@@ -17,13 +17,6 @@ Du an nay la mot AI agent co ban duoc xay dung theo ki hieu:
 - Chon tab AI20K Technical Book de doc chi tiet:
   https://phoenix.note.transformerlabs.ai/technical-book
 
-## 3) Thong tin nhom
-
-- Ten nhom: [Nhap ten nhom]
-- MSSV thanh vien:
-  - Thanh vien 1: [Ho va ten] - MSSV: [xxxxx]
-  - Thanh vien 2: [Ho va ten] - MSSV: [xxxxx]
-  - Thanh vien 3: [Ho va ten] - MSSV: [xxxxx]
 
 ## 4) Cac buoc thuc hien
 
