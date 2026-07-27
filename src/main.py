@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,7 +34,15 @@ app.add_middleware(
 
 app.include_router(router, prefix="/api/v1")
 
+@app.get("/api/v1/echo")
+async def echo(text: str = "Hello") -> dict[str, str]:
+    return {
+        "status": "ok",
+        "echo": text,
+        "time": datetime.now(UTC).isoformat(),
+    }
 
 @app.get("/health")
 async def health():
     return {"status": "ok", "env": settings.app_env}
+
