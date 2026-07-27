@@ -1,4 +1,4 @@
-# 🤖 AI20K Agent Template
+﻿# 🤖 AI20K Agent Template
 
 Template chính thức cho học viên **VinUni AI20K Build Phase** — cung cấp sẵn cấu trúc dự án, code mẫu, và hướng dẫn kỹ thuật chi tiết để xây dựng AI Agent đạt điểm cao (35+/50).
 
@@ -199,3 +199,12 @@ bất kỳ markdown viewer/editor nào (VS Code, Obsidian, GitHub UI, …).
 ## 📄 License
 
 MIT — Sử dụng tự do cho mục đích giáo dục.
+
+## Danh sach thanh vien
+
+| Vai tro | Ho ten | MSSV |
+|---------|--------|------|
+| Team lead | [Nhap ten] | [Nhap MSSV] |
+| Thanh vien 1 | [Nhap ten] | [Nhap MSSV] |
+| Thanh vien 2 | [Nhap ten] | [Nhap MSSV] |
+| Thanh vien 3 | [Nhap ten] | [Nhap MSSV] |
