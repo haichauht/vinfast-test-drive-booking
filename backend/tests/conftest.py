@@ -1,9 +1,8 @@
 from unittest.mock import AsyncMock
 
+from httpx import ASGITransport, AsyncClient
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
 from src.main import app
 
 
