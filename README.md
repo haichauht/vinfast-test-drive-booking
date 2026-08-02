@@ -204,7 +204,7 @@ MIT — Sử dụng tự do cho mục đích giáo dục.
 
 | Vai tro | Ho ten | MSSV |
 |---------|--------|------|
-| Team lead | [Nhap ten] | [Nhap MSSV] |
-| Thanh vien 1 | [Nhap ten] | [Nhap MSSV] |
-| Thanh vien 2 | [Nhap ten] | [Nhap MSSV] |
-| Thanh vien 3 | [Nhap ten] | [Nhap MSSV] |
+| Team lead | Huynh Thi Hai Chau | 2A202601912 |
+| Thanh vien 1 | Le Binh Nguyen | 2A202601659 |
+| Thanh vien 2 | Nguyen Thien Loc | 2A202601479 |
+| Thanh vien 3 | Nguyen Hoang Minh | 2A202601764 |
