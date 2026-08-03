@@ -5,8 +5,7 @@ from src.services.booking import BookingService
 
 def _sqlite_path(url: str) -> str:
     if not url.startswith("sqlite:///"):
-        raise RuntimeError(
-            "Phiên bản MVP hiện chỉ hỗ trợ DATABASE_URL SQLite.")
+        raise RuntimeError("Phiên bản MVP hiện chỉ hỗ trợ DATABASE_URL SQLite.")
     return url.removeprefix("sqlite:///")
 
 
