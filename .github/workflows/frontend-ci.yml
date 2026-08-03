@@ -4,11 +4,11 @@ on:
   push:
     paths:
       - 'frontend/**'
-    branches: [main, develop, testing]
+    branches: [main, develop]
   pull_request:
     paths:
       - 'frontend/**'
-    branches: [main, develop, testing] 
+    branches: [main, develop] 
 jobs:
   build:
     runs-on: ubuntu-latest
