@@ -6,14 +6,18 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import router
 from src.config import get_settings
+from src.logging_config import configure_logging
+import logging
+import time
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    print(f"Starting {settings.app_name} in {settings.app_env} mode")
+    configure_logging(settings.log_level)
+    logging.getLogger(__name__).info("Starting %s in %s mode",settings.app_name,settings.app_env)
     yield
-    print("Shutting down...")
+    logging.getLogger(__name__).info("Shutting down")
 
 
 app = FastAPI(
@@ -31,6 +35,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def request_logging(request,call_next):
+    started=time.perf_counter()
+    try:
+        response=await call_next(request)
+        logging.getLogger("http").info("%s %s -> %s %.1fms",request.method,request.url.path,response.status_code,(time.perf_counter()-started)*1000)
+        return response
+    except Exception:
+        logging.getLogger("http").exception("Unhandled error: %s %s",request.method,request.url.path)
+        raise
 
 app.include_router(router, prefix="/api/v1")
 
