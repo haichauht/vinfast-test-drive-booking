@@ -1,21 +1,33 @@
-.PHONY: run test lint format typecheck check clean
+.PHONY: help run test lint format format-check typecheck check clean
+
+help:
+	@echo "run          Start the development API server"
+	@echo "test         Run the backend test suite"
+	@echo "lint         Run Ruff lint checks"
+	@echo "format       Format source files with Ruff"
+	@echo "format-check Verify formatting without changing files"
+	@echo "typecheck    Run mypy"
+	@echo "check        Run all verification commands"
 
 run:
 	uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
 test:
-	pytest tests/ -v
+	python -m pytest tests/ -v
 
 lint:
-	ruff check src/ tests/
+	python -m ruff check src/ tests/
 
 format:
-	ruff format src/ tests/
+	python -m ruff format src/ tests/
+
+format-check:
+	python -m ruff format --check src/ tests/
 
 typecheck:
-	mypy src/
+	python -m mypy src/
 
-check: lint format test
+check: lint format-check typecheck test
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
