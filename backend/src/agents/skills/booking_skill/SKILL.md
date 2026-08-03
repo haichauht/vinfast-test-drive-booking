@@ -46,12 +46,13 @@ When a user selects a slot, the system creates a temporary held reservation (Dra
 - **Inputs**:
   - `booker_patch`: Contact details of the booker.
   - `driver_patch`: Driver information (if different from booker).
-  - `license_patch`: License details (`license_number`, `license_class`).
+  - `has_valid_license_commitment`: Boolean — `true` if the driver confirms they have a valid driving license, `false` if not. **DO NOT ask for license number or license class.** Only ask: *"Bạn có giấy phép lái xe hợp lệ không?"*
   - `notification_plan_patch`: Notification channels (SMS, Email, Zalo).
   - `expected_version`: Version token to prevent dirty write conflicts between UI and Agent.
 - **Rules**:
   - Updates only succeed if the draft is `held` and not expired (`remaining_seconds` > 0).
   - **Do not** use this tool to change slots or finalize/confirm bookings.
+  - **Never** ask the user for `license_number` or `license_class`. The system only requires a boolean commitment.
 
 ---
 
