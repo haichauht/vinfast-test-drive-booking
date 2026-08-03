@@ -43,7 +43,8 @@ def build_graph() -> StateGraph:
     graph.add_conditional_edges(
         "classifier",
         route_intent,
-        {"sensitive_policy": "sensitive_policy", "general_respond": "general_respond", "analyze": "analyze"},
+        {"sensitive_policy": "sensitive_policy",
+            "general_respond": "general_respond", "analyze": "analyze"},
     )
 
     # Luồng nghiệp vụ domain

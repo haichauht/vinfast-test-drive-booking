@@ -1,5 +1,7 @@
 from langchain_core.tools import tool
+
 from src.dependencies import booking_service
+
 
 @tool
 def get_booking_draft(booking_id: str) -> dict:
