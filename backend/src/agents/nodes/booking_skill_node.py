@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from langchain_core.messages import SystemMessage
 
@@ -55,7 +55,7 @@ async def booking_skill_node(state: AgentState) -> dict:
     # Extract response text for the API
     response_content = cast(str, response.content) if hasattr(response, "content") else ""
 
-    output = {
+    output: dict[str, Any] = {
         "messages": [response],
     }
     if response_content:
