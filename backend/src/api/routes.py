@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException
 
@@ -51,7 +52,8 @@ AGENT_TOOLS = {"search_options", "get_draft", "update_draft",
 async def demo_action(request: DemoActionRequest):
     """Deterministic UI simulator: one button maps to one tool/command."""
     p = request.payload
-    actions = {
+    actions: dict[str, tuple[str, Callable[..., Any]]] = {
+
         "search_options": ("search_test_drive_options", lambda **kw: search_test_drive_options.invoke(kw)),
         "hold_slot": ("HoldSlotCommand", booking_service.hold_slot),
         "get_draft": ("get_booking_draft", lambda **kw: get_booking_draft.invoke(kw)),

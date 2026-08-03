@@ -1,4 +1,5 @@
 from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from src.agents.nodes.classifier_node import classifier_node
 from src.agents.nodes.example_node import analyze_node, respond_node
@@ -24,8 +25,9 @@ def should_continue(state: AgentState) -> str:
     return "respond"
 
 
-def build_graph() -> StateGraph:
+def build_graph() -> CompiledStateGraph:
     graph = StateGraph(AgentState)
+
 
     # Thêm các nodes phân lớp định tuyến và xử lý chính sách
     graph.add_node("classifier", classifier_node)
