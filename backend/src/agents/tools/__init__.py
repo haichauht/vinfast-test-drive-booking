@@ -1,4 +1,3 @@
-from src.agents.tools.calculator.tool import calculate
 from src.agents.tools.get_booking_details.tool import get_booking_details
 from src.agents.tools.get_booking_draft.tool import get_booking_draft
 from src.agents.tools.request_booking_access.tool import request_booking_access
@@ -8,7 +7,6 @@ from src.agents.tools.update_booking_draft.tool import update_booking_draft
 from src.agents.tools.verify_booking_access.tool import verify_booking_access
 
 __all__ = [
-    "calculate",
     "search_knowledge",
     "search_test_drive_options",
     "get_booking_draft",

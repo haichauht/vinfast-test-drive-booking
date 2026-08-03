@@ -18,7 +18,6 @@ _SAFE_OPERATORS: dict[type, Callable[..., float]] = {
 }
 
 
-
 @tool
 def calculate(expression: str) -> str:
     """Tính toán biểu thức toán học an toàn (không dùng eval).

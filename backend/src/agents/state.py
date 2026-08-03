@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Annotated, TypedDict
+
+from langchain_core.messages import AnyMessage
+from langgraph.graph.message import add_messages
 
 
 class AgentState(TypedDict, total=False):
@@ -18,3 +21,5 @@ class AgentState(TypedDict, total=False):
     metadata: dict
     intent: str
     policy_response: str
+    messages: Annotated[list[AnyMessage], add_messages]
+    active_skill: str  # "booking" or "advise"
