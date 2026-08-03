@@ -8,7 +8,7 @@ on:
   pull_request:
     paths:
       - 'backend/**'
-    branches: [main, develop, testing]  # Kiểm tra PR vào cả 3 nhánh chính
+    branches: [main, develop, testing]  
 
 jobs:
   test:
@@ -29,8 +29,18 @@ jobs:
       - name: Lint with ruff
         run: ruff check backend/src/ backend/tests/
 
-      - name: Run tests
-        run: pytest backend/tests/ -v --tb=short
+      - name: Static type checking with mypy
+        run: mypy --ignore-missing-imports backend/src/
+
+      - name: Security scanning with bandit
+        run: bandit -r backend/src/ -ll
+
+      - name: Run tests with coverage
+        run: pytest backend/tests/ -v --tb=short --cov=backend/src/ --cov-report=term-missing
         env:
           APP_ENV: test
           OPENAI_API_KEY: test-key
+
+      - name: Verify Docker build
+        run: docker build -t backend-test ./backend
+
