@@ -52,7 +52,8 @@ async def classifier_node(state: AgentState) -> dict:
         return {"intent": result.intent, "metadata": {**(state.get("metadata") or {}), "sub_intent": result.sub_intent}}
     except Exception as e:
         # Log the specific error for debugging before falling back to keyword classifier
-        logger.warning("Classifier LLM call failed (%s: %s), falling back to keyword matching.", type(e).__name__, e)
+        logger.warning(
+            "Classifier LLM call failed (%s: %s), falling back to keyword matching.", type(e).__name__, e)
         if any(kw in lower_query for kw in GENERAL_GREETING_KEYWORDS):
             return {
                 "intent": "general",

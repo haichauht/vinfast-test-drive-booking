@@ -1,9 +1,13 @@
+import os
+
+# Override DATABASE_URL to use SQLite for tests before importing the app
+os.environ["DATABASE_URL"] = "sqlite:///./data/test.db"
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-
 from src.main import app
 
 
