@@ -613,7 +613,7 @@ class BookingService:
             raise BookingError(
                 "INVALID_INPUT", f"File không được hỗ trợ: {', '.join(unknown)}")
         counts = {}
-        skipped = []
+        skipped: list[str] = []
         with self.db.transaction(immediate=True) as c:
             for filename, (table, expected) in self.DATASET_FILES.items():
                 if filename not in supplied:

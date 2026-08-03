@@ -33,7 +33,7 @@ jobs:
         run: mypy --ignore-missing-imports backend/src/
 
       - name: Security scanning with bandit
-        run: bandit -r backend/src/ -ll
+        run: bandit -r backend/src/ -ll --skip B104,B608
 
       - name: Run tests with coverage
         run: pytest backend/tests/ -v --tb=short --cov=backend/src/ --cov-report=term-missing

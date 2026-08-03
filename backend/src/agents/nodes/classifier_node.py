@@ -49,7 +49,9 @@ async def classifier_node(state: AgentState) -> dict:
         llm = get_classifier_llm()
         structured_llm = llm.with_structured_output(RouteSchema)
         result = await structured_llm.ainvoke(prompt)
-        return {"intent": result.intent, "metadata": {**(state.get("metadata") or {}), "sub_intent": result.sub_intent}}
+        from typing import cast
+        route_result = cast(RouteSchema, result)
+        return {"intent": route_result.intent, "metadata": {**(state.get("metadata") or {}), "sub_intent": route_result.sub_intent}}
     except Exception as e:
         # Log the specific error for debugging before falling back to keyword classifier
         logger.warning(
