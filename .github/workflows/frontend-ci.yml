@@ -8,8 +8,7 @@ on:
   pull_request:
     paths:
       - 'frontend/**'
-    branches: [main]
-
+    branches: [main, develop, testing] 
 jobs:
   build:
     runs-on: ubuntu-latest

@@ -1,7 +1,16 @@
+import logging
+
 from pydantic import BaseModel, Field
 
+from src.agents.constants import (
+    GENERAL_GREETING_KEYWORDS,
+    OUT_OF_SCOPE_KEYWORDS,
+    SOVEREIGNTY_KEYWORDS,
+)
 from src.agents.state import AgentState
 from src.services.llm import get_classifier_llm
+
+logger = logging.getLogger(__name__)
 
 
 class RouteSchema(BaseModel):
@@ -16,23 +25,14 @@ class RouteSchema(BaseModel):
 async def classifier_node(state: AgentState) -> dict:
     query = state.get("query", "")
 
-    # Check basic keywords as immediate priority bypass for sensitive subjects to avoid LLM hallucinations
+    # Check basic keywords as immediate priority bypass for sensitive subjects
+    # to avoid LLM hallucinations and save API token cost
     lower_query = query.lower()
-    sovereignty_keywords = ["hoàng sa", "trường sa", "biển đông", "paracel", "spratly"]
-    out_of_scope_keywords = [
-        "viết code",
-        "lập trình",
-        "python",
-        "javascript",
-        "code python",
-        "viết script",
-        "giải toán",
-    ]
 
-    if any(kw in lower_query for kw in sovereignty_keywords):
+    if any(kw in lower_query for kw in SOVEREIGNTY_KEYWORDS):
         return {"intent": "sensitive", "metadata": {**(state.get("metadata") or {}), "sub_intent": "sovereignty"}}
 
-    if any(kw in lower_query for kw in out_of_scope_keywords):
+    if any(kw in lower_query for kw in OUT_OF_SCOPE_KEYWORDS):
         return {"intent": "sensitive", "metadata": {**(state.get("metadata") or {}), "sub_intent": "out_of_scope_code"}}
 
     # Construct prompt for the LLM classifier
@@ -50,9 +50,10 @@ async def classifier_node(state: AgentState) -> dict:
         structured_llm = llm.with_structured_output(RouteSchema)
         result = await structured_llm.ainvoke(prompt)
         return {"intent": result.intent, "metadata": {**(state.get("metadata") or {}), "sub_intent": result.sub_intent}}
-    except Exception:
-        # Fallback keyword classifier if API fails
-        if any(kw in lower_query for kw in ["chào", "hello", "hi", "tạm biệt", "bạn là ai"]):
+    except Exception as e:
+        # Log the specific error for debugging before falling back to keyword classifier
+        logger.warning("Classifier LLM call failed (%s: %s), falling back to keyword matching.", type(e).__name__, e)
+        if any(kw in lower_query for kw in GENERAL_GREETING_KEYWORDS):
             return {
                 "intent": "general",
                 "metadata": {**(state.get("metadata") or {}), "sub_intent": "fallback_general"},
