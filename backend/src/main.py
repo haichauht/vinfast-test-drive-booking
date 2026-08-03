@@ -15,8 +15,7 @@ from src.logging_config import configure_logging
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
-    logging.getLogger(__name__).info("Starting %s in %s mode",
-                                     settings.app_name, settings.app_env)
+    logging.getLogger(__name__).info("Starting %s in %s mode", settings.app_name, settings.app_env)
     yield
     logging.getLogger(__name__).info("Shutting down")
 
@@ -43,13 +42,18 @@ async def request_logging(request, call_next):
     started = time.perf_counter()
     try:
         response = await call_next(request)
-        logging.getLogger("http").info("%s %s -> %s %.1fms", request.method,
-                                       request.url.path, response.status_code, (time.perf_counter()-started)*1000)
+        logging.getLogger("http").info(
+            "%s %s -> %s %.1fms",
+            request.method,
+            request.url.path,
+            response.status_code,
+            (time.perf_counter() - started) * 1000,
+        )
         return response
     except Exception:
-        logging.getLogger("http").exception(
-            "Unhandled error: %s %s", request.method, request.url.path)
+        logging.getLogger("http").exception("Unhandled error: %s %s", request.method, request.url.path)
         raise
+
 
 app.include_router(router, prefix="/api/v1")
 
