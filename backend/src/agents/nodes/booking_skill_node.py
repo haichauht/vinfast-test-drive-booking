@@ -12,10 +12,10 @@ from src.agents.tools import (
     update_booking_draft,
     verify_booking_access,
 )
+from src.agents.utils import get_system_prompt
 from src.services.llm import get_llm
 
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "booking_skill" / "SKILL.md"
-SYSTEM_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "system_prompt.md"
 
 
 def get_booking_prompt() -> str:
@@ -24,14 +24,6 @@ def get_booking_prompt() -> str:
             return f.read()
     except Exception:
         return "You are the Booking Assistant. Help users search, update, verify and confirm test drive bookings."
-
-
-def get_system_prompt() -> str:
-    try:
-        with open(SYSTEM_PROMPT_PATH, encoding="utf-8") as f:
-            return f.read()
-    except Exception:
-        return "You are Vini, the VinFast Test Drive Virtual Assistant."
 
 
 async def booking_skill_node(state: AgentState) -> dict:
