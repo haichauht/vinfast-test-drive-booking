@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
@@ -10,6 +9,7 @@ from src.agents.constants import (
     SOVEREIGNTY_KEYWORDS,
 )
 from src.agents.state import AgentState
+from src.agents.utils import get_system_prompt
 from src.services.llm import get_classifier_llm
 
 logger = logging.getLogger(__name__)
@@ -22,17 +22,6 @@ class RouteSchema(BaseModel):
     sub_intent: str = Field(
         description="Detailed classification. e.g., 'booking', 'vehicle_info', 'small_talk', 'sovereignty', 'out_of_scope_code', 'out_of_scope_math', 'others'"
     )
-
-
-SYSTEM_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "system_prompt.md"
-
-
-def get_system_prompt() -> str:
-    try:
-        with open(SYSTEM_PROMPT_PATH, encoding="utf-8") as f:
-            return f.read()
-    except Exception:
-        return ""
 
 
 async def classifier_node(state: AgentState) -> dict:
