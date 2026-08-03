@@ -34,6 +34,7 @@ app.add_middleware(
 
 app.include_router(router, prefix="/api/v1")
 
+
 @app.get("/api/v1/echo")
 async def echo(text: str = "Hello") -> dict[str, str]:
     return {
@@ -42,7 +43,7 @@ async def echo(text: str = "Hello") -> dict[str, str]:
         "time": datetime.now(UTC).isoformat(),
     }
 
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "env": settings.app_env}
-
