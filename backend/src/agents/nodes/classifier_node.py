@@ -1,5 +1,7 @@
 import logging
+from pathlib import Path
 
+from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
 from src.agents.constants import (
@@ -22,26 +24,51 @@ class RouteSchema(BaseModel):
     )
 
 
+SYSTEM_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "system_prompt.md"
+
+
+def get_system_prompt() -> str:
+    try:
+        with open(SYSTEM_PROMPT_PATH, encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return ""
+
+
 async def classifier_node(state: AgentState) -> dict:
     query = state.get("query", "")
+    if not query:
+        return {
+            "intent": "general",
+            "messages": [HumanMessage(content="")],
+            "metadata": {**(state.get("metadata") or {}), "sub_intent": "empty_query"},
+        }
 
     # Check basic keywords as immediate priority bypass for sensitive subjects
     # to avoid LLM hallucinations and save API token cost
     lower_query = query.lower()
 
     if any(kw in lower_query for kw in SOVEREIGNTY_KEYWORDS):
-        return {"intent": "sensitive", "metadata": {**(state.get("metadata") or {}), "sub_intent": "sovereignty"}}
+        return {
+            "intent": "sensitive",
+            "messages": [HumanMessage(content=query)],
+            "metadata": {**(state.get("metadata") or {}), "sub_intent": "sovereignty"},
+        }
 
     if any(kw in lower_query for kw in OUT_OF_SCOPE_KEYWORDS):
-        return {"intent": "sensitive", "metadata": {**(state.get("metadata") or {}), "sub_intent": "out_of_scope_code"}}
+        return {
+            "intent": "sensitive",
+            "messages": [HumanMessage(content=query)],
+            "metadata": {**(state.get("metadata") or {}), "sub_intent": "out_of_scope_code"},
+        }
 
-    # Construct prompt for the LLM classifier
+    # Construct prompt for the LLM classifier dynamically based on system_prompt.md
     prompt = (
-        "You are an Intent Classifier Router for a VinFast Test Drive Assistant. "
-        "Your task is to classify the user's input query into one of three intents:\n"
-        "1. 'domain': Queries about VinFast electric vehicle models (VF3, VF5, VF7, VF8, VF9, etc.), specifications, pricing, showrooms, or booking/scheduling/cancelling a test drive.\n"
-        "2. 'general': Simple greetings ('chào bạn', 'hello'), pleasantries, small talk, or general questions about who you are.\n"
-        "3. 'sensitive': Geopolitical questions, national sovereignty questions, or out-of-scope tasks (e.g., requests to write code, program, solve complex math, write essays).\n\n"
+        "You are an Intent Classifier Router for a VinFast Test Drive Assistant.\n"
+        "Your task is to classify the user's input query into one of three intents (domain, general, sensitive) "
+        "and determine the sub_intent based on the system instructions below.\n\n"
+        "--- SYSTEM INSTRUCTIONS ---\n"
+        f"{get_system_prompt()}\n\n"
         f"User Query: {query}"
     )
 
@@ -50,16 +77,37 @@ async def classifier_node(state: AgentState) -> dict:
         structured_llm = llm.with_structured_output(RouteSchema)
         result = await structured_llm.ainvoke(prompt)
         from typing import cast
+
         route_result = cast(RouteSchema, result)
-        return {"intent": route_result.intent, "metadata": {**(state.get("metadata") or {}), "sub_intent": route_result.sub_intent}}
+        intent = route_result.intent
+        sub_intent = route_result.sub_intent
+        active_skill = "booking" if sub_intent == "booking" else "advise"
+        return {
+            "intent": intent,
+            "active_skill": active_skill,
+            "messages": [HumanMessage(content=query)],
+            "metadata": {**(state.get("metadata") or {}), "sub_intent": sub_intent},
+        }
     except Exception as e:
         # Log the specific error for debugging before falling back to keyword classifier
-        logger.warning(
-            "Classifier LLM call failed (%s: %s), falling back to keyword matching.", type(e).__name__, e)
+        logger.warning("Classifier LLM call failed (%s: %s), falling back to keyword matching.", type(e).__name__, e)
         if any(kw in lower_query for kw in GENERAL_GREETING_KEYWORDS):
             return {
                 "intent": "general",
+                "messages": [HumanMessage(content=query)],
                 "metadata": {**(state.get("metadata") or {}), "sub_intent": "fallback_general"},
             }
         else:
-            return {"intent": "domain", "metadata": {**(state.get("metadata") or {}), "sub_intent": "fallback_domain"}}
+            active_skill = (
+                "booking"
+                if any(
+                    kw in lower_query for kw in ["đặt lịch", "lái thử", "booking", "lịch hẹn", "hủy lịch", "dời lịch"]
+                )
+                else "advise"
+            )
+            return {
+                "intent": "domain",
+                "active_skill": active_skill,
+                "messages": [HumanMessage(content=query)],
+                "metadata": {**(state.get("metadata") or {}), "sub_intent": "fallback_domain"},
+            }

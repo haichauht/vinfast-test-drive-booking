@@ -45,8 +45,8 @@ async def agent_status():
     """Kiểm tra trạng thái agent."""
     return {"status": "ready", "agent": "LangGraph Agent v1.0"}
 
-AGENT_TOOLS = {"search_options", "get_draft", "update_draft",
-               "request_access", "verify_access", "get_details"}
+
+AGENT_TOOLS = {"search_options", "get_draft", "update_draft", "request_access", "verify_access", "get_details"}
 
 
 @router.post("/demo/action")
@@ -54,13 +54,15 @@ async def demo_action(request: DemoActionRequest):
     """Deterministic UI simulator: one button maps to one tool/command."""
     p = request.payload
     actions: dict[str, tuple[str, Callable[..., Any]]] = {
-
         "search_options": ("search_test_drive_options", lambda **kw: search_test_drive_options.invoke(kw)),
         "hold_slot": ("HoldSlotCommand", booking_service.hold_slot),
         "get_draft": ("get_booking_draft", lambda **kw: get_booking_draft.invoke(kw)),
         "update_draft": ("update_booking_draft", lambda **kw: update_booking_draft.invoke(kw)),
         "confirm_booking": ("ConfirmBookingCommand", booking_service.confirm_booking),
-        "request_access": ("request_booking_access", lambda **kw: booking_service.request_access(**kw, expose_otp=True)),
+        "request_access": (
+            "request_booking_access",
+            lambda **kw: booking_service.request_access(**kw, expose_otp=True),
+        ),
         "verify_access": ("verify_booking_access", lambda **kw: verify_booking_access.invoke(kw)),
         "get_details": ("get_booking_details", lambda **kw: get_booking_details.invoke(kw)),
         "update_details": ("UpdateBookingDetailsCommand", booking_service.update_booking_details),
@@ -76,7 +78,12 @@ async def demo_action(request: DemoActionRequest):
         kind = "Agent gọi tool" if request.action in AGENT_TOOLS else "Backend chạy UI command"
         return {"success": True, "message": f"{kind}: {name}", "tool": name, "data": data}
     except BookingError as exc:
-        return {"success": False, "message": str(exc), "tool": name, "error": {"code": exc.code, "retryable": exc.retryable}}
+        return {
+            "success": False,
+            "message": str(exc),
+            "tool": name,
+            "error": {"code": exc.code, "retryable": exc.retryable},
+        }
 
 
 @router.post("/admin/import/showrooms")
@@ -84,8 +91,7 @@ async def import_showrooms(request: CsvImportRequest):
     try:
         return {"success": True, "data": booking_service.import_showrooms_csv(request.csv_text)}
     except BookingError as exc:
-        raise HTTPException(status_code=422, detail={
-                            "code": exc.code, "message": str(exc)})
+        raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)})
 
 
 @router.post("/admin/import/eval-dataset")
@@ -94,19 +100,20 @@ async def import_eval_dataset(request: DatasetImportRequest):
         return {"success": True, "data": booking_service.import_eval_dataset(request.files)}
     except BookingError as exc:
         logging.getLogger("import").warning(
-            "Dataset import rejected files=%s code=%s message=%s", sorted(request.files), exc.code, str(exc))
-        raise HTTPException(status_code=422, detail={
-                            "code": exc.code, "message": str(exc)})
+            "Dataset import rejected files=%s code=%s message=%s", sorted(request.files), exc.code, str(exc)
+        )
+        raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)})
 
 
 @router.post("/client-log", status_code=204)
 async def client_log(request: ClientLogRequest):
-    level = request.level.lower() if request.level.lower() in {
-        "debug", "info", "warning", "error"} else "error"
-    safe_context = {k: v for k, v in request.context.items(
-    ) if k not in {"otp_code", "access_session_token", "contact_value"}}
-    getattr(logging.getLogger("frontend"), level)("%s | context=%s",
-                                                  request.message, json.dumps(safe_context, ensure_ascii=False, default=str))
+    level = request.level.lower() if request.level.lower() in {"debug", "info", "warning", "error"} else "error"
+    safe_context = {
+        k: v for k, v in request.context.items() if k not in {"otp_code", "access_session_token", "contact_value"}
+    }
+    getattr(logging.getLogger("frontend"), level)(
+        "%s | context=%s", request.message, json.dumps(safe_context, ensure_ascii=False, default=str)
+    )
 
 
 @router.get("/dashboard")

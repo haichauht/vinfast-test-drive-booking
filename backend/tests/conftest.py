@@ -19,22 +19,38 @@ async def client():
         yield ac
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def mock_llm():
-    """Mock LLM injected into the app to avoid real OpenAI/OpenRouter API calls during tests.
+    """Mock ChatOpenAI globally to avoid real API calls and import order issues."""
+    from langchain_core.messages import AIMessage
 
-    Usage in test:
-        async def test_something(client, mock_llm):
-            response = await client.post("/api/v1/chat", json={"message": "hello"})
-            assert response.status_code == 200
-    """
-    mock = MagicMock()
-    mock_response = MagicMock()
-    mock_response.content = "Mocked LLM response"
-    mock.ainvoke = AsyncMock(return_value=mock_response)
-    mock.with_structured_output = MagicMock(return_value=mock)
+    mock_instance = MagicMock()
+    mock_response = AIMessage(content="Mocked LLM response")
 
-    # Patch both LLM factory functions so no real API calls are made
-    with patch("src.services.llm.get_llm", return_value=mock), \
-         patch("src.services.llm.get_classifier_llm", return_value=mock):
-        yield mock
+    # Mock basic invoke/ainvoke
+    mock_instance.ainvoke = AsyncMock(return_value=mock_response)
+
+    # Mock bind_tools to return the mock instance so we can chain ainvoke on it
+    mock_instance.bind_tools = MagicMock(return_value=mock_instance)
+
+    # Mock with_structured_output for classifier_node
+    mock_structured = MagicMock()
+    from src.agents.nodes.classifier_node import RouteSchema
+
+    async def mock_classify(prompt, **kwargs):
+        prompt_lower = prompt.lower()
+        query_part = prompt_lower.split("user query:")[-1] if "user query:" in prompt_lower else prompt_lower
+        # Remove punctuation to ensure clean word splitting
+        query_clean = "".join(c if c.isalnum() or c.isspace() else " " for c in query_part)
+        words = query_clean.split()
+        if any(kw in words for kw in ["chào", "hello", "hi"]):
+            return RouteSchema(intent="general", sub_intent="small_talk")
+        elif any(kw in words or kw in query_part for kw in ["vf8", "sạc", "km", "thông số", "giá"]):
+            return RouteSchema(intent="domain", sub_intent="vehicle_info")
+        return RouteSchema(intent="domain", sub_intent="booking")
+
+    mock_structured.ainvoke = AsyncMock(side_effect=mock_classify)
+    mock_instance.with_structured_output = MagicMock(return_value=mock_structured)
+
+    with patch("src.services.llm.ChatOpenAI", return_value=mock_instance):
+        yield mock_instance

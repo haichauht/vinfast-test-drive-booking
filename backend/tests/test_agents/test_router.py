@@ -39,12 +39,23 @@ async def test_router_general_greeting():
 
 @pytest.mark.asyncio
 async def test_router_domain_booking():
-    """Kiểm tra yêu cầu đặt lịch/tư vấn xe được định tuyến sang domain path."""
+    """Kiểm tra yêu cầu đặt lịch/tư vấn xe được định tuyến sang booking skill."""
     query = "Đặt lịch lái thử xe VF3 tại Hà Nội"
     result = await agent.ainvoke({"query": query})
 
     assert result.get("intent") == "domain"
-    # Kết quả của domain path đi qua analyze -> respond
-    assert "analysis" in result
+    assert result.get("active_skill") == "booking"
     assert "response" in result
-    assert "Kết quả dựa trên phân tích" in result.get("response", "")
+    assert "Mocked LLM" in result.get("response", "")
+
+
+@pytest.mark.asyncio
+async def test_router_domain_advisory():
+    """Kiểm tra câu hỏi tư vấn thông số xe được định tuyến sang advise skill."""
+    query = "VF8 đi được bao nhiêu km sau một lần sạc đầy?"
+    result = await agent.ainvoke({"query": query})
+
+    assert result.get("intent") == "domain"
+    assert result.get("active_skill") == "advise"
+    assert "response" in result
+    assert "Mocked LLM" in result.get("response", "")
