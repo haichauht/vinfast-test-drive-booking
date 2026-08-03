@@ -3,6 +3,9 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
@@ -25,7 +28,7 @@ RUN useradd -m appuser
 COPY . .
 
 # Create data directory with correct ownership
-RUN mkdir -p /app/data && chown -R appuser:appuser /app
+RUN mkdir -p /app/data /app/logs && chown -R appuser:appuser /app
 
 USER appuser
 

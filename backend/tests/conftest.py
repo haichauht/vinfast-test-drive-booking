@@ -1,8 +1,9 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+
 from src.main import app
 
 
@@ -16,13 +17,20 @@ async def client():
 
 @pytest.fixture
 def mock_llm():
-    """Mock LLM to avoid calling OpenAI during tests.
+    """Mock LLM injected into the app to avoid real OpenAI/OpenRouter API calls during tests.
 
     Usage in test:
-        def test_something(mock_llm):
-            # LLM calls will return mock response instead of hitting OpenAI
-            ...
+        async def test_something(client, mock_llm):
+            response = await client.post("/api/v1/chat", json={"message": "hello"})
+            assert response.status_code == 200
     """
-    mock = AsyncMock()
-    mock.ainvoke.return_value = AsyncMock(content="Mocked LLM response")
-    return mock
+    mock = MagicMock()
+    mock_response = MagicMock()
+    mock_response.content = "Mocked LLM response"
+    mock.ainvoke = AsyncMock(return_value=mock_response)
+    mock.with_structured_output = MagicMock(return_value=mock)
+
+    # Patch both LLM factory functions so no real API calls are made
+    with patch("src.services.llm.get_llm", return_value=mock), \
+         patch("src.services.llm.get_classifier_llm", return_value=mock):
+        yield mock
