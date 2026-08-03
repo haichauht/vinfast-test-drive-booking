@@ -1,3 +1,4 @@
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
@@ -18,6 +19,9 @@ from src.agents.tools import (
     verify_booking_access,
 )
 
+# Giới hạn số vòng tool tối đa để tránh vòng lặp vô hạn
+MAX_TOOL_CALLS = 8
+
 
 def route_intent(state: AgentState) -> str:
     """Điều hướng dựa trên intent được phân loại."""
@@ -27,49 +31,60 @@ def route_intent(state: AgentState) -> str:
     elif intent == "general":
         return "general_respond"
 
-    # If domain, route based on active_skill
+    # Nếu domain, route theo active_skill
     active_skill = state.get("active_skill", "advise")
     if active_skill == "booking":
         return "booking_skill"
     return "advise_skill"
 
 
-def should_continue(state: AgentState) -> str:
-    """Quyết định xem có tiếp tục gọi tool hay kết thúc."""
+def should_continue_booking(state: AgentState) -> str:
+    """Quyết định booking_skill có tiếp tục gọi tool hay kết thúc."""
+    # Kiểm tra giới hạn số vòng tool
+    if (state.get("tool_call_count") or 0) >= MAX_TOOL_CALLS:
+        return "end"
+
     messages = state.get("messages") or []
     if not messages:
         return "end"
 
     last_message = messages[-1]
-    # Check if the last message has tool calls
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "continue"
     return "end"
 
 
-def route_tool_output(state: AgentState) -> str:
-    """Điều hướng kết quả từ tool quay lại node skill đang hoạt động."""
-    active_skill = state.get("active_skill", "advise")
-    if active_skill == "booking":
-        return "booking_skill"
-    return "advise_skill"
+def should_continue_advise(state: AgentState) -> str:
+    """Quyết định advise_skill có tiếp tục gọi tool hay kết thúc."""
+    # Kiểm tra giới hạn số vòng tool
+    if (state.get("tool_call_count") or 0) >= MAX_TOOL_CALLS:
+        return "end"
+
+    messages = state.get("messages") or []
+    if not messages:
+        return "end"
+
+    last_message = messages[-1]
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "continue"
+    return "end"
 
 
 def build_graph() -> CompiledStateGraph:
     graph = StateGraph(AgentState)
 
-    # Thêm các nodes phân lớp định tuyến và xử lý chính sách
+    # Nodes phân loại và chính sách
     graph.add_node("classifier", classifier_node)
     graph.add_node("sensitive_policy", sensitive_policy_node)
     graph.add_node("general_respond", general_respond_node)
 
-    # Các node xử lý Skill
+    # Nodes xử lý Skill
     graph.add_node("booking_skill", booking_skill_node)
     graph.add_node("advise_skill", advise_skill_node)
 
-    # Node thực thi Tools
-    tools = [
-        search_knowledge,
+    # Tách ToolNode theo từng skill để kiểm soát quyền gọi tool
+    # booking_skill chỉ được gọi 6 booking tools
+    booking_tools_list = [
         search_test_drive_options,
         get_booking_draft,
         update_booking_draft,
@@ -77,12 +92,22 @@ def build_graph() -> CompiledStateGraph:
         verify_booking_access,
         get_booking_details,
     ]
-    graph.add_node("tools", ToolNode(tools))
+    # advise_skill chỉ được gọi search_knowledge
+    advise_tools_list = [search_knowledge]
 
-    # Thiết lập luồng điều hướng
+    graph.add_node(
+        "booking_tools",
+        ToolNode(booking_tools_list, handle_tool_errors=True),
+    )
+    graph.add_node(
+        "advise_tools",
+        ToolNode(advise_tools_list, handle_tool_errors=True),
+    )
+
+    # Entry point
     graph.set_entry_point("classifier")
 
-    # Định tuyến từ node phân loại
+    # Định tuyến từ classifier
     graph.add_conditional_edges(
         "classifier",
         route_intent,
@@ -94,41 +119,35 @@ def build_graph() -> CompiledStateGraph:
         },
     )
 
-    # Định tuyến cho booking skill
+    # Booking skill loop: booking_skill → booking_tools → booking_skill → END
     graph.add_conditional_edges(
         "booking_skill",
-        should_continue,
+        should_continue_booking,
         {
-            "continue": "tools",
+            "continue": "booking_tools",
             "end": END,
         },
     )
+    graph.add_edge("booking_tools", "booking_skill")
 
-    # Định tuyến cho advise skill
+    # Advise skill loop: advise_skill → advise_tools → advise_skill → END
     graph.add_conditional_edges(
         "advise_skill",
-        should_continue,
+        should_continue_advise,
         {
-            "continue": "tools",
+            "continue": "advise_tools",
             "end": END,
         },
     )
-
-    # Định tuyến quay lại sau khi chạy tool
-    graph.add_conditional_edges(
-        "tools",
-        route_tool_output,
-        {
-            "booking_skill": "booking_skill",
-            "advise_skill": "advise_skill",
-        },
-    )
+    graph.add_edge("advise_tools", "advise_skill")
 
     # Các luồng kết thúc trực tiếp
     graph.add_edge("sensitive_policy", END)
     graph.add_edge("general_respond", END)
 
-    return graph.compile()
+    # Dùng MemorySaver để lưu lịch sử hội thoại theo thread_id
+    checkpointer = MemorySaver()
+    return graph.compile(checkpointer=checkpointer)
 
 
 agent = build_graph()

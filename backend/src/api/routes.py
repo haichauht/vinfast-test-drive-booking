@@ -1,5 +1,6 @@
 import json
 import logging
+import uuid
 from collections.abc import Callable
 from typing import Any
 
@@ -31,10 +32,14 @@ router = APIRouter()
 async def chat(request: ChatRequest) -> ChatResponse:
     """Chat với AI agent."""
     try:
-        result = await agent.ainvoke({"query": request.message})
+        # Tạo conversation_id mới nếu client không truyền
+        conversation_id = request.conversation_id or str(uuid.uuid4())
+        config = {"configurable": {"thread_id": conversation_id}}
+        result = await agent.ainvoke({"query": request.message}, config=config)
         return ChatResponse(
             response=result.get("response", ""),
             analysis=result.get("analysis", ""),
+            conversation_id=conversation_id,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -47,8 +47,13 @@ async def booking_skill_node(state: AgentState) -> dict:
     # Extract response text for the API
     response_content = cast(str, response.content) if hasattr(response, "content") else ""
 
+    # Tăng tool_call_count nếu LLM đang gọi tool
+    has_tool_calls = hasattr(response, "tool_calls") and bool(response.tool_calls)
+    current_count = state.get("tool_call_count") or 0
+
     output: dict[str, Any] = {
         "messages": [response],
+        "tool_call_count": current_count + 1 if has_tool_calls else current_count,
     }
     if response_content:
         output["response"] = response_content
