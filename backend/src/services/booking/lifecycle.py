@@ -115,6 +115,16 @@ class LifecycleService:
             lic["validity_acknowledged"] = bool(lic["validity_acknowledged"])
         if lic.get("has_driving_license") is not True and lic.get("has_driving_license") != 1:
             missing.append("license.has_driving_license")
+        if lic.get("has_driving_license") == 1 and not lic.get("declared_license_class"):
+            missing.append("license.declared_license_class")
+        if (
+            lic.get("declared_license_class")
+            and lic.get("required_license_class")
+            and lic["declared_license_class"] != lic["required_license_class"]
+        ):
+            missing.append("license.declared_license_class")
+        if lic.get("has_driving_license") == 1 and not lic.get("validity_acknowledged"):
+            missing.append("license.validity_acknowledged")
         remaining = max(0, int((datetime.fromisoformat(booking["hold_expires_at"]) - self.now()).total_seconds()))
         booking.update(
             missing_required_fields=missing,
@@ -170,11 +180,7 @@ class LifecycleService:
                         k: patch.get(k) for k in ("full_name", "phone", "email", "preferred_channel") if k in patch
                     }
                     current_pid = b[f"{role}_person_id"]
-                    if (
-                        role == "driver"
-                        and current_pid is not None
-                        and current_pid == b["booker_person_id"]
-                    ):
+                    if role == "driver" and current_pid is not None and current_pid == b["booker_person_id"]:
                         # Changing a self-booking to on-behalf must preserve the
                         # Booker person and attach a new Driver person.
                         current_pid = None
@@ -218,21 +224,19 @@ class LifecycleService:
                 c.execute("UPDATE bookings SET driver_person_id=? WHERE id=?", (booker_id, booking_id))
             if license_patch:
                 allowed = {}
-                commitment_key = (
-                    "has_valid_license_commitment"
-                    if "has_valid_license_commitment" in license_patch
-                    else "has_driving_license"
-                )
-                if commitment_key in license_patch:
-                    commitment = bool(license_patch[commitment_key])
-                    allowed["has_driving_license"] = int(commitment)
-                    allowed["license_check_status"] = "declared" if commitment else "not_provided"
-                    if not commitment:
+                if "has_driving_license" in license_patch:
+                    allowed["has_driving_license"] = int(bool(license_patch["has_driving_license"]))
+                    allowed["license_check_status"] = (
+                        "declared" if license_patch["has_driving_license"] else "not_provided"
+                    )
+                    if not license_patch["has_driving_license"]:
                         allowed["declared_license_class"] = None
                         allowed["validity_acknowledged"] = 0
                 for key in ("declared_license_class", "validity_acknowledged"):
                     if key in license_patch:
-                        allowed[key] = int(bool(license_patch[key])) if key == "validity_acknowledged" else license_patch[key]
+                        allowed[key] = (
+                            int(bool(license_patch[key])) if key == "validity_acknowledged" else license_patch[key]
+                        )
                 if allowed:
                     c.execute(
                         "UPDATE booking_driver_details SET "
@@ -245,7 +249,14 @@ class LifecycleService:
                     k: v
                     for k, v in notification_plan_patch.items()
                     if k
-                    in ("copy_booker", "zalo_enabled", "sms_enabled", "email_enabled", "reminder_24h_enabled", "reminder_2h_enabled")
+                    in (
+                        "copy_booker",
+                        "zalo_enabled",
+                        "sms_enabled",
+                        "email_enabled",
+                        "reminder_24h_enabled",
+                        "reminder_2h_enabled",
+                    )
                 }
                 if allowed:
                     c.execute(
@@ -337,9 +348,7 @@ class LifecycleService:
                 )
 
     def _notification_recipient_channels(self, c, bid: str):
-        booking = c.execute(
-            "SELECT booker_person_id,driver_person_id FROM bookings WHERE id=?", (bid,)
-        ).fetchone()
+        booking = c.execute("SELECT booker_person_id,driver_person_id FROM bookings WHERE id=?", (bid,)).fetchone()
         plan = c.execute("SELECT * FROM notification_plans WHERE booking_id=?", (bid,)).fetchone()
         recipients = [booking["driver_person_id"]]
         if plan["copy_booker"] and booking["booker_person_id"] != booking["driver_person_id"]:
