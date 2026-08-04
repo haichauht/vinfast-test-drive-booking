@@ -115,12 +115,6 @@ class LifecycleService:
             lic["validity_acknowledged"] = bool(lic["validity_acknowledged"])
         if lic.get("has_driving_license") is not True and lic.get("has_driving_license") != 1:
             missing.append("license.has_driving_license")
-        if lic.get("has_driving_license") == 1 and not lic.get("declared_license_class"):
-            missing.append("license.declared_license_class")
-        if lic.get("declared_license_class") and lic.get("required_license_class") and lic["declared_license_class"] != lic["required_license_class"]:
-            missing.append("license.declared_license_class")
-        if lic.get("has_driving_license") == 1 and not lic.get("validity_acknowledged"):
-            missing.append("license.validity_acknowledged")
         remaining = max(0, int((datetime.fromisoformat(booking["hold_expires_at"]) - self.now()).total_seconds()))
         booking.update(
             missing_required_fields=missing,
@@ -175,8 +169,6 @@ class LifecycleService:
                     allowed = {
                         k: patch.get(k) for k in ("full_name", "phone", "email", "preferred_channel") if k in patch
                     }
-                    if not allowed.get("full_name"):
-                        raise BookingError("INVALID_INPUT", f"{role}.full_name lÃ  báº¯t buá»™c.")
                     current_pid = b[f"{role}_person_id"]
                     if (
                         role == "driver"
@@ -186,15 +178,22 @@ class LifecycleService:
                         # Changing a self-booking to on-behalf must preserve the
                         # Booker person and attach a new Driver person.
                         current_pid = None
+                    if not current_pid and not allowed.get("full_name"):
+                        raise BookingError("INVALID_INPUT", f"{role}.full_name lÃ  báº¯t buá»™c.")
                     pid = current_pid or _id("person")
                     now = iso(self.now())
                     if current_pid:
                         sets = ",".join(f"{k}=?" for k in allowed)
                         c.execute(f"UPDATE people SET {sets},updated_at=? WHERE id=?", (*allowed.values(), now, pid))
-                        if "phone" in allowed or "email" in allowed:
+                        if "phone" in allowed:
                             c.execute(
-                                "UPDATE people SET normalized_phone=?,normalized_email=? WHERE id=?",
-                                (allowed.get("phone"), (allowed.get("email") or "").lower() or None, pid),
+                                "UPDATE people SET normalized_phone=? WHERE id=?",
+                                (allowed["phone"], pid),
+                            )
+                        if "email" in allowed:
+                            c.execute(
+                                "UPDATE people SET normalized_email=? WHERE id=?",
+                                ((allowed["email"] or "").lower() or None, pid),
                             )
                     else:
                         c.execute(
@@ -215,14 +214,20 @@ class LifecycleService:
             if driver_same_as_booker:
                 booker_id = c.execute("SELECT booker_person_id FROM bookings WHERE id=?", (booking_id,)).fetchone()[0]
                 if not booker_id:
-                    raise BookingError("INVALID_INPUT", "Cáº§n nháº­p thÃ´ng tin Booker trÆ°á»›c.")
+                    raise BookingError("INVALID_INPUT", "Cần nhập thông tin Booker trước.")
                 c.execute("UPDATE bookings SET driver_person_id=? WHERE id=?", (booker_id, booking_id))
             if license_patch:
                 allowed = {}
-                if "has_driving_license" in license_patch:
-                    allowed["has_driving_license"] = int(bool(license_patch["has_driving_license"]))
-                    allowed["license_check_status"] = "declared" if license_patch["has_driving_license"] else "not_provided"
-                    if not license_patch["has_driving_license"]:
+                commitment_key = (
+                    "has_valid_license_commitment"
+                    if "has_valid_license_commitment" in license_patch
+                    else "has_driving_license"
+                )
+                if commitment_key in license_patch:
+                    commitment = bool(license_patch[commitment_key])
+                    allowed["has_driving_license"] = int(commitment)
+                    allowed["license_check_status"] = "declared" if commitment else "not_provided"
+                    if not commitment:
                         allowed["declared_license_class"] = None
                         allowed["validity_acknowledged"] = 0
                 for key in ("declared_license_class", "validity_acknowledged"):
