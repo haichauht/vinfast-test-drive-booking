@@ -1,123 +1,53 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { useEffect } from 'react'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { HomePage } from './pages/HomePage'
+import { CarDetailPage } from './pages/CarDetailPage'
+import { BookingPage } from './pages/BookingPage'
+import { AfterSalesPage } from './pages/AfterSalesPage'
+import { ChargingPage } from './pages/ChargingPage'
 
-function App() {
-  const [messages, setMessages] = useState([
-    { text: 'Xin chào! Tôi là AI Agent kết hợp LangGraph. Tôi có thể giúp gì cho bạn hôm nay?', sender: 'agent', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
-  ])
-  const [inputValue, setInputValue] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const messagesEndRef = useRef(null)
-
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+// TODO [BACKEND/DEPLOY]: BrowserRouter requires the production web server to
+// return index.html for every non-file route (/cars/:id, /booking). Keep /api
+// outside this fallback and proxy it to the backend. See ../BACKEND_HANDOFF.md.
+function RouteEffects() {
+  const location = useLocation()
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    if (!inputValue.trim() || isLoading) return
-
-    const userMessage = inputValue
-    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    
-    // Add user message
-    setMessages(prev => [...prev, { text: userMessage, sender: 'user', timestamp }])
-    setInputValue('')
-    setIsLoading(true)
-
-    try {
-      const response = await fetch(`${apiUrl}/api/v1/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: userMessage }),
-      })
-
-      if (!response.ok) {
-        throw new Error('API server returned error')
+    const frame = window.requestAnimationFrame(() => {
+      if (location.hash) {
+        document.querySelector(location.hash)?.scrollIntoView({ behavior: 'smooth' })
+      } else {
+        window.scrollTo({ top: 0, behavior: 'instant' })
       }
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [location.pathname, location.hash])
 
-      const data = await response.json()
-      
-      // Add agent reply
-      setMessages(prev => [...prev, { 
-        text: data.response || 'Không có phản hồi từ Agent.', 
-        sender: 'agent', 
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        analysis: data.analysis 
-      }])
-    } catch (error) {
-      console.error(error)
-      setMessages(prev => [...prev, { 
-        text: 'Lỗi: Không thể kết nối tới Backend API. Vui lòng kiểm tra server đang chạy ở port 8000.', 
-        sender: 'agent', 
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-      }])
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  return null
+}
 
+function AppRoutes() {
   return (
-    <div className="app-container">
-      <header className="app-header">
-        <div>
-          <h1 className="app-title">AI20K LangGraph Agent</h1>
-        </div>
-        <div className="status-badge">
-          <span className="status-dot"></span>
-          Agent v1.0 Connected
-        </div>
-      </header>
-
-      <main className="messages-list">
-        {messages.map((msg, index) => (
-          <div key={index} className={`message-item ${msg.sender}`}>
-            <div className="message-bubble">
-              <div>{msg.text}</div>
-              {msg.analysis && (
-                <div style={{ 
-                  marginTop: '0.5rem', 
-                  padding: '0.4rem 0.6rem', 
-                  fontSize: '0.8rem', 
-                  background: 'rgba(255,255,255,0.03)', 
-                  borderLeft: '2px solid #6366f1',
-                  borderRadius: '4px',
-                  color: 'rgba(255,255,255,0.6)'
-                }}>
-                  <strong>Suy nghĩ:</strong> {msg.analysis}
-                </div>
-              )}
-            </div>
-            <div className="message-meta">{msg.timestamp}</div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </main>
-
-      <footer className="input-area">
-        <form onSubmit={handleSubmit} className="input-form">
-          <input
-            type="text"
-            className="chat-input"
-            placeholder={isLoading ? "Agent đang suy nghĩ..." : "Nhập câu hỏi tại đây..."}
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            disabled={isLoading}
-          />
-          <button type="submit" className="send-button" disabled={isLoading}>
-            {isLoading ? 'Đang gửi...' : 'Gửi'}
-          </button>
-        </form>
-      </footer>
-    </div>
+    <>
+      <RouteEffects />
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/cars/:carId" element={<CarDetailPage />} />
+        <Route path="/booking" element={<BookingPage />} />
+        <Route path="/after-sales" element={<AfterSalesPage />} />
+        <Route path="/charging" element={<ChargingPage />} />
+        <Route path="/agent" element={<Navigate to="/booking" replace />} />
+        <Route path="/home" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   )
 }
 
-export default App
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
+  )
+}
