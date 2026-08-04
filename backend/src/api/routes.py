@@ -42,7 +42,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
             conversation_id=conversation_id,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.getLogger(__name__).error("Internal error in chat endpoint: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.")
 
 
 @router.get("/status")

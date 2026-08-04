@@ -28,7 +28,17 @@ async def advise_skill_node(state: AgentState) -> dict:
     tools = [search_knowledge]
     llm_with_tools = llm.bind_tools(tools)
 
-    response = await llm_with_tools.ainvoke([SystemMessage(content=prompt)] + messages)
+    try:
+        response = await llm_with_tools.ainvoke([SystemMessage(content=prompt)] + messages)
+    except Exception as e:
+        from langchain_core.messages import AIMessage
+
+        safe_response = AIMessage(content="Đã xảy ra lỗi khi kết nối với mô hình AI. Vui lòng thử lại sau.")
+        return {
+            "messages": [safe_response],
+            "response": safe_response.content,
+            "error": str(e),
+        }
 
     # Extract response text for the API
     response_content = cast(str, response.content) if hasattr(response, "content") else ""
