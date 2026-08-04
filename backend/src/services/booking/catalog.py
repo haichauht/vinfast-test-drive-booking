@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from src.services.booking.common import iso, new_id
@@ -49,6 +50,7 @@ class CatalogService:
         vehicle_variant: str | None = None,
         showroom_id: str | None = None,
         showroom_query: str | None = None,
+        address: str | None = None,
         latitude: float | None = None,
         longitude: float | None = None,
         preferred_date: str | None = None,
@@ -58,6 +60,8 @@ class CatalogService:
     ) -> dict:
         if (latitude is None) != (longitude is None):
             raise BookingError("INVALID_INPUT", "Latitude và longitude phải được cung cấp cùng nhau.")
+        if address and not showroom_query:
+            showroom_query = address
         model = self.resolve_vehicle_model(vehicle_model)
         params: list[Any] = [model["id"]]
         variant_sql = ""
@@ -116,18 +120,21 @@ class CatalogService:
                     "search_stage": "showroom_selection",
                     "missing_fields": [],
                 }
+            selected = self._row(
+                c.execute("SELECT * FROM showrooms WHERE id=? AND is_active=1", (showroom_id,)).fetchone()
+            )
+            if not selected:
+                raise BookingError("SHOWROOM_NOT_FOUND", "Showroom not found.")
             values: list[Any] = [showroom_id, *variant_ids, iso(self.now())]
             date_sql, order_sql = "", "s.start_at"
             if preferred_date:
                 date_sql = " AND substr(s.start_at,1,10)=?"
                 values.append(preferred_date)
             if preferred_time:
-                try:
-                    hour, minute = (int(x) for x in preferred_time[:5].split(":"))
-
-                    target = hour * 60 + minute
-                except (ValueError, TypeError) as exc:
-                    raise BookingError("INVALID_INPUT", "Giá» mong muá»‘n pháº£i cÃ³ Ä‘á»‹nh dáº¡ng HH:MM.") from exc
+                if not isinstance(preferred_time, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", preferred_time):
+                    raise BookingError("INVALID_INPUT", "Preferred time must be a valid HH:MM value.")
+                hour, minute = (int(x) for x in preferred_time.split(":"))
+                target = hour * 60 + minute
                 order_sql = f"ABS((CAST(substr(s.start_at,12,2) AS INTEGER)*60 + CAST(substr(s.start_at,15,2) AS INTEGER)) - {target}), s.start_at"
             slots = [
                 dict(r)
@@ -136,8 +143,6 @@ class CatalogService:
                     (*values, min(limit, 5)),
                 )
             ]
-        with self.db.connect() as c:
-            selected = self._row(c.execute("SELECT * FROM showrooms WHERE id=?", (showroom_id,)).fetchone())
         return {
             "resolved_vehicle": {**model, "variants": variants},
             "license_requirement": model["required_license_class"],

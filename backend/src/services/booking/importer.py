@@ -11,6 +11,16 @@ _id = new_id
 
 
 class ImportService:
+    @staticmethod
+    def _validate_coordinates(latitude: object, longitude: object, *, context: str) -> tuple[float, float]:
+        try:
+            lat, lon = float(latitude), float(longitude)
+        except (TypeError, ValueError) as exc:
+            raise BookingError("INVALID_INPUT", f"Invalid coordinates {context}.") from exc
+        if not -90 <= lat <= 90 or not -180 <= lon <= 180:
+            raise BookingError("INVALID_INPUT", f"Coordinates out of range {context}.")
+        return lat, lon
+
     def import_showrooms_csv(self, csv_text: str) -> dict:
         """Upsert showroom rows from a UTF-8 CSV document."""
         required = {"code", "name", "address", "latitude", "longitude"}
@@ -20,10 +30,9 @@ class ImportService:
         imported = 0
         with self.db.transaction(immediate=True) as c:
             for line, row in enumerate(reader, start=2):
-                try:
-                    lat, lon = float(row["latitude"]), float(row["longitude"])
-                except ValueError as exc:
-                    raise BookingError("INVALID_INPUT", f"Tá»a Ä‘á»™ khÃ´ng há»£p lá»‡ táº¡i dÃ²ng {line}.") from exc
+                lat, lon = self._validate_coordinates(
+                    row["latitude"], row["longitude"], context=f"at line {line}"
+                )
                 now = iso(self.now())
                 existing = c.execute("SELECT id FROM showrooms WHERE code=?", (row["code"].strip(),)).fetchone()
                 sid = existing["id"] if existing else _id("showroom")
@@ -323,6 +332,11 @@ class ImportService:
                 if not rows:
                     counts[table] = 0
                     continue
+                if filename == "03_showrooms.csv":
+                    for line, row in enumerate(rows, start=2):
+                        self._validate_coordinates(
+                            row["latitude"], row["longitude"], context=f"at line {line} of {filename}"
+                        )
                 self._assert_dataset_references(c, filename, rows, self.DATASET_REFERENCES.get(filename, ()))
                 insert_columns = list(expected)
                 if filename == "14_booking_access_sessions.csv":
