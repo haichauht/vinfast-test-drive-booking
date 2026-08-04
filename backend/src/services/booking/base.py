@@ -21,12 +21,23 @@ class BookingBase:
         "test_drive_completed": "staff-complete:",
         "booking_marked_no_show": "staff-noshow:",
     }
+
     @staticmethod
     def _row(row):
         return row_to_dict(row)
 
     def _event(self, c, booking_id: str, event: str, actor: str = "system", payload: dict | None = None):
-        blocked = {"otp", "otp_code", "access_token", "access_session_token", "phone", "email", "contact_value", "reason", "note"}
+        blocked = {
+            "otp",
+            "otp_code",
+            "access_token",
+            "access_session_token",
+            "phone",
+            "email",
+            "contact_value",
+            "reason",
+            "note",
+        }
         safe_payload = {key: value for key, value in (payload or {}).items() if key.lower() not in blocked}
         c.execute(
             "INSERT INTO booking_events VALUES(?,?,?,?,?,?,?)",

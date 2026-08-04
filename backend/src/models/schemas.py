@@ -1,11 +1,20 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000, description="Tin nhắn từ user")
-    conversation_id: str = Field(default="", description="ID phiên hội thoại (để nhớ lịch sử nhiều lượt)")
+    conversation_id: str = Field(
+        default="", max_length=100, description="ID phiên hội thoại (để nhớ lịch sử nhiều lượt)"
+    )
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Tin nhắn không được chỉ chứa khoảng trắng.")
+        return v
 
 
 class ChatResponse(BaseModel):
