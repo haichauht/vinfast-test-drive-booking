@@ -2,10 +2,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from src.agents.nodes import advise_skill_node as advise_module
-from src.agents.nodes import booking_skill_node as booking_module
 from src.agents.nodes.advise_skill_node import advise_skill_node
 from src.agents.nodes.booking_skill_node import booking_skill_node
+
+from src.agents.nodes import advise_skill_node as advise_module
+from src.agents.nodes import booking_skill_node as booking_module
 
 
 def _mock_bound_llm(response):

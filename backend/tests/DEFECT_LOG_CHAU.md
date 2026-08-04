@@ -45,14 +45,14 @@
 | CHAU-BE-018 | OTP resend không enforce cooldown | P0 | CLOSED |
 | CHAU-BE-019 | Importer nhận tọa độ ngoài phạm vi địa lý | P2 | CLOSED — `343570c` |
 | CHAU-BE-020 | Metadata file bị bỏ qua nhưng không report skipped | P2 | OPEN |
-| CHAU-AGENT-001 | Classifier chấp nhận intent ngoài enum cho phép | P1 | OPEN |
-| CHAU-AGENT-002 | Advise skill không fallback khi LLM phát sinh exception | P1 | OPEN |
-| CHAU-AGENT-003 | tool_call_count không reset giữa các user turn | P1 | OPEN |
+| CHAU-AGENT-001 | Classifier chấp nhận intent ngoài enum cho phép | P1 | CLOSED — `ab1dc2d` |
+| CHAU-AGENT-002 | Advise skill không fallback khi LLM phát sinh exception | P1 | CLOSED — `ab1dc2d` |
+| CHAU-AGENT-003 | tool_call_count không reset giữa các user turn | P1 | CLOSED — `ab1dc2d` |
 | CHAU-TOOL-002 | Skill docs có address nhưng search tool không public | P1 | CLOSED — `343570c` |
 | CHAU-BE-022 | Provider exception làm notification job kẹt processing | P1 | OPEN |
-| CHAU-API-001 | Chat chấp nhận message chỉ có khoảng trắng | P2 | OPEN |
-| CHAU-API-002 | conversation_id không giới hạn độ dài | P1 | OPEN |
-| CHAU-API-003 | Chat trả nguyên văn exception nội bộ cho client | P0 | OPEN |
+| CHAU-API-001 | Chat chấp nhận message chỉ có khoảng trắng | P2 | CLOSED — `ab1dc2d` |
+| CHAU-API-002 | conversation_id không giới hạn độ dài | P1 | CLOSED — `ab1dc2d` |
+| CHAU-API-003 | Chat trả nguyên văn exception nội bộ cho client | P0 | CLOSED — `ab1dc2d` |
 
 ## Cập nhật retest sau khi đồng bộ `origin/testing` ngày 2026-08-04
 
@@ -70,6 +70,12 @@ Retest với `origin/feat/tools` commit `343570c` đã đóng 11 test items trư
 - CHAU-BE-020 vẫn được ghi nhận trong backlog, nhưng test report metadata đã được bỏ khỏi suite vì ngoài acceptance scope của MVP.
 
 CHAU-BE-011 tiếp tục ở backlog `TBD`; test skip đã được bỏ khỏi suite cho tới khi BA/PO chốt chính sách pin tối thiểu.
+
+## Cập nhật retest `origin/feat/agent` ngày 2026-08-04
+
+Commit `ab1dc2d` đã sửa và đóng CHAU-AGENT-001–003 cùng CHAU-API-001–003.
+Sáu testcase tương ứng đã được bỏ marker `xfail` và đều pass. CHAU-BE-022 vẫn mở
+vì exception từ messaging provider vẫn thoát khỏi dispatcher.
 
 ## Defect mới từ bộ test Agent và Tool
 
