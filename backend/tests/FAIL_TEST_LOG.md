@@ -103,9 +103,10 @@ Kết quả:
     - Expected/actual error code: `ACCESS_DENIED` / `BOOKING_DRAFT_NOT_AVAILABLE`.
     - Kết luận: production đã chặn đọc confirmed booking; testcase cần cập nhật mã lỗi và bỏ `xfail`.
 
-20. `test_rejected_license_requires_rejection_reason`
-    - Actual: không phát sinh `BookingError`.
-    - Root cause: `result="rejected"` chưa bắt buộc `rejection_reason`.
+20. `test_rejected_license_requires_rejection_reason` — removed after policy review.
+    - Decision: `rejection_reason` là tùy chọn; điều kiện bắt buộc là GPLX phải
+      `verified` trước khi check-in.
+    - Đây không còn được xem là production defect.
 
 ### Agent tools
 
@@ -159,3 +160,15 @@ Kết quả cuối sau khi đồng bộ testcase:
 ```
 
 Không còn `FAIL` hoặc `XPASS` ngoài dự kiến.
+
+## Policy update: optional rejection reason
+
+`test_rejected_license_requires_rejection_reason` và defect CHAU-BE-021 đã được
+loại bỏ. `rejection_reason` không bắt buộc; hệ thống vẫn bắt buộc GPLX ở trạng thái
+`verified` trước khi cho phép check-in.
+
+Kết quả sau thay đổi policy:
+
+```text
+172 passed, 12 xfailed in 9.25s
+```
