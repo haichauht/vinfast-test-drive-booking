@@ -3,9 +3,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from src.agents.graph import agent
-from src.agents.nodes.classifier_node import classifier_node
-
 from src.agents.nodes import advise_skill_node as advise_module
+from src.agents.nodes.classifier_node import classifier_node
 
 
 def _config(thread_id: str) -> dict:
@@ -77,7 +76,6 @@ async def test_advise_agent_converts_unauthorized_tool_call_to_tool_error(monkey
     assert result["response"] == "I cannot use that booking tool from advise skill"
 
 
-@pytest.mark.xfail(reason="Known defect: advise skill không có fallback khi LLM phát sinh exception")
 # test case of Chau + kiểm tra lỗi LLM trong advise skill không làm toàn bộ API agent thất bại
 @pytest.mark.asyncio
 async def test_advise_agent_handles_llm_exception_with_safe_response(monkeypatch):
@@ -90,12 +88,10 @@ async def test_advise_agent_handles_llm_exception_with_safe_response(monkeypatch
     assert "error" in result or "thử lại" in result["response"].lower()
 
 
-@pytest.mark.xfail(
-    reason="Known defect: classifier không reset tool_call_count nên giới hạn tám vòng bị giữ sang lượt chat mới"
-)
 # test case of Chau + kiểm tra bộ đếm tool được reset ở đầu mỗi user turn thay vì cộng dồn cả conversation
 @pytest.mark.asyncio
 async def test_classifier_resets_tool_call_counter_for_new_user_turn():
+
     result = await classifier_node({"query": "VF8 range", "tool_call_count": 8})
 
     assert result["tool_call_count"] == 0

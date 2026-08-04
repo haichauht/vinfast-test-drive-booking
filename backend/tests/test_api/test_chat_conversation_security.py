@@ -48,7 +48,6 @@ async def test_chat_reuses_client_conversation_id(client, monkeypatch):
     assert mocked.ainvoke.await_args.kwargs["config"]["configurable"]["thread_id"] == conversation_id
 
 
-@pytest.mark.xfail(reason="Known defect: ChatRequest chấp nhận message chỉ gồm khoảng trắng")
 # test case of Chau + kiểm tra message trắng bị từ chối thay vì tốn một lượt gọi agent
 @pytest.mark.asyncio
 async def test_chat_rejects_whitespace_only_message(client, monkeypatch):
@@ -60,7 +59,6 @@ async def test_chat_rejects_whitespace_only_message(client, monkeypatch):
     mocked.ainvoke.assert_not_awaited()
 
 
-@pytest.mark.xfail(reason="Known defect: conversation_id không có max_length")
 # test case of Chau + kiểm tra conversation id quá dài bị chặn để bảo vệ memory checkpoint key
 @pytest.mark.asyncio
 async def test_chat_rejects_oversized_conversation_id(client, monkeypatch):
@@ -75,7 +73,6 @@ async def test_chat_rejects_oversized_conversation_id(client, monkeypatch):
     mocked.ainvoke.assert_not_awaited()
 
 
-@pytest.mark.xfail(reason="Known defect: chat endpoint trả nguyên văn exception nội bộ cho client")
 # test case of Chau + kiểm tra lỗi nội bộ agent không làm lộ secret hoặc chi tiết hạ tầng
 @pytest.mark.asyncio
 async def test_chat_does_not_expose_internal_exception_details(client, monkeypatch):

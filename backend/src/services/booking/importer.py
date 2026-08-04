@@ -340,7 +340,9 @@ class ImportService:
                 try:
                     for row in rows:
                         if filename == "10_booking_driver_details.csv":
-                            has_license = "1" if row.get("declared_license_class") or row.get("license_number") else None
+                            has_license = (
+                                "1" if row.get("declared_license_class") or row.get("license_number") else None
+                            )
                             values = []
                             for col in insert_columns:
                                 if col == "has_driving_license":

@@ -204,13 +204,16 @@ class AccessService:
             result["showroom"] = {"id": result["slot"]["showroom_id"], "name": catalog["showroom_name"]}
             permissions = json.loads(session["permissions_json"])
             result["allowed_actions"] = [
-                action for action in ("reschedule", "cancel", "update_details", "update_notifications")
-                if b["status"] == "confirmed" and {
+                action
+                for action in ("reschedule", "cancel", "update_details", "update_notifications")
+                if b["status"] == "confirmed"
+                and {
                     "reschedule": "confirm_reschedule",
                     "cancel": "cancel_booking",
                     "update_details": "update_details",
                     "update_notifications": "update_notifications",
-                }[action] in permissions
+                }[action]
+                in permissions
             ]
             result["session_expires_at"] = session["expires_at"]
             return result

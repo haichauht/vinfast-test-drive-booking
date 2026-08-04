@@ -21,9 +21,7 @@ class MessagingProvider(Protocol):
 
 
 class OtpSender(Protocol):
-    def send(
-        self, *, channel: str, destination: str, code: str, expires_in_seconds: int
-    ) -> ProviderResult: ...
+    def send(self, *, channel: str, destination: str, code: str, expires_in_seconds: int) -> ProviderResult: ...
 
 
 @dataclass
@@ -58,9 +56,7 @@ class InMemoryOtpSender(InMemoryMessagingProvider):
         super().__init__()
         self.sent: list[SentOtp] = []
 
-    def send(
-        self, *, channel: str, destination: str, code: str, expires_in_seconds: int
-    ) -> ProviderResult:
+    def send(self, *, channel: str, destination: str, code: str, expires_in_seconds: int) -> ProviderResult:
         self.sent.append(SentOtp(channel, destination, code, expires_in_seconds))
         return self.send_message(
             channel=channel,
