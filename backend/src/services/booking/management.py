@@ -55,7 +55,9 @@ class ManagementService:
         )
         with self.db.transaction(immediate=True) as c:
             current = c.execute("SELECT * FROM bookings WHERE id=?", (current_booking_id,)).fetchone()
-            new_booking = c.execute("SELECT rescheduled_from_booking_id FROM bookings WHERE id=?", (held["booking_id"],)).fetchone()
+            new_booking = c.execute(
+                "SELECT rescheduled_from_booking_id FROM bookings WHERE id=?", (held["booking_id"],)
+            ).fetchone()
             if new_booking["rescheduled_from_booking_id"] == current_booking_id:
                 cached = self._idempotent_response(c, ui_action_id, "hold_reschedule", request_payload)
                 return {**cached, "current_booking_id": current_booking_id}
@@ -164,7 +166,9 @@ class ManagementService:
                 (now, current_booking_id),
             )
             self._create_jobs(
-                c, new_booking_id, new_slot["start_at"],
+                c,
+                new_booking_id,
+                new_slot["start_at"],
                 confirmation_type="reschedule_confirmation",
             )
             self._event(c, current_booking_id, "booking_rescheduled", "user", {"new_booking_id": new_booking_id})
