@@ -7,6 +7,8 @@ import { IslandButton } from './IslandButton'
 const links = [
   { label: 'Công nghệ', to: '/#technology' },
   { label: 'Hệ sinh thái', to: '/#ecosystem' },
+  { label: 'Hậu mãi', to: '/after-sales' },
+  { label: 'Pin & trạm sạc', to: '/charging' },
   { label: 'ViVi đặt lịch', to: '/booking' },
 ]
 

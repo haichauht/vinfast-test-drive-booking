@@ -10,6 +10,7 @@ Những phần đang là dữ liệu giả hoặc xử lý cục bộ:
 
 - Catalogue, thông số, màu và media xe: `src/data/cars.js`.
 - Media trang chủ/ViVi: `src/data/media.js`.
+- Nội dung hậu mãi, pin/trạm sạc, thời hạn và media chính sách: `src/data/ownership.js`.
 - Showroom và nhân viên sale: `showroomDirectory` trong `src/pages/BookingPage.jsx`.
 - Nhận diện tỉnh, phường/xã và intent của chat: parser cục bộ trong `BookingPage.jsx`.
 - Lịch trống: `createSlots()` sinh theo công thức, không phải tồn xe thật.
@@ -32,7 +33,7 @@ VITE_ANALYTICS_ENABLED=true
 ```
 
 - Không đặt private key hoặc service credential trong biến `VITE_*`; mọi biến này đều có thể đọc được trong browser.
-- Nginx phải dùng `try_files $uri /index.html` cho `/cars/:id`, `/booking` và các route SPA khác.
+- Nginx phải dùng `try_files $uri /index.html` cho `/cars/:id`, `/booking`, `/after-sales`, `/charging` và các route SPA khác.
 - `/api` không được rơi vào SPA fallback. Nếu reverse proxy, đặt timeout riêng cho agent streaming.
 - Không cache response booking/lookup. Asset có hash trong `dist/assets` có thể cache immutable.
 - API dùng TLS, CORS allowlist và cookie `Secure; HttpOnly; SameSite=Lax` nếu chọn cookie session.
@@ -74,6 +75,7 @@ Tên endpoint có thể đổi theo chuẩn nội bộ, nhưng payload và lifec
 | `GET` | `/api/v1/vehicles/{id}` | Trang chi tiết, panel xe | Trả specs, colors, presentation và brochure revision |
 | `GET` | `/api/v1/vehicles/{id}/media` | Detail gallery/chapters | Media có type, tone, focal point, sort order |
 | `GET` | `/api/v1/content/home?locale=vi-VN` | Home | Hero, video, editorial panels, testimonial đã publish |
+| `GET` | `/api/v1/content/ownership?locale=vi-VN` | Hậu mãi, pin & trạm sạc | Policy blocks có revision, effectiveAt, source document và sortOrder |
 | `POST` | `/api/v1/test-drive/drafts` | Bắt đầu flow | Trả `draftId`, `stage`, `expiresAt` |
 | `GET` | `/api/v1/test-drive/drafts/{id}` | Reload/khôi phục | Không trả PII nếu draft chưa được xác minh |
 | `PATCH` | `/api/v1/test-drive/drafts/{id}` | Mỗi lựa chọn | Patch recipient, vehicle, address, showroom, stage |
@@ -124,7 +126,20 @@ Ví dụ tối thiểu:
     "motionPreset": "drive-ltr",
     "focalPoint": { "x": 0.5, "y": 0.5 },
     "aspectRatio": 2.27,
-    "alt": "VinFast VF 6 màu trắng, góc đầu xe 3/4"
+    "alt": "VinFast VF 6 màu trắng, góc đầu xe 3/4",
+    "film": {
+      "url": "https://cdn.example.vn/vehicles/vf6/presentation.mp4",
+      "posterUrl": "https://cdn.example.vn/vehicles/vf6/presentation-poster.webp",
+      "mimeType": "video/mp4",
+      "width": 1920,
+      "height": 1080,
+      "duration": 30.14,
+      "eyebrow": "VF 6 trong chuyển động",
+      "title": "...",
+      "description": "...",
+      "captionUrl": null,
+      "revision": "2026-08-04"
+    }
   },
   "specifications": [
     { "key": "range_nedc", "value": 460, "unit": "km", "label": "Quãng đường NEDC", "sortOrder": 10 }
@@ -145,8 +160,61 @@ Ví dụ tối thiểu:
 - Chapter media cần `mediaType`: `exterior`, `profile`, `rear`, `cockpit`, `cabin`, `rearSeats`, `technology`, `drive`, `charging`, `cargo`.
 - `tone` chỉ là `light` hoặc `dark` để frontend chọn frame tương phản đúng.
 - Video cần `posterUrl`, `mimeType`, `duration`, `width`, `height`, captions/transcript nếu có lời nói. Autoplay chỉ áp dụng video muted.
+- `presentation.film` là optional. Khi không có hoặc tải lỗi, frontend dùng `posterUrl`/`heroImageUrl` làm fallback và tiếp tục render gallery; không để lỗi video chặn trang chi tiết.
+- Mỗi vehicle/revision chỉ được trả **một** object `presentation.film`, không trả mảng và không nhân bản cùng URL ở nhiều record. Nếu CMS có bản ghi trùng, backend chọn bản `publishedAt` mới nhất trước khi serialize; frontend chỉ mount một player cho route đang xem.
+- `motionImageUrl` dùng trong hero phải là cutout alpha thật, canvas đã crop sát `safeBounds` và không chứa nền trắng/ô màu. Với VF 9, preset hiện tại tham chiếu asset đã crop `vf9-studio`; backend cần cung cấp bản CDN tương đương để không lộ khung trên nền trang.
+- VF 8 và VF 8 Thế hệ mới hiện có hai file local giống hệt byte nhưng vẫn là hai record media độc lập. Backend/CMS không gộp quan hệ theo checksum vì nội dung biên tập, revision và ngày publish của hai mẫu có thể tách riêng sau này.
 - Frontend luôn tôn trọng `prefers-reduced-motion`; backend phải có ảnh fallback cho mọi video/motion asset.
 - Khi dữ liệu/media async render xong, frontend integration gọi `ScrollTrigger.refresh()`; không khởi tạo lại toàn bộ GSAP timeline trên từng chunk stream.
+
+### Contract media trang chủ và quy tắc lớp ảnh
+
+- `factoryFilm` và `factoryAerial` là hai content block độc lập, có `sortOrder` riêng. Không composite ảnh toàn cảnh nhà máy vào video dây chuyền và không trả HTML/CSS positioning từ CMS.
+- CTA cuối trang `homeAction` chỉ nhận tối đa một `vehicleRender`. Nền phía sau là gradient do frontend quản lý; không trả thêm ảnh xe nền thứ hai.
+- Các panel VF 8/VF 9 tại `flagship-passage` bắt buộc dùng `studioImageUrl` với `studioImageMode: "cutout"`. Nếu chưa có alpha thật, backend trả `plate` để frontend đóng khung có chủ đích, không gắn nhãn sai là `cutout`.
+- Mọi block media cần stable `id`, `sortOrder`, `alt`, `focalPoint`, `width`, `height` và `revision`. API không trả selector, z-index, vị trí tuyệt đối hay timeline GSAP.
+
+### Contract nội dung hậu mãi, pin và trạm sạc
+
+Hai route `/after-sales` và `/charging` đang đọc fixture có nguồn từ brochure trong `src/data/ownership.js`. Khi nối CMS/API, không trả một khối HTML tự do. Backend nên trả các block có cấu trúc, ví dụ:
+
+```json
+{
+  "slug": "charging",
+  "locale": "vi-VN",
+  "revision": "2026-08-04",
+  "effectiveAt": "2024-03-19T00:00:00+07:00",
+  "sourceDocument": {
+    "title": "Dịch vụ pin ô tô điện VinFast",
+    "url": "https://cdn.example.vn/policies/charging.pdf",
+    "checksum": "sha256:..."
+  },
+  "network": {
+    "provinceCount": 63,
+    "portCount": 150000,
+    "portCountQualifier": "more_than"
+  },
+  "tariff": {
+    "amountPerKwh": 3858,
+    "currency": "VND",
+    "vatIncluded": true,
+    "effectiveAt": "2024-03-19"
+  },
+  "blocks": [
+    { "id": "charging-notice", "type": "notice_timeline", "sortOrder": 10, "items": [] },
+    { "id": "charging-units", "type": "charger_catalogue", "sortOrder": 20, "items": [] }
+  ]
+}
+```
+
+Quy tắc bắt buộc:
+
+- Mọi con số pháp lý/chính sách cần `effectiveAt`, `revision` và `sourceDocument`; không cache vô thời hạn.
+- Chính sách thuê pin phải có trạng thái `legacy_existing_customers_only` để UI không hiển thị như dịch vụ mở mới.
+- Thời hạn bảo hành pin trả theo `vehicleIds`, `durationMonths`, `distanceKm` và `whicheverComesFirst`; frontend chịu trách nhiệm format, không parse chuỗi pháp lý.
+- Danh mục trụ sạc trả `powerKw`, số cổng, điện áp vào/ra, chuẩn bảo vệ, nhiệt độ vận hành và media có `alt`, `width`, `height`, `revision`.
+- Không cho CMS gửi selector GSAP hoặc JavaScript. CMS chỉ chọn animation preset allowlist: `hero-scale`, `stagger-cards`, `pinned-chapter`, `static`.
+- Khi policy hết hiệu lực hoặc chưa publish, API phải trả trạng thái rõ ràng; frontend giữ bản bundled fallback kèm cảnh báo nguồn, không tự ghép dữ liệu cũ và mới.
 
 ## 6. Contract showroom, slot, hold và booking
 
@@ -278,6 +346,7 @@ Mọi request làm thay đổi stage cần loading state, disable action gây du
 - `booking_hold_created`, `booking_hold_conflict`, `booking_form_error`.
 - `booking_created`, `booking_lookup`, `booking_reschedule`, `booking_cancel`.
 - `vivi_message_sent`, `vivi_action_selected`, `media_load_error`.
+- `ownership_page_view`, `ownership_section_view`, `policy_source_open`, `charging_hotline_click`.
 
 Thuộc tính chung chỉ gồm `eventId`, `anonymousSessionId`, `draftId`, `vehicleId`, `showroomId`, `stage`, `placement`, timestamp và trạng thái. Không gửi name, phone, email, địa chỉ chi tiết hoặc raw prompt.
 
@@ -309,6 +378,7 @@ Thuộc tính chung chỉ gồm `eventId`, `anonymousSessionId`, `draftId`, `veh
 ## 12. Checklist nghiệm thu backend ↔ frontend
 
 - [ ] Direct load `/cars/vf6` và `/booking` không 404.
+- [ ] Direct load `/after-sales` và `/charging` không 404; anchor sub-navigation nằm dưới header sticky.
 - [ ] Reload booking khôi phục đúng stage nhưng không để lộ PII trong browser storage.
 - [ ] Showroom được lọc theo đúng xe trước rồi mới theo khoảng cách.
 - [ ] Mọi slot có `inventorySlotId`; browser không tự sinh lịch.
@@ -319,5 +389,6 @@ Thuộc tính chung chỉ gồm `eventId`, `anonymousSessionId`, `draftId`, `veh
 - [ ] Ảnh `drive-ltr` có alpha và đúng hướng đầu xe; không lộ khung khi chạy.
 - [ ] `prefers-reduced-motion` vẫn hiển thị đủ nội dung.
 - [ ] Media lỗi có fallback; dữ liệu ảnh async không làm sai ScrollTrigger.
+- [ ] Giá sạc, phí lưu trụ, số cổng sạc và thời hạn bảo hành hiển thị đúng `revision/effectiveAt`; thuê pin luôn gắn nhãn khách hàng hiện hữu.
 - [ ] Analytics và log không chứa PII/raw prompt.
 - [ ] Mobile, keyboard, screen reader và timezone `Asia/Ho_Chi_Minh` được kiểm tra.

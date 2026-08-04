@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { HomePage } from './pages/HomePage'
 import { CarDetailPage } from './pages/CarDetailPage'
 import { BookingPage } from './pages/BookingPage'
+import { AfterSalesPage } from './pages/AfterSalesPage'
+import { ChargingPage } from './pages/ChargingPage'
 
 // TODO [BACKEND/DEPLOY]: BrowserRouter requires the production web server to
 // return index.html for every non-file route (/cars/:id, /booking). Keep /api
@@ -32,6 +34,8 @@ function AppRoutes() {
         <Route path="/" element={<HomePage />} />
         <Route path="/cars/:carId" element={<CarDetailPage />} />
         <Route path="/booking" element={<BookingPage />} />
+        <Route path="/after-sales" element={<AfterSalesPage />} />
+        <Route path="/charging" element={<ChargingPage />} />
         <Route path="/agent" element={<Navigate to="/booking" replace />} />
         <Route path="/home" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
