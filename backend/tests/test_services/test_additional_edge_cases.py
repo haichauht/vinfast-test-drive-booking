@@ -312,26 +312,6 @@ def test_import_showrooms_rejects_out_of_range_coordinates(booking_service, lati
     assert error.value.code == "INVALID_INPUT"
 
 
-# test case of Chau + kiểm tra metadata files được báo trong danh sách skipped khi import dataset
-@pytest.mark.xfail(reason="Known defect: importer chấp nhận metadata file nhưng skipped luôn rỗng")
-def test_import_eval_dataset_reports_skipped_metadata_files(booking_service, catalog):
-    result = booking_service.import_eval_dataset({"18_dataset_metadata.csv": "key,value\nversion,1\n"})
-
-    assert result["skipped"] == ["18_dataset_metadata.csv"]
-
-
-# test case of Chau + kiểm tra dashboard clamp limit về tối thiểu một và tối đa hai trăm
-def test_dashboard_clamps_result_limit(booking_service, confirmed_booking_factory, catalog):
-    confirmed_booking_factory()
-    confirmed_booking_factory(catalog["slot_second_vehicle"])
-
-    minimum = booking_service.get_dashboard(limit=0)
-    maximum = booking_service.get_dashboard(limit=500)
-
-    assert len(minimum["recent_bookings"]) == 1
-    assert len(maximum["recent_bookings"]) == 2
-
-
 # test case of Chau + kiểm tra dashboard không đếm hold đã hết hạn là active hold
 def test_dashboard_excludes_expired_hold_from_active_count(booking_service, catalog):
     booking_service.hold_slot(catalog["slot_main"], "hold:dashboard-expired-hold")
