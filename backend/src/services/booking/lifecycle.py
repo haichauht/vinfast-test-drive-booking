@@ -179,22 +179,27 @@ class LifecycleService:
                     allowed = {
                         k: patch.get(k) for k in ("full_name", "phone", "email", "preferred_channel") if k in patch
                     }
-                    if not allowed.get("full_name"):
-                        raise BookingError("INVALID_INPUT", f"{role}.full_name lÃ  báº¯t buá»™c.")
                     current_pid = b[f"{role}_person_id"]
                     if role == "driver" and current_pid is not None and current_pid == b["booker_person_id"]:
                         # Changing a self-booking to on-behalf must preserve the
                         # Booker person and attach a new Driver person.
                         current_pid = None
+                    if not current_pid and not allowed.get("full_name"):
+                        raise BookingError("INVALID_INPUT", f"{role}.full_name lÃ  báº¯t buá»™c.")
                     pid = current_pid or _id("person")
                     now = iso(self.now())
                     if current_pid:
                         sets = ",".join(f"{k}=?" for k in allowed)
                         c.execute(f"UPDATE people SET {sets},updated_at=? WHERE id=?", (*allowed.values(), now, pid))
-                        if "phone" in allowed or "email" in allowed:
+                        if "phone" in allowed:
                             c.execute(
-                                "UPDATE people SET normalized_phone=?,normalized_email=? WHERE id=?",
-                                (allowed.get("phone"), (allowed.get("email") or "").lower() or None, pid),
+                                "UPDATE people SET normalized_phone=? WHERE id=?",
+                                (allowed["phone"], pid),
+                            )
+                        if "email" in allowed:
+                            c.execute(
+                                "UPDATE people SET normalized_email=? WHERE id=?",
+                                ((allowed["email"] or "").lower() or None, pid),
                             )
                     else:
                         c.execute(
@@ -215,7 +220,7 @@ class LifecycleService:
             if driver_same_as_booker:
                 booker_id = c.execute("SELECT booker_person_id FROM bookings WHERE id=?", (booking_id,)).fetchone()[0]
                 if not booker_id:
-                    raise BookingError("INVALID_INPUT", "Cáº§n nháº­p thÃ´ng tin Booker trÆ°á»›c.")
+                    raise BookingError("INVALID_INPUT", "Cần nhập thông tin Booker trước.")
                 c.execute("UPDATE bookings SET driver_person_id=? WHERE id=?", (booker_id, booking_id))
             if license_patch:
                 allowed = {}
