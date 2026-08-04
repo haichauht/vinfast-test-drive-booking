@@ -185,3 +185,18 @@ Kết quả sau khi cập nhật scope:
 ```text
 172 passed, 7 xfailed in 8.30s
 ```
+
+## Retest sau khi lấy code Agent/API
+
+Đã cherry-pick commit `ab1dc2d` từ `origin/feat/agent` thành commit local `731fe79`.
+Các testcase của CHAU-AGENT-001–003 và CHAU-API-001–003 đều đã pass.
+
+Kết quả toàn bộ backend:
+
+```text
+178 passed, 1 xfailed in 8.73s
+```
+
+XFAIL còn lại:
+
+- `test_provider_exception_does_not_crash_dispatcher_or_stick_job` — CHAU-BE-022.
