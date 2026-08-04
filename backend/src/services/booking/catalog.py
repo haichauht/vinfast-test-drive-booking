@@ -14,14 +14,24 @@ class CatalogService:
         with self.db.connect() as c:
             models = [dict(row) for row in c.execute("SELECT * FROM vehicle_models WHERE is_active=1 ORDER BY code")]
             for model in models:
-                model["variants"] = [dict(row) for row in c.execute("SELECT * FROM vehicle_variants WHERE model_id=? AND is_active=1 ORDER BY code", (model["id"],))]
+                model["variants"] = [
+                    dict(row)
+                    for row in c.execute(
+                        "SELECT * FROM vehicle_variants WHERE model_id=? AND is_active=1 ORDER BY code", (model["id"],)
+                    )
+                ]
             return models
 
     def list_active_variants(self, model_id: str) -> list[dict]:
         with self.db.connect() as c:
             if not c.execute("SELECT 1 FROM vehicle_models WHERE id=? AND is_active=1", (model_id,)).fetchone():
                 raise BookingError("MODEL_NOT_FOUND", "Không tìm thấy mẫu xe.")
-            return [dict(row) for row in c.execute("SELECT * FROM vehicle_variants WHERE model_id=? AND is_active=1 ORDER BY code", (model_id,))]
+            return [
+                dict(row)
+                for row in c.execute(
+                    "SELECT * FROM vehicle_variants WHERE model_id=? AND is_active=1 ORDER BY code", (model_id,)
+                )
+            ]
 
     def list_active_showrooms(self) -> list[dict]:
         with self.db.connect() as c:

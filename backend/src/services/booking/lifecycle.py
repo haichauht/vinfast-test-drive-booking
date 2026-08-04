@@ -117,7 +117,11 @@ class LifecycleService:
             missing.append("license.has_driving_license")
         if lic.get("has_driving_license") == 1 and not lic.get("declared_license_class"):
             missing.append("license.declared_license_class")
-        if lic.get("declared_license_class") and lic.get("required_license_class") and lic["declared_license_class"] != lic["required_license_class"]:
+        if (
+            lic.get("declared_license_class")
+            and lic.get("required_license_class")
+            and lic["declared_license_class"] != lic["required_license_class"]
+        ):
             missing.append("license.declared_license_class")
         if lic.get("has_driving_license") == 1 and not lic.get("validity_acknowledged"):
             missing.append("license.validity_acknowledged")
@@ -178,11 +182,7 @@ class LifecycleService:
                     if not allowed.get("full_name"):
                         raise BookingError("INVALID_INPUT", f"{role}.full_name lÃ  báº¯t buá»™c.")
                     current_pid = b[f"{role}_person_id"]
-                    if (
-                        role == "driver"
-                        and current_pid is not None
-                        and current_pid == b["booker_person_id"]
-                    ):
+                    if role == "driver" and current_pid is not None and current_pid == b["booker_person_id"]:
                         # Changing a self-booking to on-behalf must preserve the
                         # Booker person and attach a new Driver person.
                         current_pid = None
@@ -221,13 +221,17 @@ class LifecycleService:
                 allowed = {}
                 if "has_driving_license" in license_patch:
                     allowed["has_driving_license"] = int(bool(license_patch["has_driving_license"]))
-                    allowed["license_check_status"] = "declared" if license_patch["has_driving_license"] else "not_provided"
+                    allowed["license_check_status"] = (
+                        "declared" if license_patch["has_driving_license"] else "not_provided"
+                    )
                     if not license_patch["has_driving_license"]:
                         allowed["declared_license_class"] = None
                         allowed["validity_acknowledged"] = 0
                 for key in ("declared_license_class", "validity_acknowledged"):
                     if key in license_patch:
-                        allowed[key] = int(bool(license_patch[key])) if key == "validity_acknowledged" else license_patch[key]
+                        allowed[key] = (
+                            int(bool(license_patch[key])) if key == "validity_acknowledged" else license_patch[key]
+                        )
                 if allowed:
                     c.execute(
                         "UPDATE booking_driver_details SET "
@@ -240,7 +244,14 @@ class LifecycleService:
                     k: v
                     for k, v in notification_plan_patch.items()
                     if k
-                    in ("copy_booker", "zalo_enabled", "sms_enabled", "email_enabled", "reminder_24h_enabled", "reminder_2h_enabled")
+                    in (
+                        "copy_booker",
+                        "zalo_enabled",
+                        "sms_enabled",
+                        "email_enabled",
+                        "reminder_24h_enabled",
+                        "reminder_2h_enabled",
+                    )
                 }
                 if allowed:
                     c.execute(
@@ -332,9 +343,7 @@ class LifecycleService:
                 )
 
     def _notification_recipient_channels(self, c, bid: str):
-        booking = c.execute(
-            "SELECT booker_person_id,driver_person_id FROM bookings WHERE id=?", (bid,)
-        ).fetchone()
+        booking = c.execute("SELECT booker_person_id,driver_person_id FROM bookings WHERE id=?", (bid,)).fetchone()
         plan = c.execute("SELECT * FROM notification_plans WHERE booking_id=?", (bid,)).fetchone()
         recipients = [booking["driver_person_id"]]
         if plan["copy_booker"] and booking["booker_person_id"] != booking["driver_person_id"]:

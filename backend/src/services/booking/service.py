@@ -19,8 +19,15 @@ from src.services.booking.staff import StaffOperationService
 
 
 class BookingService(
-    BookingBase, CatalogService, LifecycleService, AccessService, ManagementService, StaffOperationService,
-    BackgroundJobService, ImportService, DashboardService
+    BookingBase,
+    CatalogService,
+    LifecycleService,
+    AccessService,
+    ManagementService,
+    StaffOperationService,
+    BackgroundJobService,
+    ImportService,
+    DashboardService,
 ):
     def __init__(
         self,

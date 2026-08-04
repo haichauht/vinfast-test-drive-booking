@@ -31,6 +31,7 @@ async def classifier_node(state: AgentState) -> dict:
             "intent": "general",
             "messages": [HumanMessage(content="")],
             "metadata": {**(state.get("metadata") or {}), "sub_intent": "empty_query"},
+            "tool_call_count": 0,
         }
 
     # Check basic keywords as immediate priority bypass for sensitive subjects
@@ -42,6 +43,7 @@ async def classifier_node(state: AgentState) -> dict:
             "intent": "sensitive",
             "messages": [HumanMessage(content=query)],
             "metadata": {**(state.get("metadata") or {}), "sub_intent": "sovereignty"},
+            "tool_call_count": 0,
         }
 
     if any(kw in lower_query for kw in OUT_OF_SCOPE_KEYWORDS):
@@ -49,6 +51,7 @@ async def classifier_node(state: AgentState) -> dict:
             "intent": "sensitive",
             "messages": [HumanMessage(content=query)],
             "metadata": {**(state.get("metadata") or {}), "sub_intent": "out_of_scope_code"},
+            "tool_call_count": 0,
         }
 
     # Construct prompt for the LLM classifier dynamically based on system_prompt.md
@@ -69,6 +72,9 @@ async def classifier_node(state: AgentState) -> dict:
 
         route_result = cast(RouteSchema, result)
         intent = route_result.intent
+        if intent not in {"domain", "general", "sensitive"}:
+            intent = "general"
+
         sub_intent = route_result.sub_intent
         active_skill = "booking" if sub_intent == "booking" else "advise"
         return {
@@ -76,6 +82,7 @@ async def classifier_node(state: AgentState) -> dict:
             "active_skill": active_skill,
             "messages": [HumanMessage(content=query)],
             "metadata": {**(state.get("metadata") or {}), "sub_intent": sub_intent},
+            "tool_call_count": 0,
         }
     except Exception as e:
         # Log the specific error for debugging before falling back to keyword classifier
@@ -85,6 +92,7 @@ async def classifier_node(state: AgentState) -> dict:
                 "intent": "general",
                 "messages": [HumanMessage(content=query)],
                 "metadata": {**(state.get("metadata") or {}), "sub_intent": "fallback_general"},
+                "tool_call_count": 0,
             }
         else:
             active_skill = (
@@ -99,4 +107,5 @@ async def classifier_node(state: AgentState) -> dict:
                 "active_skill": active_skill,
                 "messages": [HumanMessage(content=query)],
                 "metadata": {**(state.get("metadata") or {}), "sub_intent": "fallback_domain"},
+                "tool_call_count": 0,
             }
