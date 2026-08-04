@@ -120,6 +120,31 @@ def test_update_booking_draft_forwards_non_license_patches(monkeypatch):
     )
 
 
+# test case of Chau + kiểm tra cam kết GPLX đi xuyên suốt từ tool vào service và draft thật
+def test_update_booking_draft_tool_persists_license_commitment(
+    monkeypatch, booking_service, catalog
+):
+    held = booking_service.hold_slot(catalog["slot_main"], "hold:tool-license-integration")
+    monkeypatch.setattr(update_module, "booking_service", booking_service)
+
+    result = update_booking_draft.invoke(
+        {
+            "booking_id": held["booking_id"],
+            "booker_patch": {
+                "full_name": "Huynh Thi Hai Chau",
+                "phone": "0901234567",
+            },
+            "driver_same_as_booker": True,
+            "has_valid_license_commitment": True,
+            "expected_version": 1,
+        }
+    )
+
+    assert result["license_declaration"]["has_driving_license"] is True
+    assert "license.has_driving_license" not in result["missing_required_fields"]
+    assert result["is_ready_to_confirm"] is True
+
+
 # test case of Chau + kiểm tra request access tool forward purpose channel và không bật expose OTP
 def test_request_booking_access_forwards_safe_arguments(monkeypatch):
     service = MagicMock()

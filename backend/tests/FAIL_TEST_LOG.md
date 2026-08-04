@@ -200,3 +200,15 @@ Kết quả toàn bộ backend:
 XFAIL còn lại:
 
 - `test_provider_exception_does_not_crash_dispatcher_or_stick_job` — CHAU-BE-022.
+
+## Bổ sung integration test cam kết GPLX
+
+Đã thêm `test_update_booking_draft_tool_persists_license_commitment` để kiểm tra
+tool `update_booking_draft` gọi service thật, lưu cam kết vào
+`license_declaration.has_driving_license` và làm draft sẵn sàng xác nhận.
+
+Kết quả toàn bộ backend:
+
+```text
+179 passed, 1 xfailed in 8.94s
+```
