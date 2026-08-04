@@ -65,6 +65,37 @@ function ColorExplorer({ car }) {
   )
 }
 
+function ModelFilm({ car }) {
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const film = car.presentationFilm
+
+  if (!film) return null
+
+  return (
+    <section id="model-film" className="model-film" aria-labelledby={`model-film-${car.id}`}>
+      <div className="model-film__stage">
+        <video
+          className="model-film__video"
+          src={film.src}
+          poster={film.poster || car.hero}
+          autoPlay={!reducedMotion}
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          aria-label={`Thước phim giới thiệu ${car.name}`}
+        />
+        <div className="model-film__veil" aria-hidden="true" />
+        <div className="model-film__copy" data-film-layer>
+          <p>{film.eyebrow}</p>
+          <h2 id={`model-film-${car.id}`}>{film.title}</h2>
+          <span>{film.copy}</span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export function CarDetailPage() {
   const { carId } = useParams()
   const car = useMemo(() => getCar(carId), [carId])
@@ -105,7 +136,12 @@ export function CarDetailPage() {
       window.sessionStorage.setItem(visitKey, 'true')
 
       if (reduced) {
-        gsap.set('.detail-hero__car, [data-detail-copy]', { opacity: 1, x: 0, y: 0, scale: 1 })
+        gsap.set('.detail-hero__car, [data-detail-copy], .model-film__stage, [data-film-layer]', {
+          opacity: 1,
+          x: 0,
+          y: 0,
+          scale: 1,
+        })
       } else {
         const intro = gsap.timeline({ defaults: { ease: 'power4.out' } })
         const carFrom = car.motionImage
@@ -149,16 +185,20 @@ export function CarDetailPage() {
         },
       )
 
-      const media = gsap.matchMedia()
-      media.add('(min-width: 980px)', () => {
-        ScrollTrigger.create({
-          trigger: '.detail-story',
-          start: 'top 14%',
-          end: 'bottom 84%',
-          pin: '.detail-story__aside',
-          pinSpacing: false,
+      if (car.presentationFilm) {
+        const filmTimeline = gsap.timeline({
+          scrollTrigger: {
+            trigger: '.model-film',
+            start: 'top 82%',
+            end: 'center 48%',
+            scrub: 1,
+          },
         })
-      })
+        filmTimeline
+          .fromTo('.model-film__stage', { y: 56, scale: 0.94, opacity: 0.42 }, { y: 0, scale: 1, opacity: 1, ease: 'none' })
+          .fromTo('.model-film__video', { scale: 1.07 }, { scale: 1, ease: 'none' }, '<')
+          .fromTo('[data-film-layer]', { y: 30, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.06, ease: 'power3.out' }, 0.18)
+      }
 
       gsap.utils.toArray('.detail-chapter__media').forEach((mediaEl) => {
         gsap.fromTo(
@@ -187,7 +227,6 @@ export function CarDetailPage() {
         })
       })
 
-      return () => media.revert()
     },
     { scope: root, dependencies: [carId, car] },
   )
@@ -279,6 +318,8 @@ export function CarDetailPage() {
             </p>
           </div>
         </section>
+
+        <ModelFilm car={car} />
 
         <section className="detail-specs" id="specifications">
           <div className="section-frame">

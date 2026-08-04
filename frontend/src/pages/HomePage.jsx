@@ -15,7 +15,13 @@ import { IslandButton } from '../components/IslandButton'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
 import { carGroups, carImage, cars } from '../data/cars'
-import { factoryFilm, viviPortrait } from '../data/media'
+import {
+  factoryAerial,
+  factoryFilm,
+  roadBanner,
+  vf9Sculpture,
+  viviPortrait,
+} from '../data/media'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
@@ -42,6 +48,10 @@ const stories = [
     role: 'Khách hàng VF 6 · Đà Nẵng',
   },
 ]
+
+const flagshipVehicles = ['vf8', 'vf9']
+  .map((id) => cars.find((car) => car.id === id))
+  .filter(Boolean)
 
 function VehicleRail({ vehicles }) {
   const rail = useRef(null)
@@ -200,6 +210,65 @@ export function HomePage() {
         },
       )
 
+      gsap.fromTo(
+        '.road-chapter__media img',
+        { scale: 1.13 },
+        {
+          scale: 1,
+          ease: 'none',
+          scrollTrigger: {
+            trigger: '.road-chapter',
+            start: 'top bottom',
+            end: 'bottom top',
+            scrub: 1,
+          },
+        },
+      )
+
+      gsap.fromTo(
+        '.factory-origin__media',
+        { scale: 0.88, opacity: 0.28 },
+        {
+          scale: 1,
+          opacity: 1,
+          ease: 'none',
+          scrollTrigger: { trigger: '.factory-origin', start: 'top 88%', end: 'center 58%', scrub: 1 },
+        },
+      )
+
+      gsap.fromTo(
+        '.flagship-passage__card:first-child',
+        { xPercent: -18, opacity: 0 },
+        {
+          xPercent: 0,
+          opacity: 1,
+          ease: 'none',
+          scrollTrigger: { trigger: '.flagship-passage', start: 'top 82%', end: 'center 54%', scrub: 0.9 },
+        },
+      )
+
+      gsap.fromTo(
+        '.flagship-passage__card:last-child',
+        { xPercent: 18, opacity: 0 },
+        {
+          xPercent: 0,
+          opacity: 1,
+          ease: 'none',
+          scrollTrigger: { trigger: '.flagship-passage', start: 'top 82%', end: 'center 54%', scrub: 0.9 },
+        },
+      )
+
+      gsap.fromTo(
+        '.home-action__model',
+        { xPercent: -22, opacity: 0 },
+        {
+          xPercent: 0,
+          opacity: 0.8,
+          ease: 'none',
+          scrollTrigger: { trigger: '.home-action', start: 'top 82%', end: 'center 50%', scrub: 0.9 },
+        },
+      )
+
       const desktop = gsap.matchMedia()
       desktop.add('(min-width: 980px)', () => {
         ScrollTrigger.create({
@@ -281,7 +350,22 @@ export function HomePage() {
           </a>
         </section>
 
-        <section className="factory-film" aria-labelledby="factory-film-title">
+        <section className="road-chapter" aria-labelledby="road-chapter-title">
+          <div className="road-chapter__media">
+            <SmartImage src={roadBanner} alt="Hai mẫu ô tô điện VinFast trên cung đường núi" />
+          </div>
+          <div className="road-chapter__veil" aria-hidden="true" />
+          <div className="section-frame road-chapter__copy">
+            <p className="eyebrow">Một dải sản phẩm · nhiều nhịp sống</p>
+            <h2 id="road-chapter-title">Đi xa hơn, theo cách yên tĩnh hơn.</h2>
+            <Link to="/charging">Khám phá năng lượng cho hành trình <ArrowRight size={18} weight="light" /></Link>
+          </div>
+        </section>
+
+        {/* TODO [BACKEND/HOME MEDIA]: `factoryFilm` and `factoryAerial` are two
+            independent CMS blocks. Do not composite the aerial image into this
+            video slot; preserve their separate ordering and focal points. */}
+        <section id="factory-film" className="factory-film" aria-labelledby="factory-film-title">
           <div className="factory-film__media">
             <video src={factoryFilm} autoPlay muted loop playsInline preload="auto" aria-label="Dây chuyền lắp ráp VinFast" />
             <div className="factory-film__veil" aria-hidden="true" />
@@ -290,6 +374,22 @@ export function HomePage() {
               <h2 id="factory-film-title">Mỗi hành trình bắt đầu từ một chuyển động được chế tạo chính xác.</h2>
               <span>Nhà máy VinFast · Hải Phòng</span>
             </div>
+          </div>
+        </section>
+
+        <section id="factory-origin" className="factory-origin" aria-labelledby="factory-origin-title">
+          <div className="section-frame factory-origin__grid">
+            <Reveal className="factory-origin__copy">
+              <p className="eyebrow">Từ Hải Phòng</p>
+              <h2 id="factory-origin-title">Một tổ hợp dành cho những chuyển động quy mô lớn.</h2>
+              <p>
+                Sau nhịp lắp ráp cận cảnh là toàn bộ không gian nơi mỗi chiếc xe đi qua nhiều công đoạn trước khi bắt đầu hành trình trên đường.
+              </p>
+            </Reveal>
+            <figure className="factory-origin__media">
+              <SmartImage src={factoryAerial} alt="Toàn cảnh tổ hợp sản xuất VinFast tại Hải Phòng" />
+              <figcaption><span>01</span>Tổ hợp sản xuất VinFast · Hải Phòng</figcaption>
+            </figure>
           </div>
         </section>
 
@@ -327,6 +427,34 @@ export function HomePage() {
             </div>
 
             <VehicleRail vehicles={vehicles} />
+          </div>
+        </section>
+
+        <section id="flagship" className="flagship-passage" aria-labelledby="flagship-title">
+          <div className="section-frame">
+            <Reveal className="flagship-passage__heading">
+              <p className="eyebrow">Hai dấu ấn đường dài</p>
+              <h2 id="flagship-title">Không gian cho từng cách bạn đi.</h2>
+            </Reveal>
+            <div className="flagship-passage__grid">
+              {flagshipVehicles.map((car) => (
+                <Link className="flagship-passage__card" to={`/cars/${car.id}`} key={car.id}>
+                  <span className="flagship-passage__index" aria-hidden="true">
+                    {car.id === 'vf8' ? '08' : '09'}
+                  </span>
+                  <SmartImage
+                    className={`flagship-passage__media vehicle-shot vehicle-shot--${car.studioShot.mode}`}
+                    src={car.studioShot.src}
+                    alt={`${car.name} — ảnh xe studio đã tách nền`}
+                  />
+                  <span className="flagship-passage__copy">
+                    <small>{car.body} · {car.seats}</small>
+                    <strong>{car.name}</strong>
+                    <ArrowRight size={20} weight="light" />
+                  </span>
+                </Link>
+              ))}
+            </div>
           </div>
         </section>
 
@@ -382,7 +510,7 @@ export function HomePage() {
 
             <div className="ownership-bento">
               <Reveal className="bento-block bento-block--main">
-                <div className="double-bezel double-bezel--dark">
+                <Link to="/charging" className="double-bezel double-bezel--dark">
                   <div className="double-bezel__core bento-charge">
                     <SmartImage
                       src={carImage('VF9/cs-home-charger.webp')}
@@ -394,11 +522,11 @@ export function HomePage() {
                       <p>Chủ động nạp năng lượng tại nhà hoặc tiếp tục hành trình qua mạng lưới trạm sạc.</p>
                     </div>
                   </div>
-                </div>
+                </Link>
               </Reveal>
 
               <Reveal className="bento-block bento-block--support" delay={0.08}>
-                <div className="double-bezel">
+                <Link to="/after-sales" className="double-bezel">
                   <div className="double-bezel__core bento-support">
                     <ShieldCheck size={28} weight="light" />
                     <div>
@@ -406,7 +534,7 @@ export function HomePage() {
                       <p>Thông tin chính sách hiển thị rõ theo từng mẫu xe và phiên bản.</p>
                     </div>
                   </div>
-                </div>
+                </Link>
               </Reveal>
 
               <Reveal className="bento-block bento-block--network" delay={0.14}>
@@ -514,8 +642,11 @@ export function HomePage() {
           </div>
         </section>
 
-        <section className="home-action">
+        {/* TODO [BACKEND/HOME CTA]: This CTA accepts exactly one vehicle render.
+            Background is presentation CSS; never return a second car as backdrop. */}
+        <section id="home-action" className="home-action">
           <div className="home-action__backdrop" aria-hidden="true" />
+          <SmartImage className="home-action__model" src={vf9Sculpture} alt="" aria-hidden="true" />
           <div className="section-frame home-action__content">
             <Reveal>
               <p className="eyebrow">Bắt đầu từ cảm giác sau tay lái</p>
@@ -542,6 +673,8 @@ export function HomePage() {
             <nav aria-label="Liên kết cuối trang">
               <a href="#models">Ô tô</a>
               <a href="#technology">Công nghệ</a>
+              <Link to="/after-sales">Hậu mãi</Link>
+              <Link to="/charging">Pin & trạm sạc</Link>
               <Link to="/booking">Đặt lịch</Link>
               <Link to="/agent">Trợ lý ViVi</Link>
             </nav>
