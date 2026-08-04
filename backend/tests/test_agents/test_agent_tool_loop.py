@@ -3,9 +3,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from src.agents.graph import agent
-from src.agents.nodes.classifier_node import classifier_node
-
 from src.agents.nodes import advise_skill_node as advise_module
+from src.agents.nodes.classifier_node import classifier_node
 
 
 def _config(thread_id: str) -> dict:

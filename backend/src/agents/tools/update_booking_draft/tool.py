@@ -27,7 +27,7 @@ def update_booking_draft(
     """
     license_patch = None
     if has_valid_license_commitment is not None:
-        license_patch = {"has_valid_license_commitment": has_valid_license_commitment}
+        license_patch = {"has_driving_license": has_valid_license_commitment}
 
     return booking_service.update_booking_draft(
         booking_id,
