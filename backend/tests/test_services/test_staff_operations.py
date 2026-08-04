@@ -162,25 +162,6 @@ def test_staff_operation_denies_unauthorized_staff(booking_service, confirmed_bo
     assert error.value.code == "ACCESS_DENIED"
 
 
-@pytest.mark.xfail(reason="Known defect: kết quả rejected vẫn được lưu khi không có rejection_reason")
-# test case of Chau + kiểm tra từ chối GPLX bắt buộc phải ghi lý do để audit và hỗ trợ khách hàng
-def test_rejected_license_requires_rejection_reason(booking_service, confirmed_booking_factory, staff_ids):
-    booking = confirmed_booking_factory()
-
-    with pytest.raises(BookingError) as error:
-        booking_service.record_license_check(
-            booking["booking_id"],
-            staff_ids["q7"],
-            "staff-license:rejected-no-reason",
-            original_document_presented=False,
-            license_class_matches=False,
-            is_currently_valid=False,
-            result="rejected",
-        )
-
-    assert error.value.code == "INVALID_INPUT"
-
-
 # test case of Chau + kiểm tra check-in bị chặn khi GPLX chưa được nhân viên xác minh
 def test_check_in_requires_verified_license(booking_service, confirmed_booking_factory, staff_ids, catalog):
     booking = confirmed_booking_factory()

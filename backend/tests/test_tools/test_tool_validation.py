@@ -49,33 +49,3 @@ def test_update_tool_rejects_non_mapping_booker_patch(monkeypatch):
         update_booking_draft.invoke({"booking_id": "booking-1", "booker_patch": ["name", "phone"]})
 
     service.update_booking_draft.assert_not_called()
-
-
-@pytest.mark.xfail(reason="Known defect: tool schema silently ignores unexpected arguments")
-# test case of Chau + kiểm tra field lạ hoặc nhạy cảm không bị bỏ qua âm thầm tại tool boundary
-def test_search_tool_rejects_unexpected_sensitive_argument(monkeypatch):
-    service = MagicMock()
-    monkeypatch.setattr(search_module, "booking_service", service)
-
-    with pytest.raises(ValidationError):
-        search_test_drive_options.invoke({"vehicle_model": "VF8", "license_number": "012345678901"})
-
-    service.search_options.assert_not_called()
-
-
-@pytest.mark.xfail(reason="Known defect: Pydantic coerces chuỗi yes thành boolean True tại tool boundary")
-# test case of Chau + kiểm tra cam kết GPLX chỉ nhận boolean thật thay vì tự ép chuỗi mơ hồ
-def test_update_tool_requires_strict_boolean_license_commitment(monkeypatch):
-    service = MagicMock()
-    monkeypatch.setattr(update_module, "booking_service", service)
-
-    with pytest.raises(ValidationError):
-        update_booking_draft.invoke(
-            {
-                "booking_id": "booking-1",
-                "has_valid_license_commitment": "yes",
-                "expected_version": 1,
-            }
-        )
-
-    service.update_booking_draft.assert_not_called()

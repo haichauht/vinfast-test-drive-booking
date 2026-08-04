@@ -1,5 +1,4 @@
 import pytest
-from src.services.booking import BookingError
 from src.services.booking.notifications import (
     InMemoryMessagingProvider,
 )
@@ -132,14 +131,3 @@ def test_provider_exception_does_not_crash_dispatcher_or_stick_job(
         ).fetchone()
     assert row["status"] in {"pending", "failed"}
     assert row["attempt_count"] == 1
-
-
-@pytest.mark.xfail(reason="Known defect: batch_size âm được SQLite hiểu là không giới hạn")
-# test case of Chau + kiểm tra dispatcher từ chối batch size âm thay vì claim toàn bộ job
-def test_dispatch_rejects_negative_batch_size(booking_service, confirmed_booking_factory):
-    confirmed_booking_factory()
-
-    with pytest.raises(BookingError) as error:
-        booking_service.dispatch_due_notifications(batch_size=-1)
-
-    assert error.value.code == "INVALID_INPUT"

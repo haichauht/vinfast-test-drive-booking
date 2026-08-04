@@ -30,6 +30,7 @@ def test_search_test_drive_options_forwards_all_filters(monkeypatch):
             "vehicle_variant": "Plus",
             "showroom_id": "showroom-q7",
             "showroom_query": "Quận 7",
+            "address": "123 Nguyễn Văn Linh, Quận 7",
             "preferred_date": "2026-08-10",
             "preferred_time": "09:30",
             "latitude": 10.729,
@@ -44,7 +45,7 @@ def test_search_test_drive_options_forwards_all_filters(monkeypatch):
         vehicle_variant="Plus",
         showroom_id="showroom-q7",
         showroom_query="Quận 7",
-        address=None,
+        address="123 Nguyễn Văn Linh, Quận 7",
         preferred_date="2026-08-10",
         preferred_time="09:30",
         latitude=10.729,
@@ -119,30 +120,29 @@ def test_update_booking_draft_forwards_non_license_patches(monkeypatch):
     )
 
 
-# test case of Chau + kiểm tra tool chuyển cam kết GPLX boolean sang field service đang hỗ trợ
-@pytest.mark.parametrize("commitment", [True, False])
-def test_update_booking_draft_maps_license_commitment_to_service_field(monkeypatch, commitment):
-    service = MagicMock()
-    service.update_booking_draft.return_value = {"id": "booking-1"}
-    monkeypatch.setattr(update_module, "booking_service", service)
+# test case of Chau + kiểm tra cam kết GPLX đi xuyên suốt từ tool vào service và draft thật
+def test_update_booking_draft_tool_persists_license_commitment(
+    monkeypatch, booking_service, catalog
+):
+    held = booking_service.hold_slot(catalog["slot_main"], "hold:tool-license-integration")
+    monkeypatch.setattr(update_module, "booking_service", booking_service)
 
-    update_booking_draft.invoke(
+    result = update_booking_draft.invoke(
         {
-            "booking_id": "booking-1",
-            "has_valid_license_commitment": commitment,
+            "booking_id": held["booking_id"],
+            "booker_patch": {
+                "full_name": "Huynh Thi Hai Chau",
+                "phone": "0901234567",
+            },
+            "driver_same_as_booker": True,
+            "has_valid_license_commitment": True,
             "expected_version": 1,
         }
     )
 
-    service.update_booking_draft.assert_called_once_with(
-        "booking-1",
-        booker_patch=None,
-        driver_patch=None,
-        driver_same_as_booker=False,
-        license_patch={"has_driving_license": commitment},
-        notification_plan_patch=None,
-        expected_version=1,
-    )
+    assert result["license_declaration"]["has_driving_license"] is True
+    assert "license.has_driving_license" not in result["missing_required_fields"]
+    assert result["is_ready_to_confirm"] is True
 
 
 # test case of Chau + kiểm tra request access tool forward purpose channel và không bật expose OTP
