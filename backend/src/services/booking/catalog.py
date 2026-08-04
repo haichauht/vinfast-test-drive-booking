@@ -141,9 +141,7 @@ class CatalogService:
                 date_sql = " AND substr(s.start_at,1,10)=?"
                 values.append(preferred_date)
             if preferred_time:
-                if not isinstance(preferred_time, str) or not re.fullmatch(
-                    r"(?:[01]\d|2[0-3]):[0-5]\d", preferred_time
-                ):
+                if not isinstance(preferred_time, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", preferred_time):
                     raise BookingError("INVALID_INPUT", "Preferred time must be a valid HH:MM value.")
                 hour, minute = (int(x) for x in preferred_time.split(":"))
                 target = hour * 60 + minute

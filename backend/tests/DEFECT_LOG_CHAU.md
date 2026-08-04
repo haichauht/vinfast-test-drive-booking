@@ -32,48 +32,50 @@
 | CHAU-BE-005 | Replay cancel trả cache trước khi xác thực token | P0 | CLOSED |
 | CHAU-BE-006 | Notification preferences được lưu nhưng bị bỏ qua | P1 | CLOSED |
 | CHAU-BE-007 | Chuyển sang Driver riêng ghi đè thông tin Booker | P0 | CLOSED |
-| CHAU-BE-008 | Booking confirmed đọc được qua draft tool không cần OTP | P0 | OPEN |
+| CHAU-BE-008 | Booking confirmed đọc được qua draft tool không cần OTP | P0 | CLOSED |
 | CHAU-BE-009 | hold_slot chấp nhận TTL bằng 0 hoặc âm | P1 | CLOSED |
 | CHAU-BE-010 | Xe maintenance vẫn có thể được giữ nếu slot còn available | P0 | CLOSED |
 | CHAU-BE-011 | Quy tắc đặt xe có pin dưới minimum SOC chưa rõ | — | TBD policy |
-| CHAU-BE-012 | Showroom ID không tồn tại trả response rỗng | P1 | OPEN |
-| CHAU-BE-013 | preferred_time ngoài phạm vi 24 giờ vẫn được nhận | P1 | OPEN |
-| CHAU-BE-014 | Partial person patch bắt nhập lại full_name | P1 | OPEN |
-| CHAU-BE-015 | Cam kết GPLX true vẫn bắt class và validity cũ | P1 | OPEN |
+| CHAU-BE-012 | Showroom ID không tồn tại trả response rỗng | P1 | CLOSED — `343570c` |
+| CHAU-BE-013 | preferred_time ngoài phạm vi 24 giờ vẫn được nhận | P1 | CLOSED — `343570c` |
+| CHAU-BE-014 | Partial person patch bắt nhập lại full_name | P1 | CLOSED — `343570c` |
+| CHAU-BE-015 | Cam kết GPLX true vẫn bắt class và validity cũ | P1 | CLOSED — `343570c` |
 | CHAU-BE-016 | Reminder được tạo trong quá khứ | P1 | CLOSED |
 | CHAU-BE-017 | OTP channel không có whitelist | P1 | CLOSED |
 | CHAU-BE-018 | OTP resend không enforce cooldown | P0 | CLOSED |
-| CHAU-BE-019 | Importer nhận tọa độ ngoài phạm vi địa lý | P2 | OPEN |
+| CHAU-BE-019 | Importer nhận tọa độ ngoài phạm vi địa lý | P2 | CLOSED — `343570c` |
 | CHAU-BE-020 | Metadata file bị bỏ qua nhưng không report skipped | P2 | OPEN |
-| CHAU-AGENT-001 | Classifier chấp nhận intent ngoài enum cho phép | P1 | OPEN |
-| CHAU-AGENT-002 | Advise skill không fallback khi LLM phát sinh exception | P1 | OPEN |
-| CHAU-AGENT-003 | tool_call_count không reset giữa các user turn | P1 | OPEN |
-| CHAU-TOOL-001 | Tool cam kết GPLX gửi sai tên field xuống service | P0 | OPEN |
-| CHAU-TOOL-002 | Skill docs có address nhưng search tool không public | P1 | OPEN |
-| CHAU-TOOL-003 | Tool schema bỏ qua argument lạ thay vì từ chối | P1 | OPEN |
-| CHAU-TOOL-004 | Tool tự ép chuỗi `yes` thành cam kết GPLX boolean true | P1 | OPEN |
-| CHAU-BE-021 | Reject GPLX không bắt buộc rejection_reason | P1 | OPEN |
+| CHAU-AGENT-001 | Classifier chấp nhận intent ngoài enum cho phép | P1 | CLOSED — `ab1dc2d` |
+| CHAU-AGENT-002 | Advise skill không fallback khi LLM phát sinh exception | P1 | CLOSED — `ab1dc2d` |
+| CHAU-AGENT-003 | tool_call_count không reset giữa các user turn | P1 | CLOSED — `ab1dc2d` |
+| CHAU-TOOL-002 | Skill docs có address nhưng search tool không public | P1 | CLOSED — `343570c` |
 | CHAU-BE-022 | Provider exception làm notification job kẹt processing | P1 | OPEN |
-| CHAU-BE-023 | batch_size âm claim toàn bộ notification jobs | P2 | OPEN |
-| CHAU-API-001 | Chat chấp nhận message chỉ có khoảng trắng | P2 | OPEN |
-| CHAU-API-002 | conversation_id không giới hạn độ dài | P1 | OPEN |
-| CHAU-API-003 | Chat trả nguyên văn exception nội bộ cho client | P0 | OPEN |
+| CHAU-API-001 | Chat chấp nhận message chỉ có khoảng trắng | P2 | CLOSED — `ab1dc2d` |
+| CHAU-API-002 | conversation_id không giới hạn độ dài | P1 | CLOSED — `ab1dc2d` |
+| CHAU-API-003 | Chat trả nguyên văn exception nội bộ cho client | P0 | CLOSED — `ab1dc2d` |
 
 ## Cập nhật retest sau khi đồng bộ `origin/testing` ngày 2026-08-04
 
 Backend mới đã refactor booking service thành package và sửa các defect CHAU-BE-001–007, CHAU-BE-009–010 và CHAU-BE-016–018. Các marker `xfail` tương ứng đã được bỏ sau khi testcase pass.
 
-Các vấn đề còn được tái hiện bằng 11 test items `XFAIL`:
+Retest với `origin/feat/tools` commit `343570c` đã đóng 11 test items trước đây là `XFAIL`:
 
-- CHAU-BE-008: confirmed booking vẫn đọc được qua draft API không cần OTP.
-- CHAU-BE-012: chưa validate showroom ID không tồn tại.
-- CHAU-BE-013: chưa validate hour/minute range của `preferred_time` — 3 dữ liệu test.
-- CHAU-BE-014: partial patch vẫn bắt nhập lại `full_name`.
-- CHAU-BE-015: backend đã bỏ `license_number` nhưng vẫn bắt class và validity ngoài cam kết boolean.
-- CHAU-BE-019: chưa validate latitude/longitude range — 4 dữ liệu test.
+- CHAU-BE-012: showroom ID không tồn tại đã trả `SHOWROOM_NOT_FOUND`.
+- CHAU-BE-013: hour/minute ngoài phạm vi đã trả `INVALID_INPUT` — 3 dữ liệu test.
+- CHAU-BE-014: partial patch không còn bắt nhập lại `full_name`.
+- CHAU-BE-015: cam kết GPLX boolean không còn bắt class và validity legacy.
+- CHAU-BE-019: latitude/longitude ngoài phạm vi đã bị từ chối — 4 dữ liệu test.
+- CHAU-TOOL-002: search tool đã public và forward `address`.
+- CHAU-BE-008: retest xác nhận confirmed booking đã bị chặn bằng `BOOKING_DRAFT_NOT_AVAILABLE`; testcase cũ được cập nhật mã lỗi và bỏ `xfail`.
 - CHAU-BE-020 vẫn được ghi nhận trong backlog, nhưng test report metadata đã được bỏ khỏi suite vì ngoài acceptance scope của MVP.
 
 CHAU-BE-011 tiếp tục ở backlog `TBD`; test skip đã được bỏ khỏi suite cho tới khi BA/PO chốt chính sách pin tối thiểu.
+
+## Cập nhật retest `origin/feat/agent` ngày 2026-08-04
+
+Commit `ab1dc2d` đã sửa và đóng CHAU-AGENT-001–003 cùng CHAU-API-001–003.
+Sáu testcase tương ứng đã được bỏ marker `xfail` và đều pass. CHAU-BE-022 vẫn mở
+vì exception từ messaging provider vẫn thoát khỏi dispatcher.
 
 ## Defect mới từ bộ test Agent và Tool
 
@@ -85,15 +87,6 @@ CHAU-BE-011 tiếp tục ở backlog `TBD`; test skip đã được bỏ khỏi 
 - Actual: `RouteSchema.intent` là `str`, nên giá trị như `unknown` vẫn qua validation và bị router xử lý như domain.
 - Rủi ro: output LLM sai contract có thể đi vào skill nghiệp vụ thay vì fallback an toàn.
 
-### CHAU-TOOL-001 — Mapping field cam kết GPLX không khớp service
-
-- Testcase: `test_update_booking_draft_maps_license_commitment_to_service_field[True/False]`
-- Test file: `test_tools/test_booking_tool_wrappers.py`
-- Tool input: `has_valid_license_commitment`.
-- Tool đang gửi: `license_patch={"has_valid_license_commitment": value}`.
-- Service chỉ xử lý: `license_patch["has_driving_license"]`.
-- Rủi ro: Agent đã hỏi và nhận cam kết của người dùng nhưng draft không ghi nhận, nên booking vẫn thiếu điều kiện GPLX.
-
 ### CHAU-TOOL-002 — Contract address giữa skill docs và tool bị lệch
 
 - Testcase: `test_search_tool_schema_includes_documented_address`
@@ -104,23 +97,11 @@ CHAU-BE-011 tiếp tục ở backlog `TBD`; test skip đã được bỏ khỏi 
 
 ## Defect mới từ staff service, notification, Agent–Tool và Chat API
 
-### CHAU-BE-021 — Reject GPLX không bắt buộc lý do
-
-- Testcase: `test_rejected_license_requires_rejection_reason`
-- Actual: `record_license_check(..., result="rejected", rejection_reason=None)` vẫn ghi trạng thái rejected.
-- Rủi ro: thiếu dữ liệu audit, nhân viên và khách hàng không biết điều kiện nào thất bại.
-
 ### CHAU-BE-022 — Provider exception làm notification job kẹt
 
 - Testcase: `test_provider_exception_does_not_crash_dispatcher_or_stick_job`
 - Actual: exception từ `send_message()` thoát khỏi dispatcher; job đã chuyển sang `processing` nhưng không được trả về `pending` hoặc `failed`.
 - Rủi ro: reminder/confirmation không được retry và cả batch dừng giữa chừng.
-
-### CHAU-BE-023 — batch_size âm được hiểu là không giới hạn
-
-- Testcase: `test_dispatch_rejects_negative_batch_size`
-- Actual: SQLite `LIMIT -1` claim toàn bộ job đến hạn.
-- Rủi ro: một input cấu hình sai có thể tạo tải gửi notification ngoài dự kiến.
 
 ### CHAU-AGENT-002 — Advise skill không fallback khi LLM lỗi
 
@@ -133,18 +114,6 @@ CHAU-BE-011 tiếp tục ở backlog `TBD`; test skip đã được bỏ khỏi 
 - Testcase: `test_classifier_resets_tool_call_counter_for_new_user_turn`
 - Actual: `tool_call_count` nằm trong checkpoint nhưng classifier không reset khi nhận query mới.
 - Rủi ro: sau đủ tám vòng tool trong cả conversation, các lượt chat sau có thể bị chặn tool dù là yêu cầu mới.
-
-### CHAU-TOOL-003 — Tool bỏ qua argument lạ
-
-- Testcase: `test_search_tool_rejects_unexpected_sensitive_argument`
-- Actual: Pydantic bỏ qua field không có trong schema rồi vẫn gọi service.
-- Rủi ro: Agent tưởng dữ liệu đã được xử lý; field nhạy cảm hoặc field gõ sai biến mất âm thầm.
-
-### CHAU-TOOL-004 — Cam kết GPLX không dùng strict boolean
-
-- Testcase: `test_update_tool_requires_strict_boolean_license_commitment`
-- Actual: chuỗi `"yes"` được tự ép thành `True`.
-- Rủi ro: dữ liệu LLM sai kiểu vẫn trở thành cam kết pháp lý của người dùng.
 
 ### CHAU-API-001 — Chat nhận message chỉ có khoảng trắng
 

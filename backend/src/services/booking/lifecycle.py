@@ -115,16 +115,6 @@ class LifecycleService:
             lic["validity_acknowledged"] = bool(lic["validity_acknowledged"])
         if lic.get("has_driving_license") is not True and lic.get("has_driving_license") != 1:
             missing.append("license.has_driving_license")
-        if lic.get("has_driving_license") == 1 and not lic.get("declared_license_class"):
-            missing.append("license.declared_license_class")
-        if (
-            lic.get("declared_license_class")
-            and lic.get("required_license_class")
-            and lic["declared_license_class"] != lic["required_license_class"]
-        ):
-            missing.append("license.declared_license_class")
-        if lic.get("has_driving_license") == 1 and not lic.get("validity_acknowledged"):
-            missing.append("license.validity_acknowledged")
         remaining = max(0, int((datetime.fromisoformat(booking["hold_expires_at"]) - self.now()).total_seconds()))
         booking.update(
             missing_required_fields=missing,
@@ -224,12 +214,16 @@ class LifecycleService:
                 c.execute("UPDATE bookings SET driver_person_id=? WHERE id=?", (booker_id, booking_id))
             if license_patch:
                 allowed = {}
-                if "has_driving_license" in license_patch:
-                    allowed["has_driving_license"] = int(bool(license_patch["has_driving_license"]))
-                    allowed["license_check_status"] = (
-                        "declared" if license_patch["has_driving_license"] else "not_provided"
-                    )
-                    if not license_patch["has_driving_license"]:
+                commitment_key = (
+                    "has_valid_license_commitment"
+                    if "has_valid_license_commitment" in license_patch
+                    else "has_driving_license"
+                )
+                if commitment_key in license_patch:
+                    commitment = bool(license_patch[commitment_key])
+                    allowed["has_driving_license"] = int(commitment)
+                    allowed["license_check_status"] = "declared" if commitment else "not_provided"
+                    if not commitment:
                         allowed["declared_license_class"] = None
                         allowed["validity_acknowledged"] = 0
                 for key in ("declared_license_class", "validity_acknowledged"):
