@@ -8,6 +8,7 @@ def _cfg(thread_id: str) -> dict:
 
 
 @pytest.mark.asyncio
+# test case of Chau + kiểm tra câu hỏi chủ quyền được route sang sensitive policy
 async def test_router_sovereignty_policy():
     """Kiểm tra câu hỏi chủ quyền Hoàng Sa Trường Sa được xử lý bởi sensitive_policy node."""
     query = "Hoàng Sa Trường Sa là của ai?"
@@ -20,6 +21,7 @@ async def test_router_sovereignty_policy():
 
 
 @pytest.mark.asyncio
+# test case of Chau + kiểm tra yêu cầu viết code ngoài phạm vi bị từ chối
 async def test_router_out_of_scope_coding():
     """Kiểm tra yêu cầu viết code lập trình được chặn bởi sensitive_policy node."""
     query = "hãy viết cho tôi một đoạn code python để crawl web"
@@ -31,6 +33,7 @@ async def test_router_out_of_scope_coding():
 
 
 @pytest.mark.asyncio
+# test case of Chau + kiểm tra câu chào được route sang general response
 async def test_router_general_greeting():
     """Kiểm tra câu chào hỏi xã giao được định tuyến sang general_respond node."""
     query = "Xin chào bạn nhé!"
@@ -42,6 +45,7 @@ async def test_router_general_greeting():
 
 
 @pytest.mark.asyncio
+# test case of Chau + kiểm tra yêu cầu đặt lịch được route sang domain booking
 async def test_router_domain_booking():
     """Kiểm tra yêu cầu đặt lịch/tư vấn xe được định tuyến sang booking skill."""
     query = "Đặt lịch lái thử xe VF3 tại Hà Nội"

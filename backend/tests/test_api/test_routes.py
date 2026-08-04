@@ -2,6 +2,7 @@ import pytest
 
 
 @pytest.mark.asyncio
+# test case of Chau + kiểm tra health endpoint báo backend đang hoạt động
 async def test_health(client):
     response = await client.get("/health")
     assert response.status_code == 200
@@ -10,12 +11,14 @@ async def test_health(client):
 
 
 @pytest.mark.asyncio
+# test case of Chau + kiểm tra chat từ chối message rỗng bằng validation 422
 async def test_chat_empty_message(client):
     response = await client.post("/api/v1/chat", json={"message": ""})
     assert response.status_code == 422  # Validation error
 
 
 @pytest.mark.asyncio
+# test case of Chau + kiểm tra status endpoint trả trạng thái agent sẵn sàng
 async def test_agent_status(client):
     response = await client.get("/api/v1/status")
     assert response.status_code == 200
