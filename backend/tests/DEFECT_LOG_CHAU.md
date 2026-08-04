@@ -52,7 +52,6 @@
 | CHAU-TOOL-002 | Skill docs có address nhưng search tool không public | P1 | CLOSED — `343570c` |
 | CHAU-TOOL-003 | Tool schema bỏ qua argument lạ thay vì từ chối | P1 | OPEN |
 | CHAU-TOOL-004 | Tool tự ép chuỗi `yes` thành cam kết GPLX boolean true | P1 | OPEN |
-| CHAU-BE-021 | Reject GPLX không bắt buộc rejection_reason | P1 | OPEN |
 | CHAU-BE-022 | Provider exception làm notification job kẹt processing | P1 | OPEN |
 | CHAU-BE-023 | batch_size âm claim toàn bộ notification jobs | P2 | OPEN |
 | CHAU-API-001 | Chat chấp nhận message chỉ có khoảng trắng | P2 | OPEN |
@@ -104,12 +103,6 @@ CHAU-BE-011 tiếp tục ở backlog `TBD`; test skip đã được bỏ khỏi 
 - Rủi ro: LLM làm đúng hướng dẫn trong skill nhưng không thể tạo tool call hợp lệ với địa chỉ người dùng.
 
 ## Defect mới từ staff service, notification, Agent–Tool và Chat API
-
-### CHAU-BE-021 — Reject GPLX không bắt buộc lý do
-
-- Testcase: `test_rejected_license_requires_rejection_reason`
-- Actual: `record_license_check(..., result="rejected", rejection_reason=None)` vẫn ghi trạng thái rejected.
-- Rủi ro: thiếu dữ liệu audit, nhân viên và khách hàng không biết điều kiện nào thất bại.
 
 ### CHAU-BE-022 — Provider exception làm notification job kẹt
 
