@@ -5,11 +5,11 @@
 | Thuộc tính | Giá trị |
 |---|---|
 | Project | P-053 — VinFast Test Drive Booking |
-| Phạm vi | Backend booking service, OTP, access, notification và vehicle availability |
+| Phạm vi | Backend booking service, Agent nodes/graph và Tool wrappers |
 | Người phụ trách testcase | Chau |
 | Ngày cập nhật | 2026-08-04 |
-| Nguồn phát hiện | Automated tests trong backend/tests/test_services |
-| Kết quả gần nhất | 116 passed, 12 xfailed, 1 skipped |
+| Nguồn phát hiện | Automated tests trong backend/tests/test_services, test_agents, test_tools và test_api |
+| Kết quả gần nhất | 187 passed, 26 xfailed, 1 skipped |
 
 ## Quy ước trạng thái
 
@@ -45,12 +45,25 @@
 | CHAU-BE-018 | OTP resend không enforce cooldown | P0 | CLOSED |
 | CHAU-BE-019 | Importer nhận tọa độ ngoài phạm vi địa lý | P2 | OPEN |
 | CHAU-BE-020 | Metadata file bị bỏ qua nhưng không report skipped | P2 | OPEN |
+| CHAU-AGENT-001 | Classifier chấp nhận intent ngoài enum cho phép | P1 | OPEN |
+| CHAU-AGENT-002 | Advise skill không fallback khi LLM phát sinh exception | P1 | OPEN |
+| CHAU-AGENT-003 | tool_call_count không reset giữa các user turn | P1 | OPEN |
+| CHAU-TOOL-001 | Tool cam kết GPLX gửi sai tên field xuống service | P0 | OPEN |
+| CHAU-TOOL-002 | Skill docs có address nhưng search tool không public | P1 | OPEN |
+| CHAU-TOOL-003 | Tool schema bỏ qua argument lạ thay vì từ chối | P1 | OPEN |
+| CHAU-TOOL-004 | Tool tự ép chuỗi `yes` thành cam kết GPLX boolean true | P1 | OPEN |
+| CHAU-BE-021 | Reject GPLX không bắt buộc rejection_reason | P1 | OPEN |
+| CHAU-BE-022 | Provider exception làm notification job kẹt processing | P1 | OPEN |
+| CHAU-BE-023 | batch_size âm claim toàn bộ notification jobs | P2 | OPEN |
+| CHAU-API-001 | Chat chấp nhận message chỉ có khoảng trắng | P2 | OPEN |
+| CHAU-API-002 | conversation_id không giới hạn độ dài | P1 | OPEN |
+| CHAU-API-003 | Chat trả nguyên văn exception nội bộ cho client | P0 | OPEN |
 
 ## Cập nhật retest sau khi đồng bộ `origin/testing` ngày 2026-08-04
 
 Backend mới đã refactor booking service thành package và sửa các defect CHAU-BE-001–007, CHAU-BE-009–010 và CHAU-BE-016–018. Các marker `xfail` tương ứng đã được bỏ sau khi testcase pass.
 
-Các vấn đề còn được tái hiện bằng 12 test items `XFAIL`:
+Các vấn đề còn được tái hiện bằng 11 test items `XFAIL`:
 
 - CHAU-BE-008: confirmed booking vẫn đọc được qua draft API không cần OTP.
 - CHAU-BE-012: chưa validate showroom ID không tồn tại.
@@ -58,9 +71,98 @@ Các vấn đề còn được tái hiện bằng 12 test items `XFAIL`:
 - CHAU-BE-014: partial patch vẫn bắt nhập lại `full_name`.
 - CHAU-BE-015: backend đã bỏ `license_number` nhưng vẫn bắt class và validity ngoài cam kết boolean.
 - CHAU-BE-019: chưa validate latitude/longitude range — 4 dữ liệu test.
-- CHAU-BE-020: metadata file được chấp nhận nhưng `skipped` vẫn rỗng.
+- CHAU-BE-020 vẫn được ghi nhận trong backlog, nhưng test report metadata đã được bỏ khỏi suite vì ngoài acceptance scope của MVP.
 
-CHAU-BE-011 tiếp tục `SKIP/TBD` cho tới khi BA/PO chốt chính sách pin tối thiểu.
+CHAU-BE-011 tiếp tục ở backlog `TBD`; test skip đã được bỏ khỏi suite cho tới khi BA/PO chốt chính sách pin tối thiểu.
+
+## Defect mới từ bộ test Agent và Tool
+
+### CHAU-AGENT-001 — Classifier không giới hạn enum intent
+
+- Testcase: `test_classifier_rejects_unknown_llm_intent`
+- Test file: `test_agents/test_nodes_unit.py`
+- Expected: chỉ chấp nhận `domain`, `general`, `sensitive`.
+- Actual: `RouteSchema.intent` là `str`, nên giá trị như `unknown` vẫn qua validation và bị router xử lý như domain.
+- Rủi ro: output LLM sai contract có thể đi vào skill nghiệp vụ thay vì fallback an toàn.
+
+### CHAU-TOOL-001 — Mapping field cam kết GPLX không khớp service
+
+- Testcase: `test_update_booking_draft_maps_license_commitment_to_service_field[True/False]`
+- Test file: `test_tools/test_booking_tool_wrappers.py`
+- Tool input: `has_valid_license_commitment`.
+- Tool đang gửi: `license_patch={"has_valid_license_commitment": value}`.
+- Service chỉ xử lý: `license_patch["has_driving_license"]`.
+- Rủi ro: Agent đã hỏi và nhận cam kết của người dùng nhưng draft không ghi nhận, nên booking vẫn thiếu điều kiện GPLX.
+
+### CHAU-TOOL-002 — Contract address giữa skill docs và tool bị lệch
+
+- Testcase: `test_search_tool_schema_includes_documented_address`
+- Test file: `test_tools/test_tool_registry.py`
+- Expected theo booking skill: Agent có thể truyền `address` để tìm showroom gần nhất.
+- Actual: schema `search_test_drive_options` không có tham số `address`.
+- Rủi ro: LLM làm đúng hướng dẫn trong skill nhưng không thể tạo tool call hợp lệ với địa chỉ người dùng.
+
+## Defect mới từ staff service, notification, Agent–Tool và Chat API
+
+### CHAU-BE-021 — Reject GPLX không bắt buộc lý do
+
+- Testcase: `test_rejected_license_requires_rejection_reason`
+- Actual: `record_license_check(..., result="rejected", rejection_reason=None)` vẫn ghi trạng thái rejected.
+- Rủi ro: thiếu dữ liệu audit, nhân viên và khách hàng không biết điều kiện nào thất bại.
+
+### CHAU-BE-022 — Provider exception làm notification job kẹt
+
+- Testcase: `test_provider_exception_does_not_crash_dispatcher_or_stick_job`
+- Actual: exception từ `send_message()` thoát khỏi dispatcher; job đã chuyển sang `processing` nhưng không được trả về `pending` hoặc `failed`.
+- Rủi ro: reminder/confirmation không được retry và cả batch dừng giữa chừng.
+
+### CHAU-BE-023 — batch_size âm được hiểu là không giới hạn
+
+- Testcase: `test_dispatch_rejects_negative_batch_size`
+- Actual: SQLite `LIMIT -1` claim toàn bộ job đến hạn.
+- Rủi ro: một input cấu hình sai có thể tạo tải gửi notification ngoài dự kiến.
+
+### CHAU-AGENT-002 — Advise skill không fallback khi LLM lỗi
+
+- Testcase: `test_advise_agent_handles_llm_exception_with_safe_response`
+- Actual: exception từ LLM thoát khỏi graph và `/chat` trả HTTP 500.
+- Rủi ro: lỗi provider tạm thời làm mất toàn bộ câu trả lời thay vì thông báo retry an toàn.
+
+### CHAU-AGENT-003 — Bộ đếm tool không reset theo user turn
+
+- Testcase: `test_classifier_resets_tool_call_counter_for_new_user_turn`
+- Actual: `tool_call_count` nằm trong checkpoint nhưng classifier không reset khi nhận query mới.
+- Rủi ro: sau đủ tám vòng tool trong cả conversation, các lượt chat sau có thể bị chặn tool dù là yêu cầu mới.
+
+### CHAU-TOOL-003 — Tool bỏ qua argument lạ
+
+- Testcase: `test_search_tool_rejects_unexpected_sensitive_argument`
+- Actual: Pydantic bỏ qua field không có trong schema rồi vẫn gọi service.
+- Rủi ro: Agent tưởng dữ liệu đã được xử lý; field nhạy cảm hoặc field gõ sai biến mất âm thầm.
+
+### CHAU-TOOL-004 — Cam kết GPLX không dùng strict boolean
+
+- Testcase: `test_update_tool_requires_strict_boolean_license_commitment`
+- Actual: chuỗi `"yes"` được tự ép thành `True`.
+- Rủi ro: dữ liệu LLM sai kiểu vẫn trở thành cam kết pháp lý của người dùng.
+
+### CHAU-API-001 — Chat nhận message chỉ có khoảng trắng
+
+- Testcase: `test_chat_rejects_whitespace_only_message`
+- Actual: `min_length` tính cả whitespace nên request vẫn gọi Agent.
+- Rủi ro: tốn tài nguyên và tạo state hội thoại rác.
+
+### CHAU-API-002 — conversation_id không có giới hạn độ dài
+
+- Testcase: `test_chat_rejects_oversized_conversation_id`
+- Actual: chuỗi 10.000 ký tự được dùng trực tiếp làm LangGraph `thread_id`.
+- Rủi ro: tăng bộ nhớ checkpoint/log và mở bề mặt resource abuse.
+
+### CHAU-API-003 — API làm lộ exception nội bộ
+
+- Testcase: `test_chat_does_not_expose_internal_exception_details`
+- Actual: endpoint trả `detail=str(exception)` cho client.
+- Rủi ro: có thể lộ host nội bộ, thông tin provider, câu SQL hoặc secret xuất hiện trong exception.
 
 ---
 
@@ -341,8 +443,7 @@ Chọn một hoặc cả hai:
 
 - Severity: Chưa đánh giá
 - Trạng thái: TBD policy
-- Testcase hiện tại: test_hold_slot_rejects_vehicle_not_ready[slot_low_battery]
-- Test file: test_services/test_search_and_hold.py
+- Backlog item: kiểm tra `minimum_booking_soc` sau khi BA/PO chốt thời điểm áp dụng policy.
 
 ### Câu hỏi cho BA/PO
 
@@ -354,7 +455,7 @@ Chọn một hoặc cả hai:
 
 ### Kết luận hiện tại
 
-Chưa nên kết luận defect. Có thể đổi testcase sang skip/TBD thay vì xfail cho tới khi policy được chốt.
+Chưa nên kết luận defect. Testcase đã được chuyển khỏi suite sang backlog cho tới khi policy được chốt.
 
 ---
 
