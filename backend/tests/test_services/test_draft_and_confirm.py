@@ -193,11 +193,10 @@ def test_switching_to_separate_driver_preserves_booker(booking_service, ready_dr
 
 
 # test case of Chau + kiểm tra draft confirmed không được đọc trực tiếp nếu chưa xác thực OTP
-@pytest.mark.xfail(reason="Known defect: get_booking_draft chưa giới hạn trạng thái hoặc quyền truy cập")
 def test_get_draft_rejects_confirmed_booking_without_access(booking_service, confirmed_booking_factory):
     confirmed = confirmed_booking_factory()
 
     with pytest.raises(BookingError) as error:
         booking_service.get_booking_draft(confirmed["booking_id"])
 
-    assert error.value.code == "ACCESS_DENIED"
+    assert error.value.code == "BOOKING_DRAFT_NOT_AVAILABLE"

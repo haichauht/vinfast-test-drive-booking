@@ -32,24 +32,24 @@
 | CHAU-BE-005 | Replay cancel trả cache trước khi xác thực token | P0 | CLOSED |
 | CHAU-BE-006 | Notification preferences được lưu nhưng bị bỏ qua | P1 | CLOSED |
 | CHAU-BE-007 | Chuyển sang Driver riêng ghi đè thông tin Booker | P0 | CLOSED |
-| CHAU-BE-008 | Booking confirmed đọc được qua draft tool không cần OTP | P0 | OPEN |
+| CHAU-BE-008 | Booking confirmed đọc được qua draft tool không cần OTP | P0 | CLOSED |
 | CHAU-BE-009 | hold_slot chấp nhận TTL bằng 0 hoặc âm | P1 | CLOSED |
 | CHAU-BE-010 | Xe maintenance vẫn có thể được giữ nếu slot còn available | P0 | CLOSED |
 | CHAU-BE-011 | Quy tắc đặt xe có pin dưới minimum SOC chưa rõ | — | TBD policy |
-| CHAU-BE-012 | Showroom ID không tồn tại trả response rỗng | P1 | OPEN |
-| CHAU-BE-013 | preferred_time ngoài phạm vi 24 giờ vẫn được nhận | P1 | OPEN |
-| CHAU-BE-014 | Partial person patch bắt nhập lại full_name | P1 | OPEN |
-| CHAU-BE-015 | Cam kết GPLX true vẫn bắt class và validity cũ | P1 | OPEN |
+| CHAU-BE-012 | Showroom ID không tồn tại trả response rỗng | P1 | CLOSED — `343570c` |
+| CHAU-BE-013 | preferred_time ngoài phạm vi 24 giờ vẫn được nhận | P1 | CLOSED — `343570c` |
+| CHAU-BE-014 | Partial person patch bắt nhập lại full_name | P1 | CLOSED — `343570c` |
+| CHAU-BE-015 | Cam kết GPLX true vẫn bắt class và validity cũ | P1 | CLOSED — `343570c` |
 | CHAU-BE-016 | Reminder được tạo trong quá khứ | P1 | CLOSED |
 | CHAU-BE-017 | OTP channel không có whitelist | P1 | CLOSED |
 | CHAU-BE-018 | OTP resend không enforce cooldown | P0 | CLOSED |
-| CHAU-BE-019 | Importer nhận tọa độ ngoài phạm vi địa lý | P2 | OPEN |
+| CHAU-BE-019 | Importer nhận tọa độ ngoài phạm vi địa lý | P2 | CLOSED — `343570c` |
 | CHAU-BE-020 | Metadata file bị bỏ qua nhưng không report skipped | P2 | OPEN |
 | CHAU-AGENT-001 | Classifier chấp nhận intent ngoài enum cho phép | P1 | OPEN |
 | CHAU-AGENT-002 | Advise skill không fallback khi LLM phát sinh exception | P1 | OPEN |
 | CHAU-AGENT-003 | tool_call_count không reset giữa các user turn | P1 | OPEN |
 | CHAU-TOOL-001 | Tool cam kết GPLX gửi sai tên field xuống service | P0 | OPEN |
-| CHAU-TOOL-002 | Skill docs có address nhưng search tool không public | P1 | OPEN |
+| CHAU-TOOL-002 | Skill docs có address nhưng search tool không public | P1 | CLOSED — `343570c` |
 | CHAU-TOOL-003 | Tool schema bỏ qua argument lạ thay vì từ chối | P1 | OPEN |
 | CHAU-TOOL-004 | Tool tự ép chuỗi `yes` thành cam kết GPLX boolean true | P1 | OPEN |
 | CHAU-BE-021 | Reject GPLX không bắt buộc rejection_reason | P1 | OPEN |
@@ -63,14 +63,15 @@
 
 Backend mới đã refactor booking service thành package và sửa các defect CHAU-BE-001–007, CHAU-BE-009–010 và CHAU-BE-016–018. Các marker `xfail` tương ứng đã được bỏ sau khi testcase pass.
 
-Các vấn đề còn được tái hiện bằng 11 test items `XFAIL`:
+Retest với `origin/feat/tools` commit `343570c` đã đóng 11 test items trước đây là `XFAIL`:
 
-- CHAU-BE-008: confirmed booking vẫn đọc được qua draft API không cần OTP.
-- CHAU-BE-012: chưa validate showroom ID không tồn tại.
-- CHAU-BE-013: chưa validate hour/minute range của `preferred_time` — 3 dữ liệu test.
-- CHAU-BE-014: partial patch vẫn bắt nhập lại `full_name`.
-- CHAU-BE-015: backend đã bỏ `license_number` nhưng vẫn bắt class và validity ngoài cam kết boolean.
-- CHAU-BE-019: chưa validate latitude/longitude range — 4 dữ liệu test.
+- CHAU-BE-012: showroom ID không tồn tại đã trả `SHOWROOM_NOT_FOUND`.
+- CHAU-BE-013: hour/minute ngoài phạm vi đã trả `INVALID_INPUT` — 3 dữ liệu test.
+- CHAU-BE-014: partial patch không còn bắt nhập lại `full_name`.
+- CHAU-BE-015: cam kết GPLX boolean không còn bắt class và validity legacy.
+- CHAU-BE-019: latitude/longitude ngoài phạm vi đã bị từ chối — 4 dữ liệu test.
+- CHAU-TOOL-002: search tool đã public và forward `address`.
+- CHAU-BE-008: retest xác nhận confirmed booking đã bị chặn bằng `BOOKING_DRAFT_NOT_AVAILABLE`; testcase cũ được cập nhật mã lỗi và bỏ `xfail`.
 - CHAU-BE-020 vẫn được ghi nhận trong backlog, nhưng test report metadata đã được bỏ khỏi suite vì ngoài acceptance scope của MVP.
 
 CHAU-BE-011 tiếp tục ở backlog `TBD`; test skip đã được bỏ khỏi suite cho tới khi BA/PO chốt chính sách pin tối thiểu.
