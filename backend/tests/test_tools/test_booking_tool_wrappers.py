@@ -44,6 +44,7 @@ def test_search_test_drive_options_forwards_all_filters(monkeypatch):
         vehicle_variant="Plus",
         showroom_id="showroom-q7",
         showroom_query="Quận 7",
+        address=None,
         preferred_date="2026-08-10",
         preferred_time="09:30",
         latitude=10.729,
@@ -65,6 +66,7 @@ def test_search_test_drive_options_uses_documented_defaults(monkeypatch):
         vehicle_variant=None,
         showroom_id=None,
         showroom_query=None,
+        address=None,
         preferred_date=None,
         preferred_time=None,
         latitude=None,
@@ -118,9 +120,6 @@ def test_update_booking_draft_forwards_non_license_patches(monkeypatch):
 
 
 # test case of Chau + kiểm tra tool chuyển cam kết GPLX boolean sang field service đang hỗ trợ
-@pytest.mark.xfail(
-    reason="Known defect: tool gửi has_valid_license_commitment nhưng service chỉ đọc has_driving_license"
-)
 @pytest.mark.parametrize("commitment", [True, False])
 def test_update_booking_draft_maps_license_commitment_to_service_field(monkeypatch, commitment):
     service = MagicMock()

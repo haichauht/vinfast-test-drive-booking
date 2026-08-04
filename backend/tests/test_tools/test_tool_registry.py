@@ -1,4 +1,3 @@
-import pytest
 from src.agents.tools.search_test_drive_options.tool import search_test_drive_options
 from src.agents.tools.update_booking_draft.tool import update_booking_draft
 
@@ -13,6 +12,5 @@ def test_update_booking_draft_schema_hides_sensitive_license_fields():
 
 
 # test case of Chau + kiểm tra search tool schema hỗ trợ address đúng như booking skill docs
-@pytest.mark.xfail(reason="Known defect: booking skill mô tả address nhưng search tool chưa public tham số này")
 def test_search_tool_schema_includes_documented_address():
     assert "address" in search_test_drive_options.args

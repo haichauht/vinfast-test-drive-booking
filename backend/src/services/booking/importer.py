@@ -30,9 +30,7 @@ class ImportService:
         imported = 0
         with self.db.transaction(immediate=True) as c:
             for line, row in enumerate(reader, start=2):
-                lat, lon = self._validate_coordinates(
-                    row["latitude"], row["longitude"], context=f"at line {line}"
-                )
+                lat, lon = self._validate_coordinates(row["latitude"], row["longitude"], context=f"at line {line}")
                 now = iso(self.now())
                 existing = c.execute("SELECT id FROM showrooms WHERE code=?", (row["code"].strip(),)).fetchone()
                 sid = existing["id"] if existing else _id("showroom")
