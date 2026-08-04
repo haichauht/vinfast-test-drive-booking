@@ -133,3 +133,29 @@ Kết quả:
 - 18 nguyên nhân là defect hoặc contract mismatch trong production code.
 - 1 trường hợp (`get_booking_draft`) là testcase đã lỗi thời vì production hiện đã chặn truy cập bằng mã lỗi an toàn khác.
 - Chi tiết lịch sử và mã defect nằm trong `DEFECT_LOG_CHAU.md`.
+
+## Retest sau khi merge `origin/feat/tools`
+
+Commit backend được kiểm tra: `343570c` (`fix(booking): validate search inputs and support partial updates`).
+
+Lần chạy đầu sau merge:
+
+```text
+2 failed, 158 passed, 14 xfailed, 11 xpassed in 10.41s
+```
+
+Mười một XPASS xác nhận các defect CHAU-BE-012, CHAU-BE-013, CHAU-BE-014,
+CHAU-BE-015, CHAU-BE-019 và CHAU-TOOL-002 đã được sửa. Hai failure còn lại là
+wrapper tests chưa cập nhật tham số mới `address`; production code không regression.
+
+Test wrapper đã được đồng bộ để kiểm tra cả `address` có giá trị và `address=None`.
+Test CHAU-BE-008 cũng được cập nhật từ `ACCESS_DENIED` sang mã lỗi thực tế an toàn
+`BOOKING_DRAFT_NOT_AVAILABLE` và bỏ marker `xfail`.
+
+Kết quả cuối sau khi đồng bộ testcase:
+
+```text
+172 passed, 13 xfailed in 9.04s
+```
+
+Không còn `FAIL` hoặc `XPASS` ngoài dự kiến.

@@ -31,7 +31,6 @@ def test_search_options_rejects_unknown_showroom_query(booking_service, catalog)
 
 
 # test case of Chau + kiểm tra showroom id không tồn tại phải trả lỗi thay vì response rỗng
-@pytest.mark.xfail(reason="Known defect: showroom_id không tồn tại chưa được validate")
 def test_search_options_rejects_unknown_showroom_id(booking_service, catalog):
     with pytest.raises(BookingError) as error:
         booking_service.search_options(vehicle_model="VF6", showroom_id="missing-showroom")
@@ -40,7 +39,6 @@ def test_search_options_rejects_unknown_showroom_id(booking_service, catalog):
 
 
 # test case of Chau + kiểm tra giờ đúng cú pháp nhưng ngoài phạm vi 24 giờ bị từ chối
-@pytest.mark.xfail(reason="Known defect: preferred_time chưa validate hour/minute range")
 @pytest.mark.parametrize("preferred_time", ["24:00", "25:99", "-1:30"])
 def test_search_options_rejects_out_of_range_time(booking_service, catalog, preferred_time):
     with pytest.raises(BookingError) as error:
@@ -81,7 +79,6 @@ def test_update_draft_same_driver_requires_booker_first(booking_service, catalog
 
 
 # test case of Chau + kiểm tra partial patch chỉ đổi phone không bắt nhập lại full name
-@pytest.mark.xfail(reason="Known defect: partial patch đang bắt buộc full_name ở mọi lần update")
 def test_update_draft_allows_partial_person_patch(booking_service, ready_draft_factory):
     prepared = ready_draft_factory()
 
@@ -96,9 +93,6 @@ def test_update_draft_allows_partial_person_patch(booking_service, ready_draft_f
 
 
 # test case of Chau + kiểm tra cam kết có GPLX là đủ mà không cần nhập số hoặc hạng GPLX
-@pytest.mark.xfail(
-    reason="Known defect: backend vẫn bắt declared_license_class và validity_acknowledged sau cam kết GPLX"
-)
 def test_draft_accepts_boolean_license_commitment_without_legacy_fields(booking_service, catalog):
     held = booking_service.hold_slot(catalog["slot_main"], "hold:boolean-license-commitment")
 
@@ -298,7 +292,6 @@ def test_import_eval_dataset_rejects_missing_parent_reference(booking_service, c
 
 
 # test case of Chau + kiểm tra import showroom từ chối latitude longitude ngoài phạm vi địa lý
-@pytest.mark.xfail(reason="Known defect: importer chỉ parse float, chưa validate coordinate range")
 @pytest.mark.parametrize(
     ("latitude", "longitude"),
     [(91, 106.7), (-91, 106.7), (10.7, 181), (10.7, -181)],
