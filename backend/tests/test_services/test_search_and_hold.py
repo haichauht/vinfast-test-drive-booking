@@ -168,10 +168,3 @@ def test_hold_slot_rejects_maintenance_vehicle(booking_service, catalog):
         booking_service.hold_slot(catalog["slot_maintenance"], "hold:not-ready-maintenance")
 
     assert error.value.code == "VEHICLE_NOT_READY"
-
-
-# test case of Chau + kiểm tra policy đặt xe có pin dưới minimum booking SOC
-@pytest.mark.skip(reason="TBD: BA/PO cần chốt thời điểm kiểm tra minimum_booking_soc")
-def test_hold_slot_low_battery_policy(booking_service, catalog):
-    with pytest.raises(BookingError):
-        booking_service.hold_slot(catalog["slot_low_battery"], "hold:low-battery-policy")
