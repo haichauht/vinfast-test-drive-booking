@@ -48,10 +48,7 @@
 | CHAU-AGENT-001 | Classifier chấp nhận intent ngoài enum cho phép | P1 | OPEN |
 | CHAU-AGENT-002 | Advise skill không fallback khi LLM phát sinh exception | P1 | OPEN |
 | CHAU-AGENT-003 | tool_call_count không reset giữa các user turn | P1 | OPEN |
-| CHAU-TOOL-001 | Tool cam kết GPLX gửi sai tên field xuống service | P0 | OPEN |
 | CHAU-TOOL-002 | Skill docs có address nhưng search tool không public | P1 | CLOSED — `343570c` |
-| CHAU-TOOL-003 | Tool schema bỏ qua argument lạ thay vì từ chối | P1 | OPEN |
-| CHAU-TOOL-004 | Tool tự ép chuỗi `yes` thành cam kết GPLX boolean true | P1 | OPEN |
 | CHAU-BE-022 | Provider exception làm notification job kẹt processing | P1 | OPEN |
 | CHAU-API-001 | Chat chấp nhận message chỉ có khoảng trắng | P2 | OPEN |
 | CHAU-API-002 | conversation_id không giới hạn độ dài | P1 | OPEN |
@@ -84,15 +81,6 @@ CHAU-BE-011 tiếp tục ở backlog `TBD`; test skip đã được bỏ khỏi 
 - Actual: `RouteSchema.intent` là `str`, nên giá trị như `unknown` vẫn qua validation và bị router xử lý như domain.
 - Rủi ro: output LLM sai contract có thể đi vào skill nghiệp vụ thay vì fallback an toàn.
 
-### CHAU-TOOL-001 — Mapping field cam kết GPLX không khớp service
-
-- Testcase: `test_update_booking_draft_maps_license_commitment_to_service_field[True/False]`
-- Test file: `test_tools/test_booking_tool_wrappers.py`
-- Tool input: `has_valid_license_commitment`.
-- Tool đang gửi: `license_patch={"has_valid_license_commitment": value}`.
-- Service chỉ xử lý: `license_patch["has_driving_license"]`.
-- Rủi ro: Agent đã hỏi và nhận cam kết của người dùng nhưng draft không ghi nhận, nên booking vẫn thiếu điều kiện GPLX.
-
 ### CHAU-TOOL-002 — Contract address giữa skill docs và tool bị lệch
 
 - Testcase: `test_search_tool_schema_includes_documented_address`
@@ -120,18 +108,6 @@ CHAU-BE-011 tiếp tục ở backlog `TBD`; test skip đã được bỏ khỏi 
 - Testcase: `test_classifier_resets_tool_call_counter_for_new_user_turn`
 - Actual: `tool_call_count` nằm trong checkpoint nhưng classifier không reset khi nhận query mới.
 - Rủi ro: sau đủ tám vòng tool trong cả conversation, các lượt chat sau có thể bị chặn tool dù là yêu cầu mới.
-
-### CHAU-TOOL-003 — Tool bỏ qua argument lạ
-
-- Testcase: `test_search_tool_rejects_unexpected_sensitive_argument`
-- Actual: Pydantic bỏ qua field không có trong schema rồi vẫn gọi service.
-- Rủi ro: Agent tưởng dữ liệu đã được xử lý; field nhạy cảm hoặc field gõ sai biến mất âm thầm.
-
-### CHAU-TOOL-004 — Cam kết GPLX không dùng strict boolean
-
-- Testcase: `test_update_tool_requires_strict_boolean_license_commitment`
-- Actual: chuỗi `"yes"` được tự ép thành `True`.
-- Rủi ro: dữ liệu LLM sai kiểu vẫn trở thành cam kết pháp lý của người dùng.
 
 ### CHAU-API-001 — Chat nhận message chỉ có khoảng trắng
 
