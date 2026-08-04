@@ -95,43 +95,39 @@ Kết quả:
     - Actual: `RuntimeError("provider unavailable")` thoát khỏi dispatcher.
     - Root cause: `send_message()` chưa được bọc bằng xử lý lỗi theo từng job.
 
-18. `test_dispatch_rejects_negative_batch_size`
-    - Actual: không phát sinh `BookingError`.
-    - Root cause: SQLite hiểu `LIMIT -1` là không giới hạn.
-
-19. `test_get_draft_rejects_confirmed_booking_without_access`
+18. `test_get_draft_rejects_confirmed_booking_without_access`
     - Expected/actual error code: `ACCESS_DENIED` / `BOOKING_DRAFT_NOT_AVAILABLE`.
     - Kết luận: production đã chặn đọc confirmed booking; testcase cần cập nhật mã lỗi và bỏ `xfail`.
 
-20. `test_rejected_license_requires_rejection_reason` — removed after policy review.
+19. `test_rejected_license_requires_rejection_reason` — removed after policy review.
     - Decision: `rejection_reason` là tùy chọn; điều kiện bắt buộc là GPLX phải
       `verified` trước khi check-in.
     - Đây không còn được xem là production defect.
 
 ### Agent tools
 
-21. `test_update_booking_draft_maps_license_commitment_to_service_field[True]`
-22. `test_update_booking_draft_maps_license_commitment_to_service_field[False]`
+20. `test_update_booking_draft_maps_license_commitment_to_service_field[True]`
+21. `test_update_booking_draft_maps_license_commitment_to_service_field[False]`
     - Expected field: `has_driving_license`.
     - Actual field: `has_valid_license_commitment`.
     - Root cause: tool và service dùng hai tên field khác nhau.
 
-23. `test_search_tool_schema_includes_documented_address`
+22. `test_search_tool_schema_includes_documented_address`
     - Actual: schema không có `address`.
     - Root cause: booking skill công bố `address` nhưng signature của tool chưa có field này.
 
-24. `test_search_tool_rejects_unexpected_sensitive_argument`
+23. `test_search_tool_rejects_unexpected_sensitive_argument`
     - Actual: field lạ `license_number` bị bỏ qua và service vẫn được gọi.
     - Root cause: schema chưa cấu hình `extra="forbid"`.
 
-25. `test_update_tool_requires_strict_boolean_license_commitment`
+24. `test_update_tool_requires_strict_boolean_license_commitment`
     - Actual: chuỗi `"yes"` được ép thành boolean `True`.
     - Root cause: schema dùng `bool` thay vì `StrictBool`.
 
 ## Tổng hợp nguyên nhân
 
-- 25 test items fail tương ứng 19 nguyên nhân gốc.
-- 18 nguyên nhân là defect hoặc contract mismatch trong production code.
+- 24 test items fail tương ứng 18 nguyên nhân gốc.
+- 17 nguyên nhân là defect hoặc contract mismatch trong production code.
 - 1 trường hợp (`get_booking_draft`) là testcase đã lỗi thời vì production hiện đã chặn truy cập bằng mã lỗi an toàn khác.
 - Chi tiết lịch sử và mã defect nằm trong `DEFECT_LOG_CHAU.md`.
 
@@ -171,4 +167,16 @@ Kết quả sau thay đổi policy:
 
 ```text
 172 passed, 12 xfailed in 9.25s
+```
+
+## Scope update: bỏ kiểm tra batch_size âm
+
+`test_dispatch_rejects_negative_batch_size` và defect CHAU-BE-023 đã được loại bỏ.
+`batch_size` hiện là tham số nội bộ với giá trị mặc định 100; kiểm tra input âm không
+thuộc phạm vi nghiệp vụ hiện tại.
+
+Kết quả sau khi cập nhật scope:
+
+```text
+172 passed, 11 xfailed in 9.75s
 ```

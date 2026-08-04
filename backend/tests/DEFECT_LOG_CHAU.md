@@ -53,7 +53,6 @@
 | CHAU-TOOL-003 | Tool schema bỏ qua argument lạ thay vì từ chối | P1 | OPEN |
 | CHAU-TOOL-004 | Tool tự ép chuỗi `yes` thành cam kết GPLX boolean true | P1 | OPEN |
 | CHAU-BE-022 | Provider exception làm notification job kẹt processing | P1 | OPEN |
-| CHAU-BE-023 | batch_size âm claim toàn bộ notification jobs | P2 | OPEN |
 | CHAU-API-001 | Chat chấp nhận message chỉ có khoảng trắng | P2 | OPEN |
 | CHAU-API-002 | conversation_id không giới hạn độ dài | P1 | OPEN |
 | CHAU-API-003 | Chat trả nguyên văn exception nội bộ cho client | P0 | OPEN |
@@ -109,12 +108,6 @@ CHAU-BE-011 tiếp tục ở backlog `TBD`; test skip đã được bỏ khỏi 
 - Testcase: `test_provider_exception_does_not_crash_dispatcher_or_stick_job`
 - Actual: exception từ `send_message()` thoát khỏi dispatcher; job đã chuyển sang `processing` nhưng không được trả về `pending` hoặc `failed`.
 - Rủi ro: reminder/confirmation không được retry và cả batch dừng giữa chừng.
-
-### CHAU-BE-023 — batch_size âm được hiểu là không giới hạn
-
-- Testcase: `test_dispatch_rejects_negative_batch_size`
-- Actual: SQLite `LIMIT -1` claim toàn bộ job đến hạn.
-- Rủi ro: một input cấu hình sai có thể tạo tải gửi notification ngoài dự kiến.
 
 ### CHAU-AGENT-002 — Advise skill không fallback khi LLM lỗi
 
