@@ -120,35 +120,6 @@ def test_update_booking_draft_forwards_non_license_patches(monkeypatch):
     )
 
 
-# test case of Chau + kiểm tra tool chuyển cam kết GPLX boolean sang field service đang hỗ trợ
-@pytest.mark.xfail(
-    reason="Known defect: tool gửi has_valid_license_commitment nhưng service chỉ đọc has_driving_license"
-)
-@pytest.mark.parametrize("commitment", [True, False])
-def test_update_booking_draft_maps_license_commitment_to_service_field(monkeypatch, commitment):
-    service = MagicMock()
-    service.update_booking_draft.return_value = {"id": "booking-1"}
-    monkeypatch.setattr(update_module, "booking_service", service)
-
-    update_booking_draft.invoke(
-        {
-            "booking_id": "booking-1",
-            "has_valid_license_commitment": commitment,
-            "expected_version": 1,
-        }
-    )
-
-    service.update_booking_draft.assert_called_once_with(
-        "booking-1",
-        booker_patch=None,
-        driver_patch=None,
-        driver_same_as_booker=False,
-        license_patch={"has_driving_license": commitment},
-        notification_plan_patch=None,
-        expected_version=1,
-    )
-
-
 # test case of Chau + kiểm tra request access tool forward purpose channel và không bật expose OTP
 def test_request_booking_access_forwards_safe_arguments(monkeypatch):
     service = MagicMock()

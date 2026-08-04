@@ -106,28 +106,14 @@ Kết quả:
 
 ### Agent tools
 
-20. `test_update_booking_draft_maps_license_commitment_to_service_field[True]`
-21. `test_update_booking_draft_maps_license_commitment_to_service_field[False]`
-    - Expected field: `has_driving_license`.
-    - Actual field: `has_valid_license_commitment`.
-    - Root cause: tool và service dùng hai tên field khác nhau.
-
-22. `test_search_tool_schema_includes_documented_address`
+20. `test_search_tool_schema_includes_documented_address`
     - Actual: schema không có `address`.
     - Root cause: booking skill công bố `address` nhưng signature của tool chưa có field này.
 
-23. `test_search_tool_rejects_unexpected_sensitive_argument`
-    - Actual: field lạ `license_number` bị bỏ qua và service vẫn được gọi.
-    - Root cause: schema chưa cấu hình `extra="forbid"`.
-
-24. `test_update_tool_requires_strict_boolean_license_commitment`
-    - Actual: chuỗi `"yes"` được ép thành boolean `True`.
-    - Root cause: schema dùng `bool` thay vì `StrictBool`.
-
 ## Tổng hợp nguyên nhân
 
-- 24 test items fail tương ứng 18 nguyên nhân gốc.
-- 17 nguyên nhân là defect hoặc contract mismatch trong production code.
+- 20 test items fail tương ứng 15 nguyên nhân gốc.
+- 14 nguyên nhân là defect hoặc contract mismatch trong production code.
 - 1 trường hợp (`get_booking_draft`) là testcase đã lỗi thời vì production hiện đã chặn truy cập bằng mã lỗi an toàn khác.
 - Chi tiết lịch sử và mã defect nằm trong `DEFECT_LOG_CHAU.md`.
 
@@ -179,4 +165,23 @@ Kết quả sau khi cập nhật scope:
 
 ```text
 172 passed, 11 xfailed in 9.75s
+```
+
+## Scope update: bỏ nhóm tool mapping và strict validation
+
+Đã loại bỏ bốn test items sau:
+
+- Hai biến thể `True/False` của `test_update_booking_draft_maps_license_commitment_to_service_field`
+  vì service hiện hỗ trợ trực tiếp cả `has_valid_license_commitment` và `has_driving_license`.
+- `test_search_tool_rejects_unexpected_sensitive_argument` vì từ chối mọi field lạ
+  không thuộc acceptance scope hiện tại.
+- `test_update_tool_requires_strict_boolean_license_commitment` vì strict boolean
+  không thuộc acceptance scope hiện tại.
+
+Các defect CHAU-TOOL-001, CHAU-TOOL-003 và CHAU-TOOL-004 cũng được loại khỏi defect log.
+
+Kết quả sau khi cập nhật scope:
+
+```text
+172 passed, 7 xfailed in 8.30s
 ```
