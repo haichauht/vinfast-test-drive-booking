@@ -7,12 +7,14 @@ def _cfg(thread_id: str) -> dict:
 
 
 @pytest.mark.asyncio
+# test case of Chau + kiểm tra agent xử lý query cơ bản và luôn tạo response
 async def test_agent_basic_flow():
     result = await agent.ainvoke({"query": "Hello"}, config=_cfg("test-basic"))
     assert "response" in result
 
 
 @pytest.mark.asyncio
+# test case of Chau + kiểm tra cấu trúc state trả về từ LangGraph agent
 async def test_agent_state_structure():
     result = await agent.ainvoke({"query": "Test query"}, config=_cfg("test-state"))
     assert isinstance(result, dict)
