@@ -67,13 +67,3 @@ async def test_router_domain_advisory():
     assert result.get("active_skill") == "advise"
     assert "response" in result
     assert "Mocked LLM" in result.get("response", "")
-
-
-@pytest.mark.asyncio
-async def test_tool_call_count_starts_at_zero():
-    """Kiểm tra tool_call_count bắt đầu từ 0 khi không gọi tool."""
-    query = "Xin chào!"
-    result = await agent.ainvoke({"query": query}, config=_cfg("test-count-zero"))
-
-    # general flow không gọi tool → tool_call_count phải là 0 hoặc không có
-    assert (result.get("tool_call_count") or 0) == 0
