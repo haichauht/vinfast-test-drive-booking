@@ -14,7 +14,9 @@ import { AppShell } from '../components/AppShell'
 import { IslandButton } from '../components/IslandButton'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
-import { carGroups, carImage, cars } from '../data/cars'
+import { prefetchVehicle } from '../api/vehicles'
+import { carGroups, carImage } from '../data/cars'
+import { usePageContent, useVehicleCatalog } from '../hooks/useSiteData'
 import {
   factoryAerial,
   factoryFilm,
@@ -24,34 +26,6 @@ import {
 } from '../data/media'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
-
-// TODO [BACKEND/CMS]: Replace testimonials and editorial home-page copy with
-// GET /api/v1/content/home?locale=vi-VN. Only return published records with
-// consent/publication status, stable ids and sortOrder; never expose raw CRM data.
-const stories = [
-  {
-    quote:
-      'Điều thuyết phục tôi không phải một con số đơn lẻ, mà là cảm giác chiếc xe phản hồi ngay và cabin vẫn yên tĩnh giữa giờ cao điểm.',
-    name: 'Nguyễn Khánh Linh',
-    role: 'Khách hàng VF 7 · TP. Hồ Chí Minh',
-  },
-  {
-    quote:
-      'Tôi thử xe cùng cả gia đình. Chỉ sau một vòng lái, mọi người đã biết hàng ghế nào sẽ là chỗ quen thuộc của mình.',
-    name: 'Trần Hoàng Phúc',
-    role: 'Khách hàng VF 9 · Hà Nội',
-  },
-  {
-    quote:
-      'Lịch thử xe được giữ đúng mẫu và đúng khung giờ. Tôi đến showroom, nhận xe và bắt đầu lái mà không phải chờ.',
-    name: 'Lê Ngọc An',
-    role: 'Khách hàng VF 6 · Đà Nẵng',
-  },
-]
-
-const flagshipVehicles = ['vf8', 'vf9']
-  .map((id) => cars.find((car) => car.id === id))
-  .filter(Boolean)
 
 function VehicleRail({ vehicles }) {
   const rail = useRef(null)
@@ -73,7 +47,13 @@ function VehicleRail({ vehicles }) {
     <>
       <div className="vehicle-rail" ref={rail}>
         {vehicles.map((car, index) => (
-          <Link className="vehicle-tile" to={`/cars/${car.id}`} key={car.id}>
+          <Link
+            className="vehicle-tile"
+            to={`/booking?car=${car.id}`}
+            key={car.id}
+            onMouseEnter={() => prefetchVehicle(car.id)}
+            onFocus={() => prefetchVehicle(car.id)}
+          >
             <span className="vehicle-tile__shell">
               <span className="vehicle-tile__core">
                 <span className="vehicle-tile__meta">
@@ -85,6 +65,9 @@ function VehicleRail({ vehicles }) {
                   className={`vehicle-tile__image vehicle-shot vehicle-shot--${car.studioShot.mode}`}
                   src={car.studioShot.src}
                   alt={`${car.name} - ${car.body}`}
+                  fit={car.studioShot.fit}
+                  focalPoint={car.studioShot.focalPoint}
+                  aspectRatio={car.studioShot.aspectRatio}
                 />
                 <span className="vehicle-tile__copy">
                   <span>
@@ -118,10 +101,19 @@ export function HomePage() {
   const location = useLocation()
   const [activeGroup, setActiveGroup] = useState('personal')
   const [storyIndex, setStoryIndex] = useState(0)
+  const { cars } = useVehicleCatalog()
+  const { data: homeContent } = usePageContent('home')
+  const stories = homeContent?.testimonials || []
+  const heroCar = cars.find((car) => car.id === homeContent?.hero?.vehicleId)
+    || cars.find((car) => car.featured && car.category === 'personal')
+    || cars[0]
+  const flagshipVehicles = ['vf8', 'vf9']
+    .map((id) => cars.find((car) => car.id === id))
+    .filter(Boolean)
 
   const vehicles = useMemo(
     () => cars.filter((car) => car.category === activeGroup),
-    [activeGroup],
+    [cars, activeGroup],
   )
 
   useEffect(() => {
@@ -131,36 +123,29 @@ export function HomePage() {
 
   useGSAP(
     () => {
+      // The testing UI has its catalogue synchronously available. In this branch,
+      // wait for the API catalogue so GSAP measures the same complete DOM tree.
+      if (cars.length === 0) return undefined
+
       // BACKEND/MEDIA CONTRACT: GSAP owns timing and movement; the API only selects
       // a whitelisted animationPreset and supplies correctly prepared media. Do not
       // send executable animation code or arbitrary selectors from CMS/backend.
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       if (reduced) {
         gsap.set('[data-hero-reveal]', { opacity: 1, y: 0 })
-        gsap.set('.home-hero__car', { opacity: 1, x: 0 })
+        gsap.set('.home-hero__car', { opacity: 1 })
         return
       }
 
       const heroTimeline = gsap.timeline({ defaults: { ease: 'power4.out' } })
       heroTimeline
-        .fromTo('.home-hero__car', { xPercent: -58, opacity: 0 }, { xPercent: 0, opacity: 1, duration: 1.65 })
+        .fromTo('.home-hero__car', { opacity: 0 }, { opacity: 1, duration: 1.25 })
         .fromTo(
           '[data-hero-reveal]',
           { y: 58, opacity: 0, filter: 'blur(10px)' },
           { y: 0, opacity: 1, filter: 'blur(0px)', duration: 0.95, stagger: 0.1 },
           '-=0.9',
         )
-
-      gsap.to('.home-hero__car', {
-        yPercent: 9,
-        ease: 'none',
-        scrollTrigger: {
-          trigger: '.home-hero',
-          start: 'top top',
-          end: 'bottom top',
-          scrub: 1,
-        },
-      })
 
       gsap.fromTo(
         '.scroll-drive__car',
@@ -269,17 +254,6 @@ export function HomePage() {
         },
       )
 
-      const desktop = gsap.matchMedia()
-      desktop.add('(min-width: 980px)', () => {
-        ScrollTrigger.create({
-          trigger: '.technology-story',
-          start: 'top 16%',
-          end: 'bottom 82%',
-          pin: '.technology-story__intro',
-          pinSpacing: false,
-        })
-      })
-
       gsap.utils.toArray('.technology-panel').forEach((panel) => {
         gsap.fromTo(
           panel,
@@ -298,9 +272,13 @@ export function HomePage() {
         )
       })
 
-      return () => desktop.revert()
+      const refreshFrame = window.requestAnimationFrame(() => ScrollTrigger.refresh())
+
+      return () => {
+        window.cancelAnimationFrame(refreshFrame)
+      }
     },
-    { scope: root },
+    { scope: root, dependencies: [cars.length], revertOnUpdate: true },
   )
 
   const nextStory = (direction) => {
@@ -338,8 +316,9 @@ export function HomePage() {
           <div className="home-hero__visual" aria-hidden="true">
             <SmartImage
               className="home-hero__car"
-              src={cars.find((car) => car.id === 'vf7')?.intro}
+              src={heroCar?.studioShot?.src}
               alt=""
+              fit="contain"
               eager
             />
             <span className="home-hero__line" />
@@ -438,7 +417,7 @@ export function HomePage() {
             </Reveal>
             <div className="flagship-passage__grid">
               {flagshipVehicles.map((car) => (
-                <Link className="flagship-passage__card" to={`/cars/${car.id}`} key={car.id}>
+                <Link className="flagship-passage__card" to={`/models/${car.id}`} key={car.id}>
                   <span className="flagship-passage__index" aria-hidden="true">
                     {car.id === 'vf8' ? '08' : '09'}
                   </span>
@@ -561,7 +540,7 @@ export function HomePage() {
               <p>
                 Mỗi trang xe là một câu chuyện hình ảnh: ngoại thất, khoang lái, vận hành và dữ liệu kỹ thuật được dẫn theo nhịp cuộn.
               </p>
-              <IslandButton to="/cars/vf8" variant="dark">
+              <IslandButton to="/models/vf8" variant="dark">
                 Xem trải nghiệm VF 8
               </IslandButton>
             </div>
@@ -593,6 +572,8 @@ export function HomePage() {
                 },
               ].map((item) => {
                 const car = cars.find((entry) => entry.id === item.car)
+                if (!car) return null
+
                 return (
                   <article className="technology-panel" key={item.id}>
                     <div className="double-bezel double-bezel--dark">
@@ -611,7 +592,7 @@ export function HomePage() {
           </div>
         </section>
 
-        <section className="voices-section">
+        {stories.length > 0 && <section className="voices-section">
           <div className="section-frame voices-section__grid">
             <Reveal className="voices-section__title">
               <p className="eyebrow">Sau một vòng lái</p>
@@ -640,7 +621,7 @@ export function HomePage() {
               </div>
             </div>
           </div>
-        </section>
+        </section>}
 
         {/* TODO [BACKEND/HOME CTA]: This CTA accepts exactly one vehicle render.
             Background is presentation CSS; never return a second car as backdrop. */}
