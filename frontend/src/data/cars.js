@@ -3,12 +3,13 @@ import vfMpv7StudioShot from '../assets/vf-mpv-7-model-cutout.png'
 import limoStudioShot from '../assets/limo-green-studio.webp'
 import vf9StudioShot from '../assets/vf9-studio.png'
 import nerioStudioShot from '../assets/nerio-green-studio.png'
-import vf8PresentationFilm from '../../Ảnh xe vinfast/VF8/VF8.mp4?url'
-import vf8NewPresentationFilm from '../../Ảnh xe vinfast/VF8 All the new/VF8.mp4?url'
-import vf9PresentationFilm from '../../Ảnh xe vinfast/VF9/VF9.mp4?url'
-
 const imageModules = import.meta.glob(
-  '../../Ảnh xe vinfast/**/*.{png,jpg,jpeg,webp,svg}',
+  '../../Ảnh xe vinfast/**/*.{png,jpg,jpeg,webp,svg}',
+  { eager: true, query: '?url', import: 'default' },
+)
+
+const videoModules = import.meta.glob(
+  '../../Ảnh xe vinfast/**/*.mp4',
   { eager: true, query: '?url', import: 'default' },
 )
 
@@ -18,6 +19,17 @@ const normalizedModules = Object.fromEntries(
 
 const image = (relativePath) =>
   normalizedModules[`../../Ảnh xe vinfast/${relativePath}`.normalize('NFC')] || ''
+
+const normalizedVideos = Object.fromEntries(
+  Object.entries(videoModules).map(([key, url]) => [key.normalize('NFC'), url]),
+)
+
+const video = (relativePath) =>
+  normalizedVideos[`../../Ảnh xe vinfast/${relativePath}`.normalize('NFC')] || ''
+
+const vf8PresentationFilm = video('VF8/VF8.mp4')
+const vf8NewPresentationFilm = video('VF8 All the new/VF8.mp4')
+const vf9PresentationFilm = video('VF9/VF9.mp4')
 
 export const carImage = image
 

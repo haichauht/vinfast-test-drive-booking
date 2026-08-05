@@ -2,11 +2,14 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from src.api.routes import router
+from src.api.site_routes import router as site_router
 from src.config import get_settings
 from src.logging_config import configure_logging
 
@@ -28,6 +31,8 @@ app = FastAPI(
 )
 
 settings = get_settings()
+media_root = Path(settings.media_root).resolve()
+media_root.mkdir(parents=True, exist_ok=True)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
@@ -56,6 +61,8 @@ async def request_logging(request, call_next):
 
 
 app.include_router(router, prefix="/api/v1")
+app.include_router(site_router, prefix="/api/v1")
+app.mount("/media", StaticFiles(directory=media_root), name="media")
 
 
 @app.get("/api/v1/echo")

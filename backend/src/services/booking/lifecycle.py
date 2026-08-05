@@ -68,6 +68,7 @@ class LifecycleService:
             result = {
                 "booking_id": booking_id,
                 "status": "held",
+                "version": 1,
                 "hold_expires_at": iso(expires),
                 "remaining_seconds": ttl_seconds,
             }
@@ -163,7 +164,7 @@ class LifecycleService:
                 c.commit()
                 raise BookingError("HOLD_EXPIRED", "Hold đã hết hạn.")
             if expected_version is not None and b["version"] != expected_version:
-                raise BookingError("VERSION_CONFLICT", "Draft Ä‘Ã£ Ä‘Æ°á»£c cáº­p nháº­t á»Ÿ nÆ¡i khÃ¡c.", retryable=True)
+                raise BookingError("VERSION_CONFLICT", "Draft đã được cập nhật ở nơi khác.", retryable=True)
             for role, patch in (("booker", booker_patch), ("driver", None if driver_same_as_booker else driver_patch)):
                 if patch:
                     allowed = {
@@ -201,7 +202,7 @@ class LifecycleService:
                                 allowed.get("email"),
                                 allowed.get("preferred_channel", "sms"),
                                 allowed.get("phone"),
-                                allowed.get("email", "").lower() or None,
+                                (allowed.get("email") or "").lower() or None,
                                 now,
                                 now,
                             ),
@@ -273,9 +274,9 @@ class LifecycleService:
             if draft["status"] != "held" or draft["remaining_seconds"] <= 0:
                 raise BookingError("HOLD_EXPIRED", "Hold Ä‘Ã£ háº¿t háº¡n.")
             if draft["version"] != expected_version:
-                raise BookingError("VERSION_CONFLICT", "Draft Ä‘Ã£ thay Ä‘á»•i.", retryable=True)
+                raise BookingError("VERSION_CONFLICT", "Draft đã thay đổi.", retryable=True)
             if not draft["is_ready_to_confirm"]:
-                raise BookingError("INVALID_INPUT", "Draft chÆ°a Ä‘á»§ thÃ´ng tin.")
+                raise BookingError("INVALID_INPUT", "Draft chưa đủ thông tin.")
             slot = c.execute(
                 "SELECT s.*,d.is_active vehicle_active,d.operational_status,d.battery_soc,d.minimum_booking_soc "
                 "FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id WHERE s.id=?",

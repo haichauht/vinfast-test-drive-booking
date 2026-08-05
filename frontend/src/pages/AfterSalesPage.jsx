@@ -14,7 +14,8 @@ import {
 import { AppShell } from '../components/AppShell'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
-import { highVoltageWarranty, ownershipMedia } from '../data/ownership'
+import { ownershipMedia } from '../data/ownership'
+import { usePageContent } from '../hooks/useSiteData'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
@@ -71,6 +72,8 @@ const questions = [
 ]
 
 export function AfterSalesPage() {
+  const { data: afterSalesContent } = usePageContent('after-sales')
+  const displayedWarranty = afterSalesContent?.warrantyTables || []
   const root = useRef(null)
 
   useGSAP(
@@ -208,7 +211,7 @@ export function AfterSalesPage() {
               <h2>Thời hạn được đọc theo năm hoặc quãng đường—điều kiện nào đến trước.</h2>
             </Reveal>
             <div className="battery-warranty__grid">
-              {highVoltageWarranty.map((item, index) => (
+              {displayedWarranty.map((item, index) => (
                 <article className="policy-card battery-term" key={item.term}>
                   <span className="battery-term__index">0{index + 1}</span>
                   <div>

@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { ArrowUpRight, Buildings, CaretDown, CarProfile } from '@phosphor-icons/react'
 import { Brand } from './Brand'
 import { IslandButton } from './IslandButton'
+import { useBackendStatus } from '../context/BackendStatusContext'
 
 const links = [
   { label: 'Công nghệ', to: '/#technology' },
@@ -22,6 +23,7 @@ export function AppShell({ children, navTheme = 'light' }) {
   const [productsOpen, setProductsOpen] = useState(false)
   const [bookingHref, setBookingHref] = useState('/booking')
   const location = useLocation()
+  const { bookingStatus, retry } = useBackendStatus()
 
   useEffect(() => {
     // TODO [BACKEND/SESSION]: Today this context is anonymous and tab-scoped.
@@ -30,7 +32,7 @@ export function AppShell({ children, navTheme = 'light' }) {
     // fallback only for the non-PII vehicle id. Never persist customer fields here.
     setMenuOpen(false)
     setProductsOpen(false)
-    const routeCar = location.pathname.match(/^\/cars\/([^/]+)/)?.[1]
+    const routeCar = location.pathname.match(/^\/(?:cars|models)\/([^/]+)/)?.[1]
     const recentCar = routeCar || window.sessionStorage.getItem('vinfast:last-viewed-car')
     setBookingHref(recentCar ? `/booking?car=${recentCar}` : '/booking')
   }, [location.pathname, location.hash])
@@ -124,6 +126,13 @@ export function AppShell({ children, navTheme = 'light' }) {
           </div>
         </div>
       </header>
+
+      {bookingStatus === 'unavailable' && (
+        <div className="backend-status-banner flex items-center justify-center gap-[18px] bg-[#fff3cd] px-6 py-2.5 text-[13px] text-[#5f4700] max-sm:items-start max-sm:justify-between max-sm:px-4" role="status">
+          <span>Không thể kết nối backend. Dữ liệu sản phẩm và dịch vụ đặt lịch hiện không khả dụng.</span>
+          <button type="button" onClick={retry}>Thử kết nối lại</button>
+        </div>
+      )}
 
       <div
         id="mobile-navigation"

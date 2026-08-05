@@ -1,11 +1,32 @@
 import { useState } from 'react'
 import { ImageBroken } from '@phosphor-icons/react'
 
-export function SmartImage({ className = '', alt, src, eager = false, ...props }) {
-  const [status, setStatus] = useState(src ? 'loading' : 'error')
+export function SmartImage({
+  className = '',
+  alt,
+  src,
+  eager = false,
+  fit,
+  focalPoint,
+  aspectRatio,
+  style,
+  ...props
+}) {
+  const [loadedSrc, setLoadedSrc] = useState('')
+  const [failedSrc, setFailedSrc] = useState('')
+  const status = !src
+    ? 'error'
+    : failedSrc === src
+      ? 'error'
+      : loadedSrc === src
+        ? 'loaded'
+        : 'loading'
 
   return (
-    <span className={`smart-image smart-image--${status} ${className}`.trim()}>
+    <span
+      className={`smart-image smart-image--${status} ${className}`.trim()}
+      style={{ ...style, ...(aspectRatio ? { aspectRatio } : {}) }}
+    >
       {status === 'loading' && <span className="smart-image__skeleton" aria-hidden="true" />}
       {status === 'error' && (
         <span className="smart-image__error" role="img" aria-label={`Không tải được ảnh: ${alt}`}>
@@ -18,8 +39,18 @@ export function SmartImage({ className = '', alt, src, eager = false, ...props }
           src={src}
           alt={alt}
           loading={eager ? 'eager' : 'lazy'}
-          onLoad={() => setStatus('loaded')}
-          onError={() => setStatus('error')}
+          style={{
+            ...(fit ? { objectFit: fit } : {}),
+            ...(focalPoint ? { objectPosition: focalPoint } : {}),
+          }}
+          onLoad={() => {
+            setFailedSrc('')
+            setLoadedSrc(src)
+          }}
+          onError={() => {
+            setLoadedSrc('')
+            setFailedSrc(src)
+          }}
           {...props}
         />
       )}
