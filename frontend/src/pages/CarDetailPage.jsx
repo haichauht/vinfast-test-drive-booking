@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
@@ -8,7 +8,7 @@ import { AppShell } from '../components/AppShell'
 import { IslandButton } from '../components/IslandButton'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
-import { cars, getCar } from '../data/cars'
+import { useVehicleCatalog, useVehicleDetail } from '../hooks/useSiteData'
 import { limoInteriorFilm } from '../data/media'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
@@ -98,7 +98,8 @@ function ModelFilm({ car }) {
 
 export function CarDetailPage() {
   const { carId } = useParams()
-  const car = useMemo(() => getCar(carId), [carId])
+  const { car } = useVehicleDetail(carId)
+  const { cars } = useVehicleCatalog()
   const root = useRef(null)
   const [showTestDriveNudge, setShowTestDriveNudge] = useState(false)
 
@@ -250,7 +251,9 @@ export function CarDetailPage() {
 
   // TODO [BACKEND/CATALOGUE]: The API must return deterministic sortOrder (or an
   // explicit nextVehicleId) so "Xem mẫu tiếp theo" does not change between requests.
-  const nextCar = cars[(cars.findIndex((item) => item.id === car.id) + 1) % cars.length]
+  const nextCar = cars.length
+    ? cars[(cars.findIndex((item) => item.id === car.id) + 1) % cars.length]
+    : null
   const manifesto = `${car.tagline} ${car.description}`.split(' ')
 
   return (
@@ -416,9 +419,11 @@ export function CarDetailPage() {
                 <IslandButton to={`/booking?car=${car.id}`} variant="light">
                   Đặt lịch lái thử
                 </IslandButton>
-                <IslandButton to={`/cars/${nextCar.id}`} variant="ghost-light">
-                  Xem {nextCar.name}
-                </IslandButton>
+                {nextCar && (
+                  <IslandButton to={`/models/${nextCar.id}`} variant="ghost-light">
+                    Xem {nextCar.name}
+                  </IslandButton>
+                )}
               </div>
             </Reveal>
           </div>

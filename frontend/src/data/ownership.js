@@ -7,7 +7,7 @@ const brochureModules = import.meta.glob('../../Vinfast Brochure/*.pdf', {
   import: 'default',
 })
 
-const chargingImageModules = import.meta.glob('../../Ảnh xe vinfast/Trạm sạc/*.{png,jpg,jpeg,webp}', {
+const chargingImageModules = import.meta.glob('../../Ảnh xe vinfast/Trạm sạc/*.{png,jpg,jpeg,webp}', {
   eager: true,
   query: '?url',
   import: 'default',

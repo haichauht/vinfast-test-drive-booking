@@ -17,7 +17,8 @@ import {
 import { AppShell } from '../components/AppShell'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
-import { chargingUnits, ownershipMedia } from '../data/ownership'
+import { ownershipMedia } from '../data/ownership'
+import { usePageContent } from '../hooks/useSiteData'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
@@ -46,6 +47,11 @@ const overstayFees = [
 ]
 
 export function ChargingPage() {
+  const { data: chargingContent } = usePageContent('charging')
+  const displayedChargingUnits = (chargingContent?.chargingUnits || []).map((unit) => ({
+    ...unit,
+    image: unit.image?.url || '',
+  }))
   const root = useRef(null)
 
   useGSAP(
@@ -73,17 +79,6 @@ export function ChargingPage() {
         { y: 0, opacity: 1, duration: 1, stagger: 0.09, ease: 'power4.out' },
       )
 
-      const desktop = gsap.matchMedia()
-      desktop.add('(min-width: 981px)', () => {
-        ScrollTrigger.create({
-          trigger: '.charger-lineup',
-          start: 'top 16%',
-          end: 'bottom 82%',
-          pin: '.charger-lineup__intro',
-          pinSpacing: false,
-        })
-      })
-
       gsap.utils.toArray('.charger-card, .network-place').forEach((item, index) => {
         gsap.fromTo(
           item,
@@ -99,7 +94,6 @@ export function ChargingPage() {
         )
       })
 
-      return () => desktop.revert()
     },
     { scope: root },
   )
@@ -224,7 +218,7 @@ export function ChargingPage() {
               )}
             </div>
             <div className="charger-lineup__cards">
-              {chargingUnits.map((unit, index) => (
+              {displayedChargingUnits.map((unit, index) => (
                 <article className="charger-card" key={unit.power}>
                   <div className="charger-card__visual">
                     <span>0{index + 1}</span>
