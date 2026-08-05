@@ -10,8 +10,6 @@ from src.agents.graph import agent
 from src.agents.tools import (
     get_booking_details,
     get_booking_draft,
-    search_test_drive_options,
-    update_booking_draft,
     verify_booking_access,
 )
 from src.dependencies import booking_service
@@ -52,7 +50,19 @@ async def agent_status():
     return {"status": "ready", "agent": "LangGraph Agent v1.0"}
 
 
-AGENT_TOOLS = {"search_options", "get_draft", "update_draft", "request_access", "verify_access", "get_details"}
+@router.get("/booking/health")
+async def booking_health():
+    """Lightweight readiness check for the deterministic booking UI."""
+    try:
+        with booking_service.db.connect() as connection:
+            connection.execute("SELECT 1").fetchone()
+        return {"status": "ready", "service": "booking"}
+    except Exception as exc:
+        logging.getLogger(__name__).error("Booking readiness check failed: %s", exc)
+        raise HTTPException(status_code=503, detail={"code": "BOOKING_UNAVAILABLE", "message": "Dịch vụ đặt lịch tạm thời gián đoạn."})
+
+
+AGENT_TOOLS = {"get_draft", "request_access", "verify_access", "get_details"}
 
 
 @router.post("/demo/action")
@@ -60,10 +70,10 @@ async def demo_action(request: DemoActionRequest):
     """Deterministic UI simulator: one button maps to one tool/command."""
     p = request.payload
     actions: dict[str, tuple[str, Callable[..., Any]]] = {
-        "search_options": ("search_test_drive_options", lambda **kw: search_test_drive_options.invoke(kw)),
+        "search_options": ("SearchOptionsQuery", booking_service.search_options),
         "hold_slot": ("HoldSlotCommand", booking_service.hold_slot),
         "get_draft": ("get_booking_draft", lambda **kw: get_booking_draft.invoke(kw)),
-        "update_draft": ("update_booking_draft", lambda **kw: update_booking_draft.invoke(kw)),
+        "update_draft": ("UpdateBookingDraftCommand", booking_service.update_booking_draft),
         "confirm_booking": ("ConfirmBookingCommand", booking_service.confirm_booking),
         "request_access": (
             "request_booking_access",

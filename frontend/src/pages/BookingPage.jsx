@@ -22,11 +22,18 @@ import {
 } from '@phosphor-icons/react'
 import { Brand } from '../components/Brand'
 import { SmartImage } from '../components/SmartImage'
-import { carGroups, cars, getCar } from '../data/cars'
+import { carGroups } from '../data/cars'
+import { useVehicleCatalog } from '../hooks/useSiteData'
 import { viviAvatar } from '../data/media'
+import {
+  confirmHeldBooking,
+  holdBookingSlot,
+  saveBookingCustomer,
+  searchBookingOptions,
+} from '../api/booking'
+import { useBackendStatus } from '../context/BackendStatusContext'
 
-const driveCars = cars
-const featuredChoices = ['vf3', 'vf5', 'vf6', 'vf7', 'vf-mpv-7'].map(getCar).filter(Boolean)
+const driveCars = []
 
 // BACKEND HANDOFF: This file is currently a complete frontend prototype/state
 // machine with deterministic fixtures. Replace each TODO [BACKEND/*] boundary,
@@ -238,38 +245,14 @@ const findProvince = (value) => {
 
 const hasLocalUnit = (value) => /\b(phường|phuong|xã|xa|thị trấn|thi tran)\b/i.test(value)
 
-const findCarFromText = (value) => {
+const findCarFromText = (value, catalog) => {
   const normalized = normalize(value).replace(/vinfast/g, '').trim()
   const compact = normalized.replace(/\s/g, '')
-  return [...driveCars].sort((a, b) => b.name.length - a.name.length).find((car) => {
+  return [...catalog].sort((a, b) => b.name.length - a.name.length).find((car) => {
     const candidates = [car.name, car.navName, car.id].map(normalize)
     return candidates.some((candidate) =>
       normalized.includes(candidate) || compact.includes(candidate.replace(/\s/g, '')),
     )
-  })
-}
-
-function createSlots(showroomId, carId) {
-  // TODO [BACKEND]: Replace generated slots with
-  // GET /api/v1/test-drive/slots?showroomId=&vehicleId=. Every slot needs an
-  // inventorySlotId proving the requested vehicle is available at that time,
-  // startAt/endAt in ISO-8601, timezone=Asia/Ho_Chi_Minh, capacity/status and
-  // holdExpiresAt when held. Never derive availability in the browser.
-  const times = ['08:30', '09:45', '13:30', '15:00', '16:30']
-  return Array.from({ length: 5 }, (_, dayIndex) => {
-    const date = new Date()
-    date.setDate(date.getDate() + dayIndex + 1)
-    const value = date.toISOString().slice(0, 10)
-    const dateLabel = new Intl.DateTimeFormat('vi-VN', {
-      weekday: 'short',
-      day: '2-digit',
-      month: '2-digit',
-    }).format(date)
-    return {
-      value,
-      dateLabel,
-      times: times.filter((_, timeIndex) => (dayIndex + timeIndex + showroomId.length + carId.length) % 4 !== 0),
-    }
   })
 }
 
@@ -363,10 +346,11 @@ function ContextualChoices({ stage, car, address, showrooms, slots, onResolveAre
   }
 
   if (stage === 'choose_slot' && slots.length) {
-    const quickSlots = slots.flatMap((day) => day.times.slice(0, 1).map((time) => ({
+    const quickSlots = slots.flatMap((day) => day.times.slice(0, 1).map((entry) => ({
       date: day.value,
       dateLabel: day.dateLabel,
-      time,
+      time: entry.time,
+      slotId: entry.slotId,
     }))).slice(0, 4)
     return (
       <div className="agent-context" aria-label="Khung giờ còn trống">
@@ -400,7 +384,7 @@ function VehicleShot({ car, className = '', eager = false }) {
   )
 }
 
-function VehicleSwitcher({ currentId, onSelect, onClose }) {
+function VehicleSwitcher({ cars, currentId, onSelect, onClose }) {
   useEffect(() => {
     const handleKey = (event) => { if (event.key === 'Escape') onClose() }
     window.addEventListener('keydown', handleKey)
@@ -483,7 +467,7 @@ function VehiclePanel({ car }) {
           <div key={spec.label}><strong>{spec.value}</strong><span>{spec.label}</span></div>
         ))}
       </div>
-      <Link to={`/cars/${car.id}`}>Xem lại thông tin xe <ArrowRight size={15} weight="light" /></Link>
+      <Link to={`/models/${car.id}`}>Xem lại thông tin xe <ArrowRight size={15} weight="light" /></Link>
     </section>
   )
 }
@@ -582,16 +566,16 @@ function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
           <article key={day.value}>
             <header><CalendarBlank size={18} weight="light" /><strong>{day.dateLabel}</strong></header>
             <div>
-              {day.times.map((time) => {
-                const active = pendingSlot?.date === day.value && pendingSlot?.time === time
+              {day.times.map((entry) => {
+                const active = pendingSlot?.slotId === entry.slotId
                 return (
                   <button
                     type="button"
                     className={active ? 'is-active' : ''}
-                    key={time}
-                    onClick={() => onPick({ date: day.value, dateLabel: day.dateLabel, time })}
+                    key={entry.slotId}
+                    onClick={() => onPick({ date: day.value, dateLabel: day.dateLabel, time: entry.time, slotId: entry.slotId })}
                   >
-                    <Clock size={15} weight="light" /> {time}
+                    <Clock size={15} weight="light" /> {entry.time}
                   </button>
                 )
               })}
@@ -678,12 +662,16 @@ function CustomerForm({ recipient, value, errors, onChange, onSubmit }) {
 }
 
 export function BookingPage() {
+  const { bookingStatus, retry } = useBackendStatus()
   // UX state machine (server should return/validate the same nextStage values):
   // idle -> need_car -> need_address -> need_ward -> choose_showroom ->
   // choose_slot -> collect_info -> review -> success. `lookup` is a side flow.
   // The browser may render optimistically, but inventory holds and terminal booking
   // state are always server-authoritative. Full transition table: BACKEND_HANDOFF.md.
   const [searchParams] = useSearchParams()
+  const { cars } = useVehicleCatalog()
+  const getCar = (id) => cars.find((car) => car.id === id)
+  const featuredChoices = ['vf3', 'vf5', 'vf6', 'vf7'].map(getCar).filter(Boolean)
   // TODO [BACKEND/SESSION]: Accept only a catalogue id from ?car=. When a draftId
   // exists, restore its server-side state first and use recentCar only as fallback.
   const routeCar = getCar(searchParams.get('car'))
@@ -707,17 +695,53 @@ export function BookingPage() {
   const [formErrors, setFormErrors] = useState({})
   const [bookingCode, setBookingCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [slots, setSlots] = useState([])
+  const [bookingId, setBookingId] = useState('')
+  const [bookingVersion, setBookingVersion] = useState(0)
+  const [backendError, setBackendError] = useState('')
   const messagesRef = useRef(null)
   const timersRef = useRef([])
 
   const selectedCar = getCar(selectedCarId)
   // TODO [BACKEND]: Resolve these from fetched state/query caches. A production slot
   // must include inventorySlotId; the UI's date/time tuple is display-only.
-  const selectedShowroom = showroomDirectory.find((showroom) => showroom.id === showroomId)
-  const slots = useMemo(
-    () => selectedShowroom && selectedCar ? createSlots(selectedShowroom.id, selectedCar.id) : [],
-    [selectedShowroom, selectedCar],
-  )
+  const selectedShowroom = nearbyShowrooms.find((showroom) => showroom.id === showroomId)
+
+  const mapShowrooms = (items) => items.map((item, index) => ({
+    ...item,
+    distance: item.distance_km ?? 0,
+    x: 20 + ((index * 23) % 65),
+    y: 25 + ((index * 19) % 55),
+    models: [selectedCarId],
+  }))
+
+  const groupSlots = (items) => Object.values(items.reduce((groups, item) => {
+    const start = new Date(item.start_at)
+    const value = item.start_at.slice(0, 10)
+    const time = start.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+    if (!groups[value]) groups[value] = {
+      value,
+      dateLabel: new Intl.DateTimeFormat('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(start),
+      times: [],
+    }
+    groups[value].times.push({ time, slotId: item.id })
+    return groups
+  }, {}))
+
+  const loadShowrooms = async (car) => {
+    setBackendError('')
+    try {
+      const result = await searchBookingOptions({ vehicleModel: car.name })
+      const showrooms = mapShowrooms(result.showrooms || [])
+      setNearbyShowrooms(showrooms)
+      setStage('choose_showroom')
+      setActiveView('map')
+      reply(`Đã tìm thấy ${showrooms.length} showroom đang có ${car.name}. Hãy chọn một showroom để xem lịch trống thực tế.`)
+    } catch (error) {
+      setBackendError(error.message)
+      reply(`Không tải được showroom: ${error.message}`)
+    }
+  }
 
   useEffect(() => () => timersRef.current.forEach((timer) => window.clearTimeout(timer)), [])
   useEffect(() => {
@@ -752,9 +776,9 @@ export function BookingPage() {
       'Xin chào, tôi là ViVi — trợ lý đặt lịch lái thử VinFast. Tôi có thể tạo lịch mới hoặc hỗ trợ tra cứu, bổ sung và huỷ lịch đã đặt.',
     )
     if (car) {
-      setStage('need_address')
+      setStage('choose_showroom')
       setActiveView('car')
-      reply(`Tôi đã giữ lại ${car.name}, mẫu xe bạn vừa xem gần nhất. Hãy cho tôi địa chỉ theo phường hoặc xã và tỉnh/thành phố để tìm showroom có đúng mẫu xe này. Ví dụ: “Phường Bến Nghé, TP. Hồ Chí Minh”.`, 520)
+      loadShowrooms(car)
     } else {
       setStage('need_car')
       setActiveView('agent')
@@ -766,9 +790,9 @@ export function BookingPage() {
     setSelectedCarId(car.id)
     window.sessionStorage.setItem('vinfast:last-viewed-car', car.id)
     if (!fromPrompt) addMessage('user', `Tôi muốn lái thử ${car.name}.`)
-    setStage('need_address')
+    setStage('choose_showroom')
     setActiveView('car')
-    reply(`Đã chọn ${car.name}. Hãy cho tôi địa chỉ cụ thể theo phường hoặc xã và tỉnh/thành phố để ưu tiên showroom có xe gần bạn nhất.`)
+    loadShowrooms(car)
   }
 
   // Đổi mẫu xe giữa chừng: giữ lại địa chỉ, showroom và thông tin người lái đã nhập,
@@ -847,15 +871,24 @@ export function BookingPage() {
     resolveShowrooms(showroom.province, showroom.address)
   }
 
-  const chooseShowroom = (showroom, fromPrompt = false) => {
+  const chooseShowroom = async (showroom, fromPrompt = false) => {
     // TODO [BACKEND]: Persist showroomId on the draft, then fetch live slots for
     // showroomId + vehicleId. If availability changed, remain on choose_showroom and
     // refresh the cards/map instead of advancing to a blank schedule.
     if (!fromPrompt) addMessage('user', `Tôi chọn ${showroom.name}.`)
     setShowroomId(showroom.id)
-    setStage('choose_slot')
-    setActiveView('schedule')
-    reply(`${showroom.name} đã được chọn. Các khung giờ bên trái đều đang có đúng ${selectedCar.name}. Bạn có thể bấm trực tiếp hoặc nhắn ngày, giờ mong muốn.`)
+    setBackendError('')
+    try {
+      const result = await searchBookingOptions({ vehicleModel: selectedCar.name, showroomId: showroom.id })
+      const grouped = groupSlots(result.slots || [])
+      setSlots(grouped)
+      setStage('choose_slot')
+      setActiveView('schedule')
+      reply(`${showroom.name} đã được chọn. Có ${result.slots?.length || 0} khung giờ trống từ backend.`)
+    } catch (error) {
+      setBackendError(error.message)
+      reply(`Không tải được lịch trống: ${error.message}`)
+    }
   }
 
   const chooseSlot = (slot) => {
@@ -863,15 +896,25 @@ export function BookingPage() {
     setConfirmSlotOpen(true)
   }
 
-  const confirmSlot = () => {
+  const confirmSlot = async () => {
     // TODO [BACKEND/HOLD]: POST /api/v1/test-drive/holds with draftId,
     // inventorySlotId and vehicleId here. Advance only after receiving holdId and
     // holdExpiresAt. On 409 refresh slots; on 410 return to choose_slot.
-    setSelectedSlot(pendingSlot)
-    setConfirmSlotOpen(false)
-    addMessage('user', `Tôi xác nhận ${pendingSlot.time}, ${pendingSlot.dateLabel}.`)
-    setStage('collect_info')
-    reply('Tôi đã giữ tạm khung giờ này. Vui lòng điền thông tin ngay trong cuộc trò chuyện; dữ liệu chỉ được gửi sau khi bạn xác nhận đặt lịch cuối cùng.')
+    setBackendError('')
+    try {
+      const held = await holdBookingSlot(pendingSlot.slotId)
+      setBookingId(held.booking_id)
+      setBookingVersion(held.version ?? 1)
+      setSelectedSlot(pendingSlot)
+      setConfirmSlotOpen(false)
+      addMessage('user', `Tôi xác nhận ${pendingSlot.time}, ${pendingSlot.dateLabel}.`)
+      setStage('collect_info')
+      reply('Backend đã giữ tạm khung giờ này trong 15 phút. Vui lòng điền thông tin để tiếp tục.')
+    } catch (error) {
+      setConfirmSlotOpen(false)
+      setBackendError(error.message)
+      reply(`Không thể giữ khung giờ: ${error.message}`)
+    }
   }
 
   const handlePrompt = (event) => {
@@ -886,7 +929,7 @@ export function BookingPage() {
     // extracted vehicle, administrative address, showroom and inventory slot.
 
     if (stage === 'need_car') {
-      const car = findCarFromText(value)
+      const car = findCarFromText(value, cars)
       if (car) chooseCar(car, true)
       else reply('Tôi chưa nhận ra mẫu xe trong tin nhắn. Hãy thử nhập “VF 6”, “VF 8 thế hệ mới” hoặc chọn một ảnh xe phía trên ô nhập.')
       return
@@ -956,7 +999,7 @@ export function BookingPage() {
     setFormErrors((current) => ({ ...current, [field]: '' }))
   }
 
-  const submitPerson = (event) => {
+  const submitPerson = async (event) => {
     event.preventDefault()
     const errors = {}
     if (person.bookingName.trim().length < 2) errors.bookingName = 'Vui lòng nhập tên người đặt lịch.'
@@ -970,26 +1013,36 @@ export function BookingPage() {
     // TODO [BACKEND]: Validate customer/driver identity, consentVersion,
     // privacyPolicyVersion and driving-licence declaration. Extend/validate the
     // existing hold; do not create a second hold for the same draft.
-    setStage('review')
-    setActiveView('ticket')
-    addMessage('user', 'Tôi đã hoàn tất thông tin người lái.')
-    reply('Phiếu tạm đã xuất hiện bên trái. Hãy kiểm tra tên, xe, showroom và thời gian; nếu đúng, bấm “Xác nhận đặt lịch” ngay tại đây.')
+    setBackendError('')
+    try {
+      const saved = await saveBookingCustomer({ bookingId, version: bookingVersion, recipient, person })
+      setBookingVersion(saved.version)
+      setStage('review')
+      setActiveView('ticket')
+      addMessage('user', 'Tôi đã hoàn tất thông tin người lái.')
+      reply('Backend đã lưu phiếu tạm. Hãy kiểm tra và bấm “Xác nhận đặt lịch”.')
+    } catch (error) {
+      setBackendError(error.message)
+    }
   }
 
-  const submitBooking = () => {
+  const submitBooking = async () => {
     setSubmitting(true)
     // TODO [BACKEND]: POST /api/v1/test-drive/bookings with recipientType,
     // vehicleId, showroomId, holdId, customer, driver and licenceConsent. Send an
     // Idempotency-Key to prevent duplicate bookings on retry/double click. Response
     // must include bookingCode, status and assignedSalesRepresentative; 409/410 must
     // return the user to live slot selection without losing customer form values.
-    const timer = window.setTimeout(() => {
+    try {
+      const confirmed = await confirmHeldBooking({ bookingId, version: bookingVersion })
       setSubmitting(false)
-      setBookingCode(`VF-${String(Date.now()).slice(-6)}`)
+      setBookingCode(confirmed.booking_code)
       setStage('success')
       addMessage('assistant', 'Đặt lịch thành công. Tôi đã giữ lại toàn bộ thông tin bên cạnh. Sau này, bạn chỉ cần nhập họ tên và số điện thoại để tra cứu, bổ sung hoặc huỷ lịch.')
-    }, 900)
-    timersRef.current.push(timer)
+    } catch (error) {
+      setSubmitting(false)
+      setBackendError(error.message)
+    }
   }
 
   const viewOptions = selectedCar ? [
@@ -1008,6 +1061,21 @@ export function BookingPage() {
   }
 
   const showVehicleChoices = stage === 'need_car'
+
+  if (bookingStatus === 'unavailable') {
+    return (
+      <main id="main-content" className="booking-unavailable">
+        <Brand />
+        <div>
+          <span>Dịch vụ đặt lịch</span>
+          <h1>Backend hiện không khả dụng.</h1>
+          <p>Dữ liệu xe, showroom, lịch trống và thao tác giữ chỗ đều cần kết nối backend.</p>
+          <button type="button" onClick={retry}>Thử kết nối lại</button>
+          <Link to="/">Quay về trang chủ</Link>
+        </div>
+      </main>
+    )
+  }
 
   return (
     <main id="main-content" className={`agent-booking-page ${selectedCar ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''}`}>
@@ -1091,6 +1159,7 @@ export function BookingPage() {
             </div>
 
             <div className="vivi-studio__composer">
+              {backendError && <p className="booking-api-error" role="alert">{backendError}</p>}
               {showVehicleChoices && (
                 <div className="agent-vehicle-choices" aria-label="Mẫu xe gợi ý">
                   {featuredChoices.map((car) => (
@@ -1153,6 +1222,7 @@ export function BookingPage() {
 
       {switcherOpen && (
         <VehicleSwitcher
+          cars={cars}
           currentId={selectedCarId}
           onSelect={pickCarFromSwitcher}
           onClose={() => setSwitcherOpen(false)}
