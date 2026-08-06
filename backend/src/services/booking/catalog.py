@@ -1,13 +1,53 @@
 from __future__ import annotations
 
 import re
+import unicodedata
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from src.services.booking.common import iso, new_id
 from src.services.booking.errors import BookingError
 from src.services.booking.location import Coordinates, HaversineMapProvider
 
-_id = new_id
+
+VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+_SHOWROOM_TOKEN_CACHE: dict[str, tuple[tuple[str, str, str], frozenset[str]]] = {}
+
+
+def _normalize_location_tokens(value: str) -> set[str]:
+    """Normalize a Vietnamese locality string into searchable tokens."""
+    ascii_value = unicodedata.normalize("NFD", value.casefold())
+    ascii_value = "".join(character for character in ascii_value if unicodedata.category(character) != "Mn")
+    tokens = set(re.findall(r"[a-z0-9]+", ascii_value.replace("đ", "d")))
+    ignored = {
+        "duong", "phuong", "xa", "quan", "huyen", "thi", "tran",
+        "thanh", "pho", "tp", "so",
+    }
+    return {token for token in tokens if token not in ignored and (len(token) > 1 or token.isdigit())}
+
+
+def _showroom_location_tokens(showroom: dict) -> frozenset[str]:
+    """Return cached tokens; an updated showroom naturally gets a new cache key."""
+    showroom_id = str(showroom.get("id", ""))
+    version = (
+        str(showroom.get("updated_at", "")),
+        str(showroom.get("name", "")),
+        str(showroom.get("address", "")),
+    )
+    cached = _SHOWROOM_TOKEN_CACHE.get(showroom_id)
+    if cached is None or cached[0] != version:
+        tokens = frozenset(_normalize_location_tokens(f"{version[1]} {version[2]}"))
+        _SHOWROOM_TOKEN_CACHE[showroom_id] = (version, tokens)
+        return tokens
+    return cached[1]
+
+
+def _to_vietnam_time(iso_str: str) -> datetime:
+    dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(VIETNAM_TZ)
 
 
 class CatalogService:
@@ -70,8 +110,6 @@ class CatalogService:
     ) -> dict:
         if (latitude is None) != (longitude is None):
             raise BookingError("INVALID_INPUT", "Latitude và longitude phải được cung cấp cùng nhau.")
-        if address and not showroom_query:
-            showroom_query = address
         model = self.resolve_vehicle_model(vehicle_model)
         params: list[Any] = [model["id"]]
         variant_sql = ""
@@ -114,6 +152,13 @@ class CatalogService:
                     variant_ids,
                 ).fetchall()
                 showrooms = [dict(r) for r in rows]
+                if address:
+                    ranked = sorted(
+                        ((self._address_match_score(address, showroom), showroom) for showroom in showrooms),
+                        key=lambda item: item[0],
+                        reverse=True,
+                    )
+                    showrooms = [showroom for score, showroom in ranked if score > 0]
                 if latitude is not None and longitude is not None:
                     origin = Coordinates(latitude, longitude)
                     destinations = [Coordinates(s["latitude"], s["longitude"]) for s in showrooms]
@@ -153,6 +198,24 @@ class CatalogService:
                     (*values, min(limit, 5)),
                 )
             ]
+            WEEKDAYS_VI = {
+                0: "Thứ 2",
+                1: "Thứ 3",
+                2: "Thứ 4",
+                3: "Thứ 5",
+                4: "Thứ 6",
+                5: "Thứ 7",
+                6: "Chủ nhật"
+            }
+            for s in slots:
+                dt_start = _to_vietnam_time(s["start_at"])
+                dt_end = _to_vietnam_time(s["end_at"])
+                s["start_at"] = dt_start.isoformat()
+                s["end_at"] = dt_end.isoformat()
+                day_label = WEEKDAYS_VI[dt_start.weekday()]
+                date_str = dt_start.strftime("%d/%m")
+                time_str = dt_start.strftime("%H:%M")
+                s["formatted_schedule"] = f"{day_label}, {date_str} {time_str}"
         return {
             "resolved_vehicle": {**model, "variants": variants},
             "license_requirement": model["required_license_class"],
@@ -166,3 +229,11 @@ class CatalogService:
     @staticmethod
     def _distance(a, b, c, d):
         return HaversineMapProvider.distance_km(Coordinates(a, b), Coordinates(c, d))
+
+    @staticmethod
+    def _address_match_score(address: str, showroom: dict) -> int:
+        """Rank available showrooms by locality tokens without a remote geocoder."""
+
+        requested = _normalize_location_tokens(address)
+        candidate = _showroom_location_tokens(showroom)
+        return len(requested & candidate)

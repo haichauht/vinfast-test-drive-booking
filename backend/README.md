@@ -77,7 +77,8 @@ CHROMA_PERSIST_DIR=./data/chroma
 | `GET` | `/api/v1/content/{page}` | Nội dung `home`, `charging` hoặc `after-sales` |
 | `POST` | `/api/v1/chat` | Entry point của LangGraph Agent |
 | `GET` | `/api/v1/status` | Trạng thái Agent |
-| `POST` | `/api/v1/demo/action` | Adapter tạm cho các booking command từ frontend |
+| `POST` | `/api/v1/chat` | Tin nhắn Agent và structured booking actions từ frontend |
+| `POST` | `/api/v1/demo/action` | Adapter demo cũ, không còn được booking frontend sử dụng |
 | `POST` | `/api/v1/admin/import/showrooms` | Import showroom CSV |
 | `POST` | `/api/v1/admin/import/eval-dataset` | Import bộ CSV booking theo dependency order |
 | `GET` | `/api/v1/dashboard` | Thống kê booking/slot |
@@ -151,9 +152,9 @@ Nghiệp vụ giữ slot, draft, xác nhận, OTP, tra cứu/chỉnh sửa booki
 ## Chưa implement/productionize
 
 - Catalogue/content vẫn là snapshot Python/JSON read-only; chưa có CMS hoặc CRUD admin lưu vào database.
-- `/api/v1/demo/action` vẫn là endpoint tích hợp tạm, chưa được tách thành bộ REST API booking public hoàn chỉnh.
+- `/api/v1/demo/action` vẫn được giữ cho demo/test cũ nhưng booking frontend đã chuyển sang LangGraph `/api/v1/chat`.
 - `search_knowledge` chưa có RAG/vector search thực tế.
-- Frontend chưa kết nối trực tiếp luồng chat LangGraph; streaming và lịch sử hội thoại production chưa hoàn thiện.
+- Frontend đã kết nối LangGraph nhưng streaming và persistence lịch sử hội thoại production chưa hoàn thiện.
 - Chưa có worker/gateway production để gửi notification ra SMS/email thực tế.
 - Authentication/authorization cho admin, rate limiting và secret management production chưa hoàn thiện.
 - Một số catalogue detail như màu xe, chapter và gallery vẫn rỗng hoặc chưa đủ media.

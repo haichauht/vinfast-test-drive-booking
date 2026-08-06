@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any, cast
 
@@ -5,7 +6,7 @@ from langchain_core.messages import SystemMessage
 
 from src.agents.state import AgentState
 from src.agents.tools import search_knowledge
-from src.agents.utils import get_system_prompt
+from src.agents.utils import get_system_prompt, window_messages
 from src.services.llm import get_llm
 
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "advise_skill" / "SKILL.md"
@@ -24,13 +25,16 @@ async def advise_skill_node(state: AgentState) -> dict:
 
     prompt = f"{get_system_prompt()}\n\n--- ACTIVE SKILL GUIDELINES (ADVISE) ---\n{get_advise_prompt()}"
 
-    llm = get_llm()
     tools = [search_knowledge]
-    llm_with_tools = llm.bind_tools(tools)
 
     try:
-        response = await llm_with_tools.ainvoke([SystemMessage(content=prompt)] + messages)
+        llm = get_llm()
+        if llm is None:
+            raise RuntimeError("LLM is not configured")
+        llm_with_tools = llm.bind_tools(tools)
+        response = await llm_with_tools.ainvoke([SystemMessage(content=prompt)] + window_messages(messages))
     except Exception as e:
+        logging.getLogger(__name__).exception("Error in advise_skill_node")
         from langchain_core.messages import AIMessage
 
         safe_response = AIMessage(content="Đã xảy ra lỗi khi kết nối với mô hình AI. Vui lòng thử lại sau.")

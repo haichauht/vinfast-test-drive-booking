@@ -2,7 +2,9 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import pytest
+from src.services.booking import catalog as catalog_module
 from src.services.booking import BookingError
+from zoneinfo import ZoneInfo
 
 from tests.conftest import FIXED_NOW
 
@@ -30,6 +32,37 @@ def test_search_showrooms_sorted_by_distance(booking_service, catalog):
     assert result["search_stage"] == "showroom_selection"
     assert result["showrooms"][0]["id"] == catalog["showroom_q7"]
     assert result["showrooms"][0]["distance_km"] <= result["showrooms"][1]["distance_km"]
+
+
+def test_address_match_reuses_cached_showroom_tokens():
+    catalog_module._SHOWROOM_TOKEN_CACHE.clear()
+    showroom = {
+        "id": "showroom-q7",
+        "updated_at": "2026-08-07T00:00:00+07:00",
+        "name": "VinFast Quận 7",
+        "address": "Quận 7, Thành phố Hồ Chí Minh",
+    }
+
+    first = catalog_module.CatalogService._address_match_score("Quận 7", showroom)
+    second = catalog_module.CatalogService._address_match_score("Hồ Chí Minh", showroom)
+
+    assert first > 0
+    assert second > 0
+    assert len(catalog_module._SHOWROOM_TOKEN_CACHE) == 1
+
+    showroom["updated_at"] = "2026-08-08T00:00:00+07:00"
+    catalog_module.CatalogService._address_match_score("Quận 7", showroom)
+    assert len(catalog_module._SHOWROOM_TOKEN_CACHE) == 1
+
+
+def test_to_vietnam_time_normalizes_utc_and_naive_timestamps():
+    utc_value = catalog_module._to_vietnam_time("2026-08-07T00:00:00Z")
+    offset_value = catalog_module._to_vietnam_time("2026-08-07T00:00:00+00:00")
+    naive_value = catalog_module._to_vietnam_time("2026-08-07T00:00:00")
+
+    assert utc_value == offset_value == naive_value
+    assert utc_value.tzinfo == ZoneInfo("Asia/Ho_Chi_Minh")
+    assert utc_value.hour == 7
 
 
 # test case of Chau + kiểm tra chỉ trả slot tương lai đang available và giới hạn tối đa năm slot

@@ -26,6 +26,15 @@ class RouteSchema(BaseModel):
 
 async def classifier_node(state: AgentState) -> dict:
     query = state.get("query", "")
+    context = state.get("context") or {}
+    if state.get("requested_action") or context.get("channel") == "booking":
+        return {
+            "intent": "domain",
+            "active_skill": "booking",
+            "messages": [HumanMessage(content=query)],
+            "metadata": {**(state.get("metadata") or {}), "sub_intent": "booking"},
+            "tool_call_count": 0,
+        }
     if not query:
         return {
             "intent": "general",
@@ -66,6 +75,8 @@ async def classifier_node(state: AgentState) -> dict:
 
     try:
         llm = get_classifier_llm()
+        if llm is None:
+            raise RuntimeError("LLM is not configured")
         structured_llm = llm.with_structured_output(RouteSchema)
         result = await structured_llm.ainvoke(prompt)
         from typing import cast
