@@ -4,21 +4,32 @@ from pydantic import SecretStr
 from src.config import get_settings
 
 
-def get_llm() -> ChatOpenAI:
+def _build_llm(model: str, temperature: float) -> ChatOpenAI | None:
     settings = get_settings()
-    return ChatOpenAI(
-        model=settings.model_name,
-        api_key=SecretStr(settings.openrouter_api_key),
-        base_url="https://openrouter.ai/api/v1",
-        temperature=settings.llm_temperature,
-    )
+    if settings.openrouter_api_key:
+        return ChatOpenAI(
+            model=model,
+            api_key=SecretStr(settings.openrouter_api_key),
+            base_url="https://openrouter.ai/api/v1",
+            temperature=temperature,
+        )
+    if settings.openai_api_key:
+        return ChatOpenAI(
+            model=model.removeprefix("openai/"),
+            api_key=SecretStr(settings.openai_api_key),
+            temperature=temperature,
+        )
+    # Deterministic endpoints remain available without an LLM key. Returning
+    # None makes that state explicit so Agent nodes can choose a safe fallback
+    # without constructing a provider client with a fake credential.
+    return None
 
 
-def get_classifier_llm() -> ChatOpenAI:
+def get_llm() -> ChatOpenAI | None:
     settings = get_settings()
-    return ChatOpenAI(
-        model=settings.classifier_model_name,
-        api_key=SecretStr(settings.openrouter_api_key),
-        base_url="https://openrouter.ai/api/v1",
-        temperature=0.0,  # Classifier luôn cần temperature = 0 để phân loại chính xác
-    )
+    return _build_llm(settings.model_name, settings.llm_temperature)
+
+
+def get_classifier_llm() -> ChatOpenAI | None:
+    settings = get_settings()
+    return _build_llm(settings.classifier_model_name or settings.model_name, 0.0)

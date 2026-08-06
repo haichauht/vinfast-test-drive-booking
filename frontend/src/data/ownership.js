@@ -27,8 +27,8 @@ function brochureByKeyword(keyword) {
 export const ownershipMedia = {
   afterSalesHero,
   afterSalesConsultation,
-  afterSalesBrochure: brochureByKeyword('bảo hành'),
-  chargingBrochure: brochureByKeyword('pin ô tô'),
+  afterSalesBrochure: brochureByKeyword('bảo hành'),
+  chargingBrochure: brochureByKeyword('pin ô tô'),
   chargingStationDay: assetByName(chargingImageModules, 'pin-tramsac-5_1660273699.png.webp'),
   chargingStationNight: assetByName(chargingImageModules, 'pin-tramsac-6_1660273722.png.webp'),
   charger250: assetByName(chargingImageModules, 'pin-tramsac-7_1660273744.png.webp'),

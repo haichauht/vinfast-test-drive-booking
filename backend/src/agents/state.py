@@ -14,7 +14,7 @@ class AgentState(TypedDict, total=False):
     """
 
     query: str
-    context: str
+    context: dict
     analysis: str
     response: str
     error: str
@@ -24,3 +24,9 @@ class AgentState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]
     active_skill: str  # "booking" or "advise"
     tool_call_count: int  # số vòng tool đã gọi, giới hạn tối đa 8
+    requested_action: str | None
+    action_payload: dict
+    action_result: object | None
+    action_tool: str
+    action_input: dict
+    action_error: str
