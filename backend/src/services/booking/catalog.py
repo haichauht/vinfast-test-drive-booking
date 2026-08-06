@@ -9,6 +9,37 @@ from src.services.booking.common import iso, new_id
 from src.services.booking.errors import BookingError
 from src.services.booking.location import Coordinates, HaversineMapProvider
 
+
+_SHOWROOM_TOKEN_CACHE: dict[tuple[str, str, str, str], frozenset[str]] = {}
+
+
+def _normalize_location_tokens(value: str) -> set[str]:
+    """Normalize a Vietnamese locality string into searchable tokens."""
+    ascii_value = unicodedata.normalize("NFD", value.casefold())
+    ascii_value = "".join(character for character in ascii_value if unicodedata.category(character) != "Mn")
+    tokens = set(re.findall(r"[a-z0-9]+", ascii_value.replace("đ", "d")))
+    ignored = {
+        "duong", "phuong", "xa", "quan", "huyen", "thi", "tran",
+        "thanh", "pho", "tp", "so",
+    }
+    return {token for token in tokens if token not in ignored and (len(token) > 1 or token.isdigit())}
+
+
+def _showroom_location_tokens(showroom: dict) -> frozenset[str]:
+    """Return cached tokens; an updated showroom naturally gets a new cache key."""
+    key = (
+        str(showroom.get("id", "")),
+        str(showroom.get("updated_at", "")),
+        str(showroom.get("name", "")),
+        str(showroom.get("address", "")),
+    )
+    cached = _SHOWROOM_TOKEN_CACHE.get(key)
+    if cached is None:
+        cached = frozenset(_normalize_location_tokens(f"{key[2]} {key[3]}"))
+        _SHOWROOM_TOKEN_CACHE[key] = cached
+    return cached
+
+
 def _to_vietnam_time(iso_str: str) -> datetime:
     if iso_str.endswith("Z"):
         return datetime.fromisoformat(iso_str[:-1]).replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=7)))
@@ -202,25 +233,6 @@ class CatalogService:
     def _address_match_score(address: str, showroom: dict) -> int:
         """Rank available showrooms by locality tokens without a remote geocoder."""
 
-        def normalize(value: str) -> set[str]:
-            ascii_value = unicodedata.normalize("NFD", value.casefold())
-            ascii_value = "".join(character for character in ascii_value if unicodedata.category(character) != "Mn")
-            tokens = set(re.findall(r"[a-z0-9]+", ascii_value.replace("đ", "d")))
-            ignored = {
-                "duong",
-                "phuong",
-                "xa",
-                "quan",
-                "huyen",
-                "thi",
-                "tran",
-                "thanh",
-                "pho",
-                "tp",
-                "so",
-            }
-            return {token for token in tokens if token not in ignored and (len(token) > 1 or token.isdigit())}
-
-        requested = normalize(address)
-        candidate = normalize(f"{showroom.get('name', '')} {showroom.get('address', '')}")
+        requested = _normalize_location_tokens(address)
+        candidate = _showroom_location_tokens(showroom)
         return len(requested & candidate)

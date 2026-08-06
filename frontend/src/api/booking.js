@@ -57,12 +57,12 @@ export const searchBookingOptions = ({ vehicleModel, showroomId, address, latitu
   },
 )
 
-export const holdBookingSlot = (slotId) => agentAction(
+export const holdBookingSlot = (slotId, uiActionId = `hold:${crypto.randomUUID()}`) => agentAction(
   'hold_slot',
   'Tôi xác nhận chọn khung giờ này. Hãy giữ chỗ giúp tôi.',
   {
     slot_id: slotId,
-    ui_action_id: `hold:${crypto.randomUUID()}`,
+    ui_action_id: uiActionId,
   },
 )
 
@@ -89,12 +89,12 @@ export const saveBookingCustomer = ({ bookingId, version, recipient, person }) =
   },
 )
 
-export const confirmHeldBooking = ({ bookingId, version }) => agentAction(
+export const confirmHeldBooking = ({ bookingId, version, uiActionId = `confirm:${crypto.randomUUID()}` }) => agentAction(
   'confirm_booking',
   'Tôi đã kiểm tra thông tin và xác nhận đặt lịch lái thử.',
   {
     booking_id: bookingId,
     expected_version: version,
-    ui_action_id: `confirm:${crypto.randomUUID()}`,
+    ui_action_id: uiActionId,
   },
 )

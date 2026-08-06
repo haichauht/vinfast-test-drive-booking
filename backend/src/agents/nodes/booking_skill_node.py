@@ -1,6 +1,6 @@
+import hashlib
 import json
 import logging
-import uuid
 from pathlib import Path
 from typing import Any, cast
 
@@ -59,6 +59,18 @@ def _tool_call_input(messages: list, tool_message: ToolMessage) -> dict[str, Any
     return {}
 
 
+def _structured_tool_call_id(action: str, payload: dict[str, Any]) -> str:
+    """Use a stable ID so a graph retry represents the same UI command."""
+    canonical = json.dumps(
+        {"action": action, "payload": payload},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return f"call_{hashlib.sha256(canonical.encode('utf-8')).hexdigest()[:32]}"
+
+
 def get_booking_prompt() -> str:
     try:
         with open(SKILL_PATH, encoding="utf-8") as f:
@@ -96,13 +108,14 @@ async def booking_skill_node(state: AgentState) -> dict:
                 "action_error": str(decoded) if failed else "",
             }
 
+        action_payload = state.get("action_payload") or {}
         tool_call = AIMessage(
             content="",
             tool_calls=[
                 {
                     "name": tool.name,
-                    "args": state.get("action_payload") or {},
-                    "id": f"call_{uuid.uuid4().hex}",
+                    "args": action_payload,
+                    "id": _structured_tool_call_id(requested_action, action_payload),
                     "type": "tool_call",
                 }
             ],
@@ -128,6 +141,8 @@ async def booking_skill_node(state: AgentState) -> dict:
 
     try:
         llm = get_llm()
+        if llm is None:
+            raise RuntimeError("LLM is not configured")
         llm_with_tools = llm.bind_tools(tools)
         response = await llm_with_tools.ainvoke([SystemMessage(content=prompt)] + messages)
     except Exception as e:

@@ -84,6 +84,16 @@ async def test_classifier_fallback_routes_without_network(monkeypatch, query, ex
     assert result["metadata"]["sub_intent"].startswith("fallback_")
 
 
+@pytest.mark.asyncio
+async def test_classifier_falls_back_when_llm_is_not_configured(monkeypatch):
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: None)
+
+    result = await classifier_node({"query": "Tôi muốn đặt lịch lái thử VF6"})
+
+    assert result["intent"] == "domain"
+    assert result["active_skill"] == "booking"
+
+
 # test case of Chau + kiểm tra classifier từ chối intent lạ do LLM trả về
 @pytest.mark.asyncio
 async def test_classifier_rejects_unknown_llm_intent(monkeypatch):

@@ -785,6 +785,8 @@ export function BookingPage() {
   const [userLocation, setUserLocation] = useState(null)
   const messagesRef = useRef(null)
   const timersRef = useRef([])
+  const holdActionIdsRef = useRef(new Map())
+  const confirmActionIdsRef = useRef(new Map())
 
   const selectedCar = getCar(selectedCarId)
   // TODO [BACKEND]: Resolve these from fetched state/query caches. A production slot
@@ -1217,7 +1219,11 @@ export function BookingPage() {
         setAgentTyping(false)
         return
       }
-      const held = await holdBookingSlot(pendingSlot.slotId)
+      const actionKey = pendingSlot.slotId
+      const uiActionId = holdActionIdsRef.current.get(actionKey) || `hold:${crypto.randomUUID()}`
+      holdActionIdsRef.current.set(actionKey, uiActionId)
+      const held = await holdBookingSlot(pendingSlot.slotId, uiActionId)
+      holdActionIdsRef.current.delete(actionKey)
       setBookingId(held.booking_id)
       setBookingVersion(held.version ?? 1)
       setHoldExpiresAt(held.hold_expires_at ? new Date(held.hold_expires_at).getTime() : Date.now() + 900000)
@@ -1313,7 +1319,11 @@ export function BookingPage() {
     // must include bookingCode, status and assignedSalesRepresentative; 409/410 must
     // return the user to live slot selection without losing customer form values.
     try {
-      const confirmed = await confirmHeldBooking({ bookingId, version: bookingVersion })
+      const actionKey = `${bookingId}:${bookingVersion}`
+      const uiActionId = confirmActionIdsRef.current.get(actionKey) || `confirm:${crypto.randomUUID()}`
+      confirmActionIdsRef.current.set(actionKey, uiActionId)
+      const confirmed = await confirmHeldBooking({ bookingId, version: bookingVersion, uiActionId })
+      confirmActionIdsRef.current.delete(actionKey)
       setSubmitting(false)
       setBookingCode(confirmed.booking_code)
       setStage('success')
