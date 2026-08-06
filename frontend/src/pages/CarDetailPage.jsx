@@ -255,6 +255,7 @@ export function CarDetailPage() {
     ? cars[(cars.findIndex((item) => item.id === car.id) + 1) % cars.length]
     : null
   const manifesto = `${car.tagline} ${car.description}`.split(' ')
+  const carMedia = car.media || (car.gallery || []).map((url) => ({ src: url, label: '' }))
 
   return (
     <AppShell>
@@ -329,7 +330,7 @@ export function CarDetailPage() {
             <Reveal className="detail-specs__heading">
               <p className="eyebrow">Thông số nổi bật</p>
               <h2>Dữ liệu quan trọng, không làm bạn phân tâm.</h2>
-              <p>{car.brochure}</p>
+              <p>{typeof car.brochure === 'object' ? car.brochure?.title : car.brochure}</p>
             </Reveal>
             <div className="spec-strip">
               {car.specs.map((spec, index) => (
@@ -372,16 +373,16 @@ export function CarDetailPage() {
           </div>
         </section>
 
-        {car.media.length > 3 && (
+        {carMedia.length > 3 && (
           <section className="detail-media" aria-labelledby="detail-media-title">
             <div className="section-frame">
               <Reveal className="detail-media__heading">
                 <p className="eyebrow">Toàn bộ góc nhìn</p>
                 <h2 id="detail-media-title">Ngoại thất, khoang lái và công nghệ của {car.name}.</h2>
-                <p>{car.media.length} góc nhìn của {car.name}, từ ngoại thất đến khoang lái và chi tiết vận hành.</p>
+                <p>{carMedia.length} góc nhìn của {car.name}, từ ngoại thất đến khoang lái và chi tiết vận hành.</p>
               </Reveal>
               <div className="detail-media-grid">
-                {car.media.slice(3).map((asset, index) => (
+                {carMedia.slice(3).map((asset, index) => (
                   <figure className="detail-media-grid__item" key={`${asset.src}-${index}`}>
                     <SmartImage src={asset.src} alt={`${car.name} · ${asset.label}`} />
                     <figcaption>{asset.label}</figcaption>
@@ -399,7 +400,15 @@ export function CarDetailPage() {
             <FileText size={28} weight="light" />
             <div>
               <p className="eyebrow">Nguồn dữ liệu sản phẩm</p>
-              <h2>{car.brochure}</h2>
+              {typeof car.brochure === 'object' ? (
+                <h2>
+                  <a href={car.brochure.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: 'inherit' }}>
+                    {car.brochure.title}
+                  </a>
+                </h2>
+              ) : (
+                <h2>{car.brochure}</h2>
+              )}
               <p>
                 Thông số được lấy từ brochure chính thức của mẫu xe. Quãng đường thực tế còn phụ thuộc phiên bản, nhiệt độ, địa hình và thói quen lái.
               </p>
