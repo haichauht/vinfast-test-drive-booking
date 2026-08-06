@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Any, cast
@@ -130,6 +131,7 @@ async def booking_skill_node(state: AgentState) -> dict:
         llm_with_tools = llm.bind_tools(tools)
         response = await llm_with_tools.ainvoke([SystemMessage(content=prompt)] + messages)
     except Exception as e:
+        logging.getLogger(__name__).exception("Error in booking_skill_node")
         safe_response = AIMessage(content="Đã xảy ra lỗi khi kết nối với mô hình AI. Vui lòng thử lại sau.")
         return {
             "messages": [safe_response],

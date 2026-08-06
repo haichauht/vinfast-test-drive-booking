@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any, cast
 
@@ -31,6 +32,7 @@ async def advise_skill_node(state: AgentState) -> dict:
         llm_with_tools = llm.bind_tools(tools)
         response = await llm_with_tools.ainvoke([SystemMessage(content=prompt)] + messages)
     except Exception as e:
+        logging.getLogger(__name__).exception("Error in advise_skill_node")
         from langchain_core.messages import AIMessage
 
         safe_response = AIMessage(content="Đã xảy ra lỗi khi kết nối với mô hình AI. Vui lòng thử lại sau.")

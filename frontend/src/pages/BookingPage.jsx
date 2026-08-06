@@ -245,10 +245,24 @@ function RecipientModal({ onSelect }) {
 }
 
 function AgentMessage({ message }) {
+  const formatText = (text) => {
+    if (!text) return null
+    return text.split('\n').map((line, i) => {
+      const html = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      return (
+        <span
+          key={i}
+          style={{ display: 'block', minHeight: '1em' }}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      )
+    })
+  }
+
   return (
     <div className={`vivi-message vivi-message--${message.role}`}>
       {message.role === 'assistant' && <ViViAvatar compact />}
-      <div><p>{message.text}</p></div>
+      <div><p>{formatText(message.text)}</p></div>
     </div>
   )
 }
@@ -700,7 +714,7 @@ function CustomerForm({ recipient, value, errors, onChange, onSubmit }) {
           </label>
         )}
         <label>
-          <span>Số điện thoại</span>
+          <span>{recipient === 'other' ? 'Số điện thoại (người lái thử)' : 'Số điện thoại'}</span>
           <input type="tel" placeholder="09xx xxx xxx" value={value.phone} onChange={(event) => onChange('phone', event.target.value)} />
           {errors.phone && <small role="alert">{errors.phone}</small>}
         </label>
@@ -716,6 +730,11 @@ function CustomerForm({ recipient, value, errors, onChange, onSubmit }) {
         <p>Tôi xác nhận người lái thử <strong>có giấy phép lái xe</strong> phù hợp với mẫu xe đăng ký.</p>
       </label>
       {errors.hasLicense && <small className="vivi-customer-form__license-error" role="alert">{errors.hasLicense}</small>}
+      <label className="license-check" style={{ marginTop: '12px' }}>
+        <input type="checkbox" checked={value.marketingConsent} onChange={(event) => onChange('marketingConsent', event.target.checked)} />
+        <span><Check size={14} weight="bold" /></span>
+        <p>Tôi đồng ý nhận <strong>thông tin ưu đãi</strong>, <strong>khuyến mãi</strong> và <strong>sự kiện mới nhất</strong> từ VinFast.</p>
+      </label>
       <button type="submit">Tạo phiếu để kiểm tra <ArrowRight size={16} weight="light" /></button>
     </form>
   )
@@ -752,13 +771,15 @@ export function BookingPage() {
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [confirmSlotOpen, setConfirmSlotOpen] = useState(false)
   const [switcherOpen, setSwitcherOpen] = useState(false)
-  const [person, setPerson] = useState({ bookingName: '', driverName: '', phone: '', email: '', hasLicense: false })
+  const [person, setPerson] = useState({ bookingName: '', driverName: '', phone: '', email: '', hasLicense: false, marketingConsent: false })
   const [formErrors, setFormErrors] = useState({})
   const [bookingCode, setBookingCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [slots, setSlots] = useState([])
   const [bookingId, setBookingId] = useState('')
   const [bookingVersion, setBookingVersion] = useState(0)
+  const [holdExpiresAt, setHoldExpiresAt] = useState(null)
+  const [timeLeft, setTimeLeft] = useState('')
   const [backendError, setBackendError] = useState('')
   const [userLocation, setUserLocation] = useState(null)
   const messagesRef = useRef(null)
@@ -860,50 +881,156 @@ export function BookingPage() {
   }
 
   const applyAgentToolResult = (result) => {
-    if (result.tool_name !== 'search_test_drive_options' || !result.action_data) return
+    if (!result || !result.action_data) return
 
-    const data = result.action_data
-    const toolInput = result.tool_input || {}
-    const agentCar = resolveAgentCar(data.resolved_vehicle)
-    const vehicleId = agentCar?.id || selectedCarId
+    if (result.tool_name === 'search_test_drive_options') {
+      const data = result.action_data
+      const toolInput = result.tool_input || {}
+      const agentCar = resolveAgentCar(data.resolved_vehicle)
+      const vehicleId = agentCar?.id || selectedCarId
 
-    if (agentCar) {
-      setSelectedCarId(agentCar.id)
-      window.sessionStorage.setItem('vinfast:last-viewed-car', agentCar.id)
-    }
+      if (agentCar) {
+        setSelectedCarId(agentCar.id)
+        window.sessionStorage.setItem('vinfast:last-viewed-car', agentCar.id)
+      }
 
-    if (data.search_stage === 'showroom_selection') {
-      const mapped = mapShowrooms(data.showrooms || [], vehicleId)
-      const queriedAddress = String(toolInput.address || '').trim()
-      setPendingSlot(null)
-      setSelectedSlot(null)
-      setConfirmSlotOpen(false)
-      setShowroomId('')
+      if (data.search_stage === 'showroom_selection') {
+        const mapped = mapShowrooms(data.showrooms || [], vehicleId)
+        const queriedAddress = String(toolInput.address || '').trim()
+        setPendingSlot(null)
+        setSelectedSlot(null)
+        setConfirmSlotOpen(false)
+        setShowroomId('')
 
-      if (queriedAddress) {
-        setAddress({ province: '', detail: queriedAddress })
+        if (queriedAddress) {
+          setAddress({ province: '', detail: queriedAddress })
+          setLocationSuggestions([])
+          setNearbyShowrooms(mapped)
+          setStage(mapped.length ? 'choose_showroom' : 'need_address')
+          setActiveView(mapped.length ? 'map' : 'car')
+        } else {
+          setAddress({ province: '', detail: '' })
+          setNearbyShowrooms([])
+          setLocationSuggestions(mapped.slice(0, 5))
+          setStage('need_address')
+          setActiveView('car')
+        }
+        return
+      }
+
+      if (data.search_stage === 'slot_selection' && data.selected_showroom) {
+        const [showroom] = mapShowrooms([data.selected_showroom], vehicleId)
         setLocationSuggestions([])
-        setNearbyShowrooms(mapped)
-        setStage(mapped.length ? 'choose_showroom' : 'need_address')
-        setActiveView(mapped.length ? 'map' : 'car')
-      } else {
-        setAddress({ province: '', detail: '' })
-        setNearbyShowrooms([])
-        setLocationSuggestions(mapped.slice(0, 5))
-        setStage('need_address')
-        setActiveView('car')
+        setNearbyShowrooms((current) => current.some((item) => item.id === showroom.id) ? current : [...current, showroom])
+        setShowroomId(showroom.id)
+        setSlots(groupSlots(data.slots || []))
+        setStage('choose_slot')
+        setActiveView('schedule')
       }
       return
     }
 
-    if (data.search_stage === 'slot_selection' && data.selected_showroom) {
-      const [showroom] = mapShowrooms([data.selected_showroom], vehicleId)
-      setLocationSuggestions([])
-      setNearbyShowrooms((current) => current.some((item) => item.id === showroom.id) ? current : [...current, showroom])
-      setShowroomId(showroom.id)
-      setSlots(groupSlots(data.slots || []))
-      setStage('choose_slot')
+    if (result.tool_name === 'hold_test_drive_slot') {
+      const data = result.action_data
+      const toolInput = result.tool_input || {}
+      setBookingId(data.booking_id)
+      setBookingVersion(data.version ?? 1)
+      setHoldExpiresAt(data.hold_expires_at ? new Date(data.hold_expires_at).getTime() : Date.now() + 900000)
+
+      if (data.showroom) {
+        const [mappedShowroom] = mapShowrooms([data.showroom], selectedCarId)
+        setNearbyShowrooms((current) => current.some((item) => item.id === mappedShowroom.id) ? current : [...current, mappedShowroom])
+        setShowroomId(mappedShowroom.id)
+      }
+
+      let foundSlot = null
+      for (const group of slots) {
+        const match = group.times.find(item => item.slotId === toolInput.slot_id)
+        if (match) {
+          foundSlot = match
+          break
+        }
+      }
+
+      const targetSlot = foundSlot || {
+        slotId: toolInput.slot_id,
+        time: '21:00 - 22:00',
+        dateLabel: 'Ngày đã chọn',
+      }
+
+      setPendingSlot(targetSlot)
+      setSelectedSlot(targetSlot)
+      setConfirmSlotOpen(true)
       setActiveView('schedule')
+      return
+    }
+
+    if (result.tool_name === 'update_booking_draft' || result.tool_name === 'get_booking_draft') {
+      const data = result.action_data
+      setBookingId(data.id)
+      setBookingVersion(data.version ?? 1)
+      if (data.hold_expires_at) {
+        setHoldExpiresAt(new Date(data.hold_expires_at).getTime())
+      }
+
+      const newRecipient = data.recipient_type || 'self'
+      setRecipient(newRecipient)
+
+      setPerson({
+        bookingName: data.booker?.name || '',
+        driverName: data.driver?.name || '',
+        phone: data.booker?.phone || '',
+        email: data.booker?.email || '',
+        hasLicense: !!data.license_declaration?.has_driving_license,
+      })
+
+      if (stage === 'choose_slot' || stage === 'choose_showroom' || stage === 'need_address') {
+        if (data.showroom) {
+          const [mappedShowroom] = mapShowrooms([data.showroom], selectedCarId)
+          setNearbyShowrooms((current) => current.some((item) => item.id === mappedShowroom.id) ? current : [...current, mappedShowroom])
+          setShowroomId(mappedShowroom.id)
+        }
+
+        let foundSlot = null
+        if (data.slot_id) {
+          for (const group of slots) {
+            const match = group.times.find(item => item.slotId === data.slot_id)
+            if (match) {
+              foundSlot = match
+              break
+            }
+          }
+        }
+
+        const targetSlot = foundSlot || {
+          slotId: data.slot_id || 'temp-id',
+          time: data.slot_time || '21:00 - 22:00',
+          dateLabel: data.slot_date || 'Ngày đã chọn',
+        }
+
+        setPendingSlot(targetSlot)
+        setSelectedSlot(targetSlot)
+        setConfirmSlotOpen(true)
+        setActiveView('schedule')
+        setStage('choose_slot')
+        return
+      }
+
+      const isComplete = data.booker?.name && data.booker?.phone && data.license_declaration?.has_driving_license
+      if (isComplete) {
+        setStage('review')
+        setActiveView('ticket')
+      } else {
+        setStage('collect_info')
+        setActiveView('schedule')
+      }
+      return
+    }
+
+    if (result.tool_name === 'confirm_test_drive_booking') {
+      const data = result.action_data
+      setBookingCode(data.booking_code)
+      setStage('success')
     }
   }
 
@@ -939,6 +1066,28 @@ export function BookingPage() {
   useEffect(() => {
     messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, stage, agentTyping])
+
+  useEffect(() => {
+    if (!holdExpiresAt || (stage !== 'collect_info' && stage !== 'review')) {
+      setTimeLeft('')
+      return
+    }
+
+    const updateTimer = () => {
+      const diff = holdExpiresAt - Date.now()
+      if (diff <= 0) {
+        setTimeLeft('Đã hết hạn giữ')
+        return
+      }
+      const min = Math.floor(diff / 60000)
+      const sec = Math.floor((diff % 60000) / 1000)
+      setTimeLeft(`${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`)
+    }
+
+    updateTimer()
+    const interval = setInterval(updateTimer, 1000)
+    return () => clearInterval(interval)
+  }, [holdExpiresAt, stage])
 
   const addMessage = (role, text) => {
     // TODO [BACKEND/AGENT]: Use server message ids and timestamps. Store structured
@@ -1055,15 +1204,19 @@ export function BookingPage() {
   }
 
   const confirmSlot = async () => {
-    // TODO [BACKEND/HOLD]: POST /api/v1/test-drive/holds with draftId,
-    // inventorySlotId and vehicleId here. Advance only after receiving holdId and
-    // holdExpiresAt. On 409 refresh slots; on 410 return to choose_slot.
     setBackendError('')
     setAgentTyping(true)
     try {
+      if (bookingId && selectedSlot && selectedSlot.slotId === pendingSlot.slotId) {
+        setConfirmSlotOpen(false)
+        setStage('collect_info')
+        setAgentTyping(false)
+        return
+      }
       const held = await holdBookingSlot(pendingSlot.slotId)
       setBookingId(held.booking_id)
       setBookingVersion(held.version ?? 1)
+      setHoldExpiresAt(held.hold_expires_at ? new Date(held.hold_expires_at).getTime() : Date.now() + 900000)
       setSelectedSlot(pendingSlot)
       setConfirmSlotOpen(false)
       addMessage('user', `Tôi xác nhận ${pendingSlot.time}, ${pendingSlot.dateLabel}.`)
@@ -1336,6 +1489,24 @@ export function BookingPage() {
                       Đổi mẫu xe khác
                     </button>
                   )}
+                </div>
+              )}
+
+              {timeLeft && (stage === 'collect_info' || stage === 'review') && (
+                <div className="vivi-hold-timer" style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  margin: '0 0 16px',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  background: 'rgba(239, 107, 7, 0.08)',
+                  border: '1px solid rgba(239, 107, 7, 0.2)',
+                  color: '#e25c00',
+                  fontSize: '0.72rem',
+                  fontWeight: '600'
+                }}>
+                  <span>Khung giờ đang giữ tạm thời. Còn lại: <strong style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{timeLeft}</strong></span>
                 </div>
               )}
 

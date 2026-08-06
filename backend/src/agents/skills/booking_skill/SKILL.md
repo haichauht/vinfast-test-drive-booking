@@ -1,6 +1,6 @@
 # Booking Skill: Process for Test Drive Appointments & Booking Management
 
-This skill details how to interact with the backend booking services using 6 unified MCP tools (`search_test_drive_options`, `get_booking_draft`, `update_booking_draft`, `request_booking_access`, `verify_booking_access`, `get_booking_details`).
+This skill details how to interact with the backend booking services using 8 unified MCP tools (`search_test_drive_options`, `hold_test_drive_slot`, `get_booking_draft`, `update_booking_draft`, `request_booking_access`, `verify_booking_access`, `get_booking_details`, `confirm_test_drive_booking`).
 
 ---
 
@@ -32,7 +32,17 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 #### Stage 2: Slot Selection (`search_stage = "slot_selection"`)
 - **Condition**: A specific showroom is selected (`showroom_id` is supplied).
 - **Behavior**: Returns a list of open timeslots (`slots[]`) at the showroom.
-- **Agent Action**: Show available slots and guide the user to select their preferred time to hold.
+- **Agent Action**: Show available slots and guide the user to select their preferred time. **If the user specifies a timeslot in their message (e.g. "21 giờ 8/8 đi", "tôi chọn 22:30 ngày 7/8", etc.), you MUST verify it matches the available slots. If the user's request is contradictory (e.g. choosing "Thứ 6 ngày 8/8" while August 8th is Saturday), you must clarify the correct date with them instead of guessing. Otherwise, immediately call `hold_test_drive_slot` to hold the slot for them.** Do not tell them to click the UI if they have already told you their choice in text chat!
+
+---
+
+## 🔏 1.5. Hold Test Drive Slot (`hold_test_drive_slot`)
+- **Purpose**: Reserve an available slot in `held` status for 15 minutes.
+- **Agent Action**: Call this tool immediately when the user requests or selects a specific timeslot in the text chat (e.g., "tôi chọn 21:00", "lấy 22:30 ngày 7/8", etc.).
+- **Inputs**:
+  - `slot_id`: The ID of the slot to hold.
+  - `ui_action_id`: A random UUID or unique ID.
+- **Behavior**: This will trigger the confirmation modal on the screen. The user can then click "Xác nhận" to confirm.
 
 ---
 
@@ -108,3 +118,13 @@ sequenceDiagram
   - `access_session_token` (mandatory).
 - **Rules**:
   - Always enforce token check. Show only permissions allowed under the token's scope (`permissions[]`).
+
+---
+
+## 🎫 5. Confirm Booking (`confirm_test_drive_booking`)
+- **Purpose**: Finalize the draft booking and generate a permanent booking code.
+- **Agent Action**: Call this tool immediately when the user requests or confirms they want to chốt/xác nhận đặt lịch in the text chat (e.g. "ok chốt đi", "xác nhận đặt lịch", etc.).
+- **Inputs**:
+  - `booking_id`: The ID of the draft booking.
+  - `expected_version`: The current version of the booking.
+  - `ui_action_id`: A random UUID or unique ID.
