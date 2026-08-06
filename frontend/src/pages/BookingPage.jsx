@@ -29,6 +29,7 @@ import {
   confirmHeldBooking,
   holdBookingSlot,
   saveBookingCustomer,
+  sendBookingMessage,
   searchBookingOptions,
 } from '../api/booking'
 import { useBackendStatus } from '../context/BackendStatusContext'
@@ -217,45 +218,6 @@ const showroomDirectory = [
   },
 ]
 
-// TODO [BACKEND/GEOCODING]: Remove this limited alias table after connecting an
-// address service that returns normalized province/ward ids plus lat/lng and a
-// confidence score. Low-confidence or province-only input must keep stage=need_ward.
-const provinceAliases = [
-  { name: 'TP. Hồ Chí Minh', aliases: ['hồ chí minh', 'ho chi minh', 'tp hcm', 'tphcm', 'sài gòn', 'sai gon'] },
-  { name: 'Hà Nội', aliases: ['hà nội', 'ha noi'] },
-  { name: 'Đà Nẵng', aliases: ['đà nẵng', 'da nang'] },
-  { name: 'Bình Dương', aliases: ['bình dương', 'binh duong'] },
-]
-
-const normalize = (value = '') => value
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/đ/g, 'd')
-  .toLowerCase()
-  .replace(/[^a-z0-9\s]/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim()
-
-const findProvince = (value) => {
-  const normalized = normalize(value)
-  return provinceAliases.find((province) =>
-    province.aliases.some((alias) => normalized.includes(normalize(alias))),
-  )?.name || ''
-}
-
-const hasLocalUnit = (value) => /\b(phường|phuong|xã|xa|thị trấn|thi tran)\b/i.test(value)
-
-const findCarFromText = (value, catalog) => {
-  const normalized = normalize(value).replace(/vinfast/g, '').trim()
-  const compact = normalized.replace(/\s/g, '')
-  return [...catalog].sort((a, b) => b.name.length - a.name.length).find((car) => {
-    const candidates = [car.name, car.navName, car.id].map(normalize)
-    return candidates.some((candidate) =>
-      normalized.includes(candidate) || compact.includes(candidate.replace(/\s/g, '')),
-    )
-  })
-}
-
 function RecipientModal({ onSelect }) {
   return (
     <div className="recipient-modal" role="dialog" aria-modal="true" aria-labelledby="recipient-title">
@@ -298,16 +260,13 @@ function ViViAvatar({ compact = false }) {
   )
 }
 
-function ContextualChoices({ stage, car, address, showrooms, slots, onResolveArea, onShowroom, onSlot }) {
+function ContextualChoices({ stage, car, locationSuggestions, showrooms, slots, onResolveArea, onShowroom, onSlot }) {
   if (!car) return null
 
   if (stage === 'need_address' || stage === 'need_ward') {
-    // TODO [BACKEND]: Populate these suggestions from availability-aware showroom
-    // results for the selected vehicle, not from a nationwide static directory.
-    const areas = showroomDirectory
-      .filter((showroom) => showroom.models.includes(car.id) && (!address.province || showroom.province === address.province))
-      .filter((showroom, index, entries) => entries.findIndex((item) => item.province === showroom.province) === index)
-      .slice(0, 4)
+    const areas = locationSuggestions.slice(0, 5)
+
+    if (!areas.length) return null
 
     return (
       <div className="agent-context" aria-label="Showroom có sẵn mẫu xe">
@@ -333,7 +292,7 @@ function ContextualChoices({ stage, car, address, showrooms, slots, onResolveAre
       <div className="agent-context" aria-label="Chọn showroom trong cuộc trò chuyện">
         <div className="agent-context__heading"><span>Showroom phù hợp</span><small>Đã ưu tiên có xe trước, khoảng cách sau</small></div>
         <div className="agent-context__rail">
-          {showrooms.map((showroom) => (
+          {showrooms.slice(0, 5).map((showroom) => (
             <button type="button" key={showroom.id} onClick={() => onShowroom(showroom)}>
               <span><MapPin size={16} weight="light" /></span>
               <strong>{showroom.name.replace('VinFast ', '')}</strong>
@@ -351,7 +310,7 @@ function ContextualChoices({ stage, car, address, showrooms, slots, onResolveAre
       dateLabel: day.dateLabel,
       time: entry.time,
       slotId: entry.slotId,
-    }))).slice(0, 4)
+    }))).slice(0, 5)
     return (
       <div className="agent-context" aria-label="Khung giờ còn trống">
         <div className="agent-context__heading"><span>Khung giờ gần nhất</span><small>Đã ghép đúng xe {car.name}</small></div>
@@ -685,6 +644,7 @@ export function BookingPage() {
   const [draft, setDraft] = useState('')
   const [agentTyping, setAgentTyping] = useState(false)
   const [address, setAddress] = useState({ province: '', detail: '' })
+  const [locationSuggestions, setLocationSuggestions] = useState([])
   const [nearbyShowrooms, setNearbyShowrooms] = useState([])
   const [showroomId, setShowroomId] = useState('')
   const [pendingSlot, setPendingSlot] = useState(null)
@@ -707,12 +667,12 @@ export function BookingPage() {
   // must include inventorySlotId; the UI's date/time tuple is display-only.
   const selectedShowroom = nearbyShowrooms.find((showroom) => showroom.id === showroomId)
 
-  const mapShowrooms = (items) => items.map((item, index) => ({
+  const mapShowrooms = (items, vehicleId = selectedCarId) => items.map((item, index) => ({
     ...item,
     distance: item.distance_km ?? 0,
     x: 20 + ((index * 23) % 65),
     y: 25 + ((index * 19) % 55),
-    models: [selectedCarId],
+    models: [vehicleId],
   }))
 
   const groupSlots = (items) => Object.values(items.reduce((groups, item) => {
@@ -728,18 +688,97 @@ export function BookingPage() {
     return groups
   }, {}))
 
-  const loadShowrooms = async (car) => {
-    setBackendError('')
+  const resolveAgentCar = (vehicle) => {
+    if (!vehicle) return null
+    const normalize = (value) => String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+    const candidates = [vehicle.id, vehicle.code, vehicle.name].map(normalize).filter(Boolean)
+    return cars.find((car) => candidates.includes(normalize(car.id)) || candidates.includes(normalize(car.name))) || null
+  }
+
+  const primeLocationSuggestions = async (car) => {
     try {
       const result = await searchBookingOptions({ vehicleModel: car.name })
-      const showrooms = mapShowrooms(result.showrooms || [])
-      setNearbyShowrooms(showrooms)
-      setStage('choose_showroom')
-      setActiveView('map')
-      reply(`Đã tìm thấy ${showrooms.length} showroom đang có ${car.name}. Hãy chọn một showroom để xem lịch trống thực tế.`)
+      setLocationSuggestions(mapShowrooms(result.showrooms || [], car.id))
     } catch (error) {
       setBackendError(error.message)
-      reply(`Không tải được showroom: ${error.message}`)
+      setLocationSuggestions([])
+    }
+  }
+
+  const applyAgentToolResult = (result) => {
+    if (result.tool_name !== 'search_test_drive_options' || !result.action_data) return
+
+    const data = result.action_data
+    const toolInput = result.tool_input || {}
+    const agentCar = resolveAgentCar(data.resolved_vehicle)
+    const vehicleId = agentCar?.id || selectedCarId
+
+    if (agentCar) {
+      setSelectedCarId(agentCar.id)
+      window.sessionStorage.setItem('vinfast:last-viewed-car', agentCar.id)
+    }
+
+    if (data.search_stage === 'showroom_selection') {
+      const mapped = mapShowrooms(data.showrooms || [], vehicleId)
+      const queriedAddress = String(toolInput.address || '').trim()
+      setPendingSlot(null)
+      setSelectedSlot(null)
+      setConfirmSlotOpen(false)
+      setShowroomId('')
+
+      if (queriedAddress) {
+        setAddress({ province: '', detail: queriedAddress })
+        setLocationSuggestions([])
+        setNearbyShowrooms(mapped)
+        setStage(mapped.length ? 'choose_showroom' : 'need_address')
+        setActiveView(mapped.length ? 'map' : 'car')
+      } else {
+        setAddress({ province: '', detail: '' })
+        setNearbyShowrooms([])
+        setLocationSuggestions(mapped.slice(0, 5))
+        setStage('need_address')
+        setActiveView('car')
+      }
+      return
+    }
+
+    if (data.search_stage === 'slot_selection' && data.selected_showroom) {
+      const [showroom] = mapShowrooms([data.selected_showroom], vehicleId)
+      setLocationSuggestions([])
+      setNearbyShowrooms((current) => current.some((item) => item.id === showroom.id) ? current : [...current, showroom])
+      setShowroomId(showroom.id)
+      setSlots(groupSlots(data.slots || []))
+      setStage('choose_slot')
+      setActiveView('schedule')
+    }
+  }
+
+  const loadShowrooms = async (car, detail, province = '') => {
+    setBackendError('')
+    try {
+      const result = await searchBookingOptions({ vehicleModel: car.name, address: detail })
+      const showrooms = mapShowrooms(result.showrooms || [], car.id)
+      setAddress({ province, detail })
+      setLocationSuggestions([])
+      setNearbyShowrooms(showrooms)
+      if (showrooms.length) {
+        setStage('choose_showroom')
+        setActiveView('map')
+        reply(`Đã tìm thấy ${showrooms.length} showroom đang có ${car.name} gần “${detail}”. Hãy chọn một showroom để xem lịch trống thực tế.`)
+      } else {
+        setStage('need_address')
+        setActiveView('car')
+        reply(`Tôi chưa tìm thấy showroom có ${car.name} gần “${detail}”. Bạn hãy nhập địa chỉ khác, kèm phường/xã và tỉnh/thành phố.`)
+      }
+    } catch (error) {
+      setBackendError(error.message)
+      setStage('need_address')
+      setActiveView('car')
+      reply(`Không tìm được showroom từ địa chỉ này: ${error.message}`)
     }
   }
 
@@ -756,7 +795,7 @@ export function BookingPage() {
 
   const reply = (text, delay = 420) => {
     // TODO [BACKEND/AGENT]: Replace this cosmetic delay with streamed message state
-    // from POST /api/v1/booking-agent/messages (SSE or fetch stream). Cancel the
+    // from a future streaming form of POST /api/v1/chat (SSE or fetch stream). Cancel the
     // previous request on stage/vehicle changes and expose retry on failure.
     setAgentTyping(true)
     const timer = window.setTimeout(() => {
@@ -776,9 +815,10 @@ export function BookingPage() {
       'Xin chào, tôi là ViVi — trợ lý đặt lịch lái thử VinFast. Tôi có thể tạo lịch mới hoặc hỗ trợ tra cứu, bổ sung và huỷ lịch đã đặt.',
     )
     if (car) {
-      setStage('choose_showroom')
+      setStage('need_address')
       setActiveView('car')
-      loadShowrooms(car)
+      primeLocationSuggestions(car)
+      reply(`Bạn đang xem ${car.name}. Hãy nhập địa chỉ theo phường/xã và tỉnh/thành phố để tôi tìm showroom có xe lái thử gần bạn.`, 520)
     } else {
       setStage('need_car')
       setActiveView('agent')
@@ -790,13 +830,16 @@ export function BookingPage() {
     setSelectedCarId(car.id)
     window.sessionStorage.setItem('vinfast:last-viewed-car', car.id)
     if (!fromPrompt) addMessage('user', `Tôi muốn lái thử ${car.name}.`)
-    setStage('choose_showroom')
+    setNearbyShowrooms([])
+    setLocationSuggestions([])
+    setShowroomId('')
+    setStage('need_address')
     setActiveView('car')
-    loadShowrooms(car)
+    primeLocationSuggestions(car)
+    reply(`Đã chọn ${car.name}. Bây giờ bạn hãy nhập địa chỉ theo phường/xã và tỉnh/thành phố để tôi tìm showroom gần nhất.`)
   }
 
-  // Đổi mẫu xe giữa chừng: giữ lại địa chỉ, showroom và thông tin người lái đã nhập,
-  // chỉ mở lại bước chọn khung giờ vì lịch luôn được ghép theo đúng mẫu xe.
+  // Đổi mẫu xe sẽ quay lại bước địa chỉ để Agent kiểm tra tồn xe/showroom lại từ đầu.
   const switchCar = (car) => {
     setSwitcherOpen(false)
     if (!car || car.id === selectedCarId) return
@@ -808,55 +851,14 @@ export function BookingPage() {
     setConfirmSlotOpen(false)
     addMessage('user', `Tôi muốn đổi sang ${car.name}.`)
 
-    // TODO [BACKEND]: Khi đổi xe phải nhả chỗ giữ cũ và kiểm tra lại tồn xe:
-    // DELETE /api/v1/test-drive/holds/{holdId} rồi
-    // GET /api/v1/test-drive/showrooms?vehicleId={car.id}&province=… để lấy danh sách mới.
-    const matches = address.province
-      ? showroomDirectory
-        .filter((showroom) => showroom.province === address.province && showroom.models.includes(car.id))
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, 4)
-      : []
-    setNearbyShowrooms(matches)
-
-    const keptShowroom = matches.find((showroom) => showroom.id === showroomId)
-    if (keptShowroom) {
-      setStage('choose_slot')
-      setActiveView('schedule')
-      reply(`Đã đổi sang ${car.name}. Tôi vẫn giữ ${keptShowroom.name}, nhưng khung giờ phải chọn lại để ghép đúng xe mới.`)
-      return
-    }
-
+    setAddress({ province: '', detail: '' })
+    setLocationSuggestions([])
+    setNearbyShowrooms([])
     setShowroomId('')
-    if (matches.length) {
-      setStage('choose_showroom')
-      setActiveView('map')
-      reply(`Đã đổi sang ${car.name}. Showroom cũ không có sẵn mẫu này, tôi đã lọc lại ${matches.length} điểm quanh “${address.detail}” — bạn chọn giúp tôi một điểm nhé.`)
-      return
-    }
-
     setStage('need_address')
     setActiveView('car')
+    primeLocationSuggestions(car)
     reply(`Đã đổi sang ${car.name}. Bạn cho tôi lại địa chỉ theo phường hoặc xã và tỉnh/thành phố để tìm showroom có sẵn mẫu này.`)
-  }
-
-  const resolveShowrooms = (province, detail) => {
-    // TODO [BACKEND/GEOCODING + INVENTORY]: 1) normalize detail to administrative
-    // ids/lat/lng; 2) query showrooms with selected vehicle availability; 3) rank by
-    // exact vehicle first, then travel distance; 4) return at most four initial hits.
-    const matches = showroomDirectory
-      .filter((showroom) => showroom.province === province && showroom.models.includes(selectedCar.id))
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, 4)
-    setAddress({ province, detail })
-    setNearbyShowrooms(matches)
-    setStage('choose_showroom')
-    setActiveView('map')
-    if (matches.length) {
-      reply(`Tôi tìm thấy ${matches.length} showroom có ${selectedCar.name}, đã xếp theo khoảng cách từ “${detail}”. Hãy chọn một điểm trên bản đồ hoặc nhắn tên showroom bạn muốn.`)
-    } else {
-      reply(`Hiện chưa có showroom nào tại ${province} xác nhận sẵn ${selectedCar.name}. Bạn có thể gửi một khu vực lân cận để tôi kiểm tra tiếp.`)
-    }
   }
 
   // Bảng chọn xe dùng chung cho lần chọn đầu tiên và cho việc đổi xe giữa chừng.
@@ -868,7 +870,7 @@ export function BookingPage() {
 
   const resolveSuggestedArea = (showroom) => {
     addMessage('user', `Tìm quanh ${showroom.address}.`)
-    resolveShowrooms(showroom.province, showroom.address)
+    loadShowrooms(selectedCar, showroom.address, showroom.province)
   }
 
   const chooseShowroom = async (showroom, fromPrompt = false) => {
@@ -917,72 +919,32 @@ export function BookingPage() {
     }
   }
 
-  const handlePrompt = (event) => {
+  const handlePrompt = async (event) => {
     event.preventDefault()
     const value = draft.trim()
     if (!value) return
     setDraft('')
     addMessage('user', value)
+    setBackendError('')
 
-    // TODO [BACKEND]: Replace local intent/entity parsing below with
-    // POST /api/v1/booking-agent/messages. Return structured nextStage plus
-    // extracted vehicle, administrative address, showroom and inventory slot.
-
-    if (stage === 'need_car') {
-      const car = findCarFromText(value, cars)
-      if (car) chooseCar(car, true)
-      else reply('Tôi chưa nhận ra mẫu xe trong tin nhắn. Hãy thử nhập “VF 6”, “VF 8 thế hệ mới” hoặc chọn một ảnh xe phía trên ô nhập.')
-      return
-    }
-
-    if (stage === 'need_address' || stage === 'need_ward') {
-      const province = findProvince(value) || address.province
-      const detailed = hasLocalUnit(value)
-      if (!province) {
-        reply('Tôi cần cả tỉnh hoặc thành phố. Bạn có thể nhập theo mẫu: “Phường Hải Châu, Đà Nẵng”.')
-      } else if (!detailed) {
-        setAddress({ province, detail: value })
-        setStage('need_ward')
-        reply(`Tôi đã ghi nhận ${province}. Bạn cho tôi thêm tên phường hoặc xã để không hiển thị tràn lan toàn bộ showroom trong khu vực nhé.`)
-      } else {
-        resolveShowrooms(province, findProvince(value) ? value : `${value}, ${province}`)
-      }
-      return
-    }
-
-    if (stage === 'choose_showroom') {
-      const normalized = normalize(value)
-      const showroom = nearbyShowrooms.find((item) => {
-        const full = normalize(item.name)
-        const short = normalize(item.name.replace('VinFast', ''))
-        return normalized.includes(full) || normalized.includes(short)
+    setAgentTyping(true)
+    try {
+      const result = await sendBookingMessage(value, {
+        stage,
+        recipient,
+        selectedVehicle: selectedCar ? { id: selectedCar.id, name: selectedCar.name } : null,
+        selectedShowroom: selectedShowroom ? { id: selectedShowroom.id, name: selectedShowroom.name } : null,
+        selectedSlot,
+        bookingId: bookingId || null,
       })
-      if (showroom) chooseShowroom(showroom, true)
-      else reply(`Tôi chưa khớp được showroom đó với danh sách đang có ${selectedCar.name}. Hãy chọn một điểm được đánh số trên bản đồ hoặc nhập đúng tên trong danh sách.`)
-      return
+      applyAgentToolResult(result)
+      addMessage('assistant', result.response)
+    } catch (error) {
+      setBackendError(error.message)
+      addMessage('assistant', `Không thể kết nối ViVi: ${error.message}`)
+    } finally {
+      setAgentTyping(false)
     }
-
-    if (stage === 'choose_slot') {
-      const normalized = normalize(value)
-      const match = slots.flatMap((day) => day.times.map((time) => ({ ...day, time })))
-        .find((slot) => normalized.includes(normalize(slot.time)) || normalized.includes(normalize(slot.dateLabel)))
-      if (match) chooseSlot({ date: match.value, dateLabel: match.dateLabel, time: match.time })
-      else {
-        const suggestion = slots[0]?.times.slice(0, 2).join(' hoặc ')
-        reply(`Khung bạn yêu cầu chưa có ${selectedCar.name} tại ${selectedShowroom.name}. Lịch gần nhất đang trống là ${suggestion} vào ${slots[0]?.dateLabel}; hãy chọn một ô trên lịch để tôi giữ đúng xe.`)
-      }
-      return
-    }
-
-    if (stage === 'lookup') {
-      const hasPhone = /(0|\+84)[0-9\s.-]{8,12}/.test(value)
-      reply(hasPhone
-        ? 'Tôi đã nhận thông tin tra cứu. Khi API được nối, ViVi sẽ trả về lịch phù hợp để bạn bổ sung hoặc huỷ ngay tại đây.'
-        : 'Để tra cứu chính xác, hãy gửi họ tên và số điện thoại đã dùng khi đặt lịch trong cùng một tin nhắn.')
-      return
-    }
-
-    reply('Bạn hãy dùng lựa chọn đang hiển thị trong cuộc trò chuyện để tôi tiếp tục đúng bước và giữ chính xác mẫu xe.')
   }
 
   const startLookup = () => {
@@ -1178,7 +1140,7 @@ export function BookingPage() {
               <ContextualChoices
                 stage={stage}
                 car={selectedCar}
-                address={address}
+                locationSuggestions={locationSuggestions}
                 showrooms={nearbyShowrooms}
                 slots={slots}
                 onResolveArea={resolveSuggestedArea}

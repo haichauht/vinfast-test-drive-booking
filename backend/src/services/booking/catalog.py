@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any
 
 from src.services.booking.common import iso, new_id
@@ -70,8 +71,6 @@ class CatalogService:
     ) -> dict:
         if (latitude is None) != (longitude is None):
             raise BookingError("INVALID_INPUT", "Latitude và longitude phải được cung cấp cùng nhau.")
-        if address and not showroom_query:
-            showroom_query = address
         model = self.resolve_vehicle_model(vehicle_model)
         params: list[Any] = [model["id"]]
         variant_sql = ""
@@ -114,6 +113,13 @@ class CatalogService:
                     variant_ids,
                 ).fetchall()
                 showrooms = [dict(r) for r in rows]
+                if address:
+                    ranked = sorted(
+                        ((self._address_match_score(address, showroom), showroom) for showroom in showrooms),
+                        key=lambda item: item[0],
+                        reverse=True,
+                    )
+                    showrooms = [showroom for score, showroom in ranked if score > 0]
                 if latitude is not None and longitude is not None:
                     origin = Coordinates(latitude, longitude)
                     destinations = [Coordinates(s["latitude"], s["longitude"]) for s in showrooms]
@@ -166,3 +172,30 @@ class CatalogService:
     @staticmethod
     def _distance(a, b, c, d):
         return HaversineMapProvider.distance_km(Coordinates(a, b), Coordinates(c, d))
+
+    @staticmethod
+    def _address_match_score(address: str, showroom: dict) -> int:
+        """Rank available showrooms by locality tokens without a remote geocoder."""
+
+        def normalize(value: str) -> set[str]:
+            ascii_value = unicodedata.normalize("NFD", value.casefold())
+            ascii_value = "".join(character for character in ascii_value if unicodedata.category(character) != "Mn")
+            tokens = set(re.findall(r"[a-z0-9]+", ascii_value.replace("đ", "d")))
+            ignored = {
+                "duong",
+                "phuong",
+                "xa",
+                "quan",
+                "huyen",
+                "thi",
+                "tran",
+                "thanh",
+                "pho",
+                "tp",
+                "so",
+            }
+            return {token for token in tokens if token not in ignored and (len(token) > 1 or token.isdigit())}
+
+        requested = normalize(address)
+        candidate = normalize(f"{showroom.get('name', '')} {showroom.get('address', '')}")
+        return len(requested & candidate)

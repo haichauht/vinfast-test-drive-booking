@@ -26,6 +26,15 @@ class RouteSchema(BaseModel):
 
 async def classifier_node(state: AgentState) -> dict:
     query = state.get("query", "")
+    context = state.get("context") or {}
+    if state.get("requested_action") or context.get("channel") == "booking":
+        return {
+            "intent": "domain",
+            "active_skill": "booking",
+            "messages": [HumanMessage(content=query)],
+            "metadata": {**(state.get("metadata") or {}), "sub_intent": "booking"},
+            "tool_call_count": 0,
+        }
     if not query:
         return {
             "intent": "general",

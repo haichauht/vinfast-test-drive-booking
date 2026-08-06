@@ -24,11 +24,11 @@ async def advise_skill_node(state: AgentState) -> dict:
 
     prompt = f"{get_system_prompt()}\n\n--- ACTIVE SKILL GUIDELINES (ADVISE) ---\n{get_advise_prompt()}"
 
-    llm = get_llm()
     tools = [search_knowledge]
-    llm_with_tools = llm.bind_tools(tools)
 
     try:
+        llm = get_llm()
+        llm_with_tools = llm.bind_tools(tools)
         response = await llm_with_tools.ainvoke([SystemMessage(content=prompt)] + messages)
     except Exception as e:
         from langchain_core.messages import AIMessage

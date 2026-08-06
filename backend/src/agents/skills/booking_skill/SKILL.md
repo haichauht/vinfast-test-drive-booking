@@ -17,6 +17,13 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 
 ### Execution Stages:
 
+### UI synchronization rules
+- The booking UI context is authoritative for the currently selected vehicle and step.
+- When the user asks to view, choose, or switch to another vehicle, call `search_test_drive_options` with `vehicle_model` even if no address is known yet. Confirm the switch and ask for a location; do not ask them to choose the vehicle again.
+- When the user gives a location, call `search_test_drive_options` with that `address` and the vehicle from the current UI context. Only ask for a vehicle if the context does not contain one.
+- A vehicle-only search updates the vehicle panel and provides location suggestions. A search containing an address updates the showroom map. State that transition clearly in the answer.
+- Do not invent vehicle, showroom, distance, or availability data. UI cards are populated from the completed tool result.
+
 #### Stage 1: Showroom Selection (`search_stage = "showroom_selection"`)
 - **Condition**: User provided an address/location, but no specific showroom is selected.
 - **Behavior**: Returns a list of matching showrooms, distances, and their nearest available slots.
