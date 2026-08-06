@@ -65,12 +65,15 @@ class LifecycleService:
                 (booking_id, iso(now), iso(now)),
             )
             self._event(c, booking_id, "slot_held", "user", {"slot_id": slot_id})
+            showroom_row = c.execute("SELECT * FROM showrooms WHERE id=?", (slot["showroom_id"],)).fetchone()
+            showroom = dict(showroom_row) if showroom_row else None
             result = {
                 "booking_id": booking_id,
                 "status": "held",
                 "version": 1,
                 "hold_expires_at": iso(expires),
                 "remaining_seconds": ttl_seconds,
+                "showroom": showroom,
             }
             self._save_idempotency(c, ui_action_id, _operation, request_payload, result, iso(now))
             return result
@@ -117,6 +120,29 @@ class LifecycleService:
         if lic.get("has_driving_license") is not True and lic.get("has_driving_license") != 1:
             missing.append("license.has_driving_license")
         remaining = max(0, int((datetime.fromisoformat(booking["hold_expires_at"]) - self.now()).total_seconds()))
+        slot_row = c.execute("SELECT * FROM test_drive_slots WHERE id=?", (booking["slot_id"],)).fetchone()
+        if slot_row:
+            slot = dict(slot_row)
+            showroom_row = c.execute("SELECT * FROM showrooms WHERE id=?", (slot["showroom_id"],)).fetchone()
+            booking["showroom"] = dict(showroom_row) if showroom_row else None
+            booking["slot_id"] = slot["id"]
+            dt = datetime.fromisoformat(slot["start_at"])
+            WEEKDAYS_VI = {
+                0: "Thứ 2",
+                1: "Thứ 3",
+                2: "Thứ 4",
+                3: "Thứ 5",
+                4: "Thứ 6",
+                5: "Thứ 7",
+                6: "Chủ nhật"
+            }
+            booking["slot_date"] = f"{WEEKDAYS_VI[dt.weekday()]}, {dt.strftime('%d/%m')}"
+            booking["slot_time"] = dt.strftime("%H:%M")
+        else:
+            booking["showroom"] = None
+            booking["slot_date"] = "Ngày đã chọn"
+            booking["slot_time"] = "21:00 - 22:00"
+
         booking.update(
             missing_required_fields=missing,
             validation_warnings=[],

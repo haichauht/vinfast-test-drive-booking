@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from src.services.booking.common import iso, new_id
 from src.services.booking.errors import BookingError
 from src.services.booking.location import Coordinates, HaversineMapProvider
 
-_id = new_id
+def _to_vietnam_time(iso_str: str) -> datetime:
+    if iso_str.endswith("Z"):
+        return datetime.fromisoformat(iso_str[:-1]).replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=7)))
+    dt = datetime.fromisoformat(iso_str)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=7)))
+    return dt.astimezone(timezone(timedelta(hours=7)))
 
 
 class CatalogService:
@@ -159,6 +166,24 @@ class CatalogService:
                     (*values, min(limit, 5)),
                 )
             ]
+            WEEKDAYS_VI = {
+                0: "Thứ 2",
+                1: "Thứ 3",
+                2: "Thứ 4",
+                3: "Thứ 5",
+                4: "Thứ 6",
+                5: "Thứ 7",
+                6: "Chủ nhật"
+            }
+            for s in slots:
+                dt_start = _to_vietnam_time(s["start_at"])
+                dt_end = _to_vietnam_time(s["end_at"])
+                s["start_at"] = dt_start.isoformat()
+                s["end_at"] = dt_end.isoformat()
+                day_label = WEEKDAYS_VI[dt_start.weekday()]
+                date_str = dt_start.strftime("%d/%m")
+                time_str = dt_start.strftime("%H:%M")
+                s["formatted_schedule"] = f"{day_label}, {date_str} {time_str}"
         return {
             "resolved_vehicle": {**model, "variants": variants},
             "license_requirement": model["required_license_class"],
