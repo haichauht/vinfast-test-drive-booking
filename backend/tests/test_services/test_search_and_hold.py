@@ -4,6 +4,7 @@ from threading import Barrier
 import pytest
 from src.services.booking import catalog as catalog_module
 from src.services.booking import BookingError
+from zoneinfo import ZoneInfo
 
 from tests.conftest import FIXED_NOW
 
@@ -51,7 +52,17 @@ def test_address_match_reuses_cached_showroom_tokens():
 
     showroom["updated_at"] = "2026-08-08T00:00:00+07:00"
     catalog_module.CatalogService._address_match_score("Quận 7", showroom)
-    assert len(catalog_module._SHOWROOM_TOKEN_CACHE) == 2
+    assert len(catalog_module._SHOWROOM_TOKEN_CACHE) == 1
+
+
+def test_to_vietnam_time_normalizes_utc_and_naive_timestamps():
+    utc_value = catalog_module._to_vietnam_time("2026-08-07T00:00:00Z")
+    offset_value = catalog_module._to_vietnam_time("2026-08-07T00:00:00+00:00")
+    naive_value = catalog_module._to_vietnam_time("2026-08-07T00:00:00")
+
+    assert utc_value == offset_value == naive_value
+    assert utc_value.tzinfo == ZoneInfo("Asia/Ho_Chi_Minh")
+    assert utc_value.hour == 7
 
 
 # test case of Chau + kiểm tra chỉ trả slot tương lai đang available và giới hạn tối đa năm slot

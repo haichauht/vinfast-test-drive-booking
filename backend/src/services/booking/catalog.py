@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from src.services.booking.common import iso, new_id
 from src.services.booking.errors import BookingError
 from src.services.booking.location import Coordinates, HaversineMapProvider
 
 
-_SHOWROOM_TOKEN_CACHE: dict[tuple[str, str, str, str], frozenset[str]] = {}
+VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+_SHOWROOM_TOKEN_CACHE: dict[str, tuple[tuple[str, str, str], frozenset[str]]] = {}
 
 
 def _normalize_location_tokens(value: str) -> set[str]:
@@ -27,26 +29,25 @@ def _normalize_location_tokens(value: str) -> set[str]:
 
 def _showroom_location_tokens(showroom: dict) -> frozenset[str]:
     """Return cached tokens; an updated showroom naturally gets a new cache key."""
-    key = (
-        str(showroom.get("id", "")),
+    showroom_id = str(showroom.get("id", ""))
+    version = (
         str(showroom.get("updated_at", "")),
         str(showroom.get("name", "")),
         str(showroom.get("address", "")),
     )
-    cached = _SHOWROOM_TOKEN_CACHE.get(key)
-    if cached is None:
-        cached = frozenset(_normalize_location_tokens(f"{key[2]} {key[3]}"))
-        _SHOWROOM_TOKEN_CACHE[key] = cached
-    return cached
+    cached = _SHOWROOM_TOKEN_CACHE.get(showroom_id)
+    if cached is None or cached[0] != version:
+        tokens = frozenset(_normalize_location_tokens(f"{version[1]} {version[2]}"))
+        _SHOWROOM_TOKEN_CACHE[showroom_id] = (version, tokens)
+        return tokens
+    return cached[1]
 
 
 def _to_vietnam_time(iso_str: str) -> datetime:
-    if iso_str.endswith("Z"):
-        return datetime.fromisoformat(iso_str[:-1]).replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=7)))
-    dt = datetime.fromisoformat(iso_str)
+    dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=7)))
-    return dt.astimezone(timezone(timedelta(hours=7)))
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(VIETNAM_TZ)
 
 
 class CatalogService:

@@ -1,11 +1,12 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from src.agents.nodes import advise_skill_node as advise_module
 from src.agents.nodes import booking_skill_node as booking_module
 from src.agents.nodes.advise_skill_node import advise_skill_node
 from src.agents.nodes.booking_skill_node import booking_skill_node
+from src.agents.utils import window_messages
 
 
 def _mock_bound_llm(response):
@@ -81,6 +82,19 @@ async def test_structured_booking_action_uses_a_stable_tool_call_id():
     first_id = first["messages"][0].tool_calls[0]["id"]
     second_id = second["messages"][0].tool_calls[0]["id"]
     assert first_id == second_id
+
+
+def test_message_window_keeps_a_tool_call_and_its_result_together():
+    tool_request = AIMessage(
+        content="",
+        tool_calls=[{"id": "call-1", "name": "search_knowledge", "args": {"query": "VF8"}}],
+    )
+    tool_result = ToolMessage(content="result", tool_call_id="call-1")
+    messages = [HumanMessage(content=f"old-{index}") for index in range(22)] + [tool_request, tool_result]
+
+    window = window_messages(messages, limit=2)
+
+    assert window == [tool_request, tool_result]
 
 
 # test case of Chau + kiểm tra advise skill chỉ bind knowledge tool và trả lời tư vấn

@@ -1,9 +1,44 @@
 from pathlib import Path
 
+from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
+
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_prompt.md"
+MAX_LLM_HISTORY_MESSAGES = 24
 
 
 from datetime import datetime
+
+
+def window_messages(messages: list[AnyMessage], limit: int = MAX_LLM_HISTORY_MESSAGES) -> list[AnyMessage]:
+    """Keep recent conversation turns without separating tool calls from results."""
+    if len(messages) <= limit:
+        return messages
+
+    groups: list[list[AnyMessage]] = []
+    index = 0
+    while index < len(messages):
+        message = messages[index]
+        group = [message]
+        if isinstance(message, AIMessage) and message.tool_calls:
+            tool_call_ids = {str(call.get("id", "")) for call in message.tool_calls}
+            index += 1
+            while index < len(messages):
+                candidate = messages[index]
+                if not isinstance(candidate, ToolMessage) or candidate.tool_call_id not in tool_call_ids:
+                    break
+                group.append(candidate)
+                index += 1
+            groups.append(group)
+            continue
+        groups.append(group)
+        index += 1
+
+    recent: list[AnyMessage] = []
+    for group in reversed(groups):
+        if recent and len(group) + len(recent) > limit:
+            break
+        recent = group + recent
+    return recent
 
 def get_system_prompt() -> str:
     try:
