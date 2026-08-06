@@ -38,17 +38,21 @@ const agentAction = async (action, message, actionPayload) => {
 
 export const sendBookingMessage = (message, context = {}) => agentRequest({ message, context })
 
-export const searchBookingOptions = ({ vehicleModel, showroomId, address }) => agentAction(
+export const searchBookingOptions = ({ vehicleModel, showroomId, address, latitude, longitude }) => agentAction(
   'search_options',
   showroomId
     ? `Kiểm tra lịch trống cho ${vehicleModel} tại showroom đã chọn.`
     : address
       ? `Tìm showroom có ${vehicleModel} gần địa chỉ ${address}.`
-      : `Tìm các khu vực có showroom lái thử ${vehicleModel}.`,
+      : latitude && longitude
+        ? `Tìm showroom có ${vehicleModel} gần tọa độ GPS.`
+        : `Tìm các khu vực có showroom lái thử ${vehicleModel}.`,
   {
     vehicle_model: vehicleModel,
     showroom_id: showroomId,
     address,
+    latitude,
+    longitude,
     limit: 5,
   },
 )

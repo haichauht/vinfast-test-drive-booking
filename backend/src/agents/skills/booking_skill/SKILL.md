@@ -27,7 +27,7 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 #### Stage 1: Showroom Selection (`search_stage = "showroom_selection"`)
 - **Condition**: User provided an address/location, but no specific showroom is selected.
 - **Behavior**: Returns a list of matching showrooms, distances, and their nearest available slots.
-- **Agent Action**: Present the showroom options with distance and next available slots. Ask the user to choose a showroom or refine the location.
+- **Agent Action**: Inform the user that the showroom map and list have been loaded on the right panel. To avoid visual redundancy and keep the chat clean, DO NOT write tables or lists of all showrooms in the chat text. Simply direct the user to click on the map marker or select from the list in the right-hand workspace.
 
 #### Stage 2: Slot Selection (`search_stage = "slot_selection"`)
 - **Condition**: A specific showroom is selected (`showroom_id` is supplied).
