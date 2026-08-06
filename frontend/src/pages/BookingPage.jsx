@@ -25,6 +25,7 @@ import { SmartImage } from '../components/SmartImage'
 import { carGroups } from '../data/cars'
 import { useVehicleCatalog } from '../hooks/useSiteData'
 import { viviAvatar } from '../data/media'
+import vinfastLogo from '../assets/vinfast-logo.png'
 import {
   confirmHeldBooking,
   holdBookingSlot,
@@ -264,27 +265,7 @@ function ContextualChoices({ stage, car, locationSuggestions, showrooms, slots, 
   if (!car) return null
 
   if (stage === 'need_address' || stage === 'need_ward') {
-    const areas = locationSuggestions.slice(0, 5)
-
-    if (!areas.length) return null
-
-    return (
-      <div className="agent-context" aria-label="Showroom có sẵn mẫu xe">
-        <div className="agent-context__heading">
-          <span>Điểm có xe lái thử</span>
-          <small>Chọn nhanh một khu vực hoặc tiếp tục nhập địa chỉ chi tiết</small>
-        </div>
-        <div className="agent-context__rail">
-          {areas.map((showroom) => (
-            <button type="button" key={showroom.id} onClick={() => onResolveArea(showroom)}>
-              <span><MapPin size={16} weight="light" /></span>
-              <strong>{showroom.name.replace('VinFast ', '')}</strong>
-              <small>{showroom.province} · Có {car.name}</small>
-            </button>
-          ))}
-        </div>
-      </div>
-    )
+    return null
   }
 
   if (stage === 'choose_showroom' && showrooms.length) {
@@ -292,7 +273,7 @@ function ContextualChoices({ stage, car, locationSuggestions, showrooms, slots, 
       <div className="agent-context" aria-label="Chọn showroom trong cuộc trò chuyện">
         <div className="agent-context__heading"><span>Showroom phù hợp</span><small>Đã ưu tiên có xe trước, khoảng cách sau</small></div>
         <div className="agent-context__rail">
-          {showrooms.slice(0, 5).map((showroom) => (
+          {showrooms.slice(0, 4).map((showroom) => (
             <button type="button" key={showroom.id} onClick={() => onShowroom(showroom)}>
               <span><MapPin size={16} weight="light" /></span>
               <strong>{showroom.name.replace('VinFast ', '')}</strong>
@@ -431,12 +412,141 @@ function VehiclePanel({ car }) {
   )
 }
 
-function ShowroomMap({ car, showrooms, selectedId, onSelect }) {
-  const selected = showrooms.find((showroom) => showroom.id === selectedId) || showrooms[0]
+function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, userLocation }) {
+  const mapContainerRef = useRef(null)
+  const mapRef = useRef(null)
+  const markersRef = useRef([])
+  const userMarkerRef = useRef(null)
+  const [leafletLoaded, setLeafletLoaded] = useState(false)
 
-  // TODO [BACKEND/MAPS]: Replace only the canvas/drawing with the chosen map SDK.
-  // Preserve this list + selection model. Markers use backend lat/lng; distance and
-  // route duration must come from geocoding/routing, never x/y presentation values.
+  const selected = showrooms.find((showroom) => showroom.id === selectedId) || null
+  const hasLocation = !!userLocation || showrooms.some((s) => s.distance > 0)
+
+  // Load Leaflet CSS and JS dynamically from unpkg CDN
+  useEffect(() => {
+    if (window.L) {
+      setLeafletLoaded(true)
+      return
+    }
+
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+    document.head.appendChild(link)
+
+    const script = document.createElement('script')
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+    script.async = true
+    script.onload = () => {
+      setLeafletLoaded(true)
+    }
+    document.body.appendChild(script)
+  }, [])
+
+  // Initialize Map
+  useEffect(() => {
+    if (!leafletLoaded || !mapContainerRef.current) return
+
+    const L = window.L
+    const initialCenter = selected
+      ? [selected.latitude, selected.longitude]
+      : userLocation
+      ? [userLocation.latitude, userLocation.longitude]
+      : [21.028511, 105.804817] // Hanoi default
+
+    const map = L.map(mapContainerRef.current, {
+      zoomControl: false
+    }).setView(initialCenter, selected ? 14 : 11)
+
+    L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+      attribution: '&copy; Google Maps'
+    }).addTo(map)
+
+    mapRef.current = map
+
+    return () => {
+      map.remove()
+      mapRef.current = null
+    }
+  }, [leafletLoaded])
+
+  // Update Showroom Markers
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !leafletLoaded) return
+
+    const L = window.L
+
+    markersRef.current.forEach(marker => marker.remove())
+    markersRef.current = []
+
+    showrooms.forEach((showroom, index) => {
+      const isActive = selectedId === showroom.id
+      const iconHtml = `<div class="leaflet-showroom-marker ${isActive ? 'is-active' : ''}"><img src="${vinfastLogo}" alt="VinFast" /></div>`
+
+      const customIcon = L.divIcon({
+        html: iconHtml,
+        className: '',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -16]
+      })
+
+      const marker = L.marker([showroom.latitude, showroom.longitude], { icon: customIcon })
+        .bindPopup(`<strong>${showroom.name}</strong><br/><small>${showroom.address}</small>`)
+        .addTo(map)
+
+      marker.on('click', () => onSelect(showroom.id))
+      markersRef.current.push(marker)
+    })
+  }, [showrooms, selectedId, onSelect, leafletLoaded])
+
+  // Update User Marker
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !userLocation || !leafletLoaded) return
+
+    const L = window.L
+
+    if (userMarkerRef.current) {
+      userMarkerRef.current.remove()
+    }
+
+    const iconHtml = `<div class="leaflet-user-marker"></div>`
+    const customIcon = L.divIcon({
+      html: iconHtml,
+      className: '',
+      iconSize: [18, 18],
+      iconAnchor: [9, 9]
+    })
+
+    const marker = L.marker([userLocation.latitude, userLocation.longitude], { icon: customIcon })
+      .addTo(map)
+
+    userMarkerRef.current = marker
+  }, [userLocation, leafletLoaded])
+
+  // Smooth Pan
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !selected || !leafletLoaded) return
+
+    map.setView([selected.latitude, selected.longitude], 14, {
+      animate: true,
+      duration: 1.0
+    })
+  }, [selectedId, leafletLoaded])
+
+  const zoomIn = () => mapRef.current?.zoomIn()
+  const zoomOut = () => mapRef.current?.zoomOut()
+  const centerUser = () => {
+    if (mapRef.current && userLocation) {
+      mapRef.current.setView([userLocation.latitude, userLocation.longitude], 14, {
+        animate: true
+      })
+    }
+  }
+
   return (
     <section className="studio-map studio-map--familiar" aria-label="Bản đồ showroom phù hợp">
       <aside className="studio-map__list">
@@ -449,61 +559,40 @@ function ShowroomMap({ car, showrooms, selectedId, onSelect }) {
             type="button"
             key={showroom.id}
             className={selectedId === showroom.id ? 'is-active' : ''}
-            onClick={() => onSelect(showroom)}
+            onClick={() => onSelect(showroom.id)}
           >
             <span>{index + 1}</span>
             <span><strong>{showroom.name}</strong><small>{showroom.address}</small></span>
-            <em>{String(showroom.distance).replace('.', ',')} km</em>
+            {hasLocation && (
+              <em>{String(showroom.distance).replace('.', ',')} km</em>
+            )}
           </button>
         ))}
       </aside>
 
       <div className="studio-map__canvas">
-        <div className="studio-map__search">
-          <MagnifyingGlass size={18} weight="regular" />
-          <span><strong>Showroom có {car.name}</strong><small>Gần vị trí bạn vừa cung cấp</small></span>
+        <div ref={mapContainerRef} className="studio-map__leaflet-container" />
+
+
+
+        <div className="studio-map__controls" aria-label="Điều khiển bản đồ">
+          <button type="button" onClick={zoomIn} aria-label="Phóng to"><Plus size={17} weight="regular" /></button>
+          <button type="button" onClick={zoomOut} aria-label="Thu nhỏ"><Minus size={17} weight="regular" /></button>
+          <button type="button" onClick={centerUser} disabled={!userLocation} aria-label="Vị trí của tôi"><Crosshair size={17} weight="regular" /></button>
         </div>
-        <div className="studio-map__filters" aria-hidden="true">
-          <span>Đang mở cửa</span><span>Có xe lái thử</span>
-        </div>
-        <svg className="studio-map__drawing" viewBox="0 0 900 620" preserveAspectRatio="none" aria-hidden="true">
-          <rect width="900" height="620" fill="#e8eaed" />
-          <path className="map-water" d="M-20 505C160 450 226 525 380 475s245-12 360-77 153-36 190-12v254H-20Z" />
-          <path className="map-park" d="M40 45h245v150H40zM664 34h210v116H664zM604 446h230v132H604z" />
-          <path className="map-block" d="M322 32h214v120H322zM78 258h190v132H78zM625 216h222v164H625zM333 410h178v154H333z" />
-          <path className="map-road map-road--major" d="M-30 430C160 338 230 394 384 292S620 204 945 88" />
-          <path className="map-road map-road--major" d="M104-40C172 116 264 134 337 251s142 220 264 410" />
-          <path className="map-road" d="M-40 176c194 66 318 17 438 79s237 178 550 124" />
-          <path className="map-road" d="M569-30c-30 151 36 234 132 315s107 176 91 375" />
-          <path className="map-road map-road--minor" d="M18 318h286M356 92h244M180 548h322M508 488h398" />
-          <text x="350" y="282">Đường trung tâm</text>
-          <text x="630" y="186">Khu đô thị</text>
-          <text x="92" y="232">Công viên</text>
-        </svg>
-        <span className="studio-map__user"><span /> Vị trí của bạn</span>
-        {showrooms.map((showroom, index) => (
-          <button
-            type="button"
-            key={showroom.id}
-            className={selectedId === showroom.id ? 'is-active' : ''}
-            style={{ '--marker-x': `${showroom.x}%`, '--marker-y': `${showroom.y}%` }}
-            onClick={() => onSelect(showroom)}
-            aria-label={`Chọn ${showroom.name}`}
-          >
-            <span>{index + 1}</span>
-          </button>
-        ))}
-        <div className="studio-map__controls" aria-label="Điều khiển bản đồ mô phỏng">
-          {/* TODO [BACKEND/MAPS]: Nối các nút này với SDK bản đồ và geocoding thực tế. */}
-          <button type="button" aria-label="Phóng to bản đồ"><Plus size={17} weight="regular" /></button>
-          <button type="button" aria-label="Thu nhỏ bản đồ"><Minus size={17} weight="regular" /></button>
-          <button type="button" aria-label="Về vị trí của tôi"><Crosshair size={17} weight="regular" /></button>
-        </div>
+
         {selected && (
           <div className="studio-map__preview">
-            <span><strong>{selected.name}</strong><small>{selected.address}</small></span>
-            <button type="button" onClick={() => onSelect(selected)} aria-label={`Chọn ${selected.name}`}>
-              <NavigationArrow size={17} weight="fill" />
+            <span>
+              <strong>{selected.name}</strong>
+              <small>
+                {selected.address}
+                {selected.phone ? ` · SĐT: ${selected.phone}` : ''}
+                {hasLocation && selected.distance !== undefined && selected.distance !== null ? ` · Cách bạn ${String(selected.distance).replace('.', ',')} km` : ''}
+              </small>
+            </span>
+            <button type="button" onClick={() => onConfirm(selected)} className="studio-map__preview-confirm">
+              Xem lịch
             </button>
           </div>
         )}
@@ -659,6 +748,7 @@ export function BookingPage() {
   const [bookingId, setBookingId] = useState('')
   const [bookingVersion, setBookingVersion] = useState(0)
   const [backendError, setBackendError] = useState('')
+  const [userLocation, setUserLocation] = useState(null)
   const messagesRef = useRef(null)
   const timersRef = useRef([])
 
@@ -695,8 +785,56 @@ export function BookingPage() {
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '')
-    const candidates = [vehicle.id, vehicle.code, vehicle.name].map(normalize).filter(Boolean)
+    const candidates = [normalize(vehicle.id), normalize(vehicle.code), normalize(vehicle.name)]
     return cars.find((car) => candidates.includes(normalize(car.id)) || candidates.includes(normalize(car.name))) || null
+  }
+  const requestUserLocation = () => {
+    if (!navigator.geolocation) {
+      setBackendError("Trình duyệt của bạn không hỗ trợ định vị GPS.")
+      return
+    }
+
+    setBackendError('')
+    addMessage('user', 'Định vị vị trí hiện tại của tôi.')
+    setAgentTyping(true)
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords
+        setUserLocation({ latitude, longitude })
+        
+        try {
+          const result = await searchBookingOptions({
+            vehicleModel: selectedCar.name,
+            latitude: latitude,
+            longitude: longitude,
+          })
+          const showrooms = mapShowrooms(result.showrooms || [], selectedCar.id)
+          setAddress({ province: '', detail: 'Vị trí hiện tại' })
+          setLocationSuggestions([])
+          setNearbyShowrooms(showrooms)
+          setAgentTyping(false)
+          if (showrooms.length) {
+            setStage('choose_showroom')
+            setActiveView('map')
+            addMessage('assistant', `Tôi đã định vị vị trí và tìm thấy ${showrooms.length} showroom gần bạn nhất có xe ${selectedCar.name}. Mời bạn chọn showroom hiển thị trên bản đồ để tiếp tục đặt lịch.`)
+          } else {
+            setStage('need_address')
+            addMessage('assistant', `Rất tiếc, tôi chưa tìm thấy showroom nào gần vị trí của bạn có sẵn xe ${selectedCar.name}. Bạn hãy thử nhập một địa chỉ cụ thể khác ở khung chat bên dưới nhé.`)
+          }
+        } catch (error) {
+          setAgentTyping(false)
+          setBackendError(error.message)
+          addMessage('assistant', `Có lỗi xảy ra khi truy vấn dữ liệu showroom: ${error.message}`)
+        }
+      },
+      (error) => {
+        setAgentTyping(false)
+        console.error("Lỗi lấy vị trí: ", error)
+        setBackendError("Không thể truy cập vị trí. Vui lòng bật định vị hoặc nhập địa chỉ thủ công.")
+        addMessage('assistant', 'Tôi không nhận được phản hồi định vị. Hãy nhắn cho tôi quận/huyện hoặc tỉnh/thành phố của bạn (ví dụ: "Quận 1, TP HCM") để tôi tìm showroom nhé!')
+      }
+    )
   }
 
   const primeLocationSuggestions = async (car) => {
@@ -759,12 +897,14 @@ export function BookingPage() {
 
   const loadShowrooms = async (car, detail, province = '') => {
     setBackendError('')
+    setAgentTyping(true)
     try {
       const result = await searchBookingOptions({ vehicleModel: car.name, address: detail })
       const showrooms = mapShowrooms(result.showrooms || [], car.id)
       setAddress({ province, detail })
       setLocationSuggestions([])
       setNearbyShowrooms(showrooms)
+      setAgentTyping(false)
       if (showrooms.length) {
         setStage('choose_showroom')
         setActiveView('map')
@@ -775,6 +915,7 @@ export function BookingPage() {
         reply(`Tôi chưa tìm thấy showroom có ${car.name} gần “${detail}”. Bạn hãy nhập địa chỉ khác, kèm phường/xã và tỉnh/thành phố.`)
       }
     } catch (error) {
+      setAgentTyping(false)
       setBackendError(error.message)
       setStage('need_address')
       setActiveView('car')
@@ -880,14 +1021,17 @@ export function BookingPage() {
     if (!fromPrompt) addMessage('user', `Tôi chọn ${showroom.name}.`)
     setShowroomId(showroom.id)
     setBackendError('')
+    setAgentTyping(true)
     try {
       const result = await searchBookingOptions({ vehicleModel: selectedCar.name, showroomId: showroom.id })
       const grouped = groupSlots(result.slots || [])
       setSlots(grouped)
       setStage('choose_slot')
       setActiveView('schedule')
-      reply(`${showroom.name} đã được chọn. Có ${result.slots?.length || 0} khung giờ trống từ backend.`)
+      setAgentTyping(false)
+      reply(`${showroom.name} đã được chọn. ViVi đã tìm thấy ${result.slots?.length || 0} khung giờ trống cho bạn.`)
     } catch (error) {
+      setAgentTyping(false)
       setBackendError(error.message)
       reply(`Không tải được lịch trống: ${error.message}`)
     }
@@ -903,6 +1047,7 @@ export function BookingPage() {
     // inventorySlotId and vehicleId here. Advance only after receiving holdId and
     // holdExpiresAt. On 409 refresh slots; on 410 return to choose_slot.
     setBackendError('')
+    setAgentTyping(true)
     try {
       const held = await holdBookingSlot(pendingSlot.slotId)
       setBookingId(held.booking_id)
@@ -911,8 +1056,10 @@ export function BookingPage() {
       setConfirmSlotOpen(false)
       addMessage('user', `Tôi xác nhận ${pendingSlot.time}, ${pendingSlot.dateLabel}.`)
       setStage('collect_info')
-      reply('Backend đã giữ tạm khung giờ này trong 15 phút. Vui lòng điền thông tin để tiếp tục.')
+      setAgentTyping(false)
+      reply('ViVi đã giữ tạm khung giờ này cho bạn trong 15 phút. Bạn vui lòng điền thông tin để tiếp tục nhé.')
     } catch (error) {
+      setAgentTyping(false)
       setConfirmSlotOpen(false)
       setBackendError(error.message)
       reply(`Không thể giữ khung giờ: ${error.message}`)
@@ -936,6 +1083,7 @@ export function BookingPage() {
         selectedShowroom: selectedShowroom ? { id: selectedShowroom.id, name: selectedShowroom.name } : null,
         selectedSlot,
         bookingId: bookingId || null,
+        channel: 'booking',
       })
       applyAgentToolResult(result)
       addMessage('assistant', result.response)
@@ -982,7 +1130,7 @@ export function BookingPage() {
       setStage('review')
       setActiveView('ticket')
       addMessage('user', 'Tôi đã hoàn tất thông tin người lái.')
-      reply('Backend đã lưu phiếu tạm. Hãy kiểm tra và bấm “Xác nhận đặt lịch”.')
+      reply('ViVi đã lưu phiếu tạm cho bạn. Bạn hãy kiểm tra lại thông tin và bấm “Xác nhận đặt lịch” nhé.')
     } catch (error) {
       setBackendError(error.message)
     }
@@ -1016,7 +1164,7 @@ export function BookingPage() {
 
   const renderWorkspace = () => {
     if (!selectedCar) return null
-    if (activeView === 'map') return <ShowroomMap car={selectedCar} showrooms={nearbyShowrooms} selectedId={showroomId} onSelect={chooseShowroom} />
+    if (activeView === 'map') return <ShowroomMap car={selectedCar} showrooms={nearbyShowrooms} selectedId={showroomId} onSelect={setShowroomId} onConfirm={chooseShowroom} userLocation={userLocation} />
     if (activeView === 'schedule' && selectedShowroom) return <SchedulePanel car={selectedCar} showroom={selectedShowroom} slots={slots} pendingSlot={pendingSlot} onPick={chooseSlot} />
     if (activeView === 'ticket' && selectedShowroom && selectedSlot) return <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} />
     return <VehiclePanel car={selectedCar} />
@@ -1117,7 +1265,16 @@ export function BookingPage() {
               {messages.length ? messages.map((message) => <AgentMessage key={message.id} message={message} />) : (
                 <div className="vivi-studio__empty"><ViViAvatar /><p>Chọn người lái thử để ViVi bắt đầu.</p></div>
               )}
-              {agentTyping && <div className="vivi-typing" aria-label="ViVi đang trả lời"><span /><span /><span /></div>}
+              {agentTyping && (
+                <div className="vivi-message vivi-message--assistant">
+                  <ViViAvatar compact />
+                  <div className="vivi-typing" aria-label="ViVi đang trả lời">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="vivi-studio__composer">
@@ -1126,14 +1283,9 @@ export function BookingPage() {
                 <div className="agent-vehicle-choices" aria-label="Mẫu xe gợi ý">
                   {featuredChoices.map((car) => (
                     <button type="button" key={car.id} onClick={() => chooseCar(car)}>
-                      <VehicleShot car={car} />
                       <span>{car.name}</span>
                     </button>
                   ))}
-                  <button type="button" className="agent-vehicle-choices__all" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">
-                    <CarProfile size={18} weight="light" />
-                    <span>Xem tất cả {cars.length} mẫu</span>
-                  </button>
                 </div>
               )}
 
@@ -1150,8 +1302,28 @@ export function BookingPage() {
 
               {(stage === 'need_car' || stage === 'need_address') && (
                 <div className="vivi-capabilities">
-                  <button type="button" onClick={startLookup}>Tra cứu lịch đã đặt</button>
-                  {selectedCar && <button type="button" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">Đổi mẫu xe khác</button>}
+                  {stage === 'need_car' && (
+                    <button type="button" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">
+                      <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                      Xem tất cả {cars.length} mẫu
+                    </button>
+                  )}
+                  {stage === 'need_address' && (
+                    <button type="button" onClick={requestUserLocation}>
+                      <NavigationArrow size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                      Định vị hiện tại
+                    </button>
+                  )}
+                  <button type="button" onClick={startLookup}>
+                    <CalendarBlank size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                    Tra cứu lịch đã đặt
+                  </button>
+                  {selectedCar && (
+                    <button type="button" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">
+                      <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                      Đổi mẫu xe khác
+                    </button>
+                  )}
                 </div>
               )}
 
