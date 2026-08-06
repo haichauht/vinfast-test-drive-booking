@@ -5265,10 +5265,10 @@ svg {
 
 .vivi-success-copy {
   display: grid;
-  align-content: center;
+  align-content: start;
   max-width: 680px;
   height: 100%;
-  padding: 8%;
+  padding: 40px 8% 8%;
 }
 
 .vivi-success-copy > svg {
@@ -6383,7 +6383,7 @@ svg {
 .booking-success-documents .studio-ticket dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
 .booking-success-documents .studio-ticket dl div { grid-template-columns: 94px 1fr; }
 .vivi-studio--success { grid-template-rows: 80px 1fr; }
-.vivi-success-copy { max-width: 780px; padding: clamp(42px, 8%, 100px); }
+.vivi-success-copy { max-width: 780px; padding: 40px clamp(42px, 8%, 100px) clamp(42px, 8%, 100px); }
 .vivi-success-copy h1 { max-width: 720px; font-size: clamp(3.3rem, 6.2vw, 7.2rem); }
 
 @media (max-width: 1180px) {

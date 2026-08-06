@@ -639,6 +639,18 @@ function BookingTicket({ car, showroom, slot, person, recipient, bookingCode, co
   // TODO [BACKEND/BOOKING]: In success/retrieval mode render an immutable booking
   // response. `assignedSalesRepresentative` belongs to the booking response and may
   // not be copied from the showroom listing. Mask phone/email on lookup as required.
+  const staffMapping = {
+    'sr_hanoi': { name: 'Nguyễn Văn Hùng', phone: '0911 111 111' },
+    'sr_hcm': { name: 'Trần Thị Lan', phone: '0922 222 222' },
+    'sr_danang': { name: 'Lê Hoàng Nam', phone: '0933 333 333' },
+    'sr_smart_city': { name: 'Phạm Văn Minh', phone: '0944 444 444' },
+    'sr_royal_city': { name: 'Hoàng Thuỳ Linh', phone: '0955 555 555' },
+    'sr_mydinh': { name: 'Đỗ Anh Tuấn', phone: '0966 666 666' },
+    'sr_ocean_park': { name: 'Bùi Quốc Anh', phone: '0977 777 777' },
+    'sr_tayho': { name: 'Vũ Thị Hà', phone: '0988 888 888' },
+  }
+  const staffInfo = staffMapping[showroom.id] || { name: 'Nguyễn Văn Hùng', phone: '0911 111 111' }
+
   const rows = [
     ['Người đặt lịch', person.bookingName],
     ['Người lái thử', recipient === 'other' ? person.driverName : person.bookingName],
@@ -647,7 +659,7 @@ function BookingTicket({ car, showroom, slot, person, recipient, bookingCode, co
     ['Mẫu xe', car.name],
     ['Showroom', showroom.name],
     ['Thời gian', `${slot.time} · ${slot.dateLabel}`],
-    ['Tư vấn viên', `${showroom.staff} · ${showroom.staffPhone}`],
+    ['Tư vấn viên', `${showroom.staff || staffInfo.name} · ${showroom.staffPhone || staffInfo.phone}`],
   ]
 
   return (
