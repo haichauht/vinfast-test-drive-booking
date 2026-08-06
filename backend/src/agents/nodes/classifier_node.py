@@ -75,6 +75,8 @@ async def classifier_node(state: AgentState) -> dict:
 
     try:
         llm = get_classifier_llm()
+        if llm is None:
+            raise RuntimeError("LLM is not configured")
         structured_llm = llm.with_structured_output(RouteSchema)
         result = await structured_llm.ainvoke(prompt)
         from typing import cast

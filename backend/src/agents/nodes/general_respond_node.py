@@ -16,6 +16,8 @@ async def general_respond_node(state: AgentState) -> dict:
 
     try:
         llm = get_llm()
+        if llm is None:
+            return {"response": "Xin chào! Tôi có thể giúp gì cho bạn về xe VinFast hoặc đặt lịch hẹn lái thử hôm nay?"}
         result = await llm.ainvoke(prompt)
         response = result.content
     except Exception:

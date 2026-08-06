@@ -4,7 +4,7 @@ from pydantic import SecretStr
 from src.config import get_settings
 
 
-def _build_llm(model: str, temperature: float) -> ChatOpenAI:
+def _build_llm(model: str, temperature: float) -> ChatOpenAI | None:
     settings = get_settings()
     if settings.openrouter_api_key:
         return ChatOpenAI(
@@ -19,21 +19,17 @@ def _build_llm(model: str, temperature: float) -> ChatOpenAI:
             api_key=SecretStr(settings.openai_api_key),
             temperature=temperature,
         )
-    # Keep construction lazy-safe so non-Agent endpoints and deterministic UI
-    # actions remain available without an LLM key. The model call itself will be
-    # caught by the Agent node and converted to a user-safe response.
-    return ChatOpenAI(
-        model=model.removeprefix("openai/"),
-        api_key=SecretStr("not-configured"),
-        temperature=temperature,
-    )
+    # Deterministic endpoints remain available without an LLM key. Returning
+    # None makes that state explicit so Agent nodes can choose a safe fallback
+    # without constructing a provider client with a fake credential.
+    return None
 
 
-def get_llm() -> ChatOpenAI:
+def get_llm() -> ChatOpenAI | None:
     settings = get_settings()
     return _build_llm(settings.model_name, settings.llm_temperature)
 
 
-def get_classifier_llm() -> ChatOpenAI:
+def get_classifier_llm() -> ChatOpenAI | None:
     settings = get_settings()
     return _build_llm(settings.classifier_model_name or settings.model_name, 0.0)

@@ -29,6 +29,8 @@ async def advise_skill_node(state: AgentState) -> dict:
 
     try:
         llm = get_llm()
+        if llm is None:
+            raise RuntimeError("LLM is not configured")
         llm_with_tools = llm.bind_tools(tools)
         response = await llm_with_tools.ainvoke([SystemMessage(content=prompt)] + messages)
     except Exception as e:

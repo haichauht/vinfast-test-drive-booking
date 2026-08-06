@@ -68,6 +68,21 @@ async def test_booking_skill_increments_count_for_tool_call(monkeypatch):
     assert "response" not in result
 
 
+@pytest.mark.asyncio
+async def test_structured_booking_action_uses_a_stable_tool_call_id():
+    state = {
+        "requested_action": "hold_slot",
+        "action_payload": {"slot_id": "slot-main", "ui_action_id": "hold:retry-safe"},
+    }
+
+    first = await booking_skill_node(state)
+    second = await booking_skill_node(state)
+
+    first_id = first["messages"][0].tool_calls[0]["id"]
+    second_id = second["messages"][0].tool_calls[0]["id"]
+    assert first_id == second_id
+
+
 # test case of Chau + kiểm tra advise skill chỉ bind knowledge tool và trả lời tư vấn
 @pytest.mark.asyncio
 async def test_advise_skill_binds_only_knowledge_tool_and_returns_text(monkeypatch):
