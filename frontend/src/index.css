@@ -6365,7 +6365,7 @@ svg {
 
 .agent-context__heading span { color: var(--ink-soft); font-size: 0.69rem; font-weight: 680; }
 .agent-context__heading small { color: var(--muted); font-size: 0.61rem; }
-.agent-context__rail { display: grid; grid-template-columns: repeat(4, minmax(132px, 1fr)); gap: 7px; overflow-x: auto; padding-bottom: 2px; }
+.agent-context__rail { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; overflow-x: auto; padding-bottom: 2px; }
 .agent-context__rail button { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 8px; min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 17px; color: var(--ink); background: #f7f8f7; text-align: left; cursor: pointer; transition: transform 0.3s var(--ease-heavy), border-color 0.3s var(--ease-soft), background 0.3s var(--ease-soft); }
 .agent-context__rail button:hover { border-color: rgba(20, 100, 244, 0.38); background: #fff; transform: translateY(-2px); }
 .agent-context__rail button:active { transform: scale(0.98); }
@@ -6461,7 +6461,7 @@ svg {
   .booking-studio,
   .booking-success-layout { border-radius: 24px; }
   .agent-context__heading { display: grid; gap: 3px; }
-  .agent-context__rail { grid-template-columns: repeat(4, 150px); }
+  .agent-context__rail { grid-template-columns: repeat(5, 150px); }
   .booking-success-documents { grid-template-rows: 280px auto; min-height: 960px; }
   .booking-success-documents .studio-vehicle { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); padding: 28px 20px; }
   .booking-success-documents .studio-vehicle__stage { grid-column: 1; grid-row: 2; }
@@ -6598,7 +6598,7 @@ small,
 }
 
 .agent-context__rail {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   overflow: visible;
   padding: 5px 0 7px;
@@ -7003,7 +7003,7 @@ small,
   .agent-context__rail {
     overflow-x: auto;
     overflow-y: hidden;
-    grid-template-columns: repeat(4, 160px);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     padding: 7px 4px 10px;
     scroll-padding-inline: 4px;
   }
@@ -7061,7 +7061,7 @@ small,
   }
 
   .agent-context__rail {
-    grid-template-columns: repeat(4, 154px);
+    grid-template-columns: repeat(5, 154px);
   }
 
   .slot-confirm-actions,

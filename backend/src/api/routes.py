@@ -33,11 +33,27 @@ async def chat(request: ChatRequest) -> ChatResponse:
         # Tạo conversation_id mới nếu client không truyền
         conversation_id = request.conversation_id or str(uuid.uuid4())
         config = {"configurable": {"thread_id": conversation_id}}
-        result = await agent.ainvoke({"query": request.message}, config=config)
+        result = await agent.ainvoke(
+            {
+                "query": request.message,
+                "context": request.context,
+                "requested_action": request.action,
+                "action_payload": request.action_payload,
+                "action_result": None,
+                "action_tool": "",
+                "action_input": {},
+                "action_error": "",
+            },
+            config=config,
+        )
         return ChatResponse(
             response=result.get("response", ""),
             analysis=result.get("analysis", ""),
             conversation_id=conversation_id,
+            tool_name=result.get("action_tool", ""),
+            tool_input=result.get("action_input", {}),
+            action_data=result.get("action_result"),
+            action_error=result.get("action_error", ""),
         )
     except Exception as e:
         logging.getLogger(__name__).error("Internal error in chat endpoint: %s", e, exc_info=True)

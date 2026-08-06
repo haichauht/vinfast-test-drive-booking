@@ -67,7 +67,7 @@ Page/component
 - Catalogue xe: `GET /vehicles` và `GET /vehicles/{id}`.
 - Nội dung động: `GET /content/home`, `/content/charging`, `/content/after-sales`.
 - Booking availability: `GET /booking/health`.
-- Một phần luồng booking hiện gọi `POST /demo/action` để tìm slot, giữ slot, lưu khách hàng và xác nhận.
+- Tin nhắn và các thao tác booking có cấu trúc đều đi qua `POST /chat`; LangGraph định tuyến và gọi booking tools tương ứng.
 - API client cache dữ liệu trong memory, lưu `ETag`, gửi `If-None-Match` và hủy request khi component unmount.
 - Khi backend không khả dụng, UI hiển thị trạng thái lỗi; catalogue không được hard-code để giả lập response thành công.
 
@@ -112,7 +112,7 @@ Frontend được phục vụ tại <http://localhost:3000> và phụ thuộc se
 - Bản đồ showroom và geocoding hiện là giao diện/logic cục bộ; chưa nối Google Maps hoặc nhà cung cấp bản đồ thực tế.
 - Chat ViVi còn dùng parser intent, message ID/timestamp và delay cục bộ; chưa nối streaming từ `/api/v1/chat`.
 - Tra cứu lịch đã đặt, đổi/hủy lịch và OTP chưa được nối đầy đủ vào UI production.
-- Booking vẫn đi qua `/demo/action`; session/draft còn mang tính anonymous và tab-scoped.
+- Conversation ID của Agent được giữ trong `sessionStorage`; memory backend vẫn là in-memory và mất khi backend restart.
 - Một số marketing media, brochure và nội dung chi tiết xe vẫn import từ `src/data`/asset bundle thay vì hoàn toàn từ CMS/CDN.
 - Chưa có analytics production cho view, nudge, CTA và booking funnel.
 - Chưa có bộ test frontend tự động hoặc script `npm test`; hiện cần build và regression test thủ công.

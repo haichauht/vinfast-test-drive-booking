@@ -10,8 +10,10 @@ from src.agents.nodes.general_respond_node import general_respond_node
 from src.agents.nodes.sensitive_policy_node import sensitive_policy_node
 from src.agents.state import AgentState
 from src.agents.tools import (
+    confirm_test_drive_booking,
     get_booking_details,
     get_booking_draft,
+    hold_test_drive_slot,
     request_booking_access,
     search_knowledge,
     search_test_drive_options,
@@ -86,11 +88,13 @@ def build_graph() -> CompiledStateGraph:
     # booking_skill chỉ được gọi 6 booking tools
     booking_tools_list = [
         search_test_drive_options,
+        hold_test_drive_slot,
         get_booking_draft,
         update_booking_draft,
         request_booking_access,
         verify_booking_access,
         get_booking_details,
+        confirm_test_drive_booking,
     ]
     # advise_skill chỉ được gọi search_knowledge
     advise_tools_list = [search_knowledge]
