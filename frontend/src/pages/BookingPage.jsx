@@ -771,6 +771,7 @@ export function BookingPage() {
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [confirmSlotOpen, setConfirmSlotOpen] = useState(false)
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [workspaceHidden, setWorkspaceHidden] = useState(false)
   const [person, setPerson] = useState({ bookingName: '', driverName: '', phone: '', email: '', hasLicense: false, marketingConsent: false })
   const [formErrors, setFormErrors] = useState({})
   const [bookingCode, setBookingCode] = useState('')
@@ -882,6 +883,7 @@ export function BookingPage() {
 
   const applyAgentToolResult = (result) => {
     if (!result || !result.action_data) return
+    setWorkspaceHidden(false)
 
     if (result.tool_name === 'search_test_drive_options') {
       const data = result.action_data
@@ -1130,6 +1132,7 @@ export function BookingPage() {
 
   const chooseCar = (car, fromPrompt = false) => {
     setSelectedCarId(car.id)
+    setWorkspaceHidden(false)
     window.sessionStorage.setItem('vinfast:last-viewed-car', car.id)
     if (!fromPrompt) addMessage('user', `Tôi muốn lái thử ${car.name}.`)
     setNearbyShowrooms([])
@@ -1180,6 +1183,7 @@ export function BookingPage() {
     // showroomId + vehicleId. If availability changed, remain on choose_showroom and
     // refresh the cards/map instead of advancing to a blank schedule.
     if (!fromPrompt) addMessage('user', `Tôi chọn ${showroom.name}.`)
+    setWorkspaceHidden(false)
     setShowroomId(showroom.id)
     setBackendError('')
     setAgentTyping(true)
@@ -1353,7 +1357,7 @@ export function BookingPage() {
   }
 
   return (
-    <main id="main-content" className={`agent-booking-page ${selectedCar ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''}`}>
+    <main id="main-content" className={`agent-booking-page ${selectedCar && !workspaceHidden ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''}`}>
       <header className="booking-topbar booking-topbar--studio">
         <Link to="/"><ArrowLeft size={17} weight="light" /> Trang chủ</Link>
         <Brand />
@@ -1362,6 +1366,48 @@ export function BookingPage() {
             present the browser stores only last-viewed vehicle and dismissal flags. */}
         <div><span /> Tiến trình được giữ trên thiết bị</div>
       </header>
+
+      {selectedCar && workspaceHidden && (
+        <button
+          type="button"
+          onClick={() => setWorkspaceHidden(false)}
+          className="workspace-restore-button"
+          style={{
+            position: 'fixed',
+            left: '37px',
+            top: '117px',
+            zIndex: 99,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '7px',
+            height: '38px',
+            padding: '0 13px',
+            borderRadius: '11px',
+            background: '#ffffff',
+            color: '#4a4d52',
+            border: '1px solid rgba(0,0,0,0.05)',
+            cursor: 'pointer',
+            fontWeight: '620',
+            fontSize: '0.73rem',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+            transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.backgroundColor = '#20252b'
+            e.currentTarget.style.color = '#ffffff'
+            e.currentTarget.style.borderColor = '#20252b'
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.backgroundColor = '#ffffff'
+            e.currentTarget.style.color = '#4a4d52'
+            e.currentTarget.style.borderColor = 'rgba(0,0,0,0.05)'
+          }}
+        >
+          <ArrowRight size={16} weight="bold" />
+          <span style={{ fontSize: '0.73rem', fontWeight: '700', letterSpacing: '-0.01em' }}>Hiện bảng</span>
+        </button>
+      )}
 
       {!recipient && <RecipientModal onSelect={beginConversation} />}
 
@@ -1387,8 +1433,8 @@ export function BookingPage() {
           </section>
         </div>
       ) : (
-        <div className={`booking-studio ${selectedCar ? 'booking-studio--split' : 'booking-studio--agent'}`}>
-          {selectedCar && (
+        <div className={`booking-studio ${selectedCar && !workspaceHidden ? 'booking-studio--split' : 'booking-studio--agent'}`}>
+          {selectedCar && !workspaceHidden && (
             <section className="booking-workspace">
               <div className="workspace-switcher" role="tablist" aria-label="Nội dung hỗ trợ đặt lịch">
                 {viewOptions.map(({ id, label, icon: Icon }) => {
@@ -1414,6 +1460,30 @@ export function BookingPage() {
                     </button>
                   )
                 })}
+                <button
+                  type="button"
+                  title="Ẩn bảng hỗ trợ"
+                  className="workspace-switcher__close"
+                  onClick={() => setWorkspaceHidden(true)}
+                  style={{
+                    marginLeft: 'auto',
+                    border: 'none',
+                    background: 'transparent',
+                    color: '#92959a',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '0.78rem',
+                    padding: '4px 8px',
+                    borderRadius: '8px',
+                    transition: 'color 0.2s',
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.color = '#ff4d4f'}
+                  onMouseOut={(e) => e.currentTarget.style.color = '#92959a'}
+                >
+                  <X size={14} weight="bold" /> Ẩn bảng
+                </button>
               </div>
               <div className="booking-workspace__content" key={activeView}>{renderWorkspace()}</div>
             </section>
