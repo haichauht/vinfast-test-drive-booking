@@ -196,15 +196,15 @@ flowchart TD
     advise -->|"AIMessage has tool_calls; count < 8"| adviseTools["ToolNode: knowledge tool"]
     adviseTools --> advise
 
-    policy --> end([End])
-    general --> end
-    booking -->|"no tool call / limit reached"| end
-    advise -->|"no tool call / limit reached"| end
+    policy --> finish(["End"])
+    general --> finish
+    booking -->|"no tool call / limit reached"| finish
+    advise -->|"no tool call / limit reached"| finish
 ```
 
 ### Agent state
 
-The graph state contains query/context, messages, intent, active skill, response/error fields, a `tool_call_count`, and structured action fields. `messages` uses LangGraph's `add_messages` reducer so the conversation and tool results can be correlated.
+The graph state contains query/context, messages, intent, active skill, response/error fields, a `tool_call_count`, and structured action fields. `messages` uses LangGraph's `add_messages` reducer so the conversation and tool results can be correlated. The checkpoint may retain the full thread, but model invocations receive a recent window of at most 24 messages. The window keeps each `AIMessage` tool call together with its matching `ToolMessage`; it never truncates a tool result away from the command that produced it.
 
 The graph has a maximum of eight tool-call iterations to prevent uncontrolled model/tool loops.
 
