@@ -1,0 +1,181 @@
+import pytest
+from src.services.booking import BookingError
+
+
+# test case of Chau + kiểm tra token update_details được sửa thông tin Booker của booking confirmed
+def test_update_booking_details_with_correct_permission(booking_service, access_factory):
+    access = access_factory("update_details")
+
+    result = booking_service.update_booking_details(
+        access["booking"]["booking_id"],
+        access["session"]["access_session_token"],
+        booker_patch={"full_name": "Chau Updated", "email": "chau@example.com"},
+    )
+
+    assert result["booker"]["full_name"] == "Chau Updated"
+    assert result["booker"]["email"] == "chau@example.com"
+
+
+# test case of Chau + kiểm tra token lookup không được sửa thông tin Booker Driver
+def test_update_booking_details_rejects_wrong_permission(booking_service, access_factory):
+    access = access_factory("lookup")
+
+    with pytest.raises(BookingError) as error:
+        booking_service.update_booking_details(
+            access["booking"]["booking_id"],
+            access["session"]["access_session_token"],
+            booker_patch={"full_name": "Unauthorized Change"},
+        )
+
+    assert error.value.code == "ACCESS_DENIED"
+
+
+# test case of Chau + kiểm tra giữ slot dời lịch sao chép Booker Driver GPLX và notification plan
+def test_hold_reschedule_slot_copies_booking_data(booking_service, access_factory, catalog):
+    access = access_factory("reschedule")
+
+    result = booking_service.hold_reschedule_slot(
+        access["booking"]["booking_id"],
+        catalog["slot_second_vehicle"],
+        access["session"]["access_session_token"],
+        "reschedule-hold:copy-data",
+    )
+    draft = booking_service.get_booking_draft(result["booking_id"])
+
+    assert draft["status"] == "held"
+    assert draft["rescheduled_from_booking_id"] == access["booking"]["booking_id"]
+    assert draft["booker_person_id"] == access["booking"]["draft"]["booker_person_id"]
+    assert draft["driver_person_id"] == access["booking"]["draft"]["driver_person_id"]
+    assert draft["license_declaration"]["has_driving_license"] is True
+    assert draft["is_ready_to_confirm"] is True
+
+
+# test case of Chau + kiểm tra xác nhận dời lịch đóng booking cũ mở booking mới và chuyển slot
+def test_confirm_reschedule_transitions_both_bookings(booking_service, booking_db, access_factory, catalog):
+    access = access_factory("reschedule")
+    old_booking_id = access["booking"]["booking_id"]
+    held = booking_service.hold_reschedule_slot(
+        old_booking_id,
+        catalog["slot_second_vehicle"],
+        access["session"]["access_session_token"],
+        "reschedule-hold:success",
+    )
+
+    result = booking_service.confirm_reschedule(
+        old_booking_id,
+        held["booking_id"],
+        access["session"]["access_session_token"],
+        "reschedule-confirm:success",
+    )
+
+    assert result["old_booking_status"] == "rescheduled"
+    assert result["new_booking_status"] == "confirmed"
+    with booking_db.connect() as connection:
+        old_booking = connection.execute("SELECT * FROM bookings WHERE id=?", (old_booking_id,)).fetchone()
+        new_booking = connection.execute("SELECT * FROM bookings WHERE id=?", (held["booking_id"],)).fetchone()
+        old_slot = connection.execute("SELECT * FROM test_drive_slots WHERE id=?", (catalog["slot_main"],)).fetchone()
+        new_slot = connection.execute(
+            "SELECT * FROM test_drive_slots WHERE id=?",
+            (catalog["slot_second_vehicle"],),
+        ).fetchone()
+        old_pending_jobs = connection.execute(
+            "SELECT count(*) FROM notification_jobs WHERE booking_id=? AND status='pending'",
+            (old_booking_id,),
+        ).fetchone()[0]
+
+    assert old_booking["status"] == "rescheduled"
+    assert old_booking["replaced_by_booking_id"] == held["booking_id"]
+    assert new_booking["status"] == "confirmed"
+    assert old_slot["status"] == "available"
+    assert new_slot["status"] == "booked"
+    assert old_pending_jobs == 0
+
+
+# test case of Chau + kiểm tra hủy booking giải phóng slot và dừng notification pending
+def test_cancel_booking_releases_slot_and_notifications(booking_service, booking_db, access_factory, catalog):
+    access = access_factory("cancel")
+
+    result = booking_service.cancel_booking(
+        access["booking"]["booking_id"],
+        access["session"]["access_session_token"],
+        "cancel:success",
+    )
+
+    assert result["booking_status"] == "cancelled"
+    assert result["released_slot_id"] == catalog["slot_main"]
+    assert result["cancelled_notification_jobs_count"] == 3
+    with booking_db.connect() as connection:
+        slot = connection.execute(
+            "SELECT status,current_booking_id FROM test_drive_slots WHERE id=?",
+            (catalog["slot_main"],),
+        ).fetchone()
+        booking = connection.execute(
+            "SELECT status,cancellation_reason FROM bookings WHERE id=?",
+            (access["booking"]["booking_id"],),
+        ).fetchone()
+    assert booking["status"] == "cancelled"
+    assert booking["cancellation_reason"] is None
+    assert slot["status"] == "available"
+    assert slot["current_booking_id"] is None
+
+
+# test case of Chau + kiểm tra hủy lặp lại cùng action id không tạo event hoặc side effect trùng
+def test_cancel_booking_is_idempotent(booking_service, booking_db, access_factory):
+    access = access_factory("cancel")
+    action_id = "cancel:idempotent"
+
+    first = booking_service.cancel_booking(
+        access["booking"]["booking_id"],
+        access["session"]["access_session_token"],
+        action_id,
+    )
+    second = booking_service.cancel_booking(
+        access["booking"]["booking_id"],
+        access["session"]["access_session_token"],
+        action_id,
+    )
+
+    assert second == first
+    with booking_db.connect() as connection:
+        event_count = connection.execute(
+            "SELECT count(*) FROM booking_events WHERE booking_id=? AND event_type='booking_cancelled'",
+            (access["booking"]["booking_id"],),
+        ).fetchone()[0]
+    assert event_count == 1
+
+
+# test case of Chau + kiểm tra action id được phân tách theo namespace của từng operation
+def test_idempotency_key_is_scoped_by_operation(booking_service, catalog):
+    held = booking_service.hold_slot(catalog["slot_main"], "hold:shared")
+    draft = booking_service.update_booking_draft(
+        held["booking_id"],
+        booker_patch={"full_name": "Huynh Thi Hai Chau", "phone": "0901234567"},
+        driver_same_as_booker=True,
+        license_patch={
+            "has_driving_license": True,
+            "declared_license_class": "B1",
+            "validity_acknowledged": True,
+        },
+        expected_version=1,
+    )
+
+    confirmed = booking_service.confirm_booking(held["booking_id"], "confirm:shared", draft["version"])
+
+    assert confirmed["status"] == "confirmed"
+    assert "booking_code" in confirmed
+
+
+# test case of Chau + kiểm tra replay cancel vẫn phải xác thực access token trước khi trả cache
+def test_cancel_idempotent_replay_still_requires_valid_token(booking_service, access_factory):
+    access = access_factory("cancel")
+    action_id = "cancel:auth-replay"
+    booking_service.cancel_booking(
+        access["booking"]["booking_id"],
+        access["session"]["access_session_token"],
+        action_id,
+    )
+
+    with pytest.raises(BookingError) as error:
+        booking_service.cancel_booking(access["booking"]["booking_id"], "invalid-token", action_id)
+
+    assert error.value.code == "ACCESS_SESSION_EXPIRED"

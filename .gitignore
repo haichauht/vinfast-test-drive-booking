@@ -16,6 +16,7 @@ env/
 .env
 .env.local
 .env.production
+backend/cloudflare/r2-cors.json
 
 # IDE
 .vscode/
@@ -30,6 +31,9 @@ Thumbs.db
 
 # Data (never commit large data)
 data/
+# Frontend catalogue/CMS fallback modules are application source, not runtime data.
+!frontend/src/data/
+!frontend/src/data/*.js
 *.db
 *.sqlite3
 
@@ -63,3 +67,5 @@ out/
 SKILLS.md
 setup.md
 summary_code/
+CODEXreview.md
+
