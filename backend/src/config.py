@@ -7,7 +7,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "../.env"),
+        # Shared root defaults load first; backend-local values are more specific
+        # and must win (notably the SQLite URL supported by this MVP).
+        env_file=("../.env", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -29,6 +31,11 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "sqlite:///./data/app.db"
+
+    # Media: local development serves MEDIA_ROOT at /media. Production can set
+    # MEDIA_BASE_URL to an absolute CDN origin without changing API DTOs.
+    media_root: str = "./data/media"
+    media_base_url: str = "/media"
 
     # Vector Store
     chroma_persist_dir: str = "./data/chroma"

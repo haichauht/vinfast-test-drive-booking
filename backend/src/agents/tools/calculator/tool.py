@@ -1,10 +1,11 @@
 import ast
 import operator
+from collections.abc import Callable
 
 from langchain_core.tools import tool
 
 # Safe operator mapping for calculator
-_SAFE_OPERATORS = {
+_SAFE_OPERATORS: dict[type, Callable[..., float]] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -40,7 +41,7 @@ def calculate(expression: str) -> str:
 def _eval_node(node: ast.AST) -> float:
     """Recursively evaluate AST node using safe operators only."""
     if isinstance(node, ast.Constant):
-        if isinstance(node.value, (int, float)):
+        if isinstance(node.value, int | float):
             return node.value
         raise ValueError(f"Unsupported constant type: {type(node.value)}")
     elif isinstance(node, ast.UnaryOp):
