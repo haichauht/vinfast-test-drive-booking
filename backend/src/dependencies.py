@@ -22,5 +22,6 @@ booking_service = BookingService(
         zalo_provider=ZaloOtpSender(database, zalo_client) if zalo_client else None,
     ),
     otp_ttl_seconds=settings.booking_access_otp_ttl_seconds,
+    otp_resend_cooldown_seconds=settings.booking_access_otp_resend_cooldown_seconds,
     otp_max_attempts=settings.booking_access_otp_max_attempts,
 )

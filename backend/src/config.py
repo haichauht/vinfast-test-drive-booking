@@ -46,7 +46,9 @@ class Settings(BaseSettings):
     zalo_bot_enabled: bool = False
     zalo_bot_polling_enabled: bool = False
     zalo_bot_poll_timeout_seconds: int = Field(default=25, ge=1, le=50)
+    zalo_bot_processed_message_retention_days: int = Field(default=30, ge=1, le=365)
     booking_access_otp_ttl_seconds: int = Field(default=60, ge=60, le=900)
+    booking_access_otp_resend_cooldown_seconds: int = Field(default=60, ge=1, le=900)
     booking_access_otp_max_attempts: int = Field(default=2, ge=1, le=10)
 
 

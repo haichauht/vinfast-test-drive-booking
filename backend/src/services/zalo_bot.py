@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -90,16 +90,19 @@ class ZaloOtpSender:
 
 
 class ZaloPollingService:
-    def __init__(self, database: Database, client: ZaloBotClient, timeout_seconds: int) -> None:
+    def __init__(self, database: Database, client: ZaloBotClient, timeout_seconds: int, retention_days: int = 30) -> None:
         self.database = database
         self.client = client
         self.timeout_seconds = timeout_seconds
+        self.retention_days = retention_days
+        self._last_cleanup_at: datetime | None = None
         self.processed_message_ids: set[str] = set()
         self.logger = logging.getLogger(__name__)
 
     async def run(self) -> None:
         while True:
             try:
+                self._cleanup_processed_messages_if_due()
                 for update in await self.client.get_updates(self.timeout_seconds):
                     self._handle_update(update)
             except asyncio.CancelledError:
@@ -108,10 +111,32 @@ class ZaloPollingService:
                 self.logger.exception("Zalo polling failed; retrying shortly")
                 await asyncio.sleep(3)
 
+    def _cleanup_processed_messages_if_due(self) -> None:
+        now = datetime.now(UTC)
+        if self._last_cleanup_at and now - self._last_cleanup_at < timedelta(days=1):
+            return
+        cutoff = (now - timedelta(days=self.retention_days)).isoformat()
+        with self.database.transaction(immediate=True) as connection:
+            deleted = connection.execute(
+                "DELETE FROM zalo_processed_messages WHERE processed_at<?", (cutoff,)
+            ).rowcount
+        self._last_cleanup_at = now
+        if deleted:
+            self.logger.info("Pruned %s expired Zalo processed-message records", deleted)
+
     def _handle_update(self, update: dict) -> None:
         message = update.get("message") or {}
         message_id = str(message.get("message_id") or "")
         if not message_id or message_id in self.processed_message_ids:
+            return
+        now = datetime.now(UTC).isoformat()
+        with self.database.transaction(immediate=True) as connection:
+            inserted = connection.execute(
+                "INSERT OR IGNORE INTO zalo_processed_messages(message_id,processed_at) VALUES(?,?)",
+                (message_id, now),
+            ).rowcount
+        if not inserted:
+            self.processed_message_ids.add(message_id)
             return
         self.processed_message_ids.add(message_id)
         text = str(message.get("text") or "")
@@ -121,7 +146,6 @@ class ZaloPollingService:
             self.client.send_text(chat_id, "Để liên kết số điện thoại, hãy nhắn: LIENKET 09xxxxxxxx")
             return
         phone = normalize_phone(match.group(1))
-        now = datetime.now(UTC).isoformat()
         with self.database.connect() as connection:
             connection.execute(
                 "INSERT INTO zalo_identity_links(phone,chat_id,linked_at,updated_at) VALUES(?,?,?,?) "

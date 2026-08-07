@@ -11,6 +11,18 @@ _id = new_id
 
 
 class ManagementService:
+    @staticmethod
+    def _delete_unreferenced_person(c, person_id: str | None) -> None:
+        """Remove a transient clone only when no booking or notification needs it."""
+        if not person_id:
+            return
+        c.execute(
+            "DELETE FROM people WHERE id=? AND NOT EXISTS "
+            "(SELECT 1 FROM bookings WHERE booker_person_id=? OR driver_person_id=?) AND NOT EXISTS "
+            "(SELECT 1 FROM notification_jobs WHERE recipient_person_id=?)",
+            (person_id, person_id, person_id, person_id),
+        )
+
     def update_booking_details(
         self, booking_id: str, access_session_token: str, *, booker_patch=None, driver_patch=None, driver_same_as_booker: bool = False
     ) -> dict:
@@ -50,7 +62,10 @@ class ManagementService:
                     if "email" in allowed:
                         c.execute("UPDATE people SET normalized_email=? WHERE id=?", ((allowed["email"] or "").lower() or None, pid))
             if driver_same_as_booker:
+                old_driver_id = booking["driver_person_id"]
                 c.execute("UPDATE bookings SET driver_person_id=booker_person_id WHERE id=?", (booking_id,))
+                if old_driver_id != booking["booker_person_id"]:
+                    self._delete_unreferenced_person(c, old_driver_id)
             c.execute("UPDATE bookings SET version=version+1,updated_at=? WHERE id=?", (iso(self.now()), booking_id))
             self._event(c, booking_id, "booking_details_updated", "user")
             return self._draft(c, booking_id, require_held=False)

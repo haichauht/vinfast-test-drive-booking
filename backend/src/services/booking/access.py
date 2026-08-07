@@ -63,9 +63,9 @@ class AccessService:
             ):
                 raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Không thể cấp quyền truy cập booking.")
             latest = c.execute(
-                "SELECT created_at FROM otp_challenges WHERE booking_id=? AND destination_hash=? AND status='pending' AND expires_at>? "
+                "SELECT created_at FROM otp_challenges WHERE booking_id=? AND destination_hash=? "
                 "ORDER BY created_at DESC LIMIT 1",
-                (booking["id"], destination_hash, iso(self.now())),
+                (booking["id"], destination_hash),
             ).fetchone()
             if latest:
                 elapsed = (self.now() - datetime.fromisoformat(latest["created_at"])).total_seconds()

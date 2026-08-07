@@ -26,7 +26,12 @@ async def lifespan(app: FastAPI):
     notification_task = None
     if settings.zalo_bot_enabled and settings.zalo_bot_polling_enabled and zalo_client:
         polling_task = asyncio.create_task(
-            ZaloPollingService(database, zalo_client, settings.zalo_bot_poll_timeout_seconds).run()
+            ZaloPollingService(
+                database,
+                zalo_client,
+                settings.zalo_bot_poll_timeout_seconds,
+                settings.zalo_bot_processed_message_retention_days,
+            ).run()
         )
         logging.getLogger(__name__).info("Zalo Bot polling enabled")
     async def dispatch_notifications() -> None:
