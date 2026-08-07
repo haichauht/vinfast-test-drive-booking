@@ -104,6 +104,9 @@ CREATE TABLE IF NOT EXISTS zalo_identity_links (
  phone TEXT PRIMARY KEY, chat_id TEXT NOT NULL UNIQUE,
  linked_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS zalo_processed_messages (
+ message_id TEXT PRIMARY KEY, processed_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS booking_events (
  id TEXT PRIMARY KEY, booking_id TEXT NOT NULL REFERENCES bookings(id), event_type TEXT NOT NULL,
  actor_type TEXT NOT NULL, actor_id TEXT, payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
