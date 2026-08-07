@@ -95,7 +95,7 @@ def test_hold_slot_creates_booking_and_related_records(booking_service, booking_
     result = booking_service.hold_slot(catalog["slot_main"], "hold:001")
 
     assert result["status"] == "held"
-    assert result["remaining_seconds"] == 900
+    assert result["remaining_seconds"] == 120
     with booking_db.connect() as connection:
         booking = connection.execute("SELECT * FROM bookings WHERE id=?", (result["booking_id"],)).fetchone()
         slot = connection.execute("SELECT * FROM test_drive_slots WHERE id=?", (catalog["slot_main"],)).fetchone()

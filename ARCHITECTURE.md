@@ -150,7 +150,7 @@ stateDiagram-v2
 Key invariants are enforced inside the booking service, not trusted to the UI:
 
 - A slot must be available, future-dated and assigned to an active, operational vehicle with sufficient battery.
-- A hold lasts 900 seconds.
+- A hold lasts 120 seconds.
 - Confirmation validates the held draft, expected version, and current slot state.
 - Booking lookup/change actions use OTP-backed access sessions and action-specific permissions.
 - Database transactions prevent competing holds from both succeeding.

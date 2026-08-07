@@ -11,8 +11,20 @@ _id = new_id
 
 
 class ManagementService:
+    @staticmethod
+    def _delete_unreferenced_person(c, person_id: str | None) -> None:
+        """Remove a transient clone only when no booking or notification needs it."""
+        if not person_id:
+            return
+        c.execute(
+            "DELETE FROM people WHERE id=? AND NOT EXISTS "
+            "(SELECT 1 FROM bookings WHERE booker_person_id=? OR driver_person_id=?) AND NOT EXISTS "
+            "(SELECT 1 FROM notification_jobs WHERE recipient_person_id=?)",
+            (person_id, person_id, person_id, person_id),
+        )
+
     def update_booking_details(
-        self, booking_id: str, access_session_token: str, *, booker_patch=None, driver_patch=None
+        self, booking_id: str, access_session_token: str, *, booker_patch=None, driver_patch=None, driver_same_as_booker: bool = False
     ) -> dict:
         """Edit people data of an existing booking after OTP verification."""
         with self.db.transaction(immediate=True) as c:
@@ -20,16 +32,40 @@ class ManagementService:
             booking = c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone()
             if not booking or booking["status"] not in ("confirmed", "checked_in"):
                 raise BookingError("BOOKING_NOT_EDITABLE", "Booking khÃ´ng thá»ƒ chá»‰nh sá»­a.")
-            for role, patch in (("booker", booker_patch), ("driver", driver_patch)):
+            for role, patch in (("booker", booker_patch), ("driver", None if driver_same_as_booker else driver_patch)):
                 if not patch:
                     continue
                 pid = booking[f"{role}_person_id"]
                 allowed = {k: v for k, v in patch.items() if k in ("full_name", "phone", "email", "preferred_channel")}
                 if allowed:
+                    # A self-booking shares one person record. Editing the driver
+                    # separately must first clone it, otherwise it overwrites the
+                    # booker's details as well.
+                    if role == "driver" and pid == booking["booker_person_id"]:
+                        source = c.execute("SELECT * FROM people WHERE id=?", (pid,)).fetchone()
+                        pid = _id("person")
+                        now = iso(self.now())
+                        values = {key: source[key] for key in ("full_name", "phone", "email", "preferred_channel")}
+                        values.update(allowed)
+                        c.execute(
+                            "INSERT INTO people(id,full_name,phone,email,preferred_channel,normalized_phone,normalized_email,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                            (pid, values["full_name"], values["phone"], values["email"], values["preferred_channel"], values["phone"], (values["email"] or "").lower() or None, now, now),
+                        )
+                        c.execute("UPDATE bookings SET driver_person_id=? WHERE id=?", (pid, booking_id))
+                        continue
                     c.execute(
                         "UPDATE people SET " + ",".join(f"{k}=?" for k in allowed) + ",updated_at=? WHERE id=?",
                         (*allowed.values(), iso(self.now()), pid),
                     )
+                    if "phone" in allowed:
+                        c.execute("UPDATE people SET normalized_phone=? WHERE id=?", (allowed["phone"], pid))
+                    if "email" in allowed:
+                        c.execute("UPDATE people SET normalized_email=? WHERE id=?", ((allowed["email"] or "").lower() or None, pid))
+            if driver_same_as_booker:
+                old_driver_id = booking["driver_person_id"]
+                c.execute("UPDATE bookings SET driver_person_id=booker_person_id WHERE id=?", (booking_id,))
+                if old_driver_id != booking["booker_person_id"]:
+                    self._delete_unreferenced_person(c, old_driver_id)
             c.execute("UPDATE bookings SET version=version+1,updated_at=? WHERE id=?", (iso(self.now()), booking_id))
             self._event(c, booking_id, "booking_details_updated", "user")
             return self._draft(c, booking_id, require_held=False)
@@ -140,7 +176,11 @@ class ManagementService:
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Slot má»›i khÃ´ng cÃ²n thuá»™c booking.")
             now = iso(self.now())
 
-            code = "VF" + self.now().strftime("%y%m%d") + secrets.token_hex(3).upper()
+            # The public code follows the active appointment across a
+            # reschedule; the old row remains available through its internal id
+            # and audit events, without retaining the unique public code.
+            code = old["booking_code"]
+            c.execute("UPDATE bookings SET booking_code=NULL,updated_at=? WHERE id=?", (now, current_booking_id))
             c.execute(
                 "UPDATE bookings SET status='confirmed',booking_code=?,confirmed_at=?,version=version+1,updated_at=? WHERE id=?",
                 (code, now, now, new_booking_id),
@@ -156,6 +196,10 @@ class ManagementService:
             c.execute(
                 "UPDATE bookings SET status='rescheduled',replaced_by_booking_id=?,version=version+1,updated_at=? WHERE id=?",
                 (new_booking_id, now, current_booking_id),
+            )
+            c.execute(
+                "UPDATE booking_access_sessions SET booking_id=? WHERE booking_id=? AND revoked_at IS NULL",
+                (new_booking_id, current_booking_id),
             )
             c.execute(
                 "UPDATE test_drive_slots SET status='available',current_booking_id=NULL,held_until=NULL,updated_at=? WHERE id=? AND current_booking_id=?",
