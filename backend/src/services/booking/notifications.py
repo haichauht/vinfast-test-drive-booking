@@ -65,5 +65,18 @@ class InMemoryOtpSender(InMemoryMessagingProvider):
         )
 
 
+class RoutingMessagingProvider:
+    """Sends Zalo through its real adapter and keeps unsupported channels as mocks."""
+
+    def __init__(self, *, zalo_provider: MessagingProvider | None, fallback: MessagingProvider | None = None) -> None:
+        self.zalo_provider = zalo_provider
+        self.fallback = fallback or InMemoryMessagingProvider()
+
+    def send_message(self, *, channel: str, destination: str, body: str) -> ProviderResult:
+        if channel == "zalo" and self.zalo_provider:
+            return self.zalo_provider.send_message(channel=channel, destination=destination, body=body)
+        return self.fallback.send_message(channel=channel, destination=destination, body=body)
+
+
 def provider_result_dict(result: ProviderResult) -> dict:
     return asdict(result)

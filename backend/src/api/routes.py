@@ -33,6 +33,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
         # Tạo conversation_id mới nếu client không truyền
         conversation_id = request.conversation_id or str(uuid.uuid4())
         config = {"configurable": {"thread_id": conversation_id}}
+        logging.getLogger("agent.requests").info(
+            "chat_started conversation_id=%s requested_action=%s", conversation_id, request.action or "llm"
+        )
         result = await agent.ainvoke(
             {
                 "query": request.message,
@@ -45,6 +48,12 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 "action_error": "",
             },
             config=config,
+        )
+        logging.getLogger("agent.requests").info(
+            "chat_finished conversation_id=%s tool=%s status=%s",
+            conversation_id,
+            result.get("action_tool") or "none",
+            "error" if result.get("action_error") else "success",
         )
         return ChatResponse(
             response=result.get("response", ""),

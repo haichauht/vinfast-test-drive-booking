@@ -179,3 +179,27 @@ def test_cancel_idempotent_replay_still_requires_valid_token(booking_service, ac
         booking_service.cancel_booking(access["booking"]["booking_id"], "invalid-token", action_id)
 
     assert error.value.code == "ACCESS_SESSION_EXPIRED"
+
+
+def test_merging_driver_back_to_booker_removes_unreferenced_clone(booking_service, booking_db, access_factory):
+    access = access_factory("update_details")
+    booking_id = access["booking"]["booking_id"]
+    token = access["session"]["access_session_token"]
+
+    booking_service.update_booking_details(
+        booking_id,
+        token,
+        booker_patch={"full_name": "Huynh Thi Hai Chau"},
+        driver_patch={"full_name": "Nguoi Lai Thu"},
+    )
+    with booking_db.connect() as connection:
+        driver_id = connection.execute("SELECT driver_person_id FROM bookings WHERE id=?", (booking_id,)).fetchone()[0]
+
+    booking_service.update_booking_details(
+        booking_id,
+        token,
+        booker_patch={"full_name": "Huynh Thi Hai Chau"},
+        driver_same_as_booker=True,
+    )
+    with booking_db.connect() as connection:
+        assert connection.execute("SELECT count(*) FROM people WHERE id=?", (driver_id,)).fetchone()[0] == 0
