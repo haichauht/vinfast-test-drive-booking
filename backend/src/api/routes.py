@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from src.agents.graph import agent
+from src.agents.trace import trace_event
 from src.agents.tools import (
     get_booking_details,
     get_booking_draft,
@@ -32,6 +33,16 @@ async def chat(request: ChatRequest) -> ChatResponse:
     try:
         # Tạo conversation_id mới nếu client không truyền
         conversation_id = request.conversation_id or str(uuid.uuid4())
+        trace_id = str(uuid.uuid4())
+        trace_event(
+            "chat.request",
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            message=request.message,
+            context=request.context,
+            action=request.action,
+            action_payload=request.action_payload,
+        )
         config = {"configurable": {"thread_id": conversation_id}}
         result = await agent.ainvoke(
             {
@@ -43,10 +54,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 "action_tool": "",
                 "action_input": {},
                 "action_error": "",
+                "metadata": {"trace_id": trace_id},
             },
             config=config,
         )
-        return ChatResponse(
+        response = ChatResponse(
             response=result.get("response", ""),
             analysis=result.get("analysis", ""),
             conversation_id=conversation_id,
@@ -55,7 +67,23 @@ async def chat(request: ChatRequest) -> ChatResponse:
             action_data=result.get("action_result"),
             action_error=result.get("action_error", ""),
         )
+        trace_event(
+            "chat.response",
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            response=response.model_dump(),
+            intent=result.get("intent"),
+            active_skill=result.get("active_skill"),
+            tool_call_count=result.get("tool_call_count"),
+        )
+        return response
     except Exception as e:
+        trace_event(
+            "chat.error",
+            trace_id=locals().get("trace_id", ""),
+            conversation_id=locals().get("conversation_id", request.conversation_id),
+            error=str(e),
+        )
         logging.getLogger(__name__).error("Internal error in chat endpoint: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.")
 

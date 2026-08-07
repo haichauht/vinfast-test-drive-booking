@@ -354,7 +354,7 @@ export function CarDetailPage() {
             </aside>
 
             <div className="detail-story__chapters">
-              {/* Tiêu đề và ảnh đi theo cặp đã được gán sẵn trong cars.js, không gán theo
+              {/* Tiêu đề và ảnh đi theo cặp từ backend media payload, không gán theo
                   thứ tự, nên ảnh nội thất không còn bị chú thích là "hình khối". */}
               {car.chapters.map((chapter) => (
                 <article className="detail-chapter" key={chapter.src}>

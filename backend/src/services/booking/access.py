@@ -4,9 +4,9 @@ import hashlib
 import hmac
 import json
 import secrets
-import sqlite3
 from datetime import datetime, timedelta
 
+from src.database.rows import DbRow
 from src.services.booking.common import iso, new_id
 from src.services.booking.errors import BookingError
 
@@ -218,7 +218,7 @@ class AccessService:
             result["session_expires_at"] = session["expires_at"]
             return result
 
-    def _require_access(self, c, token: str, booking_id: str, permission: str) -> sqlite3.Row:
+    def _require_access(self, c, token: str, booking_id: str, permission: str) -> DbRow:
         session = c.execute(
             "SELECT * FROM booking_access_sessions WHERE token_hash=?", (self._hash(token, "session"),)
         ).fetchone()

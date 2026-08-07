@@ -25,7 +25,7 @@ import { SmartImage } from '../components/SmartImage'
 import { carGroups } from '../data/cars'
 import { useVehicleCatalog } from '../hooks/useSiteData'
 import { viviAvatar } from '../data/media'
-import vinfastLogo from '../assets/vinfast-logo.png'
+import { commonMedia } from '../media/assets'
 import {
   confirmHeldBooking,
   holdBookingSlot,
@@ -35,7 +35,12 @@ import {
 } from '../api/booking'
 import { useBackendStatus } from '../context/BackendStatusContext'
 
+const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
+
+const formatDistance = (distance) => (
+  Number.isFinite(distance) ? `${String(distance).replace('.', ',')} km` : ''
+)
 
 // BACKEND HANDOFF: This file is currently a complete frontend prototype/state
 // machine with deterministic fixtures. Replace each TODO [BACKEND/*] boundary,
@@ -291,7 +296,7 @@ function ContextualChoices({ stage, car, locationSuggestions, showrooms, slots, 
             <button type="button" key={showroom.id} onClick={() => onShowroom(showroom)}>
               <span><MapPin size={16} weight="light" /></span>
               <strong>{showroom.name.replace('VinFast ', '')}</strong>
-              <small>{String(showroom.distance).replace('.', ',')} km · Có {car.name}</small>
+              <small>{formatDistance(showroom.distance) ? `${formatDistance(showroom.distance)} · ` : ''}Có {car.name}</small>
             </button>
           ))}
         </div>
@@ -577,8 +582,8 @@ function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, userLoca
           >
             <span>{index + 1}</span>
             <span><strong>{showroom.name}</strong><small>{showroom.address}</small></span>
-            {hasLocation && (
-              <em>{String(showroom.distance).replace('.', ',')} km</em>
+            {hasLocation && Number.isFinite(showroom.distance) && (
+              <em>{formatDistance(showroom.distance)}</em>
             )}
           </button>
         ))}
@@ -602,7 +607,7 @@ function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, userLoca
               <small>
                 {selected.address}
                 {selected.phone ? ` · SĐT: ${selected.phone}` : ''}
-                {hasLocation && selected.distance !== undefined && selected.distance !== null ? ` · Cách bạn ${String(selected.distance).replace('.', ',')} km` : ''}
+                {hasLocation && Number.isFinite(selected.distance) ? ` · Cách bạn ${formatDistance(selected.distance)}` : ''}
               </small>
             </span>
             <button type="button" onClick={() => onConfirm(selected)} className="studio-map__preview-confirm">
@@ -793,9 +798,18 @@ export function BookingPage() {
   // must include inventorySlotId; the UI's date/time tuple is display-only.
   const selectedShowroom = nearbyShowrooms.find((showroom) => showroom.id === showroomId)
 
+  useEffect(() => {
+    if (selectedCarId || !cars.length) return
+    const requestedCar = getCar(searchParams.get('car')) || getCar(window.sessionStorage.getItem('vinfast:last-viewed-car'))
+    if (!requestedCar) return
+    setSelectedCarId(requestedCar.id)
+    setActiveView('car')
+    setWorkspaceHidden(false)
+  }, [cars, searchParams, selectedCarId])
+
   const mapShowrooms = (items, vehicleId = selectedCarId) => items.map((item, index) => ({
     ...item,
-    distance: item.distance_km ?? 0,
+    distance: item.distance_km,
     x: 20 + ((index * 23) % 65),
     y: 25 + ((index * 19) % 55),
     models: [vehicleId],

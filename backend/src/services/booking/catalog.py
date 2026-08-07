@@ -17,7 +17,7 @@ _SHOWROOM_TOKEN_CACHE: dict[str, tuple[tuple[str, str, str], frozenset[str]]] = 
 
 def _normalize_location_tokens(value: str) -> set[str]:
     """Normalize a Vietnamese locality string into searchable tokens."""
-    ascii_value = unicodedata.normalize("NFD", value.casefold())
+    ascii_value = unicodedata.normalize("NFD", value.casefold().replace("đ", "d"))
     ascii_value = "".join(character for character in ascii_value if unicodedata.category(character) != "Mn")
     tokens = set(re.findall(r"[a-z0-9]+", ascii_value.replace("đ", "d")))
     ignored = {
@@ -158,7 +158,11 @@ class CatalogService:
                         key=lambda item: item[0],
                         reverse=True,
                     )
-                    showrooms = [showroom for score, showroom in ranked if score > 0]
+                    matched = [(score, showroom) for score, showroom in ranked if score > 0]
+                    showrooms = [showroom for _, showroom in matched]
+                    if matched and latitude is None and longitude is None:
+                        latitude = matched[0][1]["latitude"]
+                        longitude = matched[0][1]["longitude"]
                 if latitude is not None and longitude is not None:
                     origin = Coordinates(latitude, longitude)
                     destinations = [Coordinates(s["latitude"], s["longitude"]) for s in showrooms]
