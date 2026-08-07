@@ -20,6 +20,13 @@ def configure_logging(level: str = "INFO") -> None:
     handler.name = "booking_file"
     handler.setFormatter(formatter)
     root.addHandler(handler)
+    agent = RotatingFileHandler(LOG_DIR / "ai_agent.log", maxBytes=5_000_000, backupCount=5, encoding="utf-8")
+    agent.name = "ai_agent_file"
+    agent.setFormatter(formatter)
+    agent_logger = logging.getLogger("ai_agent")
+    agent_logger.addHandler(agent)
+    agent_logger.propagate = False
+    agent_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
     client = RotatingFileHandler(LOG_DIR / "frontend.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8")
     client.name = "frontend_file"
     client.setFormatter(formatter)

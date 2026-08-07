@@ -10,7 +10,9 @@ from fastapi.staticfiles import StaticFiles
 
 from src.api.routes import router
 from src.api.site_routes import router as site_router
+from src.bootstrap import initialize_database
 from src.config import get_settings
+from src.dependencies import database
 from src.logging_config import configure_logging
 
 
@@ -18,6 +20,7 @@ from src.logging_config import configure_logging
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
+    initialize_database(database, settings)
     logging.getLogger(__name__).info("Starting %s in %s mode", settings.app_name, settings.app_env)
     yield
     logging.getLogger(__name__).info("Shutting down")
