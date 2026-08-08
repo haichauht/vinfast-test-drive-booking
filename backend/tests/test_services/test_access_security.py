@@ -37,6 +37,14 @@ def test_request_access_rejects_unregistered_contact(booking_service, confirmed_
     assert error.value.code == "BOOKING_ACCESS_NOT_AVAILABLE"
 
 
+def test_request_access_accepts_formatted_registered_phone(booking_service, confirmed_booking_factory):
+    confirmed = confirmed_booking_factory()
+
+    result = booking_service.request_access(confirmed["confirmed"]["booking_code"], "090 123 4567", "lookup")
+
+    assert result["destination_masked"].endswith("567")
+
+
 # test case of Chau + kiểm tra OTP đúng tạo access session với permission theo purpose
 @pytest.mark.parametrize(
     ("purpose", "expected_permission"),

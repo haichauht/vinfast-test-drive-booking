@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta
 
-from src.services.booking.common import iso, new_id
+from src.services.booking.common import iso, new_id, normalize_phone
 from src.services.booking.errors import BookingError
 
 _id = new_id
@@ -15,13 +15,13 @@ class LifecycleService:
         slot_id: str,
         ui_action_id: str,
         *,
-        ttl_seconds: int = 900,
+        ttl_seconds: int = 120,
         source_channel: str = "web",
         _operation: str = "hold_slot",
         _idempotency_payload: dict | None = None,
     ) -> dict:
-        if ttl_seconds != 900:
-            raise BookingError("INVALID_INPUT", "Hold TTL được cố định ở 900 giây.")
+        if ttl_seconds != 120:
+            raise BookingError("INVALID_INPUT", "Hold TTL được cố định ở 120 giây.")
         request_payload = _idempotency_payload or {"slot_id": slot_id, "source_channel": source_channel}
         with self.db.transaction(immediate=True) as c:
             cached = self._idempotent_response(c, ui_action_id, _operation, request_payload)
@@ -127,7 +127,7 @@ class LifecycleService:
             booking["showroom"] = dict(showroom_row) if showroom_row else None
             booking["slot_id"] = slot["id"]
             dt = datetime.fromisoformat(slot["start_at"])
-            WEEKDAYS_VI = {
+            weekdays_vi = {
                 0: "Thứ 2",
                 1: "Thứ 3",
                 2: "Thứ 4",
@@ -136,7 +136,7 @@ class LifecycleService:
                 5: "Thứ 7",
                 6: "Chủ nhật"
             }
-            booking["slot_date"] = f"{WEEKDAYS_VI[dt.weekday()]}, {dt.strftime('%d/%m')}"
+            booking["slot_date"] = f"{weekdays_vi[dt.weekday()]}, {dt.strftime('%d/%m')}"
             booking["slot_time"] = dt.strftime("%H:%M")
         else:
             booking["showroom"] = None
@@ -211,7 +211,7 @@ class LifecycleService:
                         if "phone" in allowed:
                             c.execute(
                                 "UPDATE people SET normalized_phone=? WHERE id=?",
-                                (allowed["phone"], pid),
+                                (normalize_phone(allowed["phone"]), pid),
                             )
                         if "email" in allowed:
                             c.execute(
@@ -227,7 +227,7 @@ class LifecycleService:
                                 allowed.get("phone"),
                                 allowed.get("email"),
                                 allowed.get("preferred_channel", "sms"),
-                                allowed.get("phone"),
+                                normalize_phone(allowed.get("phone")),
                                 (allowed.get("email") or "").lower() or None,
                                 now,
                                 now,
@@ -335,6 +335,17 @@ class LifecycleService:
                 "UPDATE booking_driver_details SET license_check_status='pending_in_person',updated_at=? WHERE booking_id=?",
                 (now, booking_id),
             )
+            # A linked Zalo identity is enough to opt the recipient into the
+            # live confirmation channel. Other configured channels remain
+            # available as their own notification jobs.
+            driver_phone = (draft.get("driver") or {}).get("phone")
+            if driver_phone and hasattr(self.messaging_provider, "zalo_provider"):
+                zalo_provider = self.messaging_provider.zalo_provider
+                if zalo_provider and hasattr(zalo_provider, "is_linked") and zalo_provider.is_linked(driver_phone):
+                    c.execute(
+                        "UPDATE notification_plans SET zalo_enabled=1,updated_at=? WHERE booking_id=?",
+                        (now, booking_id),
+                    )
             self._create_jobs(c, booking_id, slot["start_at"])
             self._event(c, booking_id, "booking_confirmed", "user")
             result = {"booking_id": booking_id, "booking_code": code, "status": "confirmed", "confirmed_at": now}

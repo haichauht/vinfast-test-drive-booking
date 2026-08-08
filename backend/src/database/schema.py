@@ -286,6 +286,14 @@ TABLES = {
         "slot_sales_assignments",
         frozenset({"id", "slot_id", "sales_staff_id", "assignment_role", "status", "created_at", "updated_at"}),
     ),
+    "zalo_identity_links": TableSchema(
+        "zalo_identity_links",
+        frozenset({"phone", "chat_id", "linked_at", "updated_at"}),
+    ),
+    "zalo_processed_messages": TableSchema(
+        "zalo_processed_messages",
+        frozenset({"message_id", "processed_at"}),
+    ),
 }
 
 SCHEMA_SQL = """
@@ -379,6 +387,13 @@ CREATE TABLE IF NOT EXISTS booking_access_sessions (
  otp_challenge_id TEXT NOT NULL REFERENCES otp_challenges(id), permissions_json TEXT NOT NULL,
  expires_at TEXT NOT NULL, revoked_at TEXT, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS zalo_identity_links (
+ phone TEXT PRIMARY KEY, chat_id TEXT NOT NULL UNIQUE,
+ linked_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS zalo_processed_messages (
+ message_id TEXT PRIMARY KEY, processed_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS booking_events (
  id TEXT PRIMARY KEY, booking_id TEXT NOT NULL REFERENCES bookings(id), event_type TEXT NOT NULL,
  actor_type TEXT NOT NULL, actor_id TEXT, payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
@@ -405,5 +420,6 @@ CREATE INDEX IF NOT EXISTS idx_otp_active ON otp_challenges(booking_id,status,ex
 CREATE INDEX IF NOT EXISTS idx_jobs_due ON notification_jobs(status,scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_events_timeline ON booking_events(booking_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_access_booking_expiry ON booking_access_sessions(booking_id,expires_at);
+CREATE INDEX IF NOT EXISTS idx_zalo_identity_chat ON zalo_identity_links(chat_id);
 """
 
