@@ -319,7 +319,7 @@ class ImportService:
             - {"16_import_order.csv", "17_dataset_summary.csv", "18_dataset_metadata.csv"}
         )
         if unknown:
-            raise BookingError("INVALID_INPUT", f"File khÃ´ng Ä‘Æ°á»£c há»— trá»£: {', '.join(unknown)}")
+            raise BookingError("INVALID_INPUT", f"File không được hỗ trợ: {', '.join(unknown)}")
         counts = {}
         skipped = []
         with self.db.transaction(immediate=True) as c:
@@ -328,7 +328,7 @@ class ImportService:
                     continue
                 reader = csv.DictReader(io.StringIO(supplied[filename].lstrip("\ufeff")))
                 if reader.fieldnames != expected:
-                    raise BookingError("INVALID_INPUT", f"Header {filename} khÃ´ng Ä‘Ãºng. Cáº§n: {','.join(expected)}")
+                    raise BookingError("INVALID_INPUT", f"Header {filename} không đúng. Cần: {','.join(expected)}")
                 rows = list(reader)
                 if not rows:
                     counts[table] = 0
@@ -372,7 +372,7 @@ class ImportService:
                 except DatabaseIntegrityError as exc:
                     raise BookingError(
                         "INVALID_INPUT",
-                        f"KhÃ´ng thá»ƒ import {filename}: thiáº¿u dá»¯ liá»‡u phá»¥ thuá»™c hoáº·c vi pháº¡m constraint ({exc}).",
+                        f"Không thể import {filename}: thiếu dữ liệu phụ thuộc hoặc vi phạm constraint ({exc}).",
                     ) from exc
                 counts[table] = len(rows)
         return {

@@ -105,11 +105,6 @@ export function CarDetailPage() {
 
   useEffect(() => {
     if (!car) return undefined
-    // TODO [BACKEND/SESSION + ANALYTICS]: Keep last-viewed vehicle in the anonymous
-    // booking draft when one exists and emit vehicle_view/nudge_impression events.
-    // sessionStorage is intentionally limited to ids and UI flags, never customer PII.
-    window.sessionStorage.setItem('vinfast:last-viewed-car', car.id)
-
     const dismissed = window.sessionStorage.getItem(`vinfast:test-drive-nudge:${car.id}`)
     if (dismissed) return undefined
 

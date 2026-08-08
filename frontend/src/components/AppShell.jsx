@@ -26,15 +26,10 @@ export function AppShell({ children, navTheme = 'light' }) {
   const { bookingStatus, retry } = useBackendStatus()
 
   useEffect(() => {
-    // TODO [BACKEND/SESSION]: Today this context is anonymous and tab-scoped.
-    // When draft persistence exists, restore `recentVehicleId` from
-    // GET /api/v1/test-drive/drafts/{draftId}; sessionStorage remains a safe
-    // fallback only for the non-PII vehicle id. Never persist customer fields here.
     setMenuOpen(false)
     setProductsOpen(false)
     const routeCar = location.pathname.match(/^\/(?:cars|models)\/([^/]+)/)?.[1]
-    const recentCar = routeCar || window.sessionStorage.getItem('vinfast:last-viewed-car')
-    setBookingHref(recentCar ? `/booking?car=${recentCar}` : '/booking')
+    setBookingHref(routeCar ? `/booking?car=${routeCar}` : '/booking')
   }, [location.pathname, location.hash])
 
   useEffect(() => {

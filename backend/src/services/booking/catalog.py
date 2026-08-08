@@ -90,7 +90,7 @@ class CatalogService:
                     (f"%{query}%",),
                 ).fetchone()
         if not row:
-            raise BookingError("VEHICLE_NOT_FOUND", "KhÃ´ng tÃ¬m tháº¥y máº«u xe.")
+            raise BookingError("VEHICLE_NOT_FOUND", "Không tìm thấy mẫu xe.")
         return dict(row)
 
     def search_options(
@@ -105,7 +105,7 @@ class CatalogService:
         longitude: float | None = None,
         preferred_date: str | None = None,
         preferred_time: str | None = None,
-        limit: int = 5,
+        limit: int = 24,
         **_: Any,
     ) -> dict:
         if (latitude is None) != (longitude is None):
@@ -124,7 +124,7 @@ class CatalogService:
                 )
             ]
             if vehicle_variant and not variants:
-                raise BookingError("VEHICLE_NOT_FOUND", "KhÃ´ng tÃ¬m tháº¥y phiÃªn báº£n xe.")
+                raise BookingError("VEHICLE_NOT_FOUND", "Không tìm thấy phiên bản xe.")
             variant_ids = [v["id"] for v in variants]
             if not variant_ids:
                 return {
@@ -142,8 +142,19 @@ class CatalogService:
                     (showroom_query, showroom_query, f"%{showroom_query}%", f"%{showroom_query}%", showroom_query),
                 ).fetchone()
                 if not showroom:
+                    candidates = [
+                        dict(row)
+                        for row in c.execute("SELECT * FROM showrooms WHERE is_active=1").fetchall()
+                    ]
+                    ranked = sorted(
+                        ((self._address_match_score(showroom_query, candidate), candidate) for candidate in candidates),
+                        key=lambda item: item[0],
+                        reverse=True,
+                    )
+                    showroom = next((candidate for score, candidate in ranked if score > 0), None)
+                if not showroom:
                     raise BookingError(
-                        "SHOWROOM_NOT_FOUND", "KhÃ´ng tÃ¬m tháº¥y showroom theo tÃªn hoáº·c Ä‘á»‹a chá»‰."
+                        "SHOWROOM_NOT_FOUND", "Không tìm thấy showroom theo tên hoặc địa chỉ."
                     )
                 showroom_id = showroom["id"]
             if not showroom_id:
@@ -160,9 +171,6 @@ class CatalogService:
                     )
                     matched = [(score, showroom) for score, showroom in ranked if score > 0]
                     showrooms = [showroom for _, showroom in matched]
-                    if matched and latitude is None and longitude is None:
-                        latitude = matched[0][1]["latitude"]
-                        longitude = matched[0][1]["longitude"]
                 if latitude is not None and longitude is not None:
                     origin = Coordinates(latitude, longitude)
                     destinations = [Coordinates(s["latitude"], s["longitude"]) for s in showrooms]
@@ -184,7 +192,8 @@ class CatalogService:
             )
             if not selected:
                 raise BookingError("SHOWROOM_NOT_FOUND", "Showroom not found.")
-            values: list[Any] = [showroom_id, *variant_ids, iso(self.now())]
+            now = iso(self.now())
+            values: list[Any] = [showroom_id, *variant_ids, now, now]
             date_sql, order_sql = "", "s.start_at"
             if preferred_date:
                 date_sql = " AND substr(s.start_at,1,10)=?"
@@ -198,8 +207,8 @@ class CatalogService:
             slots = [
                 dict(r)
                 for r in c.execute(
-                    f"SELECT s.*,d.asset_code,v.name variant_name FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id WHERE s.showroom_id=? AND d.variant_id IN ({marks}) AND s.status='available' AND s.start_at>? AND d.is_active=1 AND d.operational_status='available' AND d.battery_soc IS NOT NULL AND d.battery_soc>=d.minimum_booking_soc {date_sql} ORDER BY {order_sql} LIMIT ?",
-                    (*values, min(limit, 5)),
+                    f"SELECT s.*,d.asset_code,v.name variant_name FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id WHERE s.showroom_id=? AND d.variant_id IN ({marks}) AND (s.status IN ('available','booked') OR (s.status='held' AND s.held_until>?)) AND s.start_at>? AND d.is_active=1 AND d.operational_status='available' AND d.battery_soc IS NOT NULL AND d.battery_soc>=d.minimum_booking_soc {date_sql} ORDER BY {order_sql} LIMIT ?",
+                    (*values, min(max(limit, 1), 30)),
                 )
             ]
             WEEKDAYS_VI = {
