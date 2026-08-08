@@ -4,10 +4,10 @@ import hashlib
 import hmac
 import json
 import secrets
-import sqlite3
 from datetime import datetime, timedelta
 
-from src.services.booking.common import iso, new_id
+from src.database.rows import DbRow
+from src.services.booking.common import iso, new_id, normalize_phone
 from src.services.booking.errors import BookingError
 
 _id = new_id
@@ -16,7 +16,7 @@ _id = new_id
 class AccessService:
     def request_access(
         self,
-        booking_code: str,
+        booking_code: str | None,
         contact_value: str,
         purpose: str,
         preferred_channel: str = "sms",
@@ -25,28 +25,39 @@ class AccessService:
     ) -> dict:
         permissions = {
             "lookup": ["read_booking"],
-            "reschedule": ["read_booking", "search_reschedule", "hold_reschedule", "confirm_reschedule"],
+            "reschedule": ["read_booking", "search_reschedule", "hold_reschedule", "confirm_reschedule", "update_details"],
             "cancel": ["read_booking", "cancel_booking"],
             "update_details": ["read_booking", "update_details"],
             "update_notifications": ["read_booking", "update_notifications"],
         }
         if purpose not in permissions:
             raise BookingError("INVALID_INPUT", "Purpose khong hop le.")
+        normalized_code = (booking_code or "").strip().upper()
+        if not normalized_code:
+            raise BookingError("INVALID_INPUT", "Cần nhập mã lịch để xác thực.")
         if preferred_channel not in {"zalo", "sms", "email"}:
             raise BookingError("INVALID_INPUT", "Kênh OTP phải là zalo, sms hoặc email.")
-        normalized = contact_value.strip().lower()
+        contact = contact_value.strip()
+        normalized = contact.lower() if preferred_channel == "email" else normalize_phone(contact)
         if not normalized or (preferred_channel == "email") != ("@" in normalized):
             raise BookingError("INVALID_INPUT", "Thong tin lien he khong phu hop voi kenh OTP.")
         destination_hash = self._hash(normalized, "destination")
         with self.db.transaction(immediate=True) as c:
-            booking = c.execute(
-                "SELECT DISTINCT b.* FROM bookings b JOIN people p ON p.id IN "
-                "(b.booker_person_id,b.driver_person_id) WHERE b.booking_code=? "
-                "AND (lower(p.email)=? OR p.phone=?)",
-                (booking_code, normalized, contact_value.strip()),
-            ).fetchone()
+            # The booking code is the primary identifier. Never fall back to a
+            # different booking merely because the same phone appears there.
+            booking = c.execute("SELECT * FROM bookings WHERE booking_code=?", (normalized_code,)).fetchone()
             if not booking:
-                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Không thể cấp quyền truy cập booking.")
+                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Không tìm thấy mã lịch này.")
+            contact_matches = c.execute(
+                "SELECT 1 FROM people WHERE id IN (?,?) AND (lower(email)=? OR normalized_phone=? OR phone=?) LIMIT 1",
+                (booking["booker_person_id"], booking["driver_person_id"], normalized, normalized, contact),
+            ).fetchone()
+            if not contact_matches:
+                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Số điện thoại hoặc email không thuộc mã lịch này.")
+            if preferred_channel == "zalo" and not hasattr(self.otp_sender, "is_linked"):
+                raise BookingError("ZALO_NOT_CONFIGURED", "KÃªnh Zalo chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh.")
+            if preferred_channel == "zalo" and not self.otp_sender.is_linked(contact_value):
+                raise BookingError("ZALO_NOT_LINKED", "Sá»‘ Ä‘iá»‡n thoáº¡i chÆ°a liÃªn káº¿t vá»›i Zalo Bot.")
             if booking["status"] == "held" or (
                 purpose in {"reschedule", "cancel", "update_details", "update_notifications"}
                 and booking["status"] != "confirmed"
@@ -60,7 +71,8 @@ class AccessService:
             if latest:
                 elapsed = (self.now() - datetime.fromisoformat(latest["created_at"])).total_seconds()
                 if elapsed < self.otp_resend_cooldown_seconds:
-                    raise BookingError("OTP_RATE_LIMITED", "Vui long cho truoc khi gui lai OTP.", retryable=True)
+                    remaining = max(1, int(self.otp_resend_cooldown_seconds - elapsed))
+                    raise BookingError("OTP_RATE_LIMITED", f"Vui lòng chờ {remaining} giây trước khi gửi lại OTP.", retryable=True)
             c.execute(
                 "UPDATE otp_challenges SET status='superseded' WHERE booking_id=? AND status='pending'",
                 (booking["id"],),
@@ -157,7 +169,7 @@ class AccessService:
             token_hash = self._hash(raw, "session")
             perms = {
                 "lookup": ["read_booking"],
-                "reschedule": ["read_booking", "search_reschedule", "hold_reschedule", "confirm_reschedule"],
+                "reschedule": ["read_booking", "search_reschedule", "hold_reschedule", "confirm_reschedule", "update_details"],
                 "cancel": ["read_booking", "cancel_booking"],
                 "update_details": ["read_booking", "update_details"],
                 "update_notifications": ["read_booking", "update_notifications"],
@@ -217,8 +229,7 @@ class AccessService:
             ]
             result["session_expires_at"] = session["expires_at"]
             return result
-
-    def _require_access(self, c, token: str, booking_id: str, permission: str) -> sqlite3.Row:
+    def _require_access(self, c, token: str, booking_id: str, permission: str) -> DbRow:
         session = c.execute(
             "SELECT * FROM booking_access_sessions WHERE token_hash=?", (self._hash(token, "session"),)
         ).fetchone()

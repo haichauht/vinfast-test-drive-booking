@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import csv
 import io
-import sqlite3
+from pathlib import Path
 
+from src.database import DatabaseIntegrityError
 from src.services.booking.common import iso, new_id
 from src.services.booking.errors import BookingError
 
@@ -368,7 +369,7 @@ class ImportService:
                         if filename == "14_booking_access_sessions.csv":
                             values.insert(1, self._hash(row["id"], "mock-session"))
                         c.execute(sql, values)
-                except sqlite3.IntegrityError as exc:
+                except DatabaseIntegrityError as exc:
                     raise BookingError(
                         "INVALID_INPUT",
                         f"KhÃ´ng thá»ƒ import {filename}: thiáº¿u dá»¯ liá»‡u phá»¥ thuá»™c hoáº·c vi pháº¡m constraint ({exc}).",
@@ -380,3 +381,17 @@ class ImportService:
             "skipped": skipped,
             "missing_expected_files": [name for name in self.DATASET_FILES if name not in supplied],
         }
+
+    def import_eval_dataset_from_dir(self, data_dir: str | Path) -> dict:
+        """Import supported eval CSV files from a directory."""
+        root = Path(data_dir)
+        if not root.exists() or not root.is_dir():
+            raise BookingError("INVALID_INPUT", f"Eval data folder not found: {root}")
+        files = {}
+        for filename in [*self.DATASET_FILES, "16_import_order.csv", "17_dataset_summary.csv", "18_dataset_metadata.csv"]:
+            path = root / filename
+            if path.exists():
+                files[filename] = path.read_text(encoding="utf-8-sig")
+        if not files:
+            raise BookingError("INVALID_INPUT", f"No supported eval CSV files found in: {root}")
+        return self.import_eval_dataset(files)

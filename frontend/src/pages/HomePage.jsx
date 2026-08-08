@@ -385,7 +385,13 @@ export function HomePage() {
             <Reveal className="section-heading section-heading--wide">
               <p className="eyebrow">Ô tô</p>
               <h2>
-                Hai dòng xe, một lựa chọn vừa với <span className="inline-image inline-image--road" aria-hidden="true" /> hành trình của bạn.
+                Hai dòng xe, một lựa chọn vừa với{' '}
+                <span
+                  className="inline-image inline-image--road"
+                  style={{ '--inline-image-url': `url(${carImage('VF8/banner.webp')})` }}
+                  aria-hidden="true"
+                />{' '}
+                hành trình của bạn.
               </h2>
             </Reveal>
 

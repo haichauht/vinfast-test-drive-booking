@@ -1,15 +1,302 @@
-"""SQLite connection management and the MVP booking schema."""
+"""Database schema metadata and DDL for the booking service."""
 
 from __future__ import annotations
 
-import sqlite3
-from collections.abc import Iterator
-from contextlib import contextmanager
-from pathlib import Path
+from dataclasses import dataclass
 
-SCHEMA = """
-PRAGMA foreign_keys = ON;
 
+@dataclass(frozen=True)
+class TableSchema:
+    name: str
+    columns: frozenset[str]
+
+
+TABLES = {
+    "vehicle_models": TableSchema(
+        "vehicle_models",
+        frozenset(
+            {
+                "id",
+                "code",
+                "name",
+                "vehicle_type",
+                "required_license_class",
+                "license_requirement_note",
+                "is_active",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "vehicle_variants": TableSchema(
+        "vehicle_variants",
+        frozenset(
+            {
+                "id",
+                "model_id",
+                "code",
+                "name",
+                "battery_capacity_kwh",
+                "estimated_range_km",
+                "motor_power_kw",
+                "is_active",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "showrooms": TableSchema(
+        "showrooms",
+        frozenset(
+            {
+                "id",
+                "code",
+                "name",
+                "address",
+                "latitude",
+                "longitude",
+                "phone",
+                "email",
+                "timezone",
+                "is_active",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "demo_vehicles": TableSchema(
+        "demo_vehicles",
+        frozenset(
+            {
+                "id",
+                "showroom_id",
+                "variant_id",
+                "asset_code",
+                "vin",
+                "plate_number",
+                "operational_status",
+                "battery_soc",
+                "minimum_booking_soc",
+                "charging_status",
+                "is_active",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "sales_staff": TableSchema(
+        "sales_staff",
+        frozenset(
+            {
+                "id",
+                "showroom_id",
+                "employee_code",
+                "full_name",
+                "phone",
+                "email",
+                "role",
+                "status",
+                "is_active",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "test_drive_slots": TableSchema(
+        "test_drive_slots",
+        frozenset(
+            {
+                "id",
+                "showroom_id",
+                "demo_vehicle_id",
+                "start_at",
+                "end_at",
+                "status",
+                "held_until",
+                "current_booking_id",
+                "block_reason",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "people": TableSchema(
+        "people",
+        frozenset(
+            {
+                "id",
+                "full_name",
+                "phone",
+                "email",
+                "preferred_channel",
+                "normalized_phone",
+                "normalized_email",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "bookings": TableSchema(
+        "bookings",
+        frozenset(
+            {
+                "id",
+                "booking_code",
+                "slot_id",
+                "booker_person_id",
+                "driver_person_id",
+                "status",
+                "held_at",
+                "hold_expires_at",
+                "confirmed_at",
+                "checked_in_at",
+                "completed_at",
+                "cancelled_at",
+                "cancellation_reason",
+                "rescheduled_from_booking_id",
+                "replaced_by_booking_id",
+                "assigned_sales_staff_id",
+                "source_channel",
+                "version",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "booking_driver_details": TableSchema(
+        "booking_driver_details",
+        frozenset(
+            {
+                "booking_id",
+                "has_driving_license",
+                "declared_license_class",
+                "required_license_class",
+                "validity_acknowledged",
+                "license_check_status",
+                "checked_at",
+                "checked_by",
+                "rejection_reason",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "notification_plans": TableSchema(
+        "notification_plans",
+        frozenset(
+            {
+                "booking_id",
+                "primary_recipient_role",
+                "copy_booker",
+                "zalo_enabled",
+                "sms_enabled",
+                "email_enabled",
+                "reminder_24h_enabled",
+                "reminder_2h_enabled",
+                "custom_plan_json",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "notification_jobs": TableSchema(
+        "notification_jobs",
+        frozenset(
+            {
+                "id",
+                "booking_id",
+                "recipient_person_id",
+                "notification_type",
+                "channel",
+                "scheduled_at",
+                "status",
+                "attempt_count",
+                "max_attempts",
+                "last_attempt_at",
+                "sent_at",
+                "provider_name",
+                "provider_status",
+                "provider_message_id",
+                "is_mock",
+                "provider_response_json",
+                "error_message",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "otp_challenges": TableSchema(
+        "otp_challenges",
+        frozenset(
+            {
+                "id",
+                "booking_id",
+                "purpose",
+                "channel",
+                "destination_masked",
+                "destination_hash",
+                "code_hash",
+                "expires_at",
+                "attempt_count",
+                "max_attempts",
+                "resend_count",
+                "status",
+                "verified_at",
+                "consumed_at",
+                "created_at",
+            }
+        ),
+    ),
+    "booking_access_sessions": TableSchema(
+        "booking_access_sessions",
+        frozenset(
+            {
+                "id",
+                "token_hash",
+                "booking_id",
+                "otp_challenge_id",
+                "permissions_json",
+                "expires_at",
+                "revoked_at",
+                "created_at",
+            }
+        ),
+    ),
+    "booking_events": TableSchema(
+        "booking_events",
+        frozenset({"id", "booking_id", "event_type", "actor_type", "actor_id", "payload_json", "created_at"}),
+    ),
+    "idempotency_records": TableSchema(
+        "idempotency_records",
+        frozenset(
+            {
+                "action_id",
+                "operation",
+                "request_hash",
+                "status",
+                "resource_id",
+                "response_json",
+                "error_code",
+                "created_at",
+                "expires_at",
+            }
+        ),
+    ),
+    "slot_sales_assignments": TableSchema(
+        "slot_sales_assignments",
+        frozenset({"id", "slot_id", "sales_staff_id", "assignment_role", "status", "created_at", "updated_at"}),
+    ),
+    "zalo_identity_links": TableSchema(
+        "zalo_identity_links",
+        frozenset({"phone", "chat_id", "linked_at", "updated_at"}),
+    ),
+    "zalo_processed_messages": TableSchema(
+        "zalo_processed_messages",
+        frozenset({"message_id", "processed_at"}),
+    ),
+}
+
+SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS vehicle_models (
  id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
  vehicle_type TEXT NOT NULL, required_license_class TEXT NOT NULL,
@@ -100,6 +387,13 @@ CREATE TABLE IF NOT EXISTS booking_access_sessions (
  otp_challenge_id TEXT NOT NULL REFERENCES otp_challenges(id), permissions_json TEXT NOT NULL,
  expires_at TEXT NOT NULL, revoked_at TEXT, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS zalo_identity_links (
+ phone TEXT PRIMARY KEY, chat_id TEXT NOT NULL UNIQUE,
+ linked_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS zalo_processed_messages (
+ message_id TEXT PRIMARY KEY, processed_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS booking_events (
  id TEXT PRIMARY KEY, booking_id TEXT NOT NULL REFERENCES bookings(id), event_type TEXT NOT NULL,
  actor_type TEXT NOT NULL, actor_id TEXT, payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
@@ -126,123 +420,6 @@ CREATE INDEX IF NOT EXISTS idx_otp_active ON otp_challenges(booking_id,status,ex
 CREATE INDEX IF NOT EXISTS idx_jobs_due ON notification_jobs(status,scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_events_timeline ON booking_events(booking_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_access_booking_expiry ON booking_access_sessions(booking_id,expires_at);
+CREATE INDEX IF NOT EXISTS idx_zalo_identity_chat ON zalo_identity_links(chat_id);
 """
 
-
-class Database:
-    def __init__(self, path: str | Path = "data/app.db") -> None:
-        self.path = str(path)
-        if self.path != ":memory:":
-            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-
-    def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=10, isolation_level=None)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=NORMAL")
-        connection.execute("PRAGMA busy_timeout=10000")
-        return connection
-
-    def initialize(self) -> None:
-        with self.connect() as connection:
-            connection.executescript(SCHEMA)
-            self._migrate_legacy_schema(connection)
-
-    @staticmethod
-    def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
-        return {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
-
-    def _migrate_legacy_schema(self, connection: sqlite3.Connection) -> None:
-        """Migrate databases created by the old single-file booking service."""
-        additions = {
-            "sales_staff": {
-                "role": "TEXT NOT NULL DEFAULT 'sales_consultant'",
-                "is_active": "INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1))",
-            },
-            "bookings": {"assigned_sales_staff_id": "TEXT REFERENCES sales_staff(id)"},
-            "notification_plans": {"zalo_enabled": "INTEGER NOT NULL DEFAULT 0"},
-            "notification_jobs": {
-                "max_attempts": "INTEGER NOT NULL DEFAULT 3",
-                "last_attempt_at": "TEXT",
-                "provider_name": "TEXT",
-                "provider_status": "TEXT",
-                "is_mock": "INTEGER NOT NULL DEFAULT 1 CHECK(is_mock IN (0,1))",
-                "provider_response_json": "TEXT",
-            },
-            "otp_challenges": {"consumed_at": "TEXT"},
-            "idempotency_records": {
-                "request_hash": "TEXT",
-                "status": "TEXT NOT NULL DEFAULT 'succeeded'",
-                "resource_id": "TEXT",
-                "error_code": "TEXT",
-                "expires_at": "TEXT",
-            },
-        }
-        for table, columns in additions.items():
-            existing = self._columns(connection, table)
-            for name, definition in columns.items():
-                if name not in existing:
-                    connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
-
-        driver_columns = self._columns(connection, "booking_driver_details")
-        if "license_number" in driver_columns or "has_driving_license" not in driver_columns:
-            connection.execute("PRAGMA foreign_keys=OFF")
-            connection.executescript(
-                """
-                BEGIN IMMEDIATE;
-                ALTER TABLE booking_driver_details RENAME TO booking_driver_details_legacy;
-                CREATE TABLE booking_driver_details (
-                  booking_id TEXT PRIMARY KEY REFERENCES bookings(id) ON DELETE CASCADE,
-                  has_driving_license INTEGER
-                    CHECK(has_driving_license IS NULL OR has_driving_license IN (0,1)),
-                  declared_license_class TEXT,
-                  required_license_class TEXT NOT NULL,
-                  validity_acknowledged INTEGER NOT NULL DEFAULT 0
-                    CHECK(validity_acknowledged IN (0,1)),
-                  license_check_status TEXT NOT NULL DEFAULT 'not_provided'
-                    CHECK(license_check_status IN
-                      ('not_provided','declared','pending_in_person','verified','rejected')),
-                  checked_at TEXT,
-                  checked_by TEXT REFERENCES sales_staff(id),
-                  rejection_reason TEXT,
-                  created_at TEXT NOT NULL,
-                  updated_at TEXT NOT NULL,
-                  CHECK(has_driving_license != 0 OR validity_acknowledged = 0)
-                );
-                INSERT INTO booking_driver_details(
-                  booking_id,has_driving_license,declared_license_class,
-                  required_license_class,validity_acknowledged,license_check_status,
-                  checked_at,checked_by,rejection_reason,created_at,updated_at
-                )
-                SELECT booking_id,
-                  CASE
-                    WHEN declared_license_class IS NOT NULL OR validity_acknowledged=1 THEN 1
-                    ELSE NULL
-                  END,
-                  declared_license_class,required_license_class,validity_acknowledged,
-                  CASE
-                    WHEN license_check_status='declared' AND declared_license_class IS NULL
-                      THEN 'not_provided'
-                    ELSE license_check_status
-                  END,
-                  checked_at,checked_by,rejection_reason,created_at,updated_at
-                FROM booking_driver_details_legacy;
-                DROP TABLE booking_driver_details_legacy;
-                COMMIT;
-                """
-            )
-            connection.execute("PRAGMA foreign_keys=ON")
-
-    @contextmanager
-    def transaction(self, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
-        connection = self.connect()
-        try:
-            connection.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
-            yield connection
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()
