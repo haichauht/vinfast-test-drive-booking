@@ -4,10 +4,10 @@ import hashlib
 import hmac
 import json
 import secrets
-import sqlite3
 from datetime import datetime, timedelta
 
-from src.services.booking.common import iso, new_id
+from src.database.rows import DbRow
+from src.services.booking.common import iso, new_id, normalize_phone
 from src.services.booking.errors import BookingError
 
 _id = new_id
@@ -37,7 +37,8 @@ class AccessService:
             raise BookingError("INVALID_INPUT", "Cần nhập mã lịch để xác thực.")
         if preferred_channel not in {"zalo", "sms", "email"}:
             raise BookingError("INVALID_INPUT", "Kênh OTP phải là zalo, sms hoặc email.")
-        normalized = contact_value.strip().lower()
+        contact = contact_value.strip()
+        normalized = contact.lower() if preferred_channel == "email" else normalize_phone(contact)
         if not normalized or (preferred_channel == "email") != ("@" in normalized):
             raise BookingError("INVALID_INPUT", "Thong tin lien he khong phu hop voi kenh OTP.")
         destination_hash = self._hash(normalized, "destination")
@@ -48,8 +49,8 @@ class AccessService:
             if not booking:
                 raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Không tìm thấy mã lịch này.")
             contact_matches = c.execute(
-                "SELECT 1 FROM people WHERE id IN (?,?) AND (lower(email)=? OR phone=?) LIMIT 1",
-                (booking["booker_person_id"], booking["driver_person_id"], normalized, contact_value.strip()),
+                "SELECT 1 FROM people WHERE id IN (?,?) AND (lower(email)=? OR normalized_phone=? OR phone=?) LIMIT 1",
+                (booking["booker_person_id"], booking["driver_person_id"], normalized, normalized, contact),
             ).fetchone()
             if not contact_matches:
                 raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Số điện thoại hoặc email không thuộc mã lịch này.")
@@ -228,8 +229,7 @@ class AccessService:
             ]
             result["session_expires_at"] = session["expires_at"]
             return result
-
-    def _require_access(self, c, token: str, booking_id: str, permission: str) -> sqlite3.Row:
+    def _require_access(self, c, token: str, booking_id: str, permission: str) -> DbRow:
         session = c.execute(
             "SELECT * FROM booking_access_sessions WHERE token_hash=?", (self._hash(token, "session"),)
         ).fetchone()

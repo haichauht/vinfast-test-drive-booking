@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
 
     # Database
-    database_url: str = "sqlite:///./data/app.db"
+    database_url: str = "postgresql://vinfast:vinfast@localhost:5432/vinfast_booking"
+    auto_load_eval_data: bool = True
+    eval_data_dir: str = "eval/data"
 
     # Media: local development serves MEDIA_ROOT at /media. Production can set
     # MEDIA_BASE_URL to an absolute CDN origin without changing API DTOs.

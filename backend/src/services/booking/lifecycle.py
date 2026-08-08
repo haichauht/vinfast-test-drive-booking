@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta
 
-from src.services.booking.common import iso, new_id
+from src.services.booking.common import iso, new_id, normalize_phone
 from src.services.booking.errors import BookingError
 
 _id = new_id
@@ -127,7 +127,7 @@ class LifecycleService:
             booking["showroom"] = dict(showroom_row) if showroom_row else None
             booking["slot_id"] = slot["id"]
             dt = datetime.fromisoformat(slot["start_at"])
-            WEEKDAYS_VI = {
+            weekdays_vi = {
                 0: "Thứ 2",
                 1: "Thứ 3",
                 2: "Thứ 4",
@@ -136,7 +136,7 @@ class LifecycleService:
                 5: "Thứ 7",
                 6: "Chủ nhật"
             }
-            booking["slot_date"] = f"{WEEKDAYS_VI[dt.weekday()]}, {dt.strftime('%d/%m')}"
+            booking["slot_date"] = f"{weekdays_vi[dt.weekday()]}, {dt.strftime('%d/%m')}"
             booking["slot_time"] = dt.strftime("%H:%M")
         else:
             booking["showroom"] = None
@@ -211,7 +211,7 @@ class LifecycleService:
                         if "phone" in allowed:
                             c.execute(
                                 "UPDATE people SET normalized_phone=? WHERE id=?",
-                                (allowed["phone"], pid),
+                                (normalize_phone(allowed["phone"]), pid),
                             )
                         if "email" in allowed:
                             c.execute(
@@ -227,7 +227,7 @@ class LifecycleService:
                                 allowed.get("phone"),
                                 allowed.get("email"),
                                 allowed.get("preferred_channel", "sms"),
-                                allowed.get("phone"),
+                                normalize_phone(allowed.get("phone")),
                                 (allowed.get("email") or "").lower() or None,
                                 now,
                                 now,
