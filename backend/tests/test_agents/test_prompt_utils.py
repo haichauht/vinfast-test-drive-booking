@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from src.agents import utils
 
 
@@ -6,8 +8,20 @@ def test_get_system_prompt_reads_configured_file(monkeypatch, tmp_path):
     prompt_file = tmp_path / "system_prompt.md"
     prompt_file.write_text("SYSTEM PROMPT FOR TEST", encoding="utf-8")
     monkeypatch.setattr(utils, "SYSTEM_PROMPT_PATH", prompt_file)
+    fixed_now = datetime(2026, 8, 8, 20, 35, 44)
 
-    assert utils.get_system_prompt() == "SYSTEM PROMPT FOR TEST"
+    class FixedDateTime:
+        @classmethod
+        def now(cls):
+            return fixed_now
+
+    monkeypatch.setattr(utils, "datetime", FixedDateTime)
+
+    assert utils.get_system_prompt() == (
+        "SYSTEM PROMPT FOR TEST\n\n"
+        "--- CURRENT TIME CONTEXT ---\n"
+        "Today is: Thứ 7, 2026-08-08 20:35:44 (Vietnam Local Time)"
+    )
 
 
 # test case of Chau + kiểm tra system prompt dùng fallback khi file bị thiếu

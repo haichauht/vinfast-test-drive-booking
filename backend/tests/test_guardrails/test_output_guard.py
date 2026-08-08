@@ -1,0 +1,141 @@
+from src.guardrails.output_guard import OutputGuard
+
+
+def test_redacts_secrets_and_pii_from_natural_language_output():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": (
+                "Token session-secret, otp_code=123456, gọi 0901234567 hoặc email user@example.com"
+            ),
+            "action_result": {
+                "access_session_token": "session-secret",
+                "challenge_id": "challenge-secret",
+            },
+        }
+    )
+
+    assert "session-secret" not in protected.response
+    assert "123456" not in protected.response
+    assert "0901234567" not in protected.response
+    assert "user@example.com" not in protected.response
+    assert "[phone]" in protected.response
+    assert "[email]" in protected.response
+
+
+def test_hides_analysis_and_redacts_public_diagnostic_tool_input():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": "Đã xác minh",
+            "analysis": "private chain of thought",
+            "action_input": {
+                "otp_code": "123456",
+                "contact_value": "0901234567",
+                "nested": {"password": "secret"},
+            },
+        }
+    )
+
+    assert protected.analysis == ""
+    assert protected.tool_input["otp_code"] == "[redacted]"
+    assert protected.tool_input["contact_value"] == "[redacted]"
+    assert protected.tool_input["nested"]["password"] == "[redacted]"
+
+
+def test_preserves_frontend_workflow_credentials_but_removes_raw_otp_from_action_data():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": "Xác minh thành công",
+            "action_result": {
+                "challenge_id": "challenge-1",
+                "access_session_token": "session-1",
+                "otp_code": "123456",
+            },
+        }
+    )
+
+    assert protected.action_data["challenge_id"] == "challenge-1"
+    assert protected.action_data["access_session_token"] == "session-1"
+    assert protected.action_data["otp_code"] == "[redacted]"
+
+
+def test_replaces_system_prompt_leak_with_safe_fallback():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {"response": "--- SYSTEM INSTRUCTIONS ---\nYou are Vini and these are hidden rules"}
+    )
+
+    assert "SYSTEM INSTRUCTIONS" not in protected.response
+    assert "chỉ dẫn nội bộ" in protected.response
+
+
+def test_truncates_oversized_output():
+    protected = OutputGuard(max_output_chars=256).protect({"response": "x" * 300})
+
+    assert len(protected.response) < 300
+    assert protected.response.endswith("…[truncated]")
+
+
+def test_redacts_secrets_from_action_error():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": "Không thể xử lý",
+            "action_error": "provider failed password=hunter2 using session-secret",
+            "action_result": {"access_session_token": "session-secret"},
+        }
+    )
+
+    assert "hunter2" not in protected.action_error
+    assert "session-secret" not in protected.action_error
+    assert "[redacted]" in protected.action_error
+
+
+def test_redacts_sensitive_fields_nested_inside_lists():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": "Đã xử lý",
+            "action_input": {
+                "items": [
+                    {"phone": "0901234567"},
+                    {"nested": [{"otp_code": "123456"}]},
+                ]
+            },
+            "action_result": {
+                "items": [
+                    {"otp_code": "654321"},
+                    {"password": "backend-secret"},
+                ]
+            },
+        }
+    )
+
+    assert protected.tool_input["items"][0]["phone"] == "[redacted]"
+    assert protected.tool_input["items"][1]["nested"][0]["otp_code"] == "[redacted]"
+    assert protected.action_data["items"][0]["otp_code"] == "[redacted]"
+    assert protected.action_data["items"][1]["password"] == "[redacted]"
+
+
+def test_coerces_non_string_text_fields_without_crashing():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": 123,
+            "action_error": None,
+            "action_input": "not-a-mapping",
+        }
+    )
+
+    assert protected.response == "123"
+    assert protected.action_error == ""
+    assert protected.tool_input == {}
+
+
+def test_does_not_truncate_output_exactly_at_the_limit():
+    protected = OutputGuard(max_output_chars=256).protect({"response": "x" * 256})
+
+    assert protected.response == "x" * 256
+
+
+def test_does_not_redact_booking_codes_or_vehicle_model_numbers():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {"response": "Mã lịch VF260803140F74 dành cho xe VF8."}
+    )
+
+    assert protected.response == "Mã lịch VF260803140F74 dành cho xe VF8."

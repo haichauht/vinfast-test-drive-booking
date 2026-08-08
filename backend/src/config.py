@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     booking_access_otp_resend_cooldown_seconds: int = Field(default=60, ge=1, le=900)
     booking_access_otp_max_attempts: int = Field(default=2, ge=1, le=10)
 
+    # Deterministic AI guardrails. These checks run before the agent, before
+    # tool execution, and before a chat response crosses the public API.
+    guardrails_enabled: bool = True
+    guardrails_max_payload_bytes: int = Field(default=16_384, ge=1_024, le=1_048_576)
+    guardrails_max_payload_depth: int = Field(default=6, ge=1, le=20)
+    guardrails_max_payload_nodes: int = Field(default=256, ge=16, le=10_000)
+    guardrails_max_payload_string_chars: int = Field(default=5_000, ge=128, le=100_000)
+    guardrails_max_tool_calls_per_message: int = Field(default=3, ge=1, le=8)
+    guardrails_max_output_chars: int = Field(default=8_000, ge=256, le=100_000)
+
 
 @lru_cache
 def get_settings() -> Settings:
