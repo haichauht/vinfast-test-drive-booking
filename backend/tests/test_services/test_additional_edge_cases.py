@@ -14,6 +14,13 @@ def test_search_options_resolves_showroom_query(booking_service, catalog):
     assert result["selected_showroom"]["id"] == catalog["showroom_q7"]
 
 
+def test_search_options_resolves_natural_language_showroom_query(booking_service, catalog):
+    result = booking_service.search_options(vehicle_model="VF6", showroom_query="Tôi muốn đi VinFast Quận 7")
+
+    assert result["search_stage"] == "slot_selection"
+    assert result["selected_showroom"]["id"] == catalog["showroom_q7"]
+
+
 # test case of Chau + kiểm tra từ chối vehicle variant không tồn tại
 def test_search_options_rejects_unknown_variant(booking_service, catalog):
     with pytest.raises(BookingError) as error:

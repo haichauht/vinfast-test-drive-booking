@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -60,7 +58,9 @@ services:
       retries: 3
 
   admin:
-    image: p-053-backup-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "8501:8501"
     env_file:

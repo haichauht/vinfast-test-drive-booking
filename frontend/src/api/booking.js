@@ -38,10 +38,12 @@ const agentAction = async (action, message, actionPayload) => {
 
 export const sendBookingMessage = (message, context = {}) => agentRequest({ message, context })
 
-export const searchBookingOptions = ({ vehicleModel, showroomId, address, latitude, longitude }) => agentAction(
+export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, address, latitude, longitude }) => agentAction(
   'search_options',
   showroomId
     ? `Kiểm tra lịch trống cho ${vehicleModel} tại showroom đã chọn.`
+    : showroomQuery
+      ? `Tìm showroom ${showroomQuery} có ${vehicleModel}.`
     : address
       ? `Tìm showroom có ${vehicleModel} gần địa chỉ ${address}.`
       : latitude && longitude
@@ -50,10 +52,11 @@ export const searchBookingOptions = ({ vehicleModel, showroomId, address, latitu
   {
     vehicle_model: vehicleModel,
     showroom_id: showroomId,
+    showroom_query: showroomQuery,
     address,
     latitude,
     longitude,
-    limit: 5,
+    limit: 24,
   },
 )
 
@@ -119,6 +122,10 @@ export const verifyBookingAccess = ({ challengeId, otpCode }) => bookingManageme
 export const getVerifiedBooking = ({ accessToken, bookingCode, bookingId }) => bookingManagementAction('get_details', {
   access_session_token: accessToken,
   ...(bookingId ? { booking_id: bookingId } : { booking_code: bookingCode }),
+})
+
+export const listVerifiedBookings = ({ accessToken }) => bookingManagementAction('list_bookings', {
+  access_session_token: accessToken,
 })
 
 export const updateVerifiedBooking = ({ bookingId, accessToken, bookerPatch, driverPatch, driverSameAsBooker }) => bookingManagementAction('update_details', {
