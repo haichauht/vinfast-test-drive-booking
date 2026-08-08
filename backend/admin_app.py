@@ -3,13 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import streamlit as st
-
 from src.config import get_settings
 from src.database import Database
 from src.services.booking import BookingService
 from src.services.booking.errors import BookingError
-from src.services.booking.importer import ImportService
-
 
 DATA_DIR_CANDIDATES = (
     Path("/app/eval/data"),
@@ -19,6 +16,8 @@ DATA_DIR_CANDIDATES = (
 RESET_ORDER = (
     "booking_access_sessions",
     "otp_challenges",
+    "zalo_processed_messages",
+    "zalo_identity_links",
     "notification_jobs",
     "notification_plans",
     "booking_events",
@@ -148,4 +147,4 @@ with dashboard_tab:
 
     table = st.selectbox("Table", TABLES, index=TABLES.index("showrooms"))
     limit = st.slider("Rows", min_value=10, max_value=500, value=50, step=10)
-    st.dataframe(table_rows(service, table, limit), width="stretch", hide_index=True)
+    st.dataframe(table_rows(service, table, limit), use_container_width=True, hide_index=True)

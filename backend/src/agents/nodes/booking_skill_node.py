@@ -7,7 +7,6 @@ from typing import Any, cast
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
 from src.agents.state import AgentState
-from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.tools import (
     confirm_test_drive_booking,
     get_booking_details,
@@ -18,23 +17,47 @@ from src.agents.tools import (
     update_booking_draft,
     verify_booking_access,
 )
+from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.utils import get_system_prompt, window_messages
 from src.services.llm import get_llm
 
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "booking_skill" / "SKILL.md"
+tool_logger = logging.getLogger("agent.tools")
+_SENSITIVE_TOOL_FIELDS = {"otp_code", "access_session_token", "zalo_bot_token", "api_key", "token"}
+
+
+def _safe_tool_input(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep operational context in logs without persisting credentials or full contacts."""
+    safe: dict[str, Any] = {}
+    for key, value in payload.items():
+        if key in _SENSITIVE_TOOL_FIELDS:
+            safe[key] = "[redacted]"
+        elif key in {"phone", "contact_value", "destination"} and isinstance(value, str):
+            safe[key] = f"***{value[-4:]}" if len(value) >= 4 else "***"
+        elif key == "email" and isinstance(value, str):
+            safe[key] = f"***@{value.rsplit('@', 1)[-1]}" if "@" in value else "***"
+        elif isinstance(value, dict):
+            safe[key] = _safe_tool_input(value)
+        else:
+            safe[key] = value
+    return safe
 
 STRUCTURED_ACTION_TO_TOOL = {
     "search_options": search_test_drive_options,
     "hold_slot": hold_test_drive_slot,
     "update_draft": update_booking_draft,
     "confirm_booking": confirm_test_drive_booking,
+    "request_access": request_booking_access,
+    "verify_access": verify_booking_access,
 }
 
 STRUCTURED_ACTION_RESPONSES = {
     "search_options": "Tôi đã kiểm tra dữ liệu showroom và lịch trống mới nhất.",
-    "hold_slot": "Tôi đã giữ khung giờ này trong 15 phút.",
+    "hold_slot": "Tôi đã giữ khung giờ này trong 2 phút.",
     "update_draft": "Tôi đã lưu thông tin người đặt và người lái.",
     "confirm_booking": "Đặt lịch lái thử đã được xác nhận.",
+    "request_access": "Tôi đã gửi mã xác thực qua Zalo.",
+    "verify_access": "Xác thực thành công.",
 }
 
 
@@ -104,6 +127,11 @@ async def booking_skill_node(state: AgentState) -> dict:
                 result=decoded,
                 failed=failed,
             )
+            tool_logger.info(
+                "tool_completed tool=%s status=%s",
+                tool.name,
+                "error" if failed else "success",
+            )
             response_text = (
                 "Không thể hoàn tất thao tác đặt lịch. Vui lòng kiểm tra lại hoặc thử lại."
                 if failed
@@ -120,6 +148,7 @@ async def booking_skill_node(state: AgentState) -> dict:
             }
 
         action_payload = state.get("action_payload") or {}
+        tool_logger.info("tool_dispatched tool=%s mode=structured input=%s", tool.name, _safe_tool_input(action_payload))
         tool_call = AIMessage(
             content="",
             tool_calls=[
@@ -208,6 +237,12 @@ async def booking_skill_node(state: AgentState) -> dict:
                 args=tool_call.get("args"),
                 tool_call_id=tool_call.get("id"),
             )
+            arguments = tool_call.get("args")
+            tool_logger.info(
+                "tool_dispatched tool=%s mode=llm input=%s",
+                tool_call.get("name", "unknown"),
+                _safe_tool_input(arguments if isinstance(arguments, dict) else {}),
+            )
 
     output: dict[str, Any] = {
         "messages": [response],
@@ -228,6 +263,12 @@ async def booking_skill_node(state: AgentState) -> dict:
             input=_tool_call_input(messages, last_message),
             result=decoded,
             failed=failed,
+        )
+        tool_logger.info(
+            "tool_completed tool=%s status=%s input=%s",
+            last_message.name or "unknown",
+            "error" if failed else "success",
+            _safe_tool_input(_tool_call_input(messages, last_message)),
         )
         output.update(
             {

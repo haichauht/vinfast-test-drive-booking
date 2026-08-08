@@ -7,12 +7,12 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from src.agents.graph import agent
-from src.agents.trace import trace_event
 from src.agents.tools import (
     get_booking_details,
     get_booking_draft,
     verify_booking_access,
 )
+from src.agents.trace import trace_event
 from src.dependencies import booking_service
 from src.models.schemas import (
     ChatRequest,
@@ -44,6 +44,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
             action_payload=request.action_payload,
         )
         config = {"configurable": {"thread_id": conversation_id}}
+        logging.getLogger("agent.requests").info(
+            "chat_started conversation_id=%s requested_action=%s", conversation_id, request.action or "llm"
+        )
         result = await agent.ainvoke(
             {
                 "query": request.message,
@@ -57,6 +60,12 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 "metadata": {"trace_id": trace_id},
             },
             config=config,
+        )
+        logging.getLogger("agent.requests").info(
+            "chat_finished conversation_id=%s tool=%s status=%s",
+            conversation_id,
+            result.get("action_tool") or "none",
+            "error" if result.get("action_error") else "success",
         )
         response = ChatResponse(
             response=result.get("response", ""),

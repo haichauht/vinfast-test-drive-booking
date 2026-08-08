@@ -98,3 +98,54 @@ export const confirmHeldBooking = ({ bookingId, version, uiActionId = `confirm:$
     ui_action_id: uiActionId,
   },
 )
+
+const bookingManagementAction = async (action, payload) => {
+  const result = await apiPost('/demo/action', { action, payload })
+  return result
+}
+
+export const requestBookingAccess = ({ bookingCode, phone, purpose = 'lookup' }) => bookingManagementAction('request_access', {
+  booking_code: bookingCode,
+  contact_value: phone,
+  purpose,
+  preferred_channel: 'zalo',
+})
+
+export const verifyBookingAccess = ({ challengeId, otpCode }) => bookingManagementAction('verify_access', {
+  challenge_id: challengeId,
+  otp_code: otpCode,
+})
+
+export const getVerifiedBooking = ({ accessToken, bookingCode, bookingId }) => bookingManagementAction('get_details', {
+  access_session_token: accessToken,
+  ...(bookingId ? { booking_id: bookingId } : { booking_code: bookingCode }),
+})
+
+export const updateVerifiedBooking = ({ bookingId, accessToken, bookerPatch, driverPatch, driverSameAsBooker }) => bookingManagementAction('update_details', {
+  booking_id: bookingId,
+  access_session_token: accessToken,
+  booker_patch: bookerPatch,
+  driver_patch: driverPatch,
+  driver_same_as_booker: driverSameAsBooker,
+})
+
+export const cancelVerifiedBooking = ({ bookingId, accessToken, reason = '' }) => bookingManagementAction('cancel_booking', {
+  booking_id: bookingId,
+  access_session_token: accessToken,
+  ui_action_id: `cancel:${crypto.randomUUID()}`,
+  reason,
+})
+
+export const holdVerifiedReschedule = ({ bookingId, slotId, accessToken }) => bookingManagementAction('hold_reschedule', {
+  current_booking_id: bookingId,
+  new_slot_id: slotId,
+  access_session_token: accessToken,
+  ui_action_id: `reschedule-hold:${crypto.randomUUID()}`,
+})
+
+export const confirmVerifiedReschedule = ({ bookingId, newBookingId, accessToken }) => bookingManagementAction('confirm_reschedule', {
+  current_booking_id: bookingId,
+  new_booking_id: newBookingId,
+  access_session_token: accessToken,
+  ui_action_id: `reschedule-confirm:${crypto.randomUUID()}`,
+})
