@@ -12,8 +12,9 @@ from src.agents.tools import (
     get_booking_draft,
     verify_booking_access,
 )
-from src.agents.trace import trace_event
+from src.agents.trace import redact, trace_event
 from src.dependencies import booking_service
+from src.guardrails import get_guardrails
 from src.models.schemas import (
     ChatRequest,
     ChatResponse,
@@ -34,11 +35,35 @@ async def chat(request: ChatRequest) -> ChatResponse:
         # Tạo conversation_id mới nếu client không truyền
         conversation_id = request.conversation_id or str(uuid.uuid4())
         trace_id = str(uuid.uuid4())
+        guardrails = get_guardrails()
+        input_decision = guardrails.inspect_input(
+            message=request.message,
+            conversation_id=conversation_id,
+            context=request.context,
+            action=request.action,
+            action_payload=request.action_payload,
+        )
+        if not input_decision.allowed:
+            trace_event(
+                "guardrail.input_blocked",
+                trace_id=trace_id,
+                conversation_id=conversation_id,
+                code=input_decision.code,
+                reason=input_decision.reason,
+                details=input_decision.details,
+            )
+            return ChatResponse(
+                response=input_decision.user_message,
+                conversation_id=conversation_id,
+                action_error=input_decision.code,
+            )
+
+        safe_message = input_decision.sanitized_text or request.message
         trace_event(
             "chat.request",
             trace_id=trace_id,
             conversation_id=conversation_id,
-            message=request.message,
+            message=safe_message,
             context=request.context,
             action=request.action,
             action_payload=request.action_payload,
@@ -49,7 +74,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         )
         result = await agent.ainvoke(
             {
-                "query": request.message,
+                "query": safe_message,
                 "context": request.context,
                 "requested_action": request.action,
                 "action_payload": request.action_payload,
@@ -67,14 +92,15 @@ async def chat(request: ChatRequest) -> ChatResponse:
             result.get("action_tool") or "none",
             "error" if result.get("action_error") else "success",
         )
+        protected = guardrails.protect_output(result)
         response = ChatResponse(
-            response=result.get("response", ""),
-            analysis=result.get("analysis", ""),
+            response=protected.response,
+            analysis=protected.analysis,
             conversation_id=conversation_id,
             tool_name=result.get("action_tool", ""),
-            tool_input=result.get("action_input", {}),
-            action_data=result.get("action_result"),
-            action_error=result.get("action_error", ""),
+            tool_input=protected.tool_input,
+            action_data=protected.action_data,
+            action_error=protected.action_error,
         )
         trace_event(
             "chat.response",
@@ -130,7 +156,7 @@ async def demo_action(request: DemoActionRequest):
         "confirm_booking": ("ConfirmBookingCommand", booking_service.confirm_booking),
         "request_access": (
             "request_booking_access",
-            lambda **kw: booking_service.request_access(**kw, expose_otp=True),
+            lambda **kw: booking_service.request_access(**kw),
         ),
         "verify_access": ("verify_booking_access", lambda **kw: verify_booking_access.invoke(kw)),
         "get_details": ("get_booking_details", lambda **kw: get_booking_details.invoke(kw)),
@@ -141,6 +167,18 @@ async def demo_action(request: DemoActionRequest):
     }
     if request.action not in actions:
         raise HTTPException(status_code=400, detail="Unknown demo action")
+    action_decision = get_guardrails().inspect_demo_action(action=request.action, payload=p)
+    if not action_decision.allowed:
+        trace_event(
+            "guardrail.demo_action_blocked",
+            code=action_decision.code,
+            reason=action_decision.reason,
+            details=action_decision.details,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={"code": action_decision.code, "message": action_decision.user_message},
+        )
     name, handler = actions[request.action]
     try:
         data = handler(**p)
@@ -177,11 +215,10 @@ async def import_eval_dataset(request: DatasetImportRequest):
 @router.post("/client-log", status_code=204)
 async def client_log(request: ClientLogRequest):
     level = request.level.lower() if request.level.lower() in {"debug", "info", "warning", "error"} else "error"
-    safe_context = {
-        k: v for k, v in request.context.items() if k not in {"otp_code", "access_session_token", "contact_value"}
-    }
+    safe_message = redact(request.message)
+    safe_context = redact(request.context)
     getattr(logging.getLogger("frontend"), level)(
-        "%s | context=%s", request.message, json.dumps(safe_context, ensure_ascii=False, default=str)
+        "%s | context=%s", safe_message, json.dumps(safe_context, ensure_ascii=False, default=str)
     )
 
 
