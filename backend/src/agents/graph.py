@@ -1,7 +1,6 @@
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.prebuilt import ToolNode
 
 from src.agents.nodes.advise_skill_node import advise_skill_node
 from src.agents.nodes.booking_skill_node import booking_skill_node
@@ -20,6 +19,7 @@ from src.agents.tools import (
     update_booking_draft,
     verify_booking_access,
 )
+from src.guardrails.tool_guard import build_guarded_tool_node
 
 # Giới hạn số vòng tool tối đa để tránh vòng lặp vô hạn
 MAX_TOOL_CALLS = 8
@@ -101,11 +101,11 @@ def build_graph() -> CompiledStateGraph:
 
     graph.add_node(
         "booking_tools",
-        ToolNode(booking_tools_list, handle_tool_errors=True),
+        build_guarded_tool_node(booking_tools_list, skill_name="booking"),
     )
     graph.add_node(
         "advise_tools",
-        ToolNode(advise_tools_list, handle_tool_errors=True),
+        build_guarded_tool_node(advise_tools_list, skill_name="advise"),
     )
 
     # Entry point

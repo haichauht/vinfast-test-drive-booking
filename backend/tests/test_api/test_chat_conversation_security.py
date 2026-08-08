@@ -28,7 +28,15 @@ async def test_chat_generates_conversation_id_and_uses_it_as_thread_id(client, m
     payload = response.json()
     uuid.UUID(payload["conversation_id"])
     (state,) = mocked.ainvoke.await_args.args
-    assert state == {"query": "VF8 range"}
+    assert state["query"] == "VF8 range"
+    assert state["context"] == {}
+    assert state["requested_action"] is None
+    assert state["action_payload"] == {}
+    assert state["action_result"] is None
+    assert state["action_tool"] == ""
+    assert state["action_input"] == {}
+    assert state["action_error"] == ""
+    uuid.UUID(state["metadata"]["trace_id"])
     assert mocked.ainvoke.await_args.kwargs["config"] == {"configurable": {"thread_id": payload["conversation_id"]}}
 
 
