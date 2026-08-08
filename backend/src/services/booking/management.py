@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
-import secrets
 from datetime import datetime
 
-from src.services.booking.common import iso, new_id
+from src.services.booking.common import iso, new_id, normalize_phone
 from src.services.booking.errors import BookingError
 
 _id = new_id
@@ -49,7 +48,7 @@ class ManagementService:
                         values.update(allowed)
                         c.execute(
                             "INSERT INTO people(id,full_name,phone,email,preferred_channel,normalized_phone,normalized_email,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                            (pid, values["full_name"], values["phone"], values["email"], values["preferred_channel"], values["phone"], (values["email"] or "").lower() or None, now, now),
+                            (pid, values["full_name"], values["phone"], values["email"], values["preferred_channel"], normalize_phone(values["phone"]), (values["email"] or "").lower() or None, now, now),
                         )
                         c.execute("UPDATE bookings SET driver_person_id=? WHERE id=?", (pid, booking_id))
                         continue
@@ -58,7 +57,7 @@ class ManagementService:
                         (*allowed.values(), iso(self.now()), pid),
                     )
                     if "phone" in allowed:
-                        c.execute("UPDATE people SET normalized_phone=? WHERE id=?", (allowed["phone"], pid))
+                        c.execute("UPDATE people SET normalized_phone=? WHERE id=?", (normalize_phone(allowed["phone"]), pid))
                     if "email" in allowed:
                         c.execute("UPDATE people SET normalized_email=? WHERE id=?", ((allowed["email"] or "").lower() or None, pid))
             if driver_same_as_booker:

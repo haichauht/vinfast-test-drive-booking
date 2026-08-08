@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Crosshair, Minus, Plus } from '@phosphor-icons/react'
-import vinfastLogo from '../../assets/vinfast-logo.png'
+import { commonMedia } from '../../media/assets'
+
+const vinfastLogo = commonMedia.vinfastLogo
 
 export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, userLocation }) {
   const mapContainerRef = useRef(null)

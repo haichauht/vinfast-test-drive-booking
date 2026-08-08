@@ -21,8 +21,11 @@ import {
   X,
 } from '@phosphor-icons/react'
 import { Brand } from '../components/Brand'
+import { SmartImage } from '../components/SmartImage'
+import { carGroups } from '../data/cars'
 import { useVehicleCatalog } from '../hooks/useSiteData'
-import vinfastLogo from '../assets/vinfast-logo.png'
+import { viviAvatar } from '../data/media'
+import { commonMedia } from '../media/assets'
 import {
   confirmHeldBooking,
   cancelVerifiedBooking,
@@ -39,14 +42,17 @@ import {
 } from '../api/booking'
 import { useBackendStatus } from '../context/BackendStatusContext'
 import { BookingCustomerForm as CustomerForm } from '../components/booking/BookingCustomerForm'
-import { AgentMessage, ContextualChoices, ViViAvatar } from '../components/booking/BookingChatPrimitives'
 import { ShowroomMap as BookingShowroomMap } from '../components/booking/ShowroomMap'
 import { BookingTicket, SchedulePanel } from '../components/booking/BookingSummary'
-import { VehiclePanel, VehicleSwitcher } from '../components/booking/VehicleWorkspace'
 import { BookingAccessPanel } from '../components/booking/BookingAccessPanel'
 import { CancellationConfirmModal, RescheduleConfirmModal } from '../components/booking/BookingManagementModals'
 
+const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
+
+const formatDistance = (distance) => (
+  Number.isFinite(distance) ? `${String(distance).replace('.', ',')} km` : ''
+)
 
 // BACKEND HANDOFF: This file is currently a complete frontend prototype/state
 // machine with deterministic fixtures. Replace each TODO [BACKEND/*] boundary,
@@ -255,6 +261,188 @@ function RecipientModal({ onSelect }) {
   )
 }
 
+function AgentMessage({ message }) {
+  const formatText = (text) => {
+    if (!text) return null
+    return text.split('\n').map((line, i) => {
+      const html = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      return (
+        <span
+          key={i}
+          style={{ display: 'block', minHeight: '1em' }}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      )
+    })
+  }
+
+  return (
+    <div className={`vivi-message vivi-message--${message.role}`}>
+      {message.role === 'assistant' && <ViViAvatar compact />}
+      <div><p>{formatText(message.text)}</p></div>
+    </div>
+  )
+}
+
+function ViViAvatar({ compact = false }) {
+  return (
+    <span className={`${compact ? 'vivi-message__avatar' : 'vivi-studio__avatar'} vivi-avatar`}>
+      <img src={viviAvatar} alt="" aria-hidden="true" />
+    </span>
+  )
+}
+
+function ContextualChoices({ stage, car, locationSuggestions, showrooms, slots, onResolveArea, onShowroom, onSlot }) {
+  if (!car) return null
+
+  if (stage === 'need_address' || stage === 'need_ward') {
+    return null
+  }
+
+  if (stage === 'choose_showroom' && showrooms.length) {
+    return (
+      <div className="agent-context" aria-label="Chọn showroom trong cuộc trò chuyện">
+        <div className="agent-context__heading"><span>Showroom phù hợp</span><small>Đã ưu tiên có xe trước, khoảng cách sau</small></div>
+        <div className="agent-context__rail">
+          {showrooms.slice(0, 4).map((showroom) => (
+            <button type="button" key={showroom.id} onClick={() => onShowroom(showroom)}>
+              <span><MapPin size={16} weight="light" /></span>
+              <strong>{showroom.name.replace('VinFast ', '')}</strong>
+              <small>{formatDistance(showroom.distance) ? `${formatDistance(showroom.distance)} · ` : ''}Có {car.name}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (stage === 'choose_slot' && slots.length) {
+    const quickSlots = slots.flatMap((day) => day.times.slice(0, 1).map((entry) => ({
+      date: day.value,
+      dateLabel: day.dateLabel,
+      time: entry.time,
+      slotId: entry.slotId,
+    }))).slice(0, 5)
+    return (
+      <div className="agent-context" aria-label="Khung giờ còn trống">
+        <div className="agent-context__heading"><span>Khung giờ gần nhất</span><small>Đã ghép đúng xe {car.name}</small></div>
+        <div className="agent-context__rail agent-context__rail--slots">
+          {quickSlots.map((slot) => (
+            <button type="button" key={`${slot.date}-${slot.time}`} onClick={() => onSlot(slot)}>
+              <span><Clock size={16} weight="light" /></span>
+              <strong>{slot.time}</strong>
+              <small>{slot.dateLabel}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return null
+}
+
+// Ảnh studio của mẫu xe: dùng chung cho panel mẫu xe, phiếu lịch và bảng đổi xe
+// nên mọi bề mặt trong luồng đặt lịch luôn hiển thị dáng xe, không phải ảnh bối cảnh.
+function VehicleShot({ car, className = '', eager = false }) {
+  return (
+    <SmartImage
+      className={`vehicle-shot vehicle-shot--${car.studioShot.mode} ${className}`.trim()}
+      src={car.studioShot.src}
+      alt={`${car.name} — ảnh studio`}
+      eager={eager}
+    />
+  )
+}
+
+function VehicleSwitcher({ cars, currentId, onSelect, onClose }) {
+  useEffect(() => {
+    const handleKey = (event) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onClose])
+
+  return (
+    <div
+      className="vehicle-switcher"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="vehicle-switcher-title"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}
+    >
+      <div className="vehicle-switcher__panel">
+        <button type="button" className="vehicle-switcher__close" onClick={onClose} aria-label="Đóng bảng chọn xe">
+          <X size={17} weight="light" />
+        </button>
+        <header>
+          <p>Đổi mẫu xe lái thử</p>
+          <h2 id="vehicle-switcher-title">Bạn muốn cầm lái mẫu nào?</h2>
+          <small>ViVi giữ lại địa chỉ và showroom bạn đã chọn; chỉ khung giờ được mở lại để ghép đúng xe mới.</small>
+        </header>
+        {/* TODO [BACKEND]: Danh sách này cần lọc theo GET /api/v1/test-drive/vehicles?showroomId=
+            để chỉ hiện mẫu xe thực sự còn xe lái thử, kèm cờ availability cho từng mẫu. */}
+        <div className="vehicle-switcher__body">
+          {carGroups.map((group) => (
+            <section key={group.id}>
+              <div className="vehicle-switcher__group">
+                <strong>{group.label}</strong>
+                <small>{group.description}</small>
+              </div>
+              <div className="vehicle-switcher__grid">
+                {cars.filter((car) => car.category === group.id).map((car) => {
+                  const active = car.id === currentId
+                  return (
+                    <button
+                      type="button"
+                      key={car.id}
+                      className={active ? 'is-active' : ''}
+                      onClick={() => onSelect(car)}
+                      aria-pressed={active}
+                    >
+                      <VehicleShot car={car} className="vehicle-switcher__shot" />
+                      <span className="vehicle-switcher__meta">
+                        <strong>{car.name}</strong>
+                        <small>{car.body} · {car.seats}</small>
+                      </span>
+                      <span className="vehicle-switcher__state">
+                        {active
+                          ? <><Check size={13} weight="bold" /> Đang chọn</>
+                          : <>Chọn mẫu này <ArrowRight size={13} weight="light" /></>}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function VehiclePanel({ car }) {
+  return (
+    <section className="studio-vehicle" aria-label={`Mẫu xe ${car.name}`}>
+      <div className="studio-vehicle__ambient" aria-hidden="true" />
+      <div className="studio-vehicle__heading">
+        <span>Mẫu xe đang giữ</span>
+        <strong>{car.name}</strong>
+        <small>{car.body} · {car.seats}</small>
+      </div>
+      <div className="studio-vehicle__stage" key={car.id}>
+        <VehicleShot car={car} className="studio-vehicle__image" eager />
+      </div>
+      <div className="studio-vehicle__specs">
+        {car.specs.slice(0, 3).map((spec) => (
+          <div key={spec.label}><strong>{spec.value}</strong><span>{spec.label}</span></div>
+        ))}
+      </div>
+      <Link to={`/models/${car.id}`}>Xem lại thông tin xe <ArrowRight size={15} weight="light" /></Link>
+    </section>
+  )
+}
+
 function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, userLocation }) {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
@@ -406,8 +594,8 @@ function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, userLoca
           >
             <span>{index + 1}</span>
             <span><strong>{showroom.name}</strong><small>{showroom.address}</small></span>
-            {hasLocation && (
-              <em>{String(showroom.distance).replace('.', ',')} km</em>
+            {hasLocation && Number.isFinite(showroom.distance) && (
+              <em>{formatDistance(showroom.distance)}</em>
             )}
           </button>
         ))}
@@ -431,7 +619,7 @@ function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, userLoca
               <small>
                 {selected.address}
                 {selected.phone ? ` · SĐT: ${selected.phone}` : ''}
-                {hasLocation && selected.distance !== undefined && selected.distance !== null ? ` · Cách bạn ${String(selected.distance).replace('.', ',')} km` : ''}
+                {hasLocation && Number.isFinite(selected.distance) ? ` · Cách bạn ${formatDistance(selected.distance)}` : ''}
               </small>
             </span>
             <button type="button" onClick={() => onConfirm(selected)} className="studio-map__preview-confirm">
@@ -507,9 +695,18 @@ export function BookingPage() {
   // must include inventorySlotId; the UI's date/time tuple is display-only.
   const selectedShowroom = nearbyShowrooms.find((showroom) => showroom.id === showroomId)
 
+  useEffect(() => {
+    if (selectedCarId || !cars.length) return
+    const requestedCar = getCar(searchParams.get('car')) || getCar(window.sessionStorage.getItem('vinfast:last-viewed-car'))
+    if (!requestedCar) return
+    setSelectedCarId(requestedCar.id)
+    setActiveView('car')
+    setWorkspaceHidden(false)
+  }, [cars, searchParams, selectedCarId])
+
   const mapShowrooms = (items, vehicleId = selectedCarId) => items.map((item, index) => ({
     ...item,
-    distance: item.distance_km ?? 0,
+    distance: item.distance_km,
     x: 20 + ((index * 23) % 65),
     y: 25 + ((index * 19) % 55),
     models: [vehicleId],

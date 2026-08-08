@@ -36,9 +36,12 @@ class ZaloBotClient:
             raise RuntimeError(payload.get("description", "Zalo Bot rejected the message"))
         return payload
 
-    async def get_updates(self, timeout_seconds: int) -> list[dict]:
+    async def get_updates(self, timeout_seconds: int, offset: int | None = None) -> list[dict]:
+        request: dict[str, int] = {"timeout": timeout_seconds}
+        if offset is not None:
+            request["offset"] = offset
         async with httpx.AsyncClient(timeout=timeout_seconds + 10) as client:
-            response = await client.post(self._url("getUpdates"), json={"timeout": str(timeout_seconds)})
+            response = await client.post(self._url("getUpdates"), json=request)
         response.raise_for_status()
         payload = response.json()
         if payload.get("ok"):
@@ -96,20 +99,27 @@ class ZaloPollingService:
         self.timeout_seconds = timeout_seconds
         self.retention_days = retention_days
         self._last_cleanup_at: datetime | None = None
+        self._next_update_offset: int | None = None
         self.processed_message_ids: set[str] = set()
         self.logger = logging.getLogger(__name__)
 
     async def run(self) -> None:
         while True:
             try:
-                self._cleanup_processed_messages_if_due()
-                for update in await self.client.get_updates(self.timeout_seconds):
-                    self._handle_update(update)
+                await self.poll_once()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 self.logger.exception("Zalo polling failed; retrying shortly")
                 await asyncio.sleep(3)
+
+    async def poll_once(self) -> None:
+        self._cleanup_processed_messages_if_due()
+        for update in await self.client.get_updates(self.timeout_seconds, offset=self._next_update_offset):
+            self._handle_update(update)
+            update_id = _update_id(update)
+            if update_id is not None:
+                self._next_update_offset = update_id + 1
 
     def _cleanup_processed_messages_if_due(self) -> None:
         now = datetime.now(UTC)
@@ -132,7 +142,8 @@ class ZaloPollingService:
         now = datetime.now(UTC).isoformat()
         with self.database.transaction(immediate=True) as connection:
             inserted = connection.execute(
-                "INSERT OR IGNORE INTO zalo_processed_messages(message_id,processed_at) VALUES(?,?)",
+                "INSERT INTO zalo_processed_messages(message_id,processed_at) VALUES(?,?) "
+                "ON CONFLICT(message_id) DO NOTHING",
                 (message_id, now),
             ).rowcount
         if not inserted:
@@ -142,7 +153,9 @@ class ZaloPollingService:
         text = str(message.get("text") or "")
         chat_id = str((message.get("chat") or {}).get("id") or "")
         match = _LINK_COMMAND.match(text)
-        if not chat_id or not match:
+        if not chat_id:
+            return
+        if not match:
             self.client.send_text(chat_id, "Để liên kết số điện thoại, hãy nhắn: LIENKET 09xxxxxxxx")
             return
         phone = normalize_phone(match.group(1))
@@ -153,3 +166,10 @@ class ZaloPollingService:
                 (phone, chat_id, now, now),
             )
         self.client.send_text(chat_id, f"Đã liên kết số {phone} với Zalo này. Bạn có thể nhận mã OTP để quản lý lịch lái thử trên website.")
+
+
+def _update_id(update: dict) -> int | None:
+    try:
+        return int(update.get("update_id"))
+    except (TypeError, ValueError):
+        return None

@@ -4,13 +4,19 @@ uvicorn[standard]>=0.34.0
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
 python-dotenv>=1.0.0
+requests==2.27.0
+charset-normalizer>=2.0.0,<3.0.0
 
 # AI / LangChain
 langchain>=0.3.0
 langchain-openai>=0.3.0
 langgraph>=0.2.0
 
-# SQLite is provided by Python's standard library.
+# Database
+psycopg[binary]>=3.2.0
+
+# Admin tools
+streamlit>=1.37.0
 
 # Dev tools
 ruff>=0.8.0

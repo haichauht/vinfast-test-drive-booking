@@ -1,12 +1,14 @@
-import factoryFilm from '../../Ảnh xe vinfast/Video chính.mp4?url'
-import limoInteriorFilm from '../../Ảnh xe vinfast/Dịch vụ_Limo Green/Limo Green_Spacious Interior.mp4?url'
+import { commonMedia, vehicleImage, vehicleVideo } from '../media/assets'
+
+const factoryFilm = vehicleVideo('Video chính.mp4')
+const limoInteriorFilm = vehicleVideo('Dịch vụ_Limo Green/Limo Green_Spacious Interior.mp4')
 // Dùng trực tiếp ảnh ViVi gốc 447 px thay cho bản PNG cũ chỉ còn 223 px.
 // CSS ở từng bề mặt chịu trách nhiệm hoà nền trắng vào studio để không lộ khung ảnh.
-import viviPortrait from '../../Ảnh xe vinfast/Ảnh ViVi.jpeg?url'
-import viviAvatar from '../assets/vivi-avatar.png'
-import roadBanner from '../assets/vinfast-road-banner.webp'
-import factoryAerial from '../../Ảnh xe vinfast/nha-may-vinfast.jpg?url'
-import vf9Sculpture from '../../Ảnh xe vinfast/about-us.png.webp?url'
+const viviPortrait = vehicleImage('Ảnh ViVi.jpeg')
+const viviAvatar = commonMedia.viviAvatar
+const roadBanner = commonMedia.vinfastRoadBanner
+const factoryAerial = vehicleImage('nha-may-vinfast.jpg')
+const vf9Sculpture = vehicleImage('about-us.png.webp')
 
 // TODO [BACKEND/CDN]: Replace bundled marketing media with the published media
 // payload from GET /api/v1/content/home and GET /api/v1/vehicles/{id}/media.
