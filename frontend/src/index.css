@@ -723,7 +723,7 @@ svg {
 }
 
 .inline-image--road {
-  background-image: linear-gradient(90deg, rgba(23, 26, 32, 0.08), transparent), url('../Ảnh xe vinfast/VF8/banner.webp');
+  background-image: linear-gradient(90deg, rgba(23, 26, 32, 0.08), transparent), var(--inline-image-url);
 }
 
 .model-tabs {
@@ -4836,6 +4836,25 @@ svg {
 .slot-confirm-modal dt { color: var(--muted); font-size: 0.7rem; }
 .slot-confirm-modal dd { margin: 0; font-size: 0.76rem; font-weight: 650; }
 
+.cancellation-confirm-modal > div { width: min(100%, 680px); max-height: min(86vh, 760px); overflow: auto; }
+.reschedule-modal > div { width: min(100%, 680px); max-height: min(86vh, 760px); overflow: auto; }
+.reschedule-modal__vehicles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+.reschedule-modal__vehicles button,.reschedule-modal__showrooms button,.reschedule-modal__slots button { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; text-align: left; cursor: pointer; }
+.reschedule-modal__vehicles button:hover,.reschedule-modal__showrooms button:hover,.reschedule-modal__slots button:hover { border-color: var(--blue); }
+.reschedule-modal__vehicles img { width: 100%; height: 70px; object-fit: contain; }.reschedule-modal__vehicles strong,.reschedule-modal__vehicles small,.reschedule-modal__showrooms strong,.reschedule-modal__showrooms small { display:block; }.reschedule-modal__showrooms,.reschedule-modal__slots { display:grid; gap:8px; margin-bottom:20px; }
+.booking-access-action-field > div { display: grid; grid-template-columns: 1fr 42px; gap: 6px; }
+.booking-access-action-field > div button { display: grid; place-items: center; border: 1px solid #d9dee5; border-radius: 8px; color: #4d6074; background: #eef0f2; cursor: pointer; }
+.booking-access-action-field > div button:hover { border-color: var(--blue); color: var(--blue); }
+.reschedule-left-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.reschedule-left-grid button { min-height: 76px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: #fff; text-align: left; cursor: pointer; }
+.reschedule-left-grid button:hover { border-color: var(--blue); color: var(--blue); }.reschedule-left-grid small { display: block; margin-top: 5px; color: var(--muted); }
+.cancellation-confirm-modal__vehicle { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 18px; margin: 0 0 16px; padding: 14px; border-radius: 16px; background: #edf2fa; }
+.cancellation-confirm-modal__image { width: 100%; height: 96px; object-fit: contain; }
+.cancellation-confirm-modal__vehicle strong { display: block; font-size: 1.35rem; }
+.cancellation-confirm-modal__vehicle small { display: block; margin-top: 3px; color: var(--muted); }
+.cancellation-confirm-modal > div > .slot-confirm-actions .cancellation-confirm-modal__submit { color: #fff; background: #c7362e; }
+.cancellation-confirm-modal > div > .slot-confirm-actions .cancellation-confirm-modal__submit:hover { background: #a92722; }
+
 .slot-confirm-modal > div > div:last-child,
 .vivi-review-actions {
   display: flex;
@@ -6382,7 +6401,7 @@ svg {
 .booking-success-documents .studio-ticket dl div { grid-template-columns: 94px 1fr; }
 .vivi-studio--success { grid-template-rows: 80px 1fr; }
 .vivi-success-copy { max-width: 780px; padding: 40px clamp(42px, 8%, 100px) clamp(42px, 8%, 100px); }
-.vivi-success-copy h1 { max-width: 720px; font-size: clamp(3.0rem, 5.9vw, 6.7rem); }
+.vivi-success-copy h1 { max-width: 720px; font-size: clamp(calc(3.0rem - 3px), calc(5.9vw - 3px), calc(6.7rem - 3px)); }
 
 @media (max-width: 1180px) {
   .booking-success-layout { grid-template-columns: minmax(390px, 0.92fr) minmax(0, 1.08fr); }
@@ -6448,7 +6467,7 @@ svg {
   .booking-success-documents .studio-vehicle__image { width: 100%; max-height: 170px; }
   .booking-success-documents .studio-ticket { padding: 24px 20px; }
   .vivi-success-copy { padding: 38px 22px 60px; }
-  .vivi-success-copy h1 { font-size: clamp(2.7rem, 13vw, 4.8rem); }
+  .vivi-success-copy h1 { font-size: clamp(calc(2.7rem - 3px), calc(13vw - 3px), calc(4.8rem - 3px)); }
 }
 
 /* ─── 2026.08 legibility, navigation and booking refinement ─────────────── */

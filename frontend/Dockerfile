@@ -12,10 +12,8 @@ RUN npm run build
 # ---- Stage 2: Serve ----
 FROM nginx:alpine-slim
 
-# TODO [BACKEND/DEPLOY]: Add an nginx config with `try_files $uri /index.html`
-# for BrowserRouter and a narrowly scoped /api reverse proxy. Do not cache booking
-# responses; immutable hashed assets may be cached long-term.
 COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

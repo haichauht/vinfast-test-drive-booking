@@ -17,23 +17,47 @@ from src.agents.tools import (
     update_booking_draft,
     verify_booking_access,
 )
+from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.utils import get_system_prompt, window_messages
 from src.services.llm import get_llm
 
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "booking_skill" / "SKILL.md"
+tool_logger = logging.getLogger("agent.tools")
+_SENSITIVE_TOOL_FIELDS = {"otp_code", "access_session_token", "zalo_bot_token", "api_key", "token"}
+
+
+def _safe_tool_input(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep operational context in logs without persisting credentials or full contacts."""
+    safe: dict[str, Any] = {}
+    for key, value in payload.items():
+        if key in _SENSITIVE_TOOL_FIELDS:
+            safe[key] = "[redacted]"
+        elif key in {"phone", "contact_value", "destination"} and isinstance(value, str):
+            safe[key] = f"***{value[-4:]}" if len(value) >= 4 else "***"
+        elif key == "email" and isinstance(value, str):
+            safe[key] = f"***@{value.rsplit('@', 1)[-1]}" if "@" in value else "***"
+        elif isinstance(value, dict):
+            safe[key] = _safe_tool_input(value)
+        else:
+            safe[key] = value
+    return safe
 
 STRUCTURED_ACTION_TO_TOOL = {
     "search_options": search_test_drive_options,
     "hold_slot": hold_test_drive_slot,
     "update_draft": update_booking_draft,
     "confirm_booking": confirm_test_drive_booking,
+    "request_access": request_booking_access,
+    "verify_access": verify_booking_access,
 }
 
 STRUCTURED_ACTION_RESPONSES = {
     "search_options": "Tôi đã kiểm tra dữ liệu showroom và lịch trống mới nhất.",
-    "hold_slot": "Tôi đã giữ khung giờ này trong 15 phút.",
+    "hold_slot": "Tôi đã giữ khung giờ này trong 2 phút.",
     "update_draft": "Tôi đã lưu thông tin người đặt và người lái.",
     "confirm_booking": "Đặt lịch lái thử đã được xác nhận.",
+    "request_access": "Tôi đã gửi mã xác thực qua Zalo.",
+    "verify_access": "Xác thực thành công.",
 }
 
 
@@ -82,6 +106,8 @@ def get_booking_prompt() -> str:
 async def booking_skill_node(state: AgentState) -> dict:
     messages = list(state.get("messages") or [])
     requested_action = state.get("requested_action")
+    metadata = state.get("metadata") or {}
+    trace_id = metadata.get("trace_id", "")
 
     if requested_action:
         tool = STRUCTURED_ACTION_TO_TOOL.get(requested_action)
@@ -93,6 +119,19 @@ async def booking_skill_node(state: AgentState) -> dict:
         if isinstance(last_message, ToolMessage):
             failed = getattr(last_message, "status", "success") == "error"
             decoded = _decode_tool_result(last_message)
+            trace_event(
+                "tool.result",
+                trace_id=trace_id,
+                node="booking_skill",
+                tool_message=message_to_log(last_message),
+                result=decoded,
+                failed=failed,
+            )
+            tool_logger.info(
+                "tool_completed tool=%s status=%s",
+                tool.name,
+                "error" if failed else "success",
+            )
             response_text = (
                 "Không thể hoàn tất thao tác đặt lịch. Vui lòng kiểm tra lại hoặc thử lại."
                 if failed
@@ -109,6 +148,7 @@ async def booking_skill_node(state: AgentState) -> dict:
             }
 
         action_payload = state.get("action_payload") or {}
+        tool_logger.info("tool_dispatched tool=%s mode=structured input=%s", tool.name, _safe_tool_input(action_payload))
         tool_call = AIMessage(
             content="",
             tool_calls=[
@@ -119,6 +159,16 @@ async def booking_skill_node(state: AgentState) -> dict:
                     "type": "tool_call",
                 }
             ],
+        )
+        trace_event(
+            "tool.call",
+            trace_id=trace_id,
+            node="booking_skill",
+            source="structured_action",
+            action=requested_action,
+            tool=tool.name,
+            args=action_payload,
+            tool_call_id=tool_call.tool_calls[0].get("id"),
         )
         return {"messages": [tool_call], "tool_call_count": 1}
 
@@ -144,8 +194,17 @@ async def booking_skill_node(state: AgentState) -> dict:
         if llm is None:
             raise RuntimeError("LLM is not configured")
         llm_with_tools = llm.bind_tools(tools)
-        response = await llm_with_tools.ainvoke([SystemMessage(content=prompt)] + window_messages(messages))
+        llm_messages = [SystemMessage(content=prompt)] + window_messages(messages)
+        trace_event(
+            "llm.request",
+            trace_id=trace_id,
+            node="booking_skill",
+            tools=[tool.name for tool in tools],
+            messages=messages_to_log(llm_messages),
+        )
+        response = await llm_with_tools.ainvoke(llm_messages)
     except Exception as e:
+        trace_event("llm.error", trace_id=trace_id, node="booking_skill", error=str(e))
         logging.getLogger(__name__).exception("Error in booking_skill_node")
         safe_response = AIMessage(content="Đã xảy ra lỗi khi kết nối với mô hình AI. Vui lòng thử lại sau.")
         return {
@@ -160,6 +219,30 @@ async def booking_skill_node(state: AgentState) -> dict:
     # Tăng tool_call_count nếu LLM đang gọi tool
     has_tool_calls = hasattr(response, "tool_calls") and bool(response.tool_calls)
     current_count = state.get("tool_call_count") or 0
+    trace_event(
+        "llm.response",
+        trace_id=trace_id,
+        node="booking_skill",
+        message=message_to_log(response),
+        has_tool_calls=has_tool_calls,
+    )
+    if has_tool_calls:
+        for tool_call in response.tool_calls:
+            trace_event(
+                "tool.call",
+                trace_id=trace_id,
+                node="booking_skill",
+                source="llm",
+                tool=tool_call.get("name"),
+                args=tool_call.get("args"),
+                tool_call_id=tool_call.get("id"),
+            )
+            arguments = tool_call.get("args")
+            tool_logger.info(
+                "tool_dispatched tool=%s mode=llm input=%s",
+                tool_call.get("name", "unknown"),
+                _safe_tool_input(arguments if isinstance(arguments, dict) else {}),
+            )
 
     output: dict[str, Any] = {
         "messages": [response],
@@ -172,6 +255,21 @@ async def booking_skill_node(state: AgentState) -> dict:
     if isinstance(last_message, ToolMessage):
         failed = getattr(last_message, "status", "success") == "error"
         decoded = _decode_tool_result(last_message)
+        trace_event(
+            "tool.result",
+            trace_id=trace_id,
+            node="booking_skill",
+            tool_message=message_to_log(last_message),
+            input=_tool_call_input(messages, last_message),
+            result=decoded,
+            failed=failed,
+        )
+        tool_logger.info(
+            "tool_completed tool=%s status=%s input=%s",
+            last_message.name or "unknown",
+            "error" if failed else "success",
+            _safe_tool_input(_tool_call_input(messages, last_message)),
+        )
         output.update(
             {
                 "action_tool": last_message.name or "",

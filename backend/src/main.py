@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -10,16 +11,55 @@ from fastapi.staticfiles import StaticFiles
 
 from src.api.routes import router
 from src.api.site_routes import router as site_router
+from src.bootstrap import initialize_database
 from src.config import get_settings
+from src.dependencies import booking_service, database, zalo_client
 from src.logging_config import configure_logging
+from src.services.zalo_bot import ZaloPollingService
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
+    initialize_database(database, settings)
     logging.getLogger(__name__).info("Starting %s in %s mode", settings.app_name, settings.app_env)
+    polling_task = None
+    notification_task = None
+    if settings.zalo_bot_enabled and settings.zalo_bot_polling_enabled and zalo_client:
+        polling_task = asyncio.create_task(
+            ZaloPollingService(
+                database,
+                zalo_client,
+                settings.zalo_bot_poll_timeout_seconds,
+                settings.zalo_bot_processed_message_retention_days,
+            ).run()
+        )
+        logging.getLogger(__name__).info("Zalo Bot polling enabled")
+    async def dispatch_notifications() -> None:
+        while True:
+            try:
+                await asyncio.to_thread(booking_service.dispatch_due_notifications)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logging.getLogger(__name__).exception("Notification dispatch failed")
+            await asyncio.sleep(5)
+
+    notification_task = asyncio.create_task(dispatch_notifications())
     yield
+    if polling_task:
+        polling_task.cancel()
+        try:
+            await polling_task
+        except asyncio.CancelledError:
+            pass
+    if notification_task:
+        notification_task.cancel()
+        try:
+            await notification_task
+        except asyncio.CancelledError:
+            pass
     logging.getLogger(__name__).info("Shutting down")
 
 
