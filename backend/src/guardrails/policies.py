@@ -82,6 +82,7 @@ DEMO_ACTION_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     "search_options": ACTION_ALLOWED_FIELDS["search_options"],
     "hold_slot": ACTION_ALLOWED_FIELDS["hold_slot"],
     "get_draft": frozenset({"booking_id"}),
+    "list_bookings": frozenset({"access_session_token"}),
     "update_draft": frozenset(
         {
             "booking_id",

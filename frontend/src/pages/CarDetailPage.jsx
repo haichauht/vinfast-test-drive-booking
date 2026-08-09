@@ -8,6 +8,7 @@ import { AppShell } from '../components/AppShell'
 import { IslandButton } from '../components/IslandButton'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
+import { SiteFooter } from '../components/SiteFooter'
 import { useVehicleCatalog, useVehicleDetail } from '../hooks/useSiteData'
 import { limoInteriorFilm } from '../data/media'
 
@@ -105,11 +106,6 @@ export function CarDetailPage() {
 
   useEffect(() => {
     if (!car) return undefined
-    // TODO [BACKEND/SESSION + ANALYTICS]: Keep last-viewed vehicle in the anonymous
-    // booking draft when one exists and emit vehicle_view/nudge_impression events.
-    // sessionStorage is intentionally limited to ids and UI flags, never customer PII.
-    window.sessionStorage.setItem('vinfast:last-viewed-car', car.id)
-
     const dismissed = window.sessionStorage.getItem(`vinfast:test-drive-nudge:${car.id}`)
     if (dismissed) return undefined
 
@@ -139,6 +135,7 @@ export function CarDetailPage() {
       if (reduced) {
         gsap.set('.detail-hero__car, [data-detail-copy], .model-film__stage, [data-film-layer]', {
           opacity: 1,
+          xPercent: 0,
           x: 0,
           y: 0,
           scale: 1,
@@ -149,7 +146,7 @@ export function CarDetailPage() {
           ? { xPercent: firstVisit ? -132 : -34, opacity: 0, rotate: firstVisit ? -1.2 : 0 }
           : { xPercent: 0, scale: 0.92, opacity: 0 }
         intro
-          .fromTo('.detail-hero__car', carFrom, { xPercent: 0, scale: 1, opacity: 1, rotate: 0, duration: firstVisit ? 1.7 : 0.95 })
+          .fromTo('.detail-hero__car', carFrom, { xPercent: 0, x: 0, scale: 1, opacity: 1, rotate: 0, duration: firstVisit ? 1.7 : 0.95 })
           .fromTo(
             '[data-detail-copy]',
             { y: 48, opacity: 0, filter: 'blur(8px)' },
@@ -159,8 +156,7 @@ export function CarDetailPage() {
       }
 
       gsap.to('.detail-hero__car', {
-        xPercent: car.motionImage ? 28 : 0,
-        scale: car.motionImage ? 0.94 : 1.04,
+        x: car.motionImage ? 72 : 0,
         ease: 'none',
         scrollTrigger: {
           trigger: '.detail-hero',
@@ -255,7 +251,17 @@ export function CarDetailPage() {
     ? cars[(cars.findIndex((item) => item.id === car.id) + 1) % cars.length]
     : null
   const manifesto = `${car.tagline} ${car.description}`.split(' ')
-  const carMedia = car.media || (car.gallery || []).map((url) => ({ src: url, label: '' }))
+  const carMedia = (car.media || car.gallery || [])
+    .map((asset, index) => {
+      const fallbackLabel = `Góc nhìn ${String(index + 1).padStart(2, '0')}`
+      if (typeof asset === 'string') return { src: asset, alt: '', label: fallbackLabel }
+      return {
+        src: asset.src || '',
+        alt: asset.alt || asset.label || '',
+        label: asset.label || fallbackLabel,
+      }
+    })
+    .filter((asset) => asset.src)
 
   return (
     <AppShell>
@@ -384,7 +390,7 @@ export function CarDetailPage() {
               <div className="detail-media-grid">
                 {carMedia.slice(3).map((asset, index) => (
                   <figure className="detail-media-grid__item" key={`${asset.src}-${index}`}>
-                    <SmartImage src={asset.src} alt={`${car.name} · ${asset.label}`} />
+                    <SmartImage src={asset.src} alt={asset.alt || `${car.name} · ${asset.label}`} />
                     <figcaption>{asset.label}</figcaption>
                   </figure>
                 ))}
@@ -417,7 +423,7 @@ export function CarDetailPage() {
         </section>
 
         <section className="detail-action">
-          <SmartImage src={car.hero} alt="" aria-hidden="true" />
+          <SmartImage src={car.actionMedia?.src || car.hero} alt="" aria-hidden="true" focalPoint={car.actionMedia?.focalPoint} />
           <div className="detail-action__wash" aria-hidden="true" />
           <div className="section-frame detail-action__content">
             <Reveal>
@@ -437,6 +443,8 @@ export function CarDetailPage() {
             </Reveal>
           </div>
         </section>
+
+        <SiteFooter />
 
         <div className="detail-booking-dock">
           <div>

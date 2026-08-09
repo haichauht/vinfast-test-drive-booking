@@ -33,13 +33,14 @@ async def test_router_out_of_scope_coding():
 
 
 @pytest.mark.asyncio
-# test case of Chau + kiểm tra câu chào được route sang general response
+# test case of Chau + kiểm tra câu chào được route sang advise skill
 async def test_router_general_greeting():
-    """Kiểm tra câu chào hỏi xã giao được định tuyến sang general_respond node."""
+    """Câu chào hỏi dùng advise skill; graph không có general response node."""
     query = "Xin chào bạn nhé!"
     result = await agent.ainvoke({"query": query}, config=_cfg("test-greeting"))
 
-    assert result.get("intent") == "general"
+    assert result.get("intent") == "domain"
+    assert result.get("active_skill") == "advise"
     assert "response" in result
     assert len(result.get("response", "")) > 0
 

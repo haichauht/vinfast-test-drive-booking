@@ -30,7 +30,7 @@ class ManagementService:
             self._require_access(c, access_session_token, booking_id, "update_details")
             booking = c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone()
             if not booking or booking["status"] not in ("confirmed", "checked_in"):
-                raise BookingError("BOOKING_NOT_EDITABLE", "Booking khÃ´ng thá»ƒ chá»‰nh sá»­a.")
+                raise BookingError("BOOKING_NOT_EDITABLE", "Booking không thể chỉnh sửa.")
             for role, patch in (("booker", booker_patch), ("driver", None if driver_same_as_booker else driver_patch)):
                 if not patch:
                     continue
@@ -80,7 +80,7 @@ class ManagementService:
                 return cached
             current = c.execute("SELECT status FROM bookings WHERE id=?", (current_booking_id,)).fetchone()
             if not current or current["status"] != "confirmed":
-                raise BookingError("BOOKING_NOT_EDITABLE", "Booking khÃ´ng thá»ƒ dá»i lá»‹ch.")
+                raise BookingError("BOOKING_NOT_EDITABLE", "Booking không thể dời lịch.")
         held = self.hold_slot(
             new_slot_id,
             ui_action_id,
@@ -167,12 +167,12 @@ class ManagementService:
                 or new["status"] != "held"
                 or new["rescheduled_from_booking_id"] != current_booking_id
             ):
-                raise BookingError("BOOKING_NOT_EDITABLE", "Cáº·p booking dá»i lá»‹ch khÃ´ng há»£p lá»‡.")
+                raise BookingError("BOOKING_NOT_EDITABLE", "Cặp booking dời lịch không hợp lệ.")
             if datetime.fromisoformat(new["hold_expires_at"]) <= self.now():
-                raise BookingError("HOLD_EXPIRED", "Hold lá»‹ch má»›i Ä‘Ã£ háº¿t háº¡n.")
+                raise BookingError("HOLD_EXPIRED", "Giữ chỗ lịch mới đã hết hạn.")
             new_slot = c.execute("SELECT * FROM test_drive_slots WHERE id=?", (new["slot_id"],)).fetchone()
             if new_slot["current_booking_id"] != new_booking_id:
-                raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Slot má»›i khÃ´ng cÃ²n thuá»™c booking.")
+                raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Khung giờ mới không còn thuộc booking.")
             now = iso(self.now())
 
             # The public code follows the active appointment across a
@@ -239,7 +239,7 @@ class ManagementService:
                 return cached
             b = c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone()
             if not b or b["status"] != "confirmed":
-                raise BookingError("BOOKING_NOT_CANCELLABLE", "Booking khÃ´ng thá»ƒ há»§y.")
+                raise BookingError("BOOKING_NOT_CANCELLABLE", "Booking không thể hủy.")
             now = iso(self.now())
             c.execute(
                 "UPDATE bookings SET status='cancelled',cancelled_at=?,cancellation_reason=?,version=version+1,updated_at=? WHERE id=?",
