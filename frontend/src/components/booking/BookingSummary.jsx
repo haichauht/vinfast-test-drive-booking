@@ -1,3 +1,20 @@
+/**
+ * components/booking/BookingSummary.jsx — Bảng chọn khung giờ và Phiếu đặt lịch.
+ *
+ * ✅ ĐANG DÙNG THẬT: BookingPage.jsx import cả 2 component bên dưới.
+ *
+ * - SchedulePanel: lưới lịch trống (bước 4). Mỗi thẻ là một ngày, bên trong là các khung giờ.
+ *   Khung giờ đang chọn nhận class .is-active. Lịch do backend trả về, không tự sinh.
+ *
+ * - BookingTicket: phiếu đặt lịch, dùng ở HAI nơi với giao diện hơi khác nhau —
+ *   màn xem lại trước khi đặt (chưa có bookingCode) và màn thành công (prop compact + có mã lịch).
+ *   Gồm ảnh xe, 8 dòng thông tin và dòng xác nhận đã có giấy phép lái xe.
+ *
+ * ⚠️ Còn dữ liệu giả: bảng tên/số điện thoại tư vấn viên hard-code ở dòng ~9 (staff).
+ *   Chỉ dùng khi backend chưa trả showroom.staff — khi nối xong nên xoá hẳn bảng này.
+ *
+ * Style tương ứng: .studio-schedule và .studio-ticket trong index.css.
+ */
 import { CalendarBlank, CheckCircle, Clock } from '@phosphor-icons/react'
 import { VehicleShot } from './VehicleWorkspace'
 

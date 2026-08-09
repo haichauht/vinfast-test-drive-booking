@@ -1,3 +1,25 @@
+/**
+ * api/booking.js — Toàn bộ lệnh đặt lịch lái thử gửi lên backend, gồm cả tin nhắn cho ViVi.
+ *
+ * Điểm quan trọng: TẤT CẢ thao tác đặt lịch đều đi qua MỘT endpoint duy nhất
+ * POST /api/v1/chat của LangGraph Agent, phân biệt nhau bằng trường `action`.
+ * Có `action` thì backend gọi thẳng tool và BỎ QUA LLM — nên luồng đặt lịch vẫn chạy
+ * bình thường dù chưa có OpenAI key. Chỉ chat tự do (sendBookingMessage) mới cần key.
+ *
+ * Nhóm 1 — đặt lịch mới (qua /chat):
+ * - sendBookingMessage(): người dùng gõ tin nhắn tự do cho ViVi.
+ * - searchBookingOptions(): tìm showroom có đúng mẫu xe + khung giờ trống (theo địa chỉ hoặc GPS).
+ * - holdBookingSlot(): giữ chỗ một khung giờ (backend trả hạn giữ, UI đếm ngược).
+ * - saveBookingCustomer(): lưu tên/điện thoại/email người đặt và người lái.
+ * - confirmHeldBooking(): chốt đặt lịch, trả về mã lịch.
+ *
+ * Nhóm 2 — tra cứu/sửa/huỷ lịch đã đặt (qua POST /api/v1/demo/action):
+ * - requestBookingAccess() → verifyBookingAccess(): xin và xác thực OTP gửi qua Zalo.
+ * - getVerifiedBooking() · updateVerifiedBooking() · cancelVerifiedBooking().
+ * - holdVerifiedReschedule() → confirmVerifiedReschedule(): đổi sang khung giờ khác.
+ *
+ * conversation_id được giữ trong sessionStorage để ViVi nhớ mạch hội thoại trong cùng tab.
+ */
 import { ApiError, apiPost } from './client'
 
 const CONVERSATION_KEY = 'vinfast:booking-conversation-id'

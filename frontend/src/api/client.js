@@ -1,3 +1,17 @@
+/**
+ * api/client.js — Lõi gọi API. MỌI request từ frontend tới backend đều đi qua file này.
+ *
+ * Chứa gì:
+ * - API_BASE_URL: mặc định "/api/v1" (Vite proxy sang backend cổng 8000).
+ *   Ghi đè bằng biến VITE_API_BASE_URL trong frontend/.env.local khi deploy.
+ * - apiGet(): có cache trong bộ nhớ + ETag/If-None-Match. Backend trả 304 thì dùng lại bản cũ.
+ *   Mất mạng mà đã có cache thì trả cache thay vì báo lỗi.
+ * - apiPost(): gửi JSON, không cache.
+ * - ApiError: kiểu lỗi chuẩn có code/status/retryable — các trang dựa vào đây để hiện thông báo.
+ * - clearApiCache(): xoá toàn bộ cache.
+ *
+ * Sửa ở đây khi: đổi địa chỉ backend, đổi câu thông báo lỗi mạng, hoặc bật/tắt cache.
+ */
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
 const memoryCache = new Map()
 

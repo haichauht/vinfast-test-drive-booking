@@ -1,3 +1,59 @@
+/**
+ * pages/BookingPage.jsx — TRANG ĐẶT LỊCH LÁI THỬ tại /booking. File lớn nhất dự án (~1800 dòng).
+ *
+ * Đây là trái tim của sản phẩm: khung chat ViVi bên phải, không gian làm việc bên trái,
+ * và một máy trạng thái (state machine) điều khiển toàn bộ luồng.
+ *
+ * ══ LUỒNG 9 BƯỚC (biến `stage`) ══
+ *  idle → chọn đặt cho ai (RecipientModal)  ·  need_car → chọn mẫu xe
+ *  need_address / need_ward → nhập địa chỉ hoặc bấm lấy GPS
+ *  choose_showroom → chọn showroom trên bản đồ  ·  choose_slot → chọn khung giờ
+ *  collect_info → điền thông tin  ·  review → xem lại phiếu  ·  success → đặt xong, có mã lịch
+ *  Ngoài luồng chính còn nhánh 'lookup' để tra cứu/sửa/huỷ lịch cũ bằng OTP.
+ *  Vào từ /booking?car=vf9 thì bỏ qua bước chọn xe.
+ *
+ * ══ 3 TAB CỦA KHÔNG GIAN LÀM VIỆC (biến `activeView`) ══
+ *  'car' Mẫu xe (bấm lần nữa để mở bảng đổi xe) · 'map' Bản đồ showroom · 'schedule' Lịch.
+ *  Nút "Ẩn bảng" thu gọn workspace, nút "Hiện bảng" nổi bên trái để mở lại.
+ *
+ * ⚠️ ══ ĐIỀU PHẢI BIẾT TRƯỚC KHI SỬA GIAO DIỆN ══
+ *  Bên backend đã tách một số phần ra components/booking/, NHƯNG file này vẫn giữ bản sao
+ *  cũ của nhiều component. Hai bản tồn tại song song, và bản đang chạy thật là:
+ *
+ *   ĐANG CHẠY từ components/booking/ — sửa ở file riêng:
+ *     · ShowroomMap (import tên BookingShowroomMap) · BookingCustomerForm
+ *     · SchedulePanel + BookingTicket (BookingSummary.jsx) · BookingAccessPanel
+ *     · CancellationConfirmModal + RescheduleConfirmModal
+ *
+ *   ĐANG CHẠY từ CHÍNH FILE NÀY — sửa ngay tại đây:
+ *     · RecipientModal (~239) · AgentMessage (~264) · ViViAvatar (~287)
+ *     · ContextualChoices (~295) · VehicleShot (~347) · VehicleSwitcher (~358) · VehiclePanel (~424)
+ *
+ *   CODE CHẾT, sửa vào cũng không thấy gì đổi:
+ *     · ShowroomMap bản cũ trong file này (~446–634) — đã thay bằng bản import.
+ *     · Cả file components/booking/BookingChatPrimitives.jsx — không ai import.
+ *     · VehicleSwitcher + VehiclePanel trong components/booking/VehicleWorkspace.jsx.
+ *
+ * ══ CÁC HÀM CHÍNH (theo thứ tự người dùng bấm) ══
+ *  beginConversation(~1056) chọn đặt cho ai · chooseCar(~1077) / switchCar(~1092) chọn & đổi xe
+ *  requestUserLocation(~753) lấy GPS · loadShowrooms(~967) tìm showroom · chooseShowroom(~1125)
+ *  chooseSlot(~1149) mở popup giờ · confirmSlot(~1154) GIỮ CHỖ và bật đếm ngược
+ *  submitPerson(~1401) kiểm tra form · submitBooking(~1428) chốt đặt lịch
+ *  handlePrompt(~1186) xử lý khi người dùng gõ tin nhắn tự do cho ViVi
+ *  applyAgentToolResult(~812) — hàm khó nhất: dịch kết quả backend trả về thành trạng thái giao diện
+ *  Nhánh OTP: requestAccessOtp(~1247) · verifyAccessOtp(~1267) · saveAccessProfile(~1299)
+ *             confirmCancellation(~1320) · holdReschedule(~1352) · confirmReschedule(~1363)
+ *
+ * ══ CÒN DỮ LIỆU GIẢ ══
+ *  showroomDirectory (~68): 12 showroom hard-code kèm toạ độ x/y và tên nhân viên sale.
+ *  Nay backend đã trả showroom thật; mảng này chỉ còn dùng để đoán tỉnh/thành từ chữ người
+ *  dùng gõ. Đừng tin cột `staff` trong đó.
+ *
+ * ══ SỬA GIAO DIỆN Ở ĐÂU ══
+ *  Style: mục "Booking experience" và "Agent-first booking studio" trong index.css.
+ *  Riêng nút "Hiện bảng" (~1498) và nút đóng workspace viết inline style ngay trong file.
+ *  Trang này KHÔNG dùng AppShell — header riêng, gọn hơn, ở ~dòng 1488.
+ */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {

@@ -1,3 +1,18 @@
+/**
+ * hooks/useSiteData.js — 3 hook để các trang lấy dữ liệu backend mà không phải tự viết fetch.
+ *
+ * Mỗi hook tự lo: gọi API → đổi tên trường qua adapters → trả về { loading, error }
+ * và tự huỷ request khi người dùng rời trang (AbortController).
+ *
+ * Chứa gì:
+ * - useVehicleCatalog(): danh sách xe, đã sắp xếp theo sortOrder của backend.
+ *   Dùng ở HomePage, CarDetailPage (để tìm "xe tiếp theo") và BookingPage.
+ * - useVehicleDetail(id): chi tiết một mẫu xe. Dùng ở CarDetailPage.
+ * - usePageContent(page): nội dung trang home / charging / after-sales.
+ *
+ * LƯU Ý: không có dữ liệu dự phòng. Backend chết thì cars = [] và trang hiện rỗng —
+ * đây là chủ ý để giao diện không bịa ra catalogue giả.
+ */
 import { useEffect, useMemo, useState } from 'react'
 import { getPageContent } from '../api/content'
 import { vehicleDetailToCar, vehicleSummaryToCar } from '../api/adapters'

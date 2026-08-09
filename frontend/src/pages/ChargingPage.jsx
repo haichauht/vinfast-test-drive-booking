@@ -1,3 +1,23 @@
+/**
+ * pages/ChargingPage.jsx — Trang "Pin & trạm sạc" tại đường dẫn /charging.
+ *
+ * Trang nội dung thuần. Lấy chargingUnits từ backend (GET /api/v1/content/charging);
+ * phần chữ và các mảng số liệu còn lại nằm ngay trong file này.
+ *
+ * Thứ tự các mục trên trang:
+ *  1. Hero "Năng lượng cho mọi điểm đến" — ảnh nền parallax khi cuộn.
+ *  2. Thông báo chính sách (charging-notice).
+ *  3. Mạng lưới trạm sạc + 6 loại địa điểm  → mảng networkPlaces đầu file.
+ *  4. Giá điện và phí lưu trụ quá giờ       → mảng overstayFees (miễn phí 10 phút đầu, sau đó tăng dần).
+ *  5. Danh mục trụ sạc 250/150/60/30 kW     → dữ liệu TỪ BACKEND (displayedChargingUnits).
+ *  6. Sạc tại nhà (bộ sạc treo tường, sạc di động).
+ *  7. Quy tắc dùng pin an toàn              → mảng batteryRules.
+ *  8. Chính sách thuê pin (khách hàng hiện hữu) + liên hệ + footer.
+ *
+ * Sửa CHỮ/SỐ LIỆU: 3 mảng networkPlaces / batteryRules / overstayFees nằm ngay đầu file.
+ * Sửa ANIMATION: khối useGSAP (~dòng 57) — parallax hero, .charger-card và .network-place trồi lên.
+ * Sửa GIAO DIỆN: mục "Ownership chapters" + "Charging-specific editorial surfaces" trong index.css.
+ */
 import { useRef } from 'react'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'

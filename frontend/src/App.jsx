@@ -1,3 +1,19 @@
+/**
+ * App.jsx — Bộ định tuyến (router) của toàn site + cổng kiểm tra backend.
+ *
+ * Quyết định URL nào hiện trang nào, và chặn không cho vào site khi backend chưa chạy.
+ *
+ * Chứa gì:
+ * - Bảng route:  "/" → HomePage  ·  "/models/:carId" → CarDetailPage  ·  "/booking" → BookingPage
+ *                "/after-sales" → AfterSalesPage  ·  "/charging" → ChargingPage
+ * - Route chuyển hướng: "/cars/:carId" → /booking?car=…  ·  "/agent" → /booking
+ *                       "/home" và mọi URL lạ → "/"
+ * - BackendGate: màn "Đang kết nối backend…" và màn "Backend hiện không khả dụng" + nút thử lại.
+ *   LƯU Ý: backend chết thì KHÔNG trang nào hiện ra — đây là lý do web trắng khi quên chạy backend.
+ * - RouteEffects: đổi trang thì cuộn lên đầu; URL có #anchor thì cuộn mượt tới đúng mục.
+ *
+ * Sửa ở đây khi: thêm/đổi đường dẫn trang, hoặc sửa giao diện 2 màn hình chờ/lỗi backend.
+ */
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { HomePage } from './pages/HomePage'
