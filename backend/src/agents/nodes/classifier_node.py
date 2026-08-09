@@ -4,7 +4,6 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
 from src.agents.constants import (
-    GENERAL_GREETING_KEYWORDS,
     OUT_OF_SCOPE_KEYWORDS,
     SOVEREIGNTY_KEYWORDS,
 )
@@ -18,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 class RouteSchema(BaseModel):
     intent: str = Field(
-        description="The classified intent of the user. Must be one of: 'domain', 'general', 'sensitive'"
+        description="The classified intent of the user. Must be one of: 'domain' or 'sensitive'"
     )
     sub_intent: str = Field(
-        description="Detailed classification. e.g., 'booking', 'vehicle_info', 'small_talk', 'sovereignty', 'out_of_scope_code', 'out_of_scope_math', 'others'"
+        description="Detailed classification. e.g., 'booking', 'vehicle_info', 'sovereignty', 'out_of_scope_code', 'out_of_scope_math', 'others'"
     )
 
 
@@ -48,7 +47,8 @@ async def classifier_node(state: AgentState) -> dict:
     if not query:
         trace_event("classifier.empty_query", trace_id=trace_id)
         return {
-            "intent": "general",
+            "intent": "domain",
+            "active_skill": "advise",
             "messages": [HumanMessage(content="")],
             "metadata": {**metadata, "sub_intent": "empty_query"},
             "tool_call_count": 0,
@@ -79,7 +79,7 @@ async def classifier_node(state: AgentState) -> dict:
     # Construct prompt for the LLM classifier dynamically based on system_prompt.md
     prompt = (
         "You are an Intent Classifier Router for a VinFast Test Drive Assistant.\n"
-        "Your task is to classify the user's input query into one of three intents (domain, general, sensitive) "
+        "Your task is to classify the user's input query into one of two intents (domain or sensitive) "
         "and determine the sub_intent based on the system instructions below.\n\n"
         "--- SYSTEM INSTRUCTIONS ---\n"
         f"{get_system_prompt()}\n\n"
@@ -97,8 +97,8 @@ async def classifier_node(state: AgentState) -> dict:
 
         route_result = cast(RouteSchema, result)
         intent = route_result.intent
-        if intent not in {"domain", "general", "sensitive"}:
-            intent = "general"
+        if intent not in {"domain", "sensitive"}:
+            intent = "domain"
 
         sub_intent = route_result.sub_intent
         active_skill = "booking" if sub_intent == "booking" else "advise"
@@ -121,33 +121,24 @@ async def classifier_node(state: AgentState) -> dict:
         trace_event("llm.error", trace_id=trace_id, node="classifier", error=str(e))
         # Log the specific error for debugging before falling back to keyword classifier
         logger.warning("Classifier LLM call failed (%s: %s), falling back to keyword matching.", type(e).__name__, e)
-        if any(kw in lower_query for kw in GENERAL_GREETING_KEYWORDS):
-            trace_event("classifier.fallback_route", trace_id=trace_id, intent="general", sub_intent="fallback_general")
-            return {
-                "intent": "general",
-                "messages": [HumanMessage(content=query)],
-                "metadata": {**metadata, "sub_intent": "fallback_general"},
-                "tool_call_count": 0,
-            }
-        else:
-            active_skill = (
-                "booking"
-                if any(
-                    kw in lower_query for kw in ["đặt lịch", "lái thử", "booking", "lịch hẹn", "hủy lịch", "dời lịch"]
-                )
-                else "advise"
+        active_skill = (
+            "booking"
+            if any(
+                kw in lower_query for kw in ["đặt lịch", "lái thử", "booking", "lịch hẹn", "hủy lịch", "dời lịch"]
             )
-            trace_event(
-                "classifier.fallback_route",
-                trace_id=trace_id,
-                intent="domain",
-                active_skill=active_skill,
-                sub_intent="fallback_domain",
-            )
-            return {
-                "intent": "domain",
-                "active_skill": active_skill,
-                "messages": [HumanMessage(content=query)],
-                "metadata": {**metadata, "sub_intent": "fallback_domain"},
-                "tool_call_count": 0,
-            }
+            else "advise"
+        )
+        trace_event(
+            "classifier.fallback_route",
+            trace_id=trace_id,
+            intent="domain",
+            active_skill=active_skill,
+            sub_intent="fallback_domain",
+        )
+        return {
+            "intent": "domain",
+            "active_skill": active_skill,
+            "messages": [HumanMessage(content=query)],
+            "metadata": {**metadata, "sub_intent": "fallback_domain"},
+            "tool_call_count": 0,
+        }

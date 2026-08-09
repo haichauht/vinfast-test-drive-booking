@@ -1,12 +1,10 @@
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.prebuilt import ToolNode
 
 from src.agents.nodes.advise_skill_node import advise_skill_node
 from src.agents.nodes.booking_skill_node import booking_skill_node
 from src.agents.nodes.classifier_node import classifier_node
-from src.agents.nodes.general_respond_node import general_respond_node
 from src.agents.nodes.sensitive_policy_node import sensitive_policy_node
 from src.agents.state import AgentState
 from src.agents.tools import (
@@ -20,6 +18,7 @@ from src.agents.tools import (
     update_booking_draft,
     verify_booking_access,
 )
+from src.guardrails.tool_guard import build_guarded_tool_node
 
 # Giới hạn số vòng tool tối đa để tránh vòng lặp vô hạn
 MAX_TOOL_CALLS = 8
@@ -30,10 +29,7 @@ def route_intent(state: AgentState) -> str:
     intent = state.get("intent", "domain")
     if intent == "sensitive":
         return "sensitive_policy"
-    elif intent == "general":
-        return "general_respond"
-
-    # Nếu domain, route theo active_skill
+    # All non-sensitive requests use one of the two domain skills.
     active_skill = state.get("active_skill", "advise")
     if active_skill == "booking":
         return "booking_skill"
@@ -78,7 +74,6 @@ def build_graph() -> CompiledStateGraph:
     # Nodes phân loại và chính sách
     graph.add_node("classifier", classifier_node)
     graph.add_node("sensitive_policy", sensitive_policy_node)
-    graph.add_node("general_respond", general_respond_node)
 
     # Nodes xử lý Skill
     graph.add_node("booking_skill", booking_skill_node)
@@ -101,11 +96,11 @@ def build_graph() -> CompiledStateGraph:
 
     graph.add_node(
         "booking_tools",
-        ToolNode(booking_tools_list, handle_tool_errors=True),
+        build_guarded_tool_node(booking_tools_list, skill_name="booking"),
     )
     graph.add_node(
         "advise_tools",
-        ToolNode(advise_tools_list, handle_tool_errors=True),
+        build_guarded_tool_node(advise_tools_list, skill_name="advise"),
     )
 
     # Entry point
@@ -117,7 +112,6 @@ def build_graph() -> CompiledStateGraph:
         route_intent,
         {
             "sensitive_policy": "sensitive_policy",
-            "general_respond": "general_respond",
             "booking_skill": "booking_skill",
             "advise_skill": "advise_skill",
         },
@@ -147,7 +141,6 @@ def build_graph() -> CompiledStateGraph:
 
     # Các luồng kết thúc trực tiếp
     graph.add_edge("sensitive_policy", END)
-    graph.add_edge("general_respond", END)
 
     # Dùng MemorySaver để lưu lịch sử hội thoại theo thread_id
     checkpointer = MemorySaver()
