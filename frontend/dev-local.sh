@@ -29,7 +29,30 @@ else
 fi
 echo "==> Python: $PY"
 
+# ---- 1b. Cổng có đang bị tiến trình cũ chiếm không ----
+# Chạy script lần hai khi lần một chưa tắt hẳn là chuyện rất hay xảy ra. Khi đó uvicorn
+# không bind được cổng 8000 và chết lặng lẽ, còn Vite tự nhảy sang 3001 — nhìn thì web
+# vẫn lên nhưng thực chất đang nói chuyện với backend của lần chạy trước. Báo rõ ngay đây.
+for port in 8000 3000; do
+  holder="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
+  if [ -n "$holder" ]; then
+    echo "!!  Cổng $port đang bị tiến trình $holder chiếm (có thể là lần chạy trước chưa tắt)."
+    echo "!!  Tắt nó rồi chạy lại:   kill $holder"
+    exit 1
+  fi
+done
+
 mkdir -p "$BACKEND/data" "$BACKEND/logs"
+
+# ---- 1c. Cảnh báo key LLM còn là chuỗi mẫu ----
+# Luồng đặt lịch (bấm nút) KHÔNG cần key. Nhưng gõ tin nhắn tự do cho ViVi thì cần, và khi
+# key là chuỗi mẫu, backend trả "Đã xảy ra lỗi khi kết nối với mô hình AI" — rất dễ bị hiểu
+# nhầm thành mất kết nối backend. Nói trước để khỏi mất công đi tìm.
+llm_key="$(grep -E '^(OPENAI_API_KEY|OPENROUTER_API_KEY)=' "$ROOT/.env" 2>/dev/null | cut -d= -f2- | grep -v '^$' | grep -v 'your-key-here\|your-key\|sk-or-v1-your' || true)"
+if [ -z "$llm_key" ]; then
+  echo "!!  Chưa có OPENAI_API_KEY / OPENROUTER_API_KEY thật trong .env"
+  echo "!!  Bấm nút để đặt lịch thì VẪN CHẠY. Chỉ chat tự do với ViVi mới báo lỗi mô hình AI."
+fi
 
 # ---- 2. Seed dữ liệu showroom/xe/khung giờ (bỏ qua nếu DB đã có) ----
 echo "==> Seed database"
