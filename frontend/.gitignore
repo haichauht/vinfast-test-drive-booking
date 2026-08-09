@@ -1,0 +1,7 @@
+# media-index.html là catalogue media bàn giao cho dự án, cần được lưu trong Git.
+# Cập nhật bằng: npm run media:index
+
+# Thư mục ảnh/model gốc do chủ dự án tải về máy — 145 MB, trong đó có 3 file .glb
+# nặng 14–88 MB. KHÔNG đưa vào Git: repo sẽ phình và GitHub chặn file quá lớn.
+# Ảnh gốc cần cho việc tách nền đã được chép sang src/media/local/originals/ (6,4 MB).
+Ảnh xe vinfast/

@@ -1,3 +1,20 @@
+/**
+ * components/booking/BookingChatPrimitives.jsx — Các mảnh giao diện của khung chat ViVi.
+ *
+ * ⚠️ CẢNH BÁO — CẢ FILE NÀY HIỆN KHÔNG ĐƯỢC DÙNG Ở ĐÂU. Không file nào import nó.
+ * BookingPage.jsx đang chạy bản sao riêng của cả 3 component bên dưới (dòng ~264, ~287, ~295).
+ * Sửa ở đây sẽ KHÔNG thấy gì đổi trên web — muốn sửa chat ViVi thì vào src/pages/BookingPage.jsx.
+ * Đây là phần tách file còn dang dở của bên backend, chưa nối lại vào trang.
+ *
+ * Nội dung 3 component (để đối chiếu với bản trong BookingPage):
+ * - ViViAvatar: ảnh đại diện ViVi, prop `compact` cho bản nhỏ nằm cạnh tin nhắn.
+ * - AgentMessage: một bong bóng tin nhắn. Tự xuống dòng theo \n và đổi **chữ** thành in đậm.
+ * - ContextualChoices: dải nút gợi ý ngay trong khung chat — hiện tối đa 4 showroom khi
+ *   stage = 'choose_showroom', hoặc 5 khung giờ gần nhất khi stage = 'choose_slot'.
+ *
+ * Khác biệt so với bản trong BookingPage: bản ở đây thiếu nhánh gợi ý khu vực
+ * (locationSuggestions / onResolveArea) mà bản đang chạy có.
+ */
 import { Clock, MapPin } from '@phosphor-icons/react'
 import { viviAvatar } from '../../data/media'
 

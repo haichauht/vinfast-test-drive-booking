@@ -167,6 +167,14 @@ Ví dụ tối thiểu:
 - Frontend luôn tôn trọng `prefers-reduced-motion`; backend phải có ảnh fallback cho mọi video/motion asset.
 - Khi dữ liệu/media async render xong, frontend integration gọi `ScrollTrigger.refresh()`; không khởi tạo lại toàn bộ GSAP timeline trên từng chunk stream.
 
+### Kho asset và lớp ghi đè hiện tại
+
+- `src/media/vehicle-media-map.js` là sổ tra cứu mẫu xe → file nguồn. Không suy đoán file theo tên thư mục ở backend.
+- `src/media/local/by-model/<vehicleId>/studio.*` là bản studio đã duyệt và có quyền ưu tiên cao nhất. Chạy `npm run media:apply` để đồng bộ đúng file sang `backend/data/media/vehicles/<vehicleId>/studio.*` trong môi trường local.
+- Catalogue hiện tại đã publish toàn bộ 14 `studioImage` ở mode `cutout`, gồm cả VF 6, VF MPV 7, Limo Green và eBus vừa được làm sạch. Pipeline CDN phải giữ kênh alpha; nếu làm phẳng sang JPEG/WebP không alpha thì backend bắt buộc đổi mode thành `plate` hoặc `photo`.
+- Chân dung lớn ViVi dùng `src/media/local/common/vivi-portrait-cutout.png`. Không thay lại bằng `Ảnh ViVi.jpeg` vì JPEG nguồn có nền trắng và sẽ lộ khung trên nền section.
+- `frontend/media-index.html` là catalogue sinh tự động cho ảnh, video, asset ghi đè, ảnh showcase và GLB/GLTF/FBX/OBJ/USDZ. Sau khi thêm hoặc đổi media, chạy `npm run media:index`; không sửa tay file HTML sinh ra.
+
 ### Contract media trang chủ và quy tắc lớp ảnh
 
 - `factoryFilm` và `factoryAerial` là hai content block độc lập, có `sortOrder` riêng. Không composite ảnh toàn cảnh nhà máy vào video dây chuyền và không trả HTML/CSS positioning từ CMS.
@@ -215,6 +223,36 @@ Quy tắc bắt buộc:
 - Danh mục trụ sạc trả `powerKw`, số cổng, điện áp vào/ra, chuẩn bảo vệ, nhiệt độ vận hành và media có `alt`, `width`, `height`, `revision`.
 - Không cho CMS gửi selector GSAP hoặc JavaScript. CMS chỉ chọn animation preset allowlist: `hero-scale`, `stagger-cards`, `pinned-chapter`, `static`.
 - Khi policy hết hiệu lực hoặc chưa publish, API phải trả trạng thái rõ ràng; frontend giữ bản bundled fallback kèm cảnh báo nguồn, không tự ghép dữ liệu cũ và mới.
+
+### Media contract cho chương Lạc Hồng trên trang chủ
+
+Lạc Hồng là nội dung showcase thương hiệu, không thuộc catalogue bán hàng và không được trả
+`bookable: true`. Bản frontend hiện dùng một canvas duy nhất với năm ảnh alpha theo thứ tự
+camera làm fallback; người dùng chỉ đổi góc bằng kéo hoặc phím mũi tên, không autoplay và
+không hiển thị từng ảnh như gallery.
+
+Backend/CMS nên trả cấu trúc sau khi có model 3D chính thức:
+
+```json
+{
+  "id": "lac-hong-900lx",
+  "placement": "home_brand_showcase",
+  "bookable": false,
+  "model3dUrl": "https://cdn.example.com/lac-hong-900lx.glb",
+  "posterUrl": "https://cdn.example.com/lac-hong-900lx-poster.webp",
+  "orbitFrames": ["https://cdn.example.com/lac-hong/frame-01.webp"],
+  "revision": "2026-08-09"
+}
+```
+
+- Ưu tiên `model3dUrl` GLB/GLTF có Draco/KTX2; `posterUrl` bắt buộc để tải tiến triển và
+  làm fallback cho thiết bị yếu. `orbitFrames` chỉ dùng khi model 3D không có/không tải được.
+- Ảnh fallback phải cùng góc máy, ánh sáng, kích thước canvas, safe bounds và có alpha thật;
+  không để nền trắng/xám hoặc viền chroma quanh thân xe.
+- CMS chỉ cung cấp nội dung theo hướng năng lực thiết kế, chế tác và bản sắc VinFast. Tên
+  Lạc Hồng là chú thích ngữ cảnh, không thay thông điệp thương hiệu và không có CTA booking.
+- Không gửi code WebGL/GSAP từ CMS. Frontend sở hữu camera limits, drag sensitivity,
+  reduced-motion và toàn bộ motion preset.
 
 ## 6. Contract showroom, slot, hold và booking
 

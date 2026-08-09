@@ -1,3 +1,20 @@
+/**
+ * components/booking/BookingAccessPanel.jsx — Luồng TRA CỨU / SỬA / HUỶ lịch đã đặt, có xác thực OTP.
+ *
+ * ✅ ĐANG DÙNG THẬT: BookingPage.jsx render trong khung chat ViVi (~dòng 1646).
+ *
+ * Một component đổi thành 4 màn khác nhau theo prop `phase`:
+ * - 'request'        → nhập Mã lịch + Số điện thoại, bấm "Gửi OTP qua Zalo" (có đếm ngược chống spam).
+ * - (mặc định)       → 6 ô nhập OTP, tự nhảy ô, dán được cả dãy số, kèm nút gửi lại và đồng hồ hết hạn.
+ * - 'edit'           → sau khi xác thực: sửa tên/SĐT/email, đổi khung giờ (nút lịch bên phải ô Thời gian).
+ *                      Mã lịch / Mẫu xe / Showroom để chỉ đọc, nền xám.
+ * - 'confirm_cancel' → xem lại toàn bộ thông tin rồi xác nhận huỷ (nút chữ đỏ).
+ *
+ * ⚠️ Cần dọn khi rảnh: file này viết style trực tiếp bằng inline style (biến actionStyle,
+ * hoverBorder, các thuộc tính background/color rải rác) thay vì dùng class trong index.css
+ * như phần còn lại của dự án. Muốn đổi màu/khoảng cách các nút ở đây thì phải sửa trong file,
+ * không tìm thấy trong index.css đâu.
+ */
 import { CalendarBlank } from '@phosphor-icons/react'
 
 const actionStyle = { border: '1px solid transparent', background: '#f1f3f5', color: '#27313a', borderRadius: '8px', minHeight: '42px', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }

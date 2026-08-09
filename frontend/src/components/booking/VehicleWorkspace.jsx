@@ -1,3 +1,23 @@
+/**
+ * components/booking/VehicleWorkspace.jsx — 3 mảnh giao diện liên quan tới MẪU XE trong luồng đặt lịch.
+ *
+ * ⚠️ CẢNH BÁO QUAN TRỌNG — chỉ 1 trong 3 mảnh dưới đây thực sự chạy trên web:
+ * - VehicleShot     → ĐANG DÙNG (BookingSummary.jsx và BookingManagementModals.jsx import).
+ * - VehicleSwitcher → KHÔNG DÙNG. BookingPage.jsx chạy bản riêng của nó (dòng ~358).
+ * - VehiclePanel    → KHÔNG DÙNG. BookingPage.jsx chạy bản riêng của nó (dòng ~424).
+ * Sửa VehicleSwitcher/VehiclePanel ở file này sẽ KHÔNG thấy gì đổi trên web.
+ * Muốn sửa 2 mảnh đó, vào src/pages/BookingPage.jsx. Xem thêm ghi chú đầu BookingPage.jsx.
+ *
+ * Nội dung 3 mảnh:
+ * - VehicleShot: ảnh studio của xe, gắn class theo studioShot.mode (cutout ảnh tách nền /
+ *   plate / photo) để CSS chọn đúng cách đóng khung.
+ * - VehicleSwitcher: hộp thoại "Bạn muốn cầm lái mẫu nào?", chia 2 nhóm theo carGroups,
+ *   đóng bằng phím Esc hoặc bấm ra ngoài.
+ * - VehiclePanel: thẻ "Mẫu xe đang giữ" — ảnh xe, 3 thông số đầu và link về trang chi tiết.
+ *
+ * Code viết dồn 1 dòng rất dài, đọc bằng cách bật word-wrap (Option+Z trong VS Code).
+ * Style tương ứng: mục "Bảng chọn / đổi mẫu xe" trong index.css.
+ */
 import { useEffect } from 'react'
 import { ArrowRight, CaretDown, Check, X } from '@phosphor-icons/react'
 import { Link } from 'react-router-dom'

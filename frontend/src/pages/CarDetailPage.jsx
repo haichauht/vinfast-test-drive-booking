@@ -1,3 +1,33 @@
+/**
+ * pages/CarDetailPage.jsx — TRANG CHI TIẾT XE tại đường dẫn /models/:carId (vd: /models/vf9).
+ *
+ * Dữ liệu: useVehicleDetail(carId) cho mẫu xe đang xem, useVehicleCatalog() để tìm "xe tiếp theo".
+ * ID không có trong catalogue → hiện màn "Không tìm thấy mẫu xe" thay vì trang lỗi.
+ *
+ * Thứ tự các mục trên trang:
+ *  1. Hero — tên xe cỡ lớn, ảnh xe chạy vào từ trái          (.detail-hero)
+ *  2. Video nội thất (CHỈ mẫu limo-green)                     (.detail-film)
+ *  3. Popup gợi ý đặt lịch, tự hiện sau 2,2 giây              (.test-drive-nudge)
+ *  4. Câu tuyên ngôn — chữ sáng dần từng từ khi cuộn          (.car-manifesto)
+ *  5. Thước phim giới thiệu, nếu backend có video             (ModelFilm, ~dòng 68)
+ *  6. Thông số nổi bật                                        (.detail-specs, id="specifications")
+ *  7. Các chương ảnh: ngoại thất → khoang lái → chi tiết      (.detail-story)
+ *  8. Lưới ảnh đầy đủ, chỉ hiện khi có hơn 3 ảnh              (.detail-media)
+ *  9. Bảng màu bấm đổi được, cần ít nhất 2 màu                (ColorExplorer, ~dòng 16)
+ * 10. Nguồn dữ liệu + link brochure PDF                       (.brochure-note)
+ * 11. CTA cuối + link sang xe tiếp theo                       (.detail-action)
+ * 12. Thanh nổi dưới đáy: tên xe, giá, nút đặt lịch           (.detail-booking-dock)
+ *
+ * ANIMATION (khối useGSAP ~dòng 127) — phần tinh vi nhất dự án:
+ * - Xe chạy vào màn hình. Lần đầu xem mẫu này chạy dài (-132%, 1,7 giây), các lần sau
+ *   ngắn hơn (-34%, 0,95 giây) — trạng thái ghi trong sessionStorage theo từng mẫu xe.
+ * - Chỉ chạy kiểu đó khi backend có `motionImage` (ảnh tách nền). Không có thì xe phóng to dần.
+ * - Chữ tuyên ngôn sáng dần từng từ, ảnh từng chương phóng to theo thao tác cuộn.
+ *
+ * sessionStorage lưu 3 khoá (chỉ ID và cờ giao diện, KHÔNG lưu thông tin cá nhân):
+ * last-viewed-car · test-drive-nudge:<id> · vinfast-intro-seen:<id>.
+ * Muốn xem lại animation lần đầu hoặc popup gợi ý: mở tab ẩn danh, hoặc xoá sessionStorage.
+ */
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useGSAP } from '@gsap/react'
