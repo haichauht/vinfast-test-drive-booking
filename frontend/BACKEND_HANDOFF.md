@@ -171,7 +171,45 @@ Ví dụ tối thiểu:
 
 - `src/media/vehicle-media-map.js` là sổ tra cứu mẫu xe → file nguồn. Không suy đoán file theo tên thư mục ở backend.
 - `src/media/local/by-model/<vehicleId>/studio.*` là bản studio đã duyệt và có quyền ưu tiên cao nhất. Chạy `npm run media:apply` để đồng bộ đúng file sang `backend/data/media/vehicles/<vehicleId>/studio.*` trong môi trường local.
-- Catalogue hiện tại đã publish toàn bộ 14 `studioImage` ở mode `cutout`, gồm cả VF 6, VF MPV 7, Limo Green và eBus vừa được làm sạch. Pipeline CDN phải giữ kênh alpha; nếu làm phẳng sang JPEG/WebP không alpha thì backend bắt buộc đổi mode thành `plate` hoặc `photo`.
+- Catalogue publish 12/14 `studioImage` ở mode `cutout`. Riêng **Limo Green và eBus vẫn là `photo`** — xem mục "Việc cần backend xử lý" ngay dưới. Pipeline CDN phải giữ kênh alpha; nếu làm phẳng sang JPEG/WebP không alpha thì backend bắt buộc đổi mode thành `plate` hoặc `photo`.
+
+#### Việc cần backend xử lý: Limo Green và eBus đang lệch giữa ảnh và mode
+
+`GET /api/v1/vehicles` đang trả `studioImage.mode = "photo"` cho `limo-green` và `ebus`
+(`_VEHICLE_STUDIO_MODES` trong `backend/src/services/site_catalog.py`). **Giá trị đó đang đúng
+với ảnh nguồn mà backend lấy** — hai ảnh đó có nền đặc, không có alpha:
+
+| File | Tỉ lệ pixel trong suốt |
+|---|---|
+| `common/limo-green-studio.webp` — nguồn `publish_site_media.py` đang dùng | 0,0% |
+| `Dịch vụ_EBus/ebus-img-01.webp` — nguồn `publish_site_media.py` đang dùng | 0,0% |
+| `by-model/limo-green/studio.webp` — bản đã tách nền, đã có trong repo | 68,8% |
+| `by-model/ebus/studio.webp` — bản đã tách nền, đã có trong repo | 72,8% |
+
+Vấn đề: môi trường nào chạy `npm run media:apply` (mọi máy dùng `dev-local.sh`) sẽ được phục vụ
+bản alpha, nhưng API vẫn báo `photo`, nên frontend gắn `.vehicle-shot--photo` với
+`object-fit: cover`. Kết quả là 2 thẻ xe bị đóng khung chữ nhật giữa 12 thẻ xe trôi tự do.
+
+**Hai thay đổi dưới đây phải làm CÙNG LÚC. Làm lẻ một cái là hỏng:**
+
+1. `backend/scripts/publish_site_media.py` — trỏ hai mẫu này sang file alpha đã có sẵn trong repo:
+
+   ```python
+   "limo-green": "src/media/local/by-model/limo-green/studio.webp",
+   "ebus":       "src/media/local/by-model/ebus/studio.webp",
+   ```
+
+2. `backend/src/services/site_catalog.py` — sau khi bước 1 xong mới bỏ hai dòng này:
+
+   ```python
+   _VEHICLE_STUDIO_MODES = {
+       "limo-green": "photo",   # xoá
+       "ebus": "photo",         # xoá
+   }
+   ```
+
+Nếu chỉ làm bước 2, môi trường chưa chạy `media:apply` sẽ hiển thị ảnh có nền ở mode `cutout`,
+tức là một mảng nền chữ nhật trôi lơ lửng trên nền xám — xấu hơn hiện trạng.
 - Chân dung lớn ViVi dùng `src/media/local/common/vivi-portrait-cutout.png`. Không thay lại bằng `Ảnh ViVi.jpeg` vì JPEG nguồn có nền trắng và sẽ lộ khung trên nền section.
 - `frontend/media-index.html` là catalogue sinh tự động cho ảnh, video, asset ghi đè, ảnh showcase và GLB/GLTF/FBX/OBJ/USDZ. Sau khi thêm hoặc đổi media, chạy `npm run media:index`; không sửa tay file HTML sinh ra.
 
