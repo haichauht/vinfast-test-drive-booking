@@ -21,15 +21,13 @@ const productGroups = [
 export function AppShell({ children, navTheme = 'light' }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [productsOpen, setProductsOpen] = useState(false)
-  const [bookingHref, setBookingHref] = useState('/booking')
+  const bookingHref = '/booking'
   const location = useLocation()
   const { bookingStatus, retry } = useBackendStatus()
 
   useEffect(() => {
     setMenuOpen(false)
     setProductsOpen(false)
-    const routeCar = location.pathname.match(/^\/(?:cars|models)\/([^/]+)/)?.[1]
-    setBookingHref(routeCar ? `/booking?car=${routeCar}` : '/booking')
   }, [location.pathname, location.hash])
 
   useEffect(() => {

@@ -676,15 +676,20 @@ export function BookingPage() {
   const featuredChoices = ['vf3', 'vf5', 'vf6', 'vf7'].map(getCar).filter(Boolean)
   const routeCar = getCar(searchParams.get('car'))
   const initialCar = routeCar || null
-  const [recipient, setRecipient] = useState(restoredUi.recipient || '')
+  const shouldOfferResume = Boolean(
+    !initialCar && (
+      (restoredUi.stage && restoredUi.stage !== 'idle') ||
+      (Array.isArray(restoredUi.messages) && restoredUi.messages.length)
+    ),
+  )
+  const [recipient, setRecipient] = useState(initialCar ? '' : restoredUi.recipient || '')
   const [resumePending, setResumePending] = useState(() => Boolean(
-    (restoredUi.stage && restoredUi.stage !== 'idle') ||
-    (Array.isArray(restoredUi.messages) && restoredUi.messages.length),
+    shouldOfferResume,
   ))
-  const [selectedCarId, setSelectedCarId] = useState(initialCar?.id || restoredUi.selectedCarId || '')
-  const [stage, setStage] = useState(restoredUi.stage || 'idle')
-  const [activeView, setActiveView] = useState(restoredUi.activeView || (initialCar ? 'car' : 'agent'))
-  const [messages, setMessages] = useState(Array.isArray(restoredUi.messages) ? restoredUi.messages : [])
+  const [selectedCarId, setSelectedCarId] = useState(initialCar?.id || '')
+  const [stage, setStage] = useState(shouldOfferResume ? restoredUi.stage || 'idle' : 'idle')
+  const [activeView, setActiveView] = useState(initialCar ? 'car' : 'agent')
+  const [messages, setMessages] = useState(shouldOfferResume && Array.isArray(restoredUi.messages) ? restoredUi.messages : [])
   const [draft, setDraft] = useState('')
   const [agentTyping, setAgentTyping] = useState(false)
   const [address, setAddress] = useState({ province: '', detail: '' })
@@ -1392,6 +1397,8 @@ export function BookingPage() {
     // Nháp tạo trước khi lưu recipient không đủ dữ liệu để hiện lại modal;
     // tiếp tục thẳng với lựa chọn mặc định thay vì chặn người dùng thêm lần nữa.
     if (!recipient) setRecipient('self')
+    if (restoredUi.selectedCarId) setSelectedCarId(restoredUi.selectedCarId)
+    if (restoredUi.activeView) setActiveView(restoredUi.activeView)
     setResumePending(false)
   }
   const restartConversation = () => {

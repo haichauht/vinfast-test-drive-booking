@@ -14,6 +14,7 @@ import { AppShell } from '../components/AppShell'
 import { IslandButton } from '../components/IslandButton'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
+import { SiteFooter } from '../components/SiteFooter'
 import { prefetchVehicle } from '../api/vehicles'
 import { carGroups, carImage } from '../data/cars'
 import { usePageContent, useVehicleCatalog } from '../hooks/useSiteData'
@@ -49,7 +50,7 @@ function VehicleRail({ vehicles }) {
         {vehicles.map((car, index) => (
           <Link
             className="vehicle-tile"
-            to={`/booking?car=${car.id}`}
+            to={`/models/${car.id}`}
             key={car.id}
             onMouseEnter={() => prefetchVehicle(car.id)}
             onFocus={() => prefetchVehicle(car.id)}
@@ -104,7 +105,8 @@ export function HomePage() {
   const { cars } = useVehicleCatalog()
   const { data: homeContent } = usePageContent('home')
   const stories = homeContent?.testimonials || []
-  const heroCar = cars.find((car) => car.id === homeContent?.hero?.vehicleId)
+  const heroCar = cars.find((car) => car.id === 'vf7')
+    || cars.find((car) => car.id === homeContent?.hero?.vehicleId)
     || cars.find((car) => car.featured && car.category === 'personal')
     || cars[0]
   const flagshipVehicles = ['vf8', 'vf9']
@@ -133,19 +135,30 @@ export function HomePage() {
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       if (reduced) {
         gsap.set('[data-hero-reveal]', { opacity: 1, y: 0 })
-        gsap.set('.home-hero__car', { opacity: 1 })
+        gsap.set('.home-hero__car', { opacity: 1, xPercent: 0 })
         return
       }
 
       const heroTimeline = gsap.timeline({ defaults: { ease: 'power4.out' } })
       heroTimeline
-        .fromTo('.home-hero__car', { opacity: 0 }, { opacity: 1, duration: 1.25 })
+        .fromTo('.home-hero__car', { xPercent: -58, opacity: 0 }, { xPercent: 0, opacity: 1, duration: 1.65 })
         .fromTo(
           '[data-hero-reveal]',
           { y: 58, opacity: 0, filter: 'blur(10px)' },
           { y: 0, opacity: 1, filter: 'blur(0px)', duration: 0.95, stagger: 0.1 },
           '-=0.9',
         )
+
+      gsap.to('.home-hero__car', {
+        yPercent: 9,
+        ease: 'none',
+        scrollTrigger: {
+          trigger: '.home-hero',
+          start: 'top top',
+          end: 'bottom top',
+          scrub: 1,
+        },
+      })
 
       gsap.fromTo(
         '.scroll-drive__car',
@@ -316,7 +329,7 @@ export function HomePage() {
           <div className="home-hero__visual" aria-hidden="true">
             <SmartImage
               className="home-hero__car"
-              src={heroCar?.studioShot?.src}
+              src={heroCar?.intro || heroCar?.studioShot?.src}
               alt=""
               fit="contain"
               eager
@@ -651,25 +664,7 @@ export function HomePage() {
           </div>
         </section>
 
-        <footer className="site-footer">
-          <div className="section-frame site-footer__inner">
-            <div>
-              <strong>VINFAST</strong>
-              <p>Thiết kế trải nghiệm xem xe và đặt lịch lái thử.</p>
-            </div>
-            <nav aria-label="Liên kết cuối trang">
-              <a href="#models">Ô tô</a>
-              <a href="#technology">Công nghệ</a>
-              <Link to="/after-sales">Hậu mãi</Link>
-              <Link to="/charging">Pin & trạm sạc</Link>
-              <Link to="/booking">Đặt lịch</Link>
-              <Link to="/agent">Trợ lý ViVi</Link>
-            </nav>
-            <p className="site-footer__legal">
-              Thông số được tổng hợp từ brochure chính thức và có thể thay đổi theo phiên bản, điều kiện vận hành hoặc chính sách của nhà sản xuất.
-            </p>
-          </div>
-        </footer>
+        <SiteFooter />
       </main>
     </AppShell>
   )

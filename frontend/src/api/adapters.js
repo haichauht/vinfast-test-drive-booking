@@ -1,5 +1,16 @@
+import { vehicleImage } from '../media/assets'
+
+const vehicleMediaPrefix = '/media/vehicle-media/'
+
+const resolveVehicleMedia = (url = '') => {
+  const markerIndex = url.indexOf(vehicleMediaPrefix)
+  if (markerIndex === -1) return url
+  const relativePath = decodeURI(url.slice(markerIndex + vehicleMediaPrefix.length))
+  return vehicleImage(relativePath) || url
+}
+
 const mediaView = (media) => ({
-  src: media?.url || '',
+  src: resolveVehicleMedia(media?.url || ''),
   alt: media?.alt || '',
   focalPoint: media?.focalPoint || '50% 50%',
   aspectRatio: media?.aspectRatio,
@@ -32,13 +43,22 @@ export const vehicleDetailToCar = (vehicle) => ({
   ...vehicleSummaryToCar(vehicle),
   description: vehicle.description,
   brochure: vehicle.brochure,
-  colors: (vehicle.colors || []).map((color) => ({ ...color, image: color.image?.url || '' })),
-  chapters: (vehicle.chapters || []).map((chapter) => ({ ...chapter, src: chapter.media?.url || '' })),
-  gallery: (vehicle.gallery || []).map((media) => media.url),
+  specs: (vehicle.specifications?.[0]?.items || vehicle.shortSpecs || []).map(({ label, value }) => ({ label, value })),
+  colors: (vehicle.colors || []).map((color) => ({ ...color, image: resolveVehicleMedia(color.image?.url || '') })),
+  chapters: (vehicle.chapters || []).map((chapter) => ({ ...chapter, src: resolveVehicleMedia(chapter.media?.url || '') })),
+  gallery: (vehicle.gallery || []).map((media, index) => ({
+    src: resolveVehicleMedia(media.url),
+    alt: media.alt || '',
+    label: `Góc nhìn ${String(index + 1).padStart(2, '0')}`,
+  })),
+  actionMedia: mediaView(vehicle.actionMedia),
   presentationFilm: vehicle.presentationFilm ? {
     src: vehicle.presentationFilm.url,
     poster: vehicle.presentationFilm.posterUrl,
     mimeType: vehicle.presentationFilm.mimeType,
+    eyebrow: vehicle.presentationFilm.eyebrow,
+    title: vehicle.presentationFilm.title,
+    copy: vehicle.presentationFilm.copy,
   } : null,
   motionImage: vehicle.motion?.imageUrl || '',
 })
