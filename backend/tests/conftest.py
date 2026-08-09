@@ -50,7 +50,7 @@ def mock_llm():
         query_clean = "".join(c if c.isalnum() or c.isspace() else " " for c in query_part)
         words = query_clean.split()
         if any(kw in words for kw in ["chào", "hello", "hi"]):
-            return RouteSchema(intent="general", sub_intent="small_talk")
+            return RouteSchema(intent="domain", sub_intent="vehicle_info")
         elif any(kw in words or kw in query_part for kw in ["vf8", "sạc", "km", "thông số", "giá"]):
             return RouteSchema(intent="domain", sub_intent="vehicle_info")
         return RouteSchema(intent="domain", sub_intent="booking")

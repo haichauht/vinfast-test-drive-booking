@@ -34,7 +34,7 @@ class LifecycleService:
                 (slot_id,),
             ).fetchone()
             if not slot or slot["status"] != "available":
-                raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Slot khÃ´ng cÃ²n kháº£ dá»¥ng.", retryable=True)
+                raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Khung giờ này không còn khả dụng.", retryable=True)
             if datetime.fromisoformat(slot["start_at"]) <= self.now():
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Slot đã bắt đầu hoặc đã qua.", retryable=True)
             if not slot["vehicle_active"] or slot["operational_status"] != "available":
@@ -46,7 +46,7 @@ class LifecycleService:
                 (slot["demo_vehicle_id"], slot_id, slot["end_at"], slot["start_at"]),
             ).fetchone()
             if overlap:
-                raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Xe demo Ä‘Ã£ cÃ³ lá»‹ch trÃ¹ng.", retryable=True)
+                raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Xe demo đã có lịch trùng.", retryable=True)
             now, expires, booking_id = self.now(), self.now() + timedelta(seconds=ttl_seconds), _id("bkg")
             c.execute(
                 "INSERT INTO bookings(id,slot_id,status,held_at,hold_expires_at,source_channel,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
@@ -182,7 +182,7 @@ class LifecycleService:
         with self.db.transaction(immediate=True) as c:
             b = c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone()
             if not b:
-                raise BookingError("BOOKING_NOT_FOUND", "KhÃ´ng tÃ¬m tháº¥y booking.")
+                raise BookingError("BOOKING_NOT_FOUND", "Không tìm thấy booking.")
             if b["status"] != "held":
                 raise BookingError("BOOKING_DRAFT_NOT_AVAILABLE", "Booking draft không khả dụng.")
             if datetime.fromisoformat(b["hold_expires_at"]) <= self.now():
@@ -202,7 +202,7 @@ class LifecycleService:
                         # Booker person and attach a new Driver person.
                         current_pid = None
                     if not current_pid and not allowed.get("full_name"):
-                        raise BookingError("INVALID_INPUT", f"{role}.full_name lÃ  báº¯t buá»™c.")
+                        raise BookingError("INVALID_INPUT", f"{role}.full_name là bắt buộc.")
                     pid = current_pid or _id("person")
                     now = iso(self.now())
                     if current_pid:
@@ -298,7 +298,7 @@ class LifecycleService:
                 return cached
             draft = self._draft(c, booking_id)
             if draft["status"] != "held" or draft["remaining_seconds"] <= 0:
-                raise BookingError("HOLD_EXPIRED", "Hold Ä‘Ã£ háº¿t háº¡n.")
+                raise BookingError("HOLD_EXPIRED", "Giữ chỗ đã hết hạn.")
             if draft["version"] != expected_version:
                 raise BookingError("VERSION_CONFLICT", "Draft đã thay đổi.", retryable=True)
             if not draft["is_ready_to_confirm"]:
@@ -309,7 +309,7 @@ class LifecycleService:
                 (draft["slot_id"],),
             ).fetchone()
             if slot["status"] != "held" or slot["current_booking_id"] != booking_id:
-                raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Slot khÃ´ng thuá»™c booking.")
+                raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Khung giờ không thuộc lịch đặt này.")
             if datetime.fromisoformat(slot["start_at"]) <= self.now():
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Slot đã bắt đầu hoặc đã qua.")
             if not slot["vehicle_active"] or slot["operational_status"] != "available":

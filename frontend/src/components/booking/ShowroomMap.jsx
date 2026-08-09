@@ -30,7 +30,7 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
   const userMarkerRef = useRef(null)
   const [leafletLoaded, setLeafletLoaded] = useState(false)
   const selected = showrooms.find((showroom) => showroom.id === selectedId) || null
-  const hasLocation = !!userLocation || showrooms.some((showroom) => showroom.distance > 0)
+  const hasLocation = !!userLocation
 
   useEffect(() => {
     if (window.L) { setLeafletLoaded(true); return }
@@ -77,6 +77,20 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
   }, [userLocation, leafletLoaded])
 
   useEffect(() => {
+    const map = mapRef.current
+    if (!map || !leafletLoaded || selected) return
+    const points = showrooms
+      .filter((showroom) => Number.isFinite(showroom.latitude) && Number.isFinite(showroom.longitude))
+      .map((showroom) => [showroom.latitude, showroom.longitude])
+    if (userLocation) points.push([userLocation.latitude, userLocation.longitude])
+    if (points.length === 1) {
+      map.setView(points[0], 14, { animate: true })
+    } else if (points.length > 1) {
+      map.fitBounds(points, { padding: [42, 42], maxZoom: 14, animate: true })
+    }
+  }, [showrooms, userLocation, selected, leafletLoaded])
+
+  useEffect(() => {
     if (mapRef.current && selected && leafletLoaded) mapRef.current.setView([selected.latitude, selected.longitude], 14, { animate: true, duration: 1 })
   }, [selectedId, leafletLoaded])
 
@@ -85,7 +99,7 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
   return (
     <section className="studio-map studio-map--familiar" aria-label="Bản đồ showroom phù hợp">
       <aside className="studio-map__list">
-        <div className="studio-map__intro"><span>{showrooms.length} showroom có {car.name}</span><small>Ưu tiên có đúng xe, sau đó mới tính khoảng cách</small></div>
+        <div className="studio-map__intro"><span>{showrooms.length} showroom có {car.name}</span><small>{hasLocation ? 'Sắp xếp theo khoảng cách từ vị trí hiện tại.' : 'Đang hiển thị theo khu vực bạn đã nhập.'}</small></div>
         {showrooms.map((showroom, index) => (
           <button type="button" key={showroom.id} className={selectedId === showroom.id ? 'is-active' : ''} onClick={() => onSelect(showroom.id)}>
             <span>{index + 1}</span><span><strong>{showroom.name}</strong><small>{showroom.address}</small></span>{hasLocation && <em>{String(showroom.distance).replace('.', ',')} km</em>}

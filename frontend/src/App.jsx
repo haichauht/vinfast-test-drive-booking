@@ -15,7 +15,7 @@
  * Sửa ở đây khi: thêm/đổi đường dẫn trang, hoặc sửa giao diện 2 màn hình chờ/lỗi backend.
  */
 import { useEffect } from 'react'
-import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { HomePage } from './pages/HomePage'
 import { CarDetailPage } from './pages/CarDetailPage'
 import { BookingPage } from './pages/BookingPage'
@@ -72,7 +72,7 @@ function AppRoutes() {
       <RouteEffects />
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/cars/:carId" element={<LegacyCarRedirect />} />
+        <Route path="/cars/:carId" element={<CarDetailPage />} />
         <Route path="/models/:carId" element={<CarDetailPage />} />
         <Route path="/booking" element={<BookingPage />} />
         <Route path="/after-sales" element={<AfterSalesPage />} />
@@ -83,11 +83,6 @@ function AppRoutes() {
       </Routes>
     </>
   )
-}
-
-function LegacyCarRedirect() {
-  const { carId } = useParams()
-  return <Navigate to={`/booking?car=${encodeURIComponent(carId)}`} replace />
 }
 
 export default function App() {

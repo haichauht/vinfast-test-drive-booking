@@ -51,6 +51,7 @@ import { AppShell } from '../components/AppShell'
 import { IslandButton } from '../components/IslandButton'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
+import { SiteFooter } from '../components/SiteFooter'
 import { prefetchVehicle } from '../api/vehicles'
 import { carGroups, carImage } from '../data/cars'
 import { LacHongPassage } from '../components/home/LacHongPassage'
@@ -88,7 +89,7 @@ function VehicleRail({ vehicles }) {
         {vehicles.map((car, index) => (
           <Link
             className="vehicle-tile"
-            to={`/booking?car=${car.id}`}
+            to={`/models/${car.id}`}
             key={car.id}
             onMouseEnter={() => prefetchVehicle(car.id)}
             onFocus={() => prefetchVehicle(car.id)}
@@ -663,25 +664,7 @@ export function HomePage() {
           </div>
         </section>
 
-        <footer className="site-footer">
-          <div className="section-frame site-footer__inner">
-            <div>
-              <strong>VINFAST</strong>
-              <p>Thiết kế trải nghiệm xem xe và đặt lịch lái thử.</p>
-            </div>
-            <nav aria-label="Liên kết cuối trang">
-              <a href="#models">Ô tô</a>
-              <a href="#technology">Công nghệ</a>
-              <Link to="/after-sales">Hậu mãi</Link>
-              <Link to="/charging">Pin & trạm sạc</Link>
-              <Link to="/booking">Đặt lịch</Link>
-              <Link to="/agent">Trợ lý ViVi</Link>
-            </nav>
-            <p className="site-footer__legal">
-              Thông số được tổng hợp từ brochure chính thức và có thể thay đổi theo phiên bản, điều kiện vận hành hoặc chính sách của nhà sản xuất.
-            </p>
-          </div>
-        </footer>
+        <SiteFooter />
       </main>
     </AppShell>
   )

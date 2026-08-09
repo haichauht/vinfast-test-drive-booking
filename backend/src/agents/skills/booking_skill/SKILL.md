@@ -6,12 +6,13 @@ This skill details how to interact with the backend booking services using 8 uni
 
 ## 🚀 1. Search Test Drive Options (`search_test_drive_options`)
 
-The `search_test_drive_options` tool consolidates multiple backend processes (normalizing vehicle details, geocoding addresses, locating nearest showrooms, calculating distances, and fetching available slots). The Agent MUST NOT invoke sub-components separately.
+The `search_test_drive_options` tool consolidates multiple backend processes (normalizing vehicle details, matching textual areas to showrooms, and fetching available slots). Distances are calculated only when the client provides current-location coordinates. The Agent MUST NOT invoke sub-components separately.
 
 ### Key Input Fields:
 - `vehicle_model`: The model of the vehicle (e.g., VF3, VF5, VF7, VF8, VF9).
 - `vehicle_variant` (optional): The specific variant (e.g., Plus, Eco).
-- `address` (optional): The user's address/location to find the closest showroom.
+- `address` (optional): A textual area/address used to filter matching showrooms; it does not produce a distance.
+- `latitude`, `longitude` (optional): Current device coordinates. Use only when the user explicitly chooses current location; this is the only mode that ranks and displays distance.
 - `showroom_id` (optional): The ID of a specific showroom.
 - `preferred_date`, `preferred_time` (optional): Desired schedule preferences.
 
@@ -26,7 +27,7 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 
 #### Stage 1: Showroom Selection (`search_stage = "showroom_selection"`)
 - **Condition**: User provided an address/location, but no specific showroom is selected.
-- **Behavior**: Returns a list of matching showrooms, distances, and their nearest available slots.
+- **Behavior**: Returns matching showrooms. Distances are included only for an explicit current-location coordinate search.
 - **Agent Action**: Inform the user that the showroom map and list have been loaded on the right panel. To avoid visual redundancy and keep the chat clean, DO NOT write tables or lists of all showrooms in the chat text. Simply direct the user to click on the map marker or select from the list in the right-hand workspace.
 
 #### Stage 2: Slot Selection (`search_stage = "slot_selection"`)
