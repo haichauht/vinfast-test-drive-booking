@@ -8,7 +8,6 @@ from src.agents.graph import MAX_TOOL_CALLS, route_intent, should_continue_advis
     ("state", "expected"),
     [
         ({"intent": "sensitive"}, "sensitive_policy"),
-        ({"intent": "general"}, "general_respond"),
         ({"intent": "domain", "active_skill": "booking"}, "booking_skill"),
         ({"intent": "domain", "active_skill": "advise"}, "advise_skill"),
         ({"intent": "domain"}, "advise_skill"),

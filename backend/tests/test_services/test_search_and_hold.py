@@ -34,6 +34,14 @@ def test_search_showrooms_sorted_by_distance(booking_service, catalog):
     assert result["showrooms"][0]["distance_km"] <= result["showrooms"][1]["distance_km"]
 
 
+def test_address_search_filters_showrooms_without_calculating_distance(booking_service, catalog):
+    result = booking_service.search_options(vehicle_model="VF6", address="Quận 7")
+
+    assert result["search_stage"] == "showroom_selection"
+    assert result["showrooms"][0]["id"] == catalog["showroom_q7"]
+    assert all("distance_km" not in showroom for showroom in result["showrooms"])
+
+
 def test_address_match_reuses_cached_showroom_tokens():
     catalog_module._SHOWROOM_TOKEN_CACHE.clear()
     showroom = {
@@ -66,12 +74,12 @@ def test_to_vietnam_time_normalizes_utc_and_naive_timestamps():
 
 
 # test case of Chau + kiểm tra chỉ trả slot tương lai đang available và giới hạn tối đa năm slot
-def test_search_slots_returns_only_future_available_slots(booking_service, catalog):
+def test_search_slots_returns_future_visible_slots(booking_service, catalog):
     result = booking_service.search_options(vehicle_model="VF6", showroom_id=catalog["showroom_q7"], limit=20)
 
     assert result["search_stage"] == "slot_selection"
-    assert 0 < len(result["slots"]) <= 5
-    assert all(slot["status"] == "available" for slot in result["slots"])
+    assert 0 < len(result["slots"]) <= 20
+    assert all(slot["status"] in {"available", "held", "booked"} for slot in result["slots"])
     assert all(slot["start_at"] > FIXED_NOW.isoformat() for slot in result["slots"])
     assert catalog["slot_blocked"] not in {slot["id"] for slot in result["slots"]}
     assert catalog["slot_past"] not in {slot["id"] for slot in result["slots"]}

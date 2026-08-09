@@ -160,6 +160,7 @@ async def demo_action(request: DemoActionRequest):
         ),
         "verify_access": ("verify_booking_access", lambda **kw: verify_booking_access.invoke(kw)),
         "get_details": ("get_booking_details", lambda **kw: get_booking_details.invoke(kw)),
+        "list_bookings": ("list_bookings", booking_service.list_bookings),
         "update_details": ("UpdateBookingDetailsCommand", booking_service.update_booking_details),
         "hold_reschedule": ("HoldRescheduleSlotCommand", booking_service.hold_reschedule_slot),
         "confirm_reschedule": ("ConfirmRescheduleCommand", booking_service.confirm_reschedule),

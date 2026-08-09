@@ -5,7 +5,6 @@ from langgraph.graph.state import CompiledStateGraph
 from src.agents.nodes.advise_skill_node import advise_skill_node
 from src.agents.nodes.booking_skill_node import booking_skill_node
 from src.agents.nodes.classifier_node import classifier_node
-from src.agents.nodes.general_respond_node import general_respond_node
 from src.agents.nodes.sensitive_policy_node import sensitive_policy_node
 from src.agents.state import AgentState
 from src.agents.tools import (
@@ -30,10 +29,7 @@ def route_intent(state: AgentState) -> str:
     intent = state.get("intent", "domain")
     if intent == "sensitive":
         return "sensitive_policy"
-    elif intent == "general":
-        return "general_respond"
-
-    # Nếu domain, route theo active_skill
+    # All non-sensitive requests use one of the two domain skills.
     active_skill = state.get("active_skill", "advise")
     if active_skill == "booking":
         return "booking_skill"
@@ -78,7 +74,6 @@ def build_graph() -> CompiledStateGraph:
     # Nodes phân loại và chính sách
     graph.add_node("classifier", classifier_node)
     graph.add_node("sensitive_policy", sensitive_policy_node)
-    graph.add_node("general_respond", general_respond_node)
 
     # Nodes xử lý Skill
     graph.add_node("booking_skill", booking_skill_node)
@@ -117,7 +112,6 @@ def build_graph() -> CompiledStateGraph:
         route_intent,
         {
             "sensitive_policy": "sensitive_policy",
-            "general_respond": "general_respond",
             "booking_skill": "booking_skill",
             "advise_skill": "advise_skill",
         },
@@ -147,7 +141,6 @@ def build_graph() -> CompiledStateGraph:
 
     # Các luồng kết thúc trực tiếp
     graph.add_edge("sensitive_policy", END)
-    graph.add_edge("general_respond", END)
 
     # Dùng MemorySaver để lưu lịch sử hội thoại theo thread_id
     checkpointer = MemorySaver()
