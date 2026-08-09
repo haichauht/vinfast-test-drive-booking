@@ -21,6 +21,7 @@
  * conversation_id được giữ trong sessionStorage để ViVi nhớ mạch hội thoại trong cùng tab.
  */
 import { ApiError, apiPost } from './client'
+import { actionId } from './ids'
 
 const CONVERSATION_KEY = 'vinfast:booking-conversation-id'
 
@@ -82,7 +83,7 @@ export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, 
   },
 )
 
-export const holdBookingSlot = (slotId, uiActionId = `hold:${crypto.randomUUID()}`) => agentAction(
+export const holdBookingSlot = (slotId, uiActionId = actionId('hold')) => agentAction(
   'hold_slot',
   'Tôi xác nhận chọn khung giờ này. Hãy giữ chỗ giúp tôi.',
   {
@@ -114,7 +115,7 @@ export const saveBookingCustomer = ({ bookingId, version, recipient, person }) =
   },
 )
 
-export const confirmHeldBooking = ({ bookingId, version, uiActionId = `confirm:${crypto.randomUUID()}` }) => agentAction(
+export const confirmHeldBooking = ({ bookingId, version, uiActionId = actionId('confirm') }) => agentAction(
   'confirm_booking',
   'Tôi đã kiểm tra thông tin và xác nhận đặt lịch lái thử.',
   {
@@ -161,7 +162,7 @@ export const updateVerifiedBooking = ({ bookingId, accessToken, bookerPatch, dri
 export const cancelVerifiedBooking = ({ bookingId, accessToken, reason = '' }) => bookingManagementAction('cancel_booking', {
   booking_id: bookingId,
   access_session_token: accessToken,
-  ui_action_id: `cancel:${crypto.randomUUID()}`,
+  ui_action_id: actionId('cancel'),
   reason,
 })
 
@@ -169,12 +170,12 @@ export const holdVerifiedReschedule = ({ bookingId, slotId, accessToken }) => bo
   current_booking_id: bookingId,
   new_slot_id: slotId,
   access_session_token: accessToken,
-  ui_action_id: `reschedule-hold:${crypto.randomUUID()}`,
+  ui_action_id: actionId('reschedule-hold'),
 })
 
 export const confirmVerifiedReschedule = ({ bookingId, newBookingId, accessToken }) => bookingManagementAction('confirm_reschedule', {
   current_booking_id: bookingId,
   new_booking_id: newBookingId,
   access_session_token: accessToken,
-  ui_action_id: `reschedule-confirm:${crypto.randomUUID()}`,
+  ui_action_id: actionId('reschedule-confirm'),
 })

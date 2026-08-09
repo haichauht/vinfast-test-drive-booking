@@ -54,7 +54,7 @@
  *  Riêng nút "Hiện bảng" (~1498) và nút đóng workspace viết inline style ngay trong file.
  *  Trang này KHÔNG dùng AppShell — header riêng, gọn hơn, ở ~dòng 1488.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -97,12 +97,15 @@ import {
   updateVerifiedBooking,
   verifyBookingAccess,
 } from '../api/booking'
+import { actionId } from '../api/ids'
 import { useBackendStatus } from '../context/BackendStatusContext'
 import { BookingCustomerForm as CustomerForm } from '../components/booking/BookingCustomerForm'
 import { ShowroomMap as BookingShowroomMap } from '../components/booking/ShowroomMap'
 import { BookingTicket, SchedulePanel } from '../components/booking/BookingSummary'
 import { BookingAccessPanel } from '../components/booking/BookingAccessPanel'
 import { CancellationConfirmModal, RescheduleConfirmModal } from '../components/booking/BookingManagementModals'
+import { BookingSuccessCinematic, preloadVehicle3dRuntime } from '../components/Vehicle3DExperience'
+import { getVehicle3dModel } from '../data/vehicle3d'
 
 const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
@@ -761,6 +764,7 @@ export function BookingPage() {
   const [formErrors, setFormErrors] = useState({})
   const [bookingCode, setBookingCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [successCinematic, setSuccessCinematic] = useState(false)
   const [accessFlow, setAccessFlow] = useState(null)
   const [accessValue, setAccessValue] = useState({ phone: '', otpCode: '' })
   const [accessError, setAccessError] = useState('')
@@ -789,6 +793,33 @@ export function BookingPage() {
   // TODO [BACKEND]: Resolve these from fetched state/query caches. A production slot
   // must include inventorySlotId; the UI's date/time tuple is display-only.
   const selectedShowroom = nearbyShowrooms.find((showroom) => showroom.id === showroomId)
+
+  const completeBookingSuccess = useCallback(() => {
+    setSuccessCinematic(false)
+    setStage('success')
+    setMessages((current) => [...current, {
+      id: `${Date.now()}-${current.length}`,
+      role: 'assistant',
+      text: 'Đặt lịch thành công. Tôi đã giữ lại toàn bộ thông tin bên cạnh. Sau này, bạn chỉ cần nhập họ tên và số điện thoại để tra cứu, bổ sung hoặc huỷ lịch.',
+    }])
+  }, [])
+
+  useEffect(() => {
+    const config = getVehicle3dModel(selectedCarId)
+    if (!config) return undefined
+
+    // Người dùng thường mất vài phút để chọn showroom và điền form. Tận dụng quãng
+    // đó để browser cache GLB + runtime, tránh màn chờ ngay sau nút xác nhận cuối.
+    preloadVehicle3dRuntime().catch(() => {})
+    const link = document.createElement('link')
+    link.rel = 'prefetch'
+    link.as = 'fetch'
+    link.type = 'model/gltf-binary'
+    link.href = config.src
+    link.crossOrigin = 'anonymous'
+    document.head.appendChild(link)
+    return () => link.remove()
+  }, [selectedCarId])
 
   useEffect(() => {
     const safeMessages = messages
@@ -1270,7 +1301,7 @@ export function BookingPage() {
         return
       }
       const actionKey = pendingSlot.slotId
-      const uiActionId = holdActionIdsRef.current.get(actionKey) || `hold:${crypto.randomUUID()}`
+      const uiActionId = holdActionIdsRef.current.get(actionKey) || actionId('hold')
       holdActionIdsRef.current.set(actionKey, uiActionId)
       const held = await holdBookingSlot(pendingSlot.slotId, uiActionId)
       holdActionIdsRef.current.delete(actionKey)
@@ -1625,14 +1656,15 @@ export function BookingPage() {
     // return the user to live slot selection without losing customer form values.
     try {
       const actionKey = `${bookingId}:${bookingVersion}`
-      const uiActionId = confirmActionIdsRef.current.get(actionKey) || `confirm:${crypto.randomUUID()}`
+      const uiActionId = confirmActionIdsRef.current.get(actionKey) || actionId('confirm')
       confirmActionIdsRef.current.set(actionKey, uiActionId)
       const confirmed = await confirmHeldBooking({ bookingId, version: bookingVersion, uiActionId })
       confirmActionIdsRef.current.delete(actionKey)
       setSubmitting(false)
       setBookingCode(confirmed.booking_code)
-      setStage('success')
-      addMessage('assistant', 'Đặt lịch thành công. Tôi đã giữ lại toàn bộ thông tin bên cạnh. Sau này, bạn chỉ cần nhập họ tên và số điện thoại để tra cứu, bổ sung hoặc huỷ lịch.')
+      // Phiếu chỉ xuất hiện sau cinematic. Backend vẫn là nguồn xác nhận cuối cùng;
+      // animation không tự tạo booking và không chạy nếu request ở trên thất bại.
+      setSuccessCinematic(true)
     } catch (error) {
       setSubmitting(false)
       setBackendError(error.message)
@@ -1680,7 +1712,7 @@ export function BookingPage() {
   }
 
   return (
-    <main id="main-content" className={`agent-booking-page ${selectedCar && !workspaceHidden ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''}`}>
+    <main id="main-content" className={`agent-booking-page ${selectedCar && !workspaceHidden ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''} ${successCinematic ? 'is-cinematic' : ''}`}>
       <header className="booking-topbar booking-topbar--studio">
         <Link to="/"><ArrowLeft size={17} weight="light" /> Trang chủ</Link>
         <Brand />
@@ -1734,6 +1766,9 @@ export function BookingPage() {
 
       {!recipient && !resumePending && <RecipientModal onSelect={beginConversation} />}
       {resumePending && <ResumeModal onContinue={resumeConversation} onRestart={restartConversation} />}
+      {successCinematic && selectedCar && (
+        <BookingSuccessCinematic car={selectedCar} onComplete={completeBookingSuccess} />
+      )}
 
       {stage === 'success' && selectedCar && selectedShowroom && selectedSlot ? (
         <div className="booking-success-layout">
