@@ -27,7 +27,7 @@ class ImportService:
         required = {"code", "name", "address", "latitude", "longitude"}
         reader = csv.DictReader(io.StringIO(csv_text.lstrip("\ufeff")))
         if not reader.fieldnames or not required.issubset(reader.fieldnames):
-            raise BookingError("INVALID_INPUT", "CSV thiáº¿u cá»™t báº¯t buá»™c: code,name,address,latitude,longitude.")
+            raise BookingError("INVALID_INPUT", "CSV thiếu cột bắt buộc: code,name,address,latitude,longitude.")
         imported = 0
         with self.db.transaction(immediate=True) as c:
             for line, row in enumerate(reader, start=2):

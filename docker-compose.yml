@@ -16,6 +16,7 @@ services:
       retries: 5
 
   db-seed:
+    image: vinfast-backend:dev
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -33,6 +34,7 @@ services:
     restart: "no"
 
   backend:
+    image: vinfast-backend:dev
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -58,6 +60,7 @@ services:
       retries: 3
 
   admin:
+    image: vinfast-backend:dev
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -70,17 +73,13 @@ services:
     volumes:
       - ./backend:/app
       - ./eval/data:/app/eval/data:ro
-    command:
-      [
-        "sh",
-        "-c",
-        "python -m pip install --no-cache-dir --default-timeout=120 --retries=10 'streamlit>=1.37.0' && streamlit run admin_app.py --server.address=0.0.0.0 --server.port=8501",
-      ]
+    command: ["streamlit", "run", "admin_app.py", "--server.address=0.0.0.0", "--server.port=8501"]
     depends_on:
       postgres:
         condition: service_healthy
 
   frontend:
+    image: vinfast-frontend:dev
     build:
       context: ./frontend
       dockerfile: Dockerfile
