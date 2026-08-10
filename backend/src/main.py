@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from src.api.routes import router
 from src.api.site_routes import router as site_router
+from src.agents.graph import close_persistent_agent, initialize_persistent_agent
 from src.bootstrap import initialize_database
 from src.config import get_settings
 from src.dependencies import booking_service, database, zalo_client
@@ -23,6 +24,10 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
     initialize_database(database, settings)
+    await initialize_persistent_agent(
+        settings.database_url,
+        required=settings.app_env == "production",
+    )
     logging.getLogger(__name__).info("Starting %s in %s mode", settings.app_name, settings.app_env)
     polling_task = None
     notification_task = None
@@ -60,6 +65,7 @@ async def lifespan(app: FastAPI):
             await notification_task
         except asyncio.CancelledError:
             pass
+    await close_persistent_agent()
     logging.getLogger(__name__).info("Shutting down")
 
 
