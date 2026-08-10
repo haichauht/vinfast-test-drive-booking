@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from src.agents.graph import agent
+from src.agents.graph import agent, get_agent
 from src.agents.tools import (
     get_booking_details,
     get_booking_draft,
@@ -26,6 +26,7 @@ from src.models.schemas import (
 from src.services.booking import BookingError
 
 router = APIRouter()
+_default_agent = agent
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -72,7 +73,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
         logging.getLogger("agent.requests").info(
             "chat_started conversation_id=%s requested_action=%s", conversation_id, request.action or "llm"
         )
-        result = await agent.ainvoke(
+        # Keep the module-level `agent` overrideable by existing tests, while
+        # production resolves the graph initialized with the Postgres saver.
+        active_agent = agent if agent is not _default_agent else get_agent()
+        result = await active_agent.ainvoke(
             {
                 "query": safe_message,
                 "context": request.context,
