@@ -15,7 +15,7 @@
  *  7. CHƯƠNG THƯƠNG HIỆU LẠC HỒNG + góc nhìn canvas      (.lachong-passage)
  *     → code ở components/home/LacHongPassage.jsx, thay khối VF 8 · VF 9 cũ
  *  8. Giới thiệu trợ lý ViVi                              (.vivi-intro)
- *  9. Xe tiến lại gần theo thao tác cuộn                  (.drive-out)
+ *  9. Cảnh editorial Lạc Hồng: text trái, model xe phải       (.drive-out)
  * 10. Hệ sinh thái sở hữu                                 (.ownership-section, id="ecosystem")
  * 11. Câu chuyện công nghệ — cột trái dính khi cuộn       (.technology-story, id="technology")
  * 12. Cảm nhận khách hàng — chỉ hiện khi backend có data  (.voices-section)
@@ -27,7 +27,8 @@
  * ẢNH XE LỚN trên trang này là Lạc Hồng — xe trưng bày, CHƯA mở lái thử. Dải thẻ xe ở mục 6
  * vẫn là xe thương mại VF 3–VF 9 và vẫn là cửa vào /booking. Đừng gộp Lạc Hồng vào dải đó.
  *
- * ANIMATION (khối useGSAP ~dòng 124): hero đi từ trái sang phải, xe tiến từ chiều sâu ra (.drive-out__car),
+ * ANIMATION (khối useGSAP ~dòng 124): hero Lạc Hồng đi từ phải sang trái;
+ * xe chính diện tiến lại gần khi cuộn (.drive-out__car),
  * parallax ảnh đường/nhà máy. Máy bật prefers-reduced-motion thì hiện thẳng, không animate.
  * LƯU Ý: animation chỉ khởi tạo sau khi catalogue tải xong (`if (cars.length === 0) return`)
  * — nếu không GSAP sẽ đo sai chiều cao trang.
@@ -155,6 +156,47 @@ export function HomePage() {
     if (location.hash === '#models-electric') setActiveGroup('personal')
   }, [location.hash])
 
+  // Hero dùng media local nên phải chạy ngay ở lần paint đầu, không chờ catalogue backend.
+  // Tách timeline này khỏi các ScrollTrigger bên dưới để dữ liệu xe về muộn không làm replay.
+  useGSAP(
+    () => {
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (reduced) {
+        gsap.set('[data-hero-reveal]', { opacity: 1, y: 0 })
+        gsap.set('.home-hero__car img', { opacity: 1, scale: 1, xPercent: 0, yPercent: 0, filter: 'blur(0px)' })
+        gsap.set('.home-hero__line, .home-hero__depth span', { opacity: 1, scaleX: 1 })
+        return
+      }
+
+      const heroTimeline = gsap.timeline({ defaults: { ease: 'power4.out' } })
+      heroTimeline
+        .fromTo(
+          '.home-hero__car--lachong img',
+          { xPercent: 118, yPercent: 0, scale: 1, opacity: 0.72, filter: 'blur(2px)' },
+          { xPercent: 0, yPercent: 0, scale: 1, opacity: 1, filter: 'blur(0px)', duration: 2.35, ease: 'power3.inOut' },
+        )
+        .fromTo(
+          '.home-hero__depth span',
+          { scaleX: 0.06, opacity: 0 },
+          { scaleX: 1, opacity: 1, duration: 1.7, stagger: 0.12, ease: 'power2.out' },
+          0.22,
+        )
+        .fromTo(
+          '.home-hero__line',
+          { scaleX: 0.08, opacity: 0 },
+          { scaleX: 1, opacity: 1, duration: 1.8, ease: 'power3.out' },
+          0.42,
+        )
+        .fromTo(
+          '[data-hero-reveal]',
+          { y: 58, opacity: 0, filter: 'blur(10px)' },
+          { y: 0, opacity: 1, filter: 'blur(0px)', duration: 0.95, stagger: 0.1 },
+          0.28,
+        )
+    },
+    { scope: root },
+  )
+
   useGSAP(
     () => {
       // The testing UI has its catalogue synchronously available. In this branch,
@@ -165,31 +207,13 @@ export function HomePage() {
       // a whitelisted animationPreset and supplies correctly prepared media. Do not
       // send executable animation code or arbitrary selectors from CMS/backend.
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      if (reduced) {
-        gsap.set('[data-hero-reveal]', { opacity: 1, y: 0 })
-        gsap.set('.home-hero__car img', { opacity: 1 })
-        return
-      }
-
-      const heroTimeline = gsap.timeline({ defaults: { ease: 'power4.out' } })
-      heroTimeline
-        .fromTo(
-          '.home-hero__car img',
-          { xPercent: -18, scale: 0.88, opacity: 0, filter: 'blur(8px)' },
-          { xPercent: 0, scale: 1, opacity: 1, filter: 'blur(0px)', duration: 1.45 },
-        )
-        .fromTo(
-          '[data-hero-reveal]',
-          { y: 58, opacity: 0, filter: 'blur(10px)' },
-          { y: 0, opacity: 1, filter: 'blur(0px)', duration: 0.95, stagger: 0.1 },
-          '-=0.9',
-        )
+      if (reduced) return
 
       // Xe tiến từ chiều sâu ra: nhỏ, mờ và nhoè ở xa, rõ dần và lớn dần khi cuộn tới.
       // Chỉ chạm scale/opacity/filter nên trình duyệt không phải tính lại bố cục.
       gsap.fromTo(
         '.drive-out__car',
-        { scale: 0.42, opacity: 0, filter: 'blur(14px)', yPercent: 16 },
+        { scale: 0.42, opacity: 0, filter: 'blur(5px)', yPercent: 16 },
         {
           scale: 1,
           opacity: 1,
@@ -352,6 +376,9 @@ export function HomePage() {
           <div className="home-hero__visual" aria-hidden="true">
             {/* Ảnh xe lớn đầu trang là Lạc Hồng 900 LX (xe trưng bày), không phải xe trong
                 catalogue. Hai nút CTA phía trên vẫn dẫn vào dải xe thương mại và /booking. */}
+            <div className="home-hero__depth">
+              <span /><span /><span /><span />
+            </div>
             <SmartImage
               className="home-hero__car home-hero__car--lachong"
               src={lacHongHero.src}
@@ -388,7 +415,7 @@ export function HomePage() {
             <div className="factory-film__veil" aria-hidden="true" />
             <div className="factory-film__copy">
               <p>Từ dây chuyền lắp ráp</p>
-              <h2 id="factory-film-title">Mỗi hành trình bắt đầu từ một chuyển động được chế tạo chính xác.</h2>
+              <h2 id="factory-film-title">Mỗi hành trình bắt đầu từ một chuyển động được chế tạo <em className="no-orphan">chính xác.</em></h2>
               <span>Nhà máy VinFast · Hải Phòng</span>
             </div>
           </div>
@@ -476,22 +503,36 @@ export function HomePage() {
           </div>
         </section>
 
-        {/* Khối "xe tiến ra": ảnh đầu xe chính diện đi từ chiều sâu ra phía người xem theo
-            thao tác cuộn. Dùng ảnh chính diện nên chuyển động là tiến-lại-gần, không phải
-            chạy ngang như khối cũ. Ảnh gốc chỉ 768 px nên khung được giới hạn bề ngang. */}
-        <section className="drive-out" aria-label="Xe tiến lại gần theo thao tác cuộn">
-          <div className="drive-out__aura" aria-hidden="true" />
-          <div className="drive-out__copy">
-            <p className="eyebrow">Một dấu ấn đang tiến về phía trước</p>
-            <h2>Đường nét Việt. Chuyển động hướng tới tương lai.</h2>
+        {/* Cảnh editorial Lạc Hồng: nội dung và model đứng ở hai vùng riêng biệt. */}
+        <section id="drive-out" className="drive-out" aria-label="Xe tiến lại gần theo thao tác cuộn">
+          <div className="drive-out__marquee" aria-hidden="true">
+            <div>
+              <span>Thiết kế tại Việt Nam</span><span>Chế tác cho tương lai</span>
+              <span>Thiết kế tại Việt Nam</span><span>Chế tác cho tương lai</span>
+            </div>
           </div>
-          <div className="drive-out__lane" aria-hidden="true"><span /><span /><span /></div>
-          <SmartImage
-            className="drive-out__car"
-            src={lacHongEmerge.src}
-            alt={lacHongEmerge.alt}
-            fit="contain"
-          />
+          <div className="section-frame drive-out__layout">
+            <div className="drive-out__copy">
+              <p className="eyebrow">Một dấu ấn đang tiến về phía trước</p>
+              <h2>Đường nét Việt.<br />Chuyển động hướng<br />tới tương lai.</h2>
+              <p>
+                Không chỉ là tỷ lệ của một mẫu xe. Đây là cách VinFast chuyển năng lực
+                thiết kế và chế tác trong nước thành một dấu ấn có thể nhận ra từ mọi góc nhìn.
+              </p>
+              <div className="drive-out__signature"><span>Thiết kế</span><strong>Tại Việt Nam</strong></div>
+            </div>
+
+            <div className="drive-out__visual">
+              <div className="drive-out__aura" aria-hidden="true" />
+              <div className="drive-out__lane" aria-hidden="true"><span /><span /><span /></div>
+              <SmartImage
+                className="drive-out__car"
+                src={lacHongEmerge.src}
+                alt={lacHongEmerge.alt}
+                fit="contain"
+              />
+            </div>
+          </div>
         </section>
 
         <section className="ownership-section" id="ecosystem">

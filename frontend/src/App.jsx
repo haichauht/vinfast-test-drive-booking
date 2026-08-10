@@ -14,7 +14,7 @@
  *
  * Sửa ở đây khi: thêm/đổi đường dẫn trang, hoặc sửa giao diện 2 màn hình chờ/lỗi backend.
  */
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { HomePage } from './pages/HomePage'
 import { CarDetailPage } from './pages/CarDetailPage'
@@ -52,15 +52,43 @@ function BackendGate({ children }) {
 function RouteEffects() {
   const location = useLocation()
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
+  useLayoutEffect(() => {
+    if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual'
+
+    let secondFrame
+    let hashObserver
+    let hashTimeout
+    const firstFrame = window.requestAnimationFrame(() => {
       if (location.hash) {
-        document.querySelector(location.hash)?.scrollIntoView({ behavior: 'smooth' })
+        const scrollToHash = () => {
+          const target = document.getElementById(decodeURIComponent(location.hash.slice(1)))
+          if (!target) return false
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          hashObserver?.disconnect()
+          if (hashTimeout) window.clearTimeout(hashTimeout)
+          return true
+        }
+
+        // Catalogue/backend có thể trả về sau khi RouteEffects đã mount. Theo dõi DOM
+        // trong thời gian ngắn để anchor của section động (như model 3D) vẫn hoạt động.
+        if (!scrollToHash()) {
+          hashObserver = new MutationObserver(scrollToHash)
+          hashObserver.observe(document.body, { childList: true, subtree: true })
+          hashTimeout = window.setTimeout(() => hashObserver?.disconnect(), 5000)
+        }
       } else {
         window.scrollTo({ top: 0, behavior: 'instant' })
+        // Safari đôi khi phục hồi vị trí cũ sau frame đầu. Frame thứ hai giữ chắc
+        // màn hình mở đầu ở hero thay vì nhảy xuống video trong trang chủ.
+        secondFrame = window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
       }
     })
-    return () => window.cancelAnimationFrame(frame)
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      if (secondFrame) window.cancelAnimationFrame(secondFrame)
+      if (hashTimeout) window.clearTimeout(hashTimeout)
+      hashObserver?.disconnect()
+    }
   }, [location.pathname, location.hash])
 
   return null

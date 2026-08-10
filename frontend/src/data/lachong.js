@@ -60,5 +60,11 @@ export const lacHongEmerge = {
   alt: 'Lạc Hồng nhìn chính diện trên nền trong suốt',
 }
 
+/** Ảnh tư liệu thật dùng rất nhỏ trong typography của cảnh "Đường nét Việt". */
+export const lacHongContext = {
+  src: showcaseImage('lac-hong-900lx/origin-vietnam.jpg'),
+  alt: 'Lạc Hồng 900 LX tại không gian trưng bày trước quốc kỳ Việt Nam',
+}
+
 export const lacHongDisclaimer =
   'Hình ảnh thuộc phiên bản tiền thương mại, chỉ mang tính minh hoạ và có thể thay đổi trong quá trình phát triển.'

@@ -24,8 +24,8 @@ import { Link } from 'react-router-dom'
 import { SmartImage } from '../SmartImage'
 import { carGroups } from '../../data/cars'
 
-export function VehicleShot({ car, className = '', eager = false }) {
-  return <SmartImage className={`vehicle-shot vehicle-shot--${car.studioShot.mode} ${className}`.trim()} src={car.studioShot.src} alt={`${car.name} — ảnh studio`} eager={eager} />
+export function VehicleShot({ car, className = '', eager = false, mode = car.studioShot.mode }) {
+  return <SmartImage className={`vehicle-shot vehicle-shot--${mode} ${className}`.trim()} src={car.studioShot.src} alt={`${car.name} — ảnh studio`} eager={eager} />
 }
 
 export function VehicleSwitcher({ cars, currentId, onSelect, onClose }) {

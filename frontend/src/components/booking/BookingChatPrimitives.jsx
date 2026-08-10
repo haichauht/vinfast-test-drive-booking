@@ -66,7 +66,9 @@ export function ContextualChoices({ stage, car, showrooms, slots, onShowroom, on
   }
 
   if (stage !== 'choose_slot' || !slots.length) return null
-  const quickSlots = slots.flatMap((day) => day.times.slice(0, 1).map((entry) => ({
+  // Keep chat shortcuts consistent with the weekly calendar: only live,
+  // selectable inventory is allowed here.
+  const quickSlots = slots.flatMap((day) => day.times.filter((entry) => entry.isAvailable).slice(0, 1).map((entry) => ({
     date: day.value, dateLabel: day.dateLabel, time: entry.time, slotId: entry.slotId,
   }))).slice(0, 5)
   return (
