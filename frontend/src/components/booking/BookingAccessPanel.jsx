@@ -1,3 +1,21 @@
+/**
+ * components/booking/BookingAccessPanel.jsx — Luồng TRA CỨU / SỬA / HUỶ lịch đã đặt, xác thực bằng OTP.
+ *
+ * ✅ ĐANG DÙNG THẬT: BookingPage.jsx render trong khung chat ViVi.
+ *
+ * Một component đổi thành 4 màn theo prop `phase`:
+ * - 'request'        → chỉ nhập SỐ ĐIỆN THOẠI rồi bấm "Gửi OTP qua Zalo" (có đếm ngược chống spam).
+ * - (mặc định)       → 6 ô nhập OTP, tự nhảy ô. Dán đủ 6 số là TỰ XÁC THỰC luôn, không cần bấm nút.
+ * - 'edit'           → sau khi xác thực: sửa Họ tên / SĐT / Email. Mã lịch để chỉ đọc, nền xám.
+ * - 'confirm_cancel' → xem lại đầy đủ thông tin lịch rồi xác nhận huỷ (nút chữ đỏ).
+ *
+ * Đổi ngày giờ KHÔNG nằm ở đây nữa — nó đã chuyển sang tab "Lịch đã đặt" trong BookingPage.jsx.
+ *
+ * ⚠️ Cần dọn khi rảnh: file này viết style trực tiếp bằng inline style (biến actionStyle,
+ * hoverBorder, các thuộc tính background/color rải rác) thay vì dùng class trong index.css
+ * như phần còn lại của dự án. Muốn đổi màu/khoảng cách các nút ở đây thì phải sửa trong file,
+ * không tìm thấy trong index.css đâu.
+ */
 const actionStyle = { border: '1px solid transparent', background: '#f1f3f5', color: '#27313a', borderRadius: '8px', minHeight: '42px', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }
 const hoverBorder = (event) => { event.currentTarget.style.borderColor = '#1677ff' }
 const leaveBorder = (event) => { event.currentTarget.style.borderColor = 'transparent' }

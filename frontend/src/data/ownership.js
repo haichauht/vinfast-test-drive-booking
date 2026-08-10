@@ -1,3 +1,20 @@
+/**
+ * data/ownership.js — Ảnh và số liệu chính sách cho 2 trang Hậu mãi và Pin & trạm sạc.
+ *
+ * Nội dung được gõ lại từ brochure chính thức của VinFast, chưa lấy từ CMS.
+ *
+ * Chứa gì:
+ * - ownershipMedia: bảng tra ảnh — hero 2 trang, ảnh tư vấn, 4 loại trụ sạc (250/150/60/30 kW),
+ *   sạc treo tường, sạc di động, và 2 link PDF brochure (bảo hành, pin ô tô).
+ * - highVoltageWarranty: bảng thời hạn bảo hành pin cao áp (10 năm/200.000 km · 8 năm/160.000 km
+ *   · 7 năm/160.000 km) kèm danh sách mẫu xe áp dụng.
+ * - chargingUnits: danh mục 4 trụ sạc với công suất, số cổng, dải điện áp, chuẩn IP, nhiệt độ.
+ *
+ * ⚠️ Hai mảng cuối hiện đã bị backend GHI ĐÈ khi API trả dữ liệu:
+ *   AfterSalesPage dùng content.warrantyTables, ChargingPage dùng content.chargingUnits.
+ *   Sửa số liệu ở file này sẽ KHÔNG đổi trên web nếu backend đang trả về dữ liệu tương ứng.
+ *   Phần ảnh (ownershipMedia) thì vẫn dùng thật.
+ */
 import { brochureByKeyword, commonMedia, vehicleAssetByName } from '../media/assets'
 
 const chargingImage = (fileName) => vehicleAssetByName('Trạm sạc', fileName)

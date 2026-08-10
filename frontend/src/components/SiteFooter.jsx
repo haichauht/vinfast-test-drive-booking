@@ -1,3 +1,20 @@
+/**
+ * components/SiteFooter.jsx — Chân trang dùng chung cho mọi trang marketing.
+ *
+ * Dùng ở: HomePage, CarDetailPage, AfterSalesPage, ChargingPage.
+ * KHÔNG dùng ở BookingPage — trang đặt lịch cố ý không có chân trang để không cắt mạch thao tác.
+ *
+ * Chứa gì: tên thương hiệu, 6 link điều hướng và một dòng miễn trừ về thông số.
+ * Hai link đầu là thẻ <a> dẫn tới anchor trên trang chủ (`/#models`, `/#technology`);
+ * bốn link sau là <Link> của router. Đừng đổi <a> thành <Link> cho hai cái đầu — anchor
+ * cần tải lại vị trí cuộn qua RouteEffects trong App.jsx.
+ *
+ * TODO [BACKEND/CMS]: Dòng miễn trừ và danh sách link đang hard-code. Khi có CMS, trả về
+ * qua GET /api/v1/content/home dưới dạng block `footer` có `links[]` và `legalNotice`,
+ * kèm `revision` để đối soát. Không trả HTML tự do.
+ *
+ * Style tương ứng: `.site-footer` trong index.css.
+ */
 import { Link } from 'react-router-dom'
 
 export function SiteFooter() {

@@ -1,3 +1,19 @@
+/**
+ * components/booking/BookingCustomerForm.jsx — Form nhập thông tin khách (bước 5, trong khung chat ViVi).
+ *
+ * ✅ ĐANG DÙNG THẬT: BookingPage.jsx import dưới tên CustomerForm.
+ *
+ * Form đổi hình theo prop `recipient`:
+ * - recipient = 'self'  → 3 ô: Họ và tên · Số điện thoại · Email.
+ * - recipient = 'other' → 4 ô: thêm "Tên người lái thử", và 2 nhãn đổi thành
+ *   "Tên người đặt lịch" / "Số điện thoại (người lái thử)".
+ *
+ * Ngoài ra có 2 ô tick: xác nhận có giấy phép lái xe (BẮT BUỘC, sai thì báo lỗi đỏ)
+ * và đồng ý nhận thông tin ưu đãi (mặc định đã tick sẵn).
+ *
+ * File này chỉ hiển thị. Toàn bộ việc kiểm tra dữ liệu và báo lỗi nằm ở hàm submitPerson()
+ * trong BookingPage.jsx (~dòng 1401) — muốn đổi quy tắc validate thì sửa bên đó.
+ */
 import { ArrowRight, Check } from '@phosphor-icons/react'
 
 export function BookingCustomerForm({ recipient, value, errors, onChange, onSubmit }) {
