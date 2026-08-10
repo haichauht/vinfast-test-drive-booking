@@ -85,6 +85,23 @@ def test_search_slots_returns_future_visible_slots(booking_service, catalog):
     assert catalog["slot_past"] not in {slot["id"] for slot in result["slots"]}
 
 
+def test_search_slots_excludes_past_slots_with_a_positive_utc_offset(booking_service, booking_db, catalog):
+    """A +07:00 timestamp must be compared as an instant, not as text against UTC."""
+    with booking_db.transaction(immediate=True) as connection:
+        connection.execute(
+            "UPDATE test_drive_slots SET start_at=?, end_at=? WHERE id=?",
+            (
+                "2026-08-03T08:30:00+07:00",  # 01:30 UTC: already past FIXED_NOW (02:00 UTC)
+                "2026-08-03T10:00:00+07:00",
+                catalog["slot_past"],
+            ),
+        )
+
+    result = booking_service.search_options(vehicle_model="VF6", showroom_id=catalog["showroom_q7"], limit=30)
+
+    assert catalog["slot_past"] not in {slot["id"] for slot in result["slots"]}
+
+
 # test case of Chau + kiểm tra từ chối giờ mong muốn sai định dạng
 @pytest.mark.parametrize("preferred_time", ["abc", "10", "10-aa"])
 def test_search_slots_rejects_invalid_preferred_time(booking_service, catalog, preferred_time):

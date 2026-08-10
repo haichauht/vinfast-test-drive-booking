@@ -193,6 +193,15 @@ class CatalogService:
             if not selected:
                 raise BookingError("SHOWROOM_NOT_FOUND", "Showroom not found.")
             now = iso(self.now())
+            # Slot timestamps in the dataset may carry a local UTC offset (for
+            # example +07:00) while `now` is stored as UTC. Comparing those ISO
+            # strings lexicographically can make an already-past local slot look
+            # newer than the UTC value. Normalize both operands in SQL instead.
+            future_slot_sql = (
+                "s.start_at::timestamptz > ?::timestamptz"
+                if c.dialect == "postgres"
+                else "datetime(s.start_at) > datetime(?)"
+            )
             values: list[Any] = [showroom_id, *variant_ids, now, now]
             date_sql, order_sql = "", "s.start_at"
             if preferred_date:
@@ -207,7 +216,7 @@ class CatalogService:
             slots = [
                 dict(r)
                 for r in c.execute(
-                    f"SELECT s.*,d.asset_code,v.name variant_name FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id WHERE s.showroom_id=? AND d.variant_id IN ({marks}) AND (s.status IN ('available','booked') OR (s.status='held' AND s.held_until>?)) AND s.start_at>? AND d.is_active=1 AND d.operational_status='available' AND d.battery_soc IS NOT NULL AND d.battery_soc>=d.minimum_booking_soc {date_sql} ORDER BY {order_sql} LIMIT ?",
+                    f"SELECT s.*,d.asset_code,v.name variant_name FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id WHERE s.showroom_id=? AND d.variant_id IN ({marks}) AND (s.status IN ('available','booked') OR (s.status='held' AND s.held_until>?)) AND {future_slot_sql} AND d.is_active=1 AND d.operational_status='available' AND d.battery_soc IS NOT NULL AND d.battery_soc>=d.minimum_booking_soc {date_sql} ORDER BY {order_sql} LIMIT ?",
                     (*values, min(max(limit, 1), 30)),
                 )
             ]
