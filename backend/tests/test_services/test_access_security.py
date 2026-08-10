@@ -1,7 +1,9 @@
+import re
 from datetime import timedelta
 
 import pytest
 from src.services.booking import BookingError, iso
+from src.services.zalo_bot import ZaloOtpSender
 
 from tests.conftest import BOOKER_PHONE, FIXED_NOW
 
@@ -15,6 +17,56 @@ def test_request_access_masks_destination_and_hides_otp(booking_service, confirm
     assert result["destination_masked"].endswith(BOOKER_PHONE[-3:])
     assert BOOKER_PHONE not in result["destination_masked"]
     assert "otp_code" not in result
+
+
+def test_the_otp_delivered_by_sender_verifies_the_created_challenge(booking_service, confirmed_booking_factory):
+    """The code handed to the delivery adapter must be the code hashed for verification."""
+    confirmed = confirmed_booking_factory()
+
+    challenge = booking_service.request_access(
+        contact_value=BOOKER_PHONE,
+        purpose="lookup",
+        booking_code=confirmed["confirmed"]["booking_code"],
+        preferred_channel="sms",
+    )
+
+    delivered_code = booking_service.otp_sender.sent[-1].code
+    session = booking_service.verify_access(challenge["challenge_id"], delivered_code)
+
+    assert session["booking_id"] == confirmed["booking_id"]
+
+
+def test_the_code_in_the_zalo_message_verifies_the_created_challenge(
+    booking_service, booking_db, confirmed_booking_factory
+):
+    """The actual Zalo message template must carry the code stored for the challenge."""
+    class CapturingZaloClient:
+        def __init__(self):
+            self.text = ""
+
+        def send_text(self, _chat_id, text):
+            self.text = text
+            return {"ok": True, "result": {"message_id": "test-message"}}
+
+    confirmed = confirmed_booking_factory()
+    client = CapturingZaloClient()
+    with booking_db.transaction(immediate=True) as connection:
+        connection.execute(
+            "INSERT INTO zalo_identity_links(phone,chat_id,linked_at,updated_at) VALUES(?,?,?,?)",
+            (BOOKER_PHONE, "test-chat", iso(FIXED_NOW), iso(FIXED_NOW)),
+        )
+    booking_service.otp_sender = ZaloOtpSender(booking_db, client)
+
+    challenge = booking_service.request_access(
+        contact_value=BOOKER_PHONE,
+        purpose="lookup",
+        booking_code=confirmed["confirmed"]["booking_code"],
+        preferred_channel="zalo",
+    )
+    delivered_code = re.search(r"\b(\d{6})\b", client.text).group(1)
+    session = booking_service.verify_access(challenge["challenge_id"], delivered_code)
+
+    assert session["booking_id"] == confirmed["booking_id"]
 
 
 # test case of Chau + kiểm tra từ chối purpose OTP không được hỗ trợ
