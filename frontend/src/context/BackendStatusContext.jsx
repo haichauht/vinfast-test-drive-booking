@@ -1,3 +1,17 @@
+/**
+ * context/BackendStatusContext.jsx — Theo dõi backend còn sống hay không, cho cả site dùng chung.
+ *
+ * Cách hoạt động: ping GET /api/v1/booking/health ngay khi mở web, rồi LẶP LẠI MỖI 30 GIÂY.
+ * Cũng lắng nghe sự kiện online/offline của trình duyệt.
+ *
+ * Trạng thái trả về (bookingStatus): 'checking' → 'ready' hoặc 'unavailable'.
+ * Ai đang dùng:
+ * - App.jsx: 'checking' hiện màn đang kết nối, 'unavailable' chặn toàn site.
+ * - AppShell.jsx: 'unavailable' hiện dải băng vàng cảnh báo trên đầu trang.
+ * - BookingPage.jsx: khoá các nút đặt lịch khi backend chết.
+ *
+ * Sửa ở đây khi: muốn đổi nhịp kiểm tra 30 giây, hoặc đổi cách xử lý khi mất kết nối.
+ */
 import { createContext, useContext, useEffect, useState } from 'react'
 import { getBookingHealth } from '../api/availability'
 

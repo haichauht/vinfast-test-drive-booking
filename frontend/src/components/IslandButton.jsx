@@ -1,3 +1,15 @@
+/**
+ * components/IslandButton.jsx — Nút bo tròn có mũi tên, dùng lại khắp các trang marketing.
+ *
+ * Tự chọn đúng thẻ HTML theo props: có `to` → <Link> nội bộ · có `to` + `external` → thẻ <a>
+ * mở tab mới · không có `to` → <button> thường (dùng cho hành động, không phải điều hướng).
+ *
+ * Props điều khiển giao diện:
+ * - variant: 'dark' (mặc định) · 'light' · 'blue' · 'ghost-light' → ra class .island-button--<tên>.
+ * - icon: 'right' (mũi tên ngang, mặc định) hoặc 'up' (mũi tên chéo lên, ý là mở trang khác).
+ *
+ * Sửa MÀU/BO GÓC/HIỆU ỨNG HOVER của nút: tìm .island-button trong index.css, không sửa ở file này.
+ */
 import { ArrowRight, ArrowUpRight } from '@phosphor-icons/react'
 import { Link } from 'react-router-dom'
 

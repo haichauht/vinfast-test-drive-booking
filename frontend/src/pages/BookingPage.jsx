@@ -1,4 +1,61 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+/**
+ * pages/BookingPage.jsx — TRANG ĐẶT LỊCH LÁI THỬ tại /booking. File lớn nhất dự án (~1800 dòng).
+ *
+ * Đây là trái tim của sản phẩm: khung chat ViVi bên phải, không gian làm việc bên trái,
+ * và một máy trạng thái (state machine) điều khiển toàn bộ luồng.
+ *
+ * ══ LUỒNG 9 BƯỚC (biến `stage`) ══
+ *  idle → chọn đặt cho ai (RecipientModal)  ·  need_car → chọn mẫu xe
+ *  need_address / need_ward → nhập địa chỉ hoặc bấm lấy GPS
+ *  choose_showroom → chọn showroom trên bản đồ  ·  choose_slot → chọn khung giờ
+ *  collect_info → điền thông tin  ·  review → xem lại phiếu  ·  success → đặt xong, có mã lịch
+ *  Ngoài luồng chính còn nhánh 'lookup' để tra cứu/sửa/huỷ lịch cũ bằng OTP.
+ *  Vào từ /booking?car=vf9 thì bỏ qua bước chọn xe.
+ *
+ * ══ 3 TAB CỦA KHÔNG GIAN LÀM VIỆC (biến `activeView`) ══
+ *  'car' Mẫu xe (bấm lần nữa để mở bảng đổi xe) · 'map' Bản đồ showroom · 'schedule' Lịch.
+ *  Nút "Ẩn bảng" thu gọn workspace, nút "Hiện bảng" nổi bên trái để mở lại.
+ *
+ * ⚠️ ══ ĐIỀU PHẢI BIẾT TRƯỚC KHI SỬA GIAO DIỆN ══
+ *  Bên backend đã tách một số phần ra components/booking/, NHƯNG file này vẫn giữ bản sao
+ *  cũ của nhiều component. Hai bản tồn tại song song, và bản đang chạy thật là:
+ *
+ *   ĐANG CHẠY từ components/booking/ — sửa ở file riêng:
+ *     · ShowroomMap (import tên BookingShowroomMap) · BookingCustomerForm
+ *     · SchedulePanel + BookingTicket (BookingSummary.jsx) · BookingAccessPanel
+ *     · CancellationConfirmModal + RescheduleConfirmModal
+ *
+ *   ĐANG CHẠY từ CHÍNH FILE NÀY — sửa ngay tại đây:
+ *     · RecipientModal (~239) · AgentMessage (~264) · ViViAvatar (~287)
+ *     · ContextualChoices (~295) · VehicleShot (~347) · VehicleSwitcher (~358) · VehiclePanel (~424)
+ *
+ *   CODE CHẾT, sửa vào cũng không thấy gì đổi:
+ *     · ShowroomMap bản cũ trong file này (~446–634) — đã thay bằng bản import.
+ *     · Cả file components/booking/BookingChatPrimitives.jsx — không ai import.
+ *     · VehicleSwitcher + VehiclePanel trong components/booking/VehicleWorkspace.jsx.
+ *
+ * ══ CÁC HÀM CHÍNH (theo thứ tự người dùng bấm) ══
+ *  beginConversation(~1056) chọn đặt cho ai · chooseCar(~1077) / switchCar(~1092) chọn & đổi xe
+ *  requestUserLocation(~753) lấy GPS · loadShowrooms(~967) tìm showroom · chooseShowroom(~1125)
+ *  chooseSlot(~1149) mở popup giờ · confirmSlot(~1154) GIỮ CHỖ và bật đếm ngược
+ *  submitPerson(~1401) kiểm tra form · submitBooking(~1428) chốt đặt lịch
+ *  Sau response thành công: BookingSuccessCinematic chạy trước, rồi mới set stage success.
+ *  handlePrompt(~1186) xử lý khi người dùng gõ tin nhắn tự do cho ViVi
+ *  applyAgentToolResult(~812) — hàm khó nhất: dịch kết quả backend trả về thành trạng thái giao diện
+ *  Nhánh OTP: requestAccessOtp(~1247) · verifyAccessOtp(~1267) · saveAccessProfile(~1299)
+ *             confirmCancellation(~1320) · holdReschedule(~1352) · confirmReschedule(~1363)
+ *
+ * ══ CÒN DỮ LIỆU GIẢ ══
+ *  showroomDirectory (~68): 12 showroom hard-code kèm toạ độ x/y và tên nhân viên sale.
+ *  Nay backend đã trả showroom thật; mảng này chỉ còn dùng để đoán tỉnh/thành từ chữ người
+ *  dùng gõ. Đừng tin cột `staff` trong đó.
+ *
+ * ══ SỬA GIAO DIỆN Ở ĐÂU ══
+ *  Style: mục "Booking experience" và "Agent-first booking studio" trong index.css.
+ *  Riêng nút "Hiện bảng" (~1498) và nút đóng workspace viết inline style ngay trong file.
+ *  Trang này KHÔNG dùng AppShell — header riêng, gọn hơn, ở ~dòng 1488.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -41,12 +98,15 @@ import {
   updateVerifiedBooking,
   verifyBookingAccess,
 } from '../api/booking'
+import { actionId } from '../api/ids'
 import { useBackendStatus } from '../context/BackendStatusContext'
 import { BookingCustomerForm as CustomerForm } from '../components/booking/BookingCustomerForm'
 import { ShowroomMap as BookingShowroomMap } from '../components/booking/ShowroomMap'
 import { BookingTicket, SchedulePanel } from '../components/booking/BookingSummary'
 import { BookingAccessPanel } from '../components/booking/BookingAccessPanel'
 import { CancellationConfirmModal, RescheduleConfirmModal } from '../components/booking/BookingManagementModals'
+import { BookingSuccessCinematic, BookingSuccessVehicleModel, preloadVehicle3dRuntime } from '../components/Vehicle3DExperience'
+import { getVehicle3dModel } from '../data/vehicle3d'
 
 const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
@@ -73,12 +133,15 @@ const formatDistance = (distance) => (
 // not the visual components. Canonical contracts and failure behaviour live in
 // ../../BACKEND_HANDOFF.md.
 
-// TODO [BACKEND]: Replace this inventory-aware showroom fixture with
-// GET /api/v1/test-drive/showrooms?vehicleId=&lat=&lng=. Backend must rank
-// exact vehicle availability first, then travel distance from geocoded address.
-// Each result needs id, coordinates, address, distanceMeters, openingStatus,
-// availableVehicleIds and accessibility metadata. Sales staff is assigned only
-// after booking creation; do not treat the fixture's staff fields as authoritative.
+// ĐÃ XONG — KHÔNG CÒN CẦN NỐI GÌ Ở ĐÂY.
+// Showroom hiện lấy thật từ backend qua searchBookingOptions() (POST /api/v1/chat với
+// action=search_options), có toạ độ thật và khoảng cách do backend tính.
+//
+// ⚠️ MẢNG DƯỚI ĐÂY LÀ CODE CHẾT: khai báo nhưng không dòng nào trong file tham chiếu tới
+// (đã kiểm bằng đếm số lần xuất hiện: chỉ đúng 1 chỗ khai báo). Giữ lại để đối chiếu tên
+// showroom và toạ độ x/y cũ khi cần, KHÔNG được dùng làm dữ liệu hiển thị — cột `staff`
+// và `staffPhone` trong này là tên bịa, tư vấn viên thật chỉ có sau khi booking được tạo.
+// Xoá được an toàn khi không ai cần đối chiếu nữa.
 const showroomDirectory = [
   {
     id: 'hcm-nguyen-thi-thap',
@@ -256,7 +319,7 @@ function RecipientModal({ onSelect }) {
       <div className="recipient-modal__panel">
         <span className="recipient-modal__mark"><User size={24} weight="light" /></span>
         <p>Trước khi bắt đầu</p>
-        <h1 id="recipient-title">Bạn đặt lịch lái thử cho ai?</h1>
+        <h1 id="recipient-title">Bạn đặt lịch lái thử <span className="no-orphan">cho ai?</span></h1>
         <div className="recipient-modal__choices">
           <button type="button" onClick={() => onSelect('self')}>
             <User size={24} weight="light" />
@@ -347,7 +410,9 @@ function ContextualChoices({ stage, car, locationSuggestions, showrooms, slots, 
   }
 
   if (stage === 'choose_slot' && slots.length) {
-    const quickSlots = slots.flatMap((day) => day.times.slice(0, 1).map((entry) => ({
+    // Quick choices must mirror the calendar's inventory state. Never surface a
+    // held/booked cell in chat as if it could be selected.
+    const quickSlots = slots.flatMap((day) => day.times.filter((entry) => entry.isAvailable).slice(0, 1).map((entry) => ({
       date: day.value,
       dateLabel: day.dateLabel,
       time: entry.time,
@@ -451,9 +516,10 @@ function VehicleSwitcher({ cars, currentId, onSelect, onClose }) {
   )
 }
 
-function VehiclePanel({ car }) {
+function VehiclePanel({ car, success3d = false }) {
+  const hasApproved3dModel = success3d && Boolean(getVehicle3dModel(car.id))
   return (
-    <section className="studio-vehicle" aria-label={`Mẫu xe ${car.name}`}>
+    <section className={`studio-vehicle ${hasApproved3dModel ? 'has-booking-model' : ''}`} aria-label={`Mẫu xe ${car.name}`}>
       <div className="studio-vehicle__ambient" aria-hidden="true" />
       <div className="studio-vehicle__heading">
         <span>Mẫu xe đang giữ</span>
@@ -461,7 +527,9 @@ function VehiclePanel({ car }) {
         <small>{car.body} · {car.seats}</small>
       </div>
       <div className="studio-vehicle__stage" key={car.id}>
-        <VehicleShot car={car} className="studio-vehicle__image" eager />
+        {hasApproved3dModel
+          ? <BookingSuccessVehicleModel car={car} className="studio-vehicle__image" />
+          : <VehicleShot car={car} className="studio-vehicle__image" eager />}
       </div>
       <div className="studio-vehicle__specs">
         {car.specs.slice(0, 3).map((spec) => (
@@ -705,6 +773,7 @@ export function BookingPage() {
   const [formErrors, setFormErrors] = useState({})
   const [bookingCode, setBookingCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [successCinematic, setSuccessCinematic] = useState(false)
   const [accessFlow, setAccessFlow] = useState(null)
   const [accessValue, setAccessValue] = useState({ phone: '', otpCode: '' })
   const [accessError, setAccessError] = useState('')
@@ -730,9 +799,36 @@ export function BookingPage() {
   const holdExpiredRef = useRef(false)
 
   const selectedCar = getCar(selectedCarId)
-  // TODO [BACKEND]: Resolve these from fetched state/query caches. A production slot
-  // must include inventorySlotId; the UI's date/time tuple is display-only.
+  // ĐÃ XONG: showroom và khung giờ lấy thật từ backend qua searchBookingOptions().
+  // Mỗi slot đã mang id thật của backend; cặp ngày/giờ trong UI chỉ để hiển thị.
   const selectedShowroom = nearbyShowrooms.find((showroom) => showroom.id === showroomId)
+
+  const completeBookingSuccess = useCallback(() => {
+    setSuccessCinematic(false)
+    setStage('success')
+    setMessages((current) => [...current, {
+      id: `${Date.now()}-${current.length}`,
+      role: 'assistant',
+      text: 'Đặt lịch thành công. Tôi đã giữ lại toàn bộ thông tin bên cạnh. Sau này, bạn chỉ cần nhập họ tên và số điện thoại để tra cứu, bổ sung hoặc huỷ lịch.',
+    }])
+  }, [])
+
+  useEffect(() => {
+    const config = getVehicle3dModel(selectedCarId)
+    if (!config) return undefined
+
+    // Người dùng thường mất vài phút để chọn showroom và điền form. Tận dụng quãng
+    // đó để browser cache GLB + runtime, tránh màn chờ ngay sau nút xác nhận cuối.
+    preloadVehicle3dRuntime().catch(() => {})
+    const link = document.createElement('link')
+    link.rel = 'prefetch'
+    link.as = 'fetch'
+    link.type = 'model/gltf-binary'
+    link.href = config.src
+    link.crossOrigin = 'anonymous'
+    document.head.appendChild(link)
+    return () => link.remove()
+  }, [selectedCarId])
 
   useEffect(() => {
     const safeMessages = messages
@@ -1175,9 +1271,9 @@ export function BookingPage() {
   }
 
   const chooseShowroom = async (showroom, fromPrompt = false) => {
-    // TODO [BACKEND]: Persist showroomId on the draft, then fetch live slots for
-    // showroomId + vehicleId. If availability changed, remain on choose_showroom and
-    // refresh the cards/map instead of advancing to a blank schedule.
+    // ĐÃ XONG một phần: khung giờ đã là dữ liệu thật theo showroom + mẫu xe.
+    // TODO [BACKEND/DRAFT — P0]: chưa lưu showroomId lên draft phía server nên đổi máy
+    // là mất tiến trình. Chi tiết ở mục 1.3 trong BACKEND_HANDOFF.md.
     if (!fromPrompt) addMessage('user', `Tôi chọn ${showroom.name}.`)
     setWorkspaceHidden(false)
     setShowroomId(showroom.id)
@@ -1214,7 +1310,7 @@ export function BookingPage() {
         return
       }
       const actionKey = pendingSlot.slotId
-      const uiActionId = holdActionIdsRef.current.get(actionKey) || `hold:${crypto.randomUUID()}`
+      const uiActionId = holdActionIdsRef.current.get(actionKey) || actionId('hold')
       holdActionIdsRef.current.set(actionKey, uiActionId)
       const held = await holdBookingSlot(pendingSlot.slotId, uiActionId)
       holdActionIdsRef.current.delete(actionKey)
@@ -1318,9 +1414,10 @@ export function BookingPage() {
   }
 
   const startLookup = () => {
-    // TODO [BACKEND]: POST /api/v1/test-drive/bookings/lookup with customerName
-    // and phone (plus OTP/challenge if required), then expose reschedule/cancel only
-    // after verification. Lookup responses should mask PII and include allowedActions.
+    // ĐÃ XONG: tra cứu chạy thật qua requestBookingAccess + verifyBookingAccess
+    // (OTP gửi bằng Zalo). Chỉ sau khi xác thực mới mở được sửa/huỷ/đổi lịch.
+    // TODO [BACKEND/ENDPOINT — P0]: các action này vẫn đi qua /api/v1/demo/action;
+    // cần endpoint mang tên thật cho nghiệp vụ production.
     addMessage('user', 'Tôi muốn tra cứu lịch đã đặt.')
     setStage('lookup')
     setAccessError('')
@@ -1562,21 +1659,22 @@ export function BookingPage() {
 
   const submitBooking = async () => {
     setSubmitting(true)
-    // TODO [BACKEND]: POST /api/v1/test-drive/bookings with recipientType,
-    // vehicleId, showroomId, holdId, customer, driver and licenceConsent. Send an
-    // Idempotency-Key to prevent duplicate bookings on retry/double click. Response
-    // must include bookingCode, status and assignedSalesRepresentative; 409/410 must
+    // ĐÃ XONG: đặt lịch chạy thật qua confirmHeldBooking (POST /api/v1/chat,
+    // action confirm_booking). Chống bấm trùng bằng ui_action_id sinh từ api/ids.js.
+    // Contract tham chiếu giữ lại: response cần bookingCode, status,
+    // assignedSalesRepresentative; 409/410 phải
     // return the user to live slot selection without losing customer form values.
     try {
       const actionKey = `${bookingId}:${bookingVersion}`
-      const uiActionId = confirmActionIdsRef.current.get(actionKey) || `confirm:${crypto.randomUUID()}`
+      const uiActionId = confirmActionIdsRef.current.get(actionKey) || actionId('confirm')
       confirmActionIdsRef.current.set(actionKey, uiActionId)
       const confirmed = await confirmHeldBooking({ bookingId, version: bookingVersion, uiActionId })
       confirmActionIdsRef.current.delete(actionKey)
       setSubmitting(false)
       setBookingCode(confirmed.booking_code)
-      setStage('success')
-      addMessage('assistant', 'Đặt lịch thành công. Tôi đã giữ lại toàn bộ thông tin bên cạnh. Sau này, bạn chỉ cần nhập họ tên và số điện thoại để tra cứu, bổ sung hoặc huỷ lịch.')
+      // Phiếu chỉ xuất hiện sau cinematic. Backend vẫn là nguồn xác nhận cuối cùng;
+      // animation không tự tạo booking và không chạy nếu request ở trên thất bại.
+      setSuccessCinematic(true)
     } catch (error) {
       setSubmitting(false)
       setBackendError(error.message)
@@ -1624,7 +1722,7 @@ export function BookingPage() {
   }
 
   return (
-    <main id="main-content" className={`agent-booking-page ${selectedCar && !workspaceHidden ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''}`}>
+    <main id="main-content" className={`agent-booking-page ${selectedCar && !workspaceHidden ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''} ${successCinematic ? 'is-cinematic' : ''}`}>
       <header className="booking-topbar booking-topbar--studio">
         <Link to="/"><ArrowLeft size={17} weight="light" /> Trang chủ</Link>
         <Brand />
@@ -1678,11 +1776,14 @@ export function BookingPage() {
 
       {!recipient && !resumePending && <RecipientModal onSelect={beginConversation} />}
       {resumePending && <ResumeModal onContinue={resumeConversation} onRestart={restartConversation} />}
+      {successCinematic && selectedCar && (
+        <BookingSuccessCinematic car={selectedCar} onComplete={completeBookingSuccess} />
+      )}
 
       {stage === 'success' && selectedCar && selectedShowroom && selectedSlot ? (
         <div className="booking-success-layout">
           <div className="booking-success-documents">
-            <VehiclePanel car={selectedCar} />
+            <VehiclePanel car={selectedCar} success3d />
             <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} compact />
           </div>
           <section className="vivi-studio vivi-studio--success">
@@ -1691,12 +1792,14 @@ export function BookingPage() {
               <div><strong>ViVi</strong><small><span /> Lịch đã được xác nhận</small></div>
             </div>
             <div className="vivi-success-copy">
-              <CheckCircle size={38} weight="light" />
-              <p>Đặt lịch thành công</p>
-              <h1>Hẹn gặp bạn tại {selectedShowroom.name}.</h1>
-              <span>Mã lịch {bookingCode}</span>
-              <p>Để tra cứu, bổ sung hoặc huỷ lịch, bạn chỉ cần cung cấp lại họ tên và số điện thoại đã đăng ký.</p>
-              <div><button type="button" onClick={startLookup}>Tra cứu lịch này</button><Link to="/" onClick={() => window.sessionStorage.removeItem(BOOKING_UI_STATE_KEY)}>Về trang chủ</Link></div>
+              <div className="vivi-success-copy__status">
+                <span><CheckCircle size={22} weight="regular" /></span>
+                <p>Lịch lái thử đã được xác nhận</p>
+              </div>
+              <h1>Hẹn gặp bạn tại <span>{selectedShowroom.name}.</span></h1>
+              <div className="vivi-success-copy__code"><small>Mã lịch</small><strong>{bookingCode}</strong></div>
+              <p className="vivi-success-copy__note">Để tra cứu, bổ sung hoặc huỷ lịch, bạn chỉ cần cung cấp lại họ tên và số điện thoại đã đăng ký.</p>
+              <div className="vivi-success-copy__actions"><button type="button" onClick={startLookup}>Tra cứu lịch này</button><Link to="/" onClick={() => window.sessionStorage.removeItem(BOOKING_UI_STATE_KEY)}>Về trang chủ</Link></div>
             </div>
           </section>
         </div>

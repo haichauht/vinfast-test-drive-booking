@@ -1,3 +1,24 @@
+/**
+ * pages/ChargingPage.jsx — Trang "Pin & trạm sạc" tại đường dẫn /charging.
+ *
+ * Trang nội dung thuần. Lấy chargingUnits từ backend (GET /api/v1/content/charging);
+ * phần chữ và các mảng số liệu còn lại nằm ngay trong file này.
+ *
+ * Thứ tự các mục trên trang:
+ *  1. Hero "Năng lượng cho mọi điểm đến" — ảnh nền parallax khi cuộn.
+ *  2. Thông báo chính sách (charging-notice).
+ *  3. Mạng lưới trạm sạc + 6 loại địa điểm  → mảng networkPlaces đầu file.
+ *  4. Model 3D trạm sạc tương tác            → ChargingStation3DExperience.
+ *  5. Giá điện và phí lưu trụ quá giờ        → mảng overstayFees (miễn phí 10 phút đầu, sau đó tăng dần).
+ *  6. Danh mục trụ sạc 250/150/60/30 kW      → dữ liệu TỪ BACKEND (displayedChargingUnits).
+ *  7. Sạc tại nhà (bộ sạc treo tường, sạc di động).
+ *  8. Quy tắc dùng pin an toàn               → mảng batteryRules.
+ *  9. Chính sách thuê pin (khách hàng hiện hữu) + liên hệ + footer.
+ *
+ * Sửa CHỮ/SỐ LIỆU: 3 mảng networkPlaces / batteryRules / overstayFees nằm ngay đầu file.
+ * Sửa ANIMATION: khối useGSAP (~dòng 57) — parallax hero, .charger-card và .network-place trồi lên.
+ * Sửa GIAO DIỆN: mục "Ownership chapters" + "Charging-specific editorial surfaces" trong index.css.
+ */
 import { useRef } from 'react'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
@@ -15,6 +36,7 @@ import {
   WarningCircle,
 } from '@phosphor-icons/react'
 import { AppShell } from '../components/AppShell'
+import { ChargingStation3DExperience } from '../components/Vehicle3DExperience'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
 import { ownershipMedia } from '../data/ownership'
@@ -124,6 +146,7 @@ export function ChargingPage() {
           <div className="section-frame">
             <a href="#charging-notice">Thông báo</a>
             <a href="#charging-network">Mạng lưới</a>
+            <a href="#charging-3d">Mô hình 3D</a>
             <a href="#charging-price">Đơn giá</a>
             <a href="#charging-units">Loại trụ</a>
             <a href="#battery-care">Sử dụng pin</a>
@@ -178,6 +201,8 @@ export function ChargingPage() {
             ))}
           </div>
         </section>
+
+        <ChargingStation3DExperience poster={ownershipMedia.chargingStationDay} />
 
         <section className="charging-price" id="charging-price">
           <div className="section-frame charging-price__grid">
