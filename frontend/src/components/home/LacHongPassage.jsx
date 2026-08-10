@@ -137,15 +137,17 @@ export function LacHongPassage() {
         </div>
       </div>
 
-      <div className="section-frame lachong-spin-block">
-        <div className="lachong-spin-block__intro">
-          <div>
-            <p className="eyebrow">Góc nhìn tương tác</p>
-            <h3>Chạm vào một góc nhìn của năng lực Việt.</h3>
+      <div className="lachong-spin-chapter">
+        <div className="section-frame lachong-spin-block">
+          <div className="lachong-spin-block__intro">
+            <div>
+              <p className="eyebrow">Góc nhìn tương tác</p>
+              <h3>Chạm vào một góc nhìn của năng lực Việt.</h3>
+            </div>
+            <p>Giữ và kéo trực tiếp trên xe. Góc nhìn chỉ chuyển động theo tay bạn.</p>
           </div>
-          <p>Giữ và kéo trực tiếp trên xe. Góc nhìn chỉ chuyển động theo tay bạn.</p>
+          <LacHongSpin frames={lacHongSpin.frames} name={lacHongSpin.name} />
         </div>
-        <LacHongSpin frames={lacHongSpin.frames} name={lacHongSpin.name} />
       </div>
 
       <div className="section-frame lachong-block lachong-block--sedan">

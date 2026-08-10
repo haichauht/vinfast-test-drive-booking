@@ -22,6 +22,16 @@ import '@fontsource/be-vietnam-pro/600.css'
 import '@fontsource/be-vietnam-pro/700.css'
 import './index.css'
 
+// Tắt scroll restoration ngay trước khi React mount. Nếu chờ router render xong,
+// Safari có thể đã phục hồi vị trí cũ vào giữa video của trang chủ.
+if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual'
+if (window.location.pathname === '/' && !window.location.hash) window.scrollTo(0, 0)
+window.addEventListener('pageshow', () => {
+  if (window.location.pathname === '/' && !window.location.hash) {
+    window.requestAnimationFrame(() => window.scrollTo(0, 0))
+  }
+})
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <AppErrorBoundary><App /></AppErrorBoundary>

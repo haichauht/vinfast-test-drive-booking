@@ -79,7 +79,9 @@ export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, 
     address,
     latitude,
     longitude,
-    limit: 24,
+    // The weekly calendar needs enough inventory to expose the following week
+    // without inventing client-side availability. Backend currently caps this at 30.
+    limit: 30,
   },
 )
 

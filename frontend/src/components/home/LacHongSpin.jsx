@@ -12,6 +12,45 @@ const DRAG_PER_FRAME = 150
 
 const normalizedPosition = (value, total) => ((value % total) + total) % total
 
+// Các frame nguồn có kích thước và khoảng alpha khác nhau. Đo silhouette một lần khi tải
+// để luôn căn theo thân xe thật, không căn theo phần canvas trong suốt khiến xe bị lệch.
+const measureVisibleBounds = (image) => {
+  const sampleScale = Math.min(1, 640 / image.naturalWidth)
+  const width = Math.max(1, Math.round(image.naturalWidth * sampleScale))
+  const height = Math.max(1, Math.round(image.naturalHeight * sampleScale))
+  const sample = document.createElement('canvas')
+  sample.width = width
+  sample.height = height
+  const context = sample.getContext('2d', { willReadFrequently: true })
+  context.drawImage(image, 0, 0, width, height)
+  const pixels = context.getImageData(0, 0, width, height).data
+  let minX = width
+  let minY = height
+  let maxX = 0
+  let maxY = 0
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (pixels[(y * width + x) * 4 + 3] < 12) continue
+      minX = Math.min(minX, x)
+      minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x)
+      maxY = Math.max(maxY, y)
+    }
+  }
+
+  if (minX > maxX || minY > maxY) {
+    return { x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight }
+  }
+
+  return {
+    x: minX / sampleScale,
+    y: minY / sampleScale,
+    width: (maxX - minX + 1) / sampleScale,
+    height: (maxY - minY + 1) / sampleScale,
+  }
+}
+
 export function LacHongSpin({ frames, name }) {
   const canvasRef = useRef(null)
   const imagesRef = useRef([])
@@ -19,12 +58,13 @@ export function LacHongSpin({ frames, name }) {
   const dragRef = useRef(null)
   const paintFrameRef = useRef(0)
   const [ready, setReady] = useState(false)
+  const [failed, setFailed] = useState(false)
   const [touched, setTouched] = useState(false)
 
   const paint = useCallback(() => {
     const canvas = canvasRef.current
-    const images = imagesRef.current
-    if (!canvas || images.length !== frames.length) return
+    const framesWithBounds = imagesRef.current
+    if (!canvas || framesWithBounds.length !== frames.length) return
 
     const bounds = canvas.getBoundingClientRect()
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
@@ -70,26 +110,29 @@ export function LacHongSpin({ frames, name }) {
     context.fillRect(width * 0.1, height * 2.85, width * 0.8, height)
     context.restore()
 
-    const position = normalizedPosition(positionRef.current, images.length)
+    const position = normalizedPosition(positionRef.current, framesWithBounds.length)
     const currentIndex = Math.floor(position)
-    const nextIndex = (currentIndex + 1) % images.length
+    const nextIndex = (currentIndex + 1) % framesWithBounds.length
     const rawMix = position - currentIndex
     const mix = rawMix * rawMix * (3 - 2 * rawMix)
 
-    const drawImage = (image, alpha) => {
-      const scale = Math.min((width * 0.9) / image.naturalWidth, (height * 0.78) / image.naturalHeight)
-      const drawWidth = image.naturalWidth * scale
-      const drawHeight = image.naturalHeight * scale
-      const x = (width - drawWidth) / 2
-      const y = height * 0.49 - drawHeight / 2
+    const maxSourceWidth = Math.max(...framesWithBounds.map(({ image }) => image.naturalWidth))
+    const maxSourceHeight = Math.max(...framesWithBounds.map(({ image }) => image.naturalHeight))
+    const commonScale = Math.min((width * 0.9) / maxSourceWidth, (height * 0.86) / maxSourceHeight)
+
+    const drawImage = ({ image, bounds }, alpha) => {
+      const visibleCenterX = bounds.x + bounds.width / 2
+      const visibleCenterY = bounds.y + bounds.height / 2
+      const x = width * 0.5 - visibleCenterX * commonScale
+      const y = height * 0.49 - visibleCenterY * commonScale
       context.save()
       context.globalAlpha = alpha
-      context.drawImage(image, x, y, drawWidth, drawHeight)
+      context.drawImage(image, x, y, image.naturalWidth * commonScale, image.naturalHeight * commonScale)
       context.restore()
     }
 
-    drawImage(images[currentIndex], 1 - mix)
-    if (mix > 0.001) drawImage(images[nextIndex], mix)
+    drawImage(framesWithBounds[currentIndex], 1 - mix)
+    if (mix > 0.001) drawImage(framesWithBounds[nextIndex], mix)
   }, [frames.length])
 
   const queuePaint = useCallback(() => {
@@ -109,11 +152,15 @@ export function LacHongSpin({ frames, name }) {
 
     Promise.all(sources).then((images) => {
       if (cancelled) return
-      imagesRef.current = images
+      imagesRef.current = images.map((image) => ({ image, bounds: measureVisibleBounds(image) }))
+      setFailed(false)
       setReady(true)
       queuePaint()
     }).catch(() => {
-      if (!cancelled) setReady(false)
+      if (!cancelled) {
+        setReady(false)
+        setFailed(true)
+      }
     })
 
     const observer = new ResizeObserver(queuePaint)
@@ -156,7 +203,7 @@ export function LacHongSpin({ frames, name }) {
   }
 
   return (
-    <div className={`lachong-spin ${ready ? 'is-ready' : 'is-loading'}`}>
+    <div className={`lachong-spin ${ready ? 'is-ready' : failed ? 'is-error' : 'is-loading'}`}>
       <div
         className="lachong-spin__viewport"
         role="img"
@@ -169,10 +216,15 @@ export function LacHongSpin({ frames, name }) {
         onKeyDown={onKeyDown}
       >
         <canvas ref={canvasRef} className="lachong-spin__canvas" aria-hidden="true" />
-        {!ready && (
+        {!ready && !failed && (
           <span className="lachong-spin__loading" aria-live="polite">
             <SpinnerGap size={20} weight="light" />
             Đang dựng góc nhìn
+          </span>
+        )}
+        {failed && (
+          <span className="lachong-spin__loading" role="status">
+            Góc nhìn tạm thời chưa tải được
           </span>
         )}
         {ready && !touched && (

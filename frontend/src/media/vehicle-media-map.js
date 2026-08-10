@@ -28,6 +28,7 @@ export const vehicleMediaMap = {
     thumbnail: 'VF3/xám.png',
     video: '',
     brochure: '',
+    model3d: 'VF3/vinfast_vf3_plus_2026.glb',
     note: 'Chưa có brochure trong kho. Tên file trong thư mục vô nghĩa: 1..webp, 2..png, 3..jpg, 4..png.',
   },
   vf5: {
@@ -91,6 +92,7 @@ export const vehicleMediaMap = {
     thumbnail: 'common/vf9-studio.png',
     video: 'VF9/VF9.mp4',
     brochure: 'VF 9_ Brochure.pdf',
+    model3d: 'VF9/vinfast_vf9_model_no_interior.glb',
     note: 'Ảnh chính nằm ở common/. VF9/VF9 model.webp trùng byte với about-us.png.webp ở gốc vehicle-media.',
   },
   'herio-green': {
@@ -169,6 +171,7 @@ export const showcaseMediaMap = {
     originals: 'lac-hong-900lx',
     hero: 'lac-hong-900lx/hero-v2.png',
     emerge: 'lac-hong-900lx/front-emerge-v2.png',
+    context: 'lac-hong-900lx/origin-vietnam.jpg',
     // FALLBACK CANVAS: bộ v2 là cutout alpha sạch, thứ tự camera đi vòng quanh xe.
     // UI vẽ vào một canvas duy nhất và chỉ đổi góc khi người dùng kéo; không render gallery.
     // Khi media API có GLB/GLTF thật, ưu tiên model3dUrl theo contract BACKEND_HANDOFF.md.
@@ -196,7 +199,7 @@ export const showcaseMediaMap = {
  * Ảnh KHÔNG thuộc mẫu xe nào. Ghi ra đây để không ai phải đoán khi mở thư mục.
  */
 export const sharedMediaMap = {
-  'Trạm sạc': 'Ảnh trụ sạc, dùng cho trang Pin & trạm sạc (data/ownership.js).',
+  'Trạm sạc': 'Ảnh trụ sạc và model GLB, dùng cho trang Pin & trạm sạc (data/ownership.js + components/Vehicle3DExperience.jsx).',
   'common/vinfast-logo.png': 'Logo trên bản đồ showroom.',
   'common/vivi-avatar.png': 'Ảnh đại diện ViVi cạnh mỗi tin nhắn.',
   'common/vivi-portrait-cutout.png': 'Chân dung ViVi cỡ lớn đã tách alpha, đặt trực tiếp trên nền trang chủ.',
