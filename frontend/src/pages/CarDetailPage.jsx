@@ -1,14 +1,49 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+/**
+ * pages/CarDetailPage.jsx — TRANG CHI TIẾT XE tại đường dẫn /models/:carId (vd: /models/vf9).
+ *
+ * Dữ liệu: useVehicleDetail(carId) cho mẫu xe đang xem, useVehicleCatalog() để tìm "xe tiếp theo".
+ * ID không có trong catalogue → hiện màn "Không tìm thấy mẫu xe" thay vì trang lỗi.
+ *
+ * Thứ tự các mục trên trang:
+ *  1. Hero — tên xe cỡ lớn, ảnh xe chạy vào từ trái          (.detail-hero)
+ *  2. Video nội thất (CHỈ mẫu limo-green)                     (.detail-film)
+ *  3. Popup gợi ý đặt lịch, tự hiện sau 2,2 giây              (.test-drive-nudge)
+ *  4. Câu tuyên ngôn — chữ sáng dần từng từ khi cuộn          (.car-manifesto)
+ *  5. Model GLB tương tác VF3/VF9 + cinematic chạy ngang      (Vehicle3DExperience)
+ *  6. Thước phim giới thiệu, nếu backend có video             (ModelFilm, ~dòng 68)
+ *  7. Thông số nổi bật                                        (.detail-specs, id="specifications")
+ *  8. Các chương ảnh: ngoại thất → khoang lái → chi tiết      (.detail-story)
+ *  9. Lưới ảnh đầy đủ, chỉ hiện khi có hơn 3 ảnh              (.detail-media)
+ * 10. Bảng màu bấm đổi được, cần ít nhất 2 màu                (ColorExplorer, ~dòng 16)
+ * 11. Nguồn dữ liệu + link brochure PDF                       (.brochure-note)
+ * 12. CTA cuối + link sang xe tiếp theo                       (.detail-action)
+ * 13. Thanh nổi dưới đáy: tên xe, giá, nút đặt lịch           (.detail-booking-dock)
+ *
+ * ANIMATION (khối useGSAP ~dòng 127) — phần tinh vi nhất dự án:
+ * - Xe chạy vào màn hình. Lần đầu xem mẫu này chạy dài (-132%, 1,7 giây), các lần sau
+ *   ngắn hơn (-34%, 0,95 giây) — trạng thái ghi trong sessionStorage theo từng mẫu xe.
+ * - Chỉ chạy kiểu đó khi backend có `motionImage` (ảnh tách nền). Không có thì xe phóng to dần.
+ * - Chữ tuyên ngôn sáng dần từng từ, ảnh từng chương phóng to theo thao tác cuộn.
+ * - VF3/VF9: GLB chạy xuyên trái → phải trong 1,9 giây khi sân khấu đã hiện rõ,
+ *   sau đó popup thành model xoay/zoom.
+ *
+ * sessionStorage lưu 3 khoá (chỉ ID và cờ giao diện, KHÔNG lưu thông tin cá nhân):
+ * last-viewed-car · test-drive-nudge:<id> · vinfast-intro-seen:<id>.
+ * Muốn xem lại animation lần đầu hoặc popup gợi ý: mở tab ẩn danh, hoặc xoá sessionStorage.
+ */
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { ArrowLeft, ArrowRight, Check, FileText, Play, X } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowRight, Check, FileText, X } from '@phosphor-icons/react'
 import { AppShell } from '../components/AppShell'
 import { IslandButton } from '../components/IslandButton'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
-import { cars, getCar } from '../data/cars'
+import { SiteFooter } from '../components/SiteFooter'
+import { Vehicle3DExperience } from '../components/Vehicle3DExperience'
+import { useVehicleCatalog, useVehicleDetail } from '../hooks/useSiteData'
 import { limoInteriorFilm } from '../data/media'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
@@ -98,17 +133,16 @@ function ModelFilm({ car }) {
 
 export function CarDetailPage() {
   const { carId } = useParams()
-  const car = useMemo(() => getCar(carId), [carId])
+  const { car } = useVehicleDetail(carId)
+  const { cars } = useVehicleCatalog()
   const root = useRef(null)
   const [showTestDriveNudge, setShowTestDriveNudge] = useState(false)
+  const [exploring3d, setExploring3d] = useState(false)
 
   useEffect(() => {
     if (!car) return undefined
-    // TODO [BACKEND/SESSION + ANALYTICS]: Keep last-viewed vehicle in the anonymous
-    // booking draft when one exists and emit vehicle_view/nudge_impression events.
-    // sessionStorage is intentionally limited to ids and UI flags, never customer PII.
-    window.sessionStorage.setItem('vinfast:last-viewed-car', car.id)
-
+    setExploring3d(false)
+    setShowTestDriveNudge(false)
     const dismissed = window.sessionStorage.getItem(`vinfast:test-drive-nudge:${car.id}`)
     if (dismissed) return undefined
 
@@ -138,6 +172,7 @@ export function CarDetailPage() {
       if (reduced) {
         gsap.set('.detail-hero__car, [data-detail-copy], .model-film__stage, [data-film-layer]', {
           opacity: 1,
+          xPercent: 0,
           x: 0,
           y: 0,
           scale: 1,
@@ -148,7 +183,7 @@ export function CarDetailPage() {
           ? { xPercent: firstVisit ? -132 : -34, opacity: 0, rotate: firstVisit ? -1.2 : 0 }
           : { xPercent: 0, scale: 0.92, opacity: 0 }
         intro
-          .fromTo('.detail-hero__car', carFrom, { xPercent: 0, scale: 1, opacity: 1, rotate: 0, duration: firstVisit ? 1.7 : 0.95 })
+          .fromTo('.detail-hero__car', carFrom, { xPercent: 0, x: 0, scale: 1, opacity: 1, rotate: 0, duration: firstVisit ? 1.7 : 0.95 })
           .fromTo(
             '[data-detail-copy]',
             { y: 48, opacity: 0, filter: 'blur(8px)' },
@@ -158,8 +193,7 @@ export function CarDetailPage() {
       }
 
       gsap.to('.detail-hero__car', {
-        xPercent: car.motionImage ? 28 : 0,
-        scale: car.motionImage ? 0.94 : 1.04,
+        x: car.motionImage ? 72 : 0,
         ease: 'none',
         scrollTrigger: {
           trigger: '.detail-hero',
@@ -250,8 +284,21 @@ export function CarDetailPage() {
 
   // TODO [BACKEND/CATALOGUE]: The API must return deterministic sortOrder (or an
   // explicit nextVehicleId) so "Xem mẫu tiếp theo" does not change between requests.
-  const nextCar = cars[(cars.findIndex((item) => item.id === car.id) + 1) % cars.length]
+  const nextCar = cars.length
+    ? cars[(cars.findIndex((item) => item.id === car.id) + 1) % cars.length]
+    : null
   const manifesto = `${car.tagline} ${car.description}`.split(' ')
+  const carMedia = (car.media || car.gallery || [])
+    .map((asset, index) => {
+      const fallbackLabel = `Góc nhìn ${String(index + 1).padStart(2, '0')}`
+      if (typeof asset === 'string') return { src: asset, alt: '', label: fallbackLabel }
+      return {
+        src: asset.src || '',
+        alt: asset.alt || asset.label || '',
+        label: asset.label || fallbackLabel,
+      }
+    })
+    .filter((asset) => asset.src)
 
   return (
     <AppShell>
@@ -288,14 +335,13 @@ export function CarDetailPage() {
             <video src={limoInteriorFilm} autoPlay muted loop playsInline preload="metadata" />
             <div className="detail-film__veil" aria-hidden="true" />
             <div className="section-frame detail-film__copy">
-              <Play size={24} weight="fill" />
               <p className="eyebrow">Không gian Limo Green</p>
               <h2 id="detail-film-title">Ba hàng ghế được nhìn trong chuyển động thật.</h2>
             </div>
           </section>
         )}
 
-        {showTestDriveNudge && (
+        {showTestDriveNudge && !exploring3d && (
           <aside className="test-drive-nudge" aria-live="polite">
             <button type="button" onClick={dismissNudge} aria-label="Đóng gợi ý đặt lịch">
               <X size={16} weight="light" />
@@ -319,6 +365,11 @@ export function CarDetailPage() {
           </div>
         </section>
 
+        <Vehicle3DExperience car={car} onEnter={() => {
+          setExploring3d(true)
+          setShowTestDriveNudge(false)
+        }} />
+
         <ModelFilm car={car} />
 
         <section className="detail-specs" id="specifications">
@@ -326,7 +377,7 @@ export function CarDetailPage() {
             <Reveal className="detail-specs__heading">
               <p className="eyebrow">Thông số nổi bật</p>
               <h2>Dữ liệu quan trọng, không làm bạn phân tâm.</h2>
-              <p>{car.brochure}</p>
+              <p>{typeof car.brochure === 'object' ? car.brochure?.title : car.brochure}</p>
             </Reveal>
             <div className="spec-strip">
               {car.specs.map((spec, index) => (
@@ -350,7 +401,7 @@ export function CarDetailPage() {
             </aside>
 
             <div className="detail-story__chapters">
-              {/* Tiêu đề và ảnh đi theo cặp đã được gán sẵn trong cars.js, không gán theo
+              {/* Tiêu đề và ảnh đi theo cặp từ backend media payload, không gán theo
                   thứ tự, nên ảnh nội thất không còn bị chú thích là "hình khối". */}
               {car.chapters.map((chapter) => (
                 <article className="detail-chapter" key={chapter.src}>
@@ -369,18 +420,18 @@ export function CarDetailPage() {
           </div>
         </section>
 
-        {car.media.length > 3 && (
+        {carMedia.length > 3 && (
           <section className="detail-media" aria-labelledby="detail-media-title">
             <div className="section-frame">
               <Reveal className="detail-media__heading">
                 <p className="eyebrow">Toàn bộ góc nhìn</p>
                 <h2 id="detail-media-title">Ngoại thất, khoang lái và công nghệ của {car.name}.</h2>
-                <p>{car.media.length} góc nhìn của {car.name}, từ ngoại thất đến khoang lái và chi tiết vận hành.</p>
+                <p>{carMedia.length} góc nhìn của {car.name}, từ ngoại thất đến khoang lái và chi tiết vận hành.</p>
               </Reveal>
               <div className="detail-media-grid">
-                {car.media.slice(3).map((asset, index) => (
+                {carMedia.slice(3).map((asset, index) => (
                   <figure className="detail-media-grid__item" key={`${asset.src}-${index}`}>
-                    <SmartImage src={asset.src} alt={`${car.name} · ${asset.label}`} />
+                    <SmartImage src={asset.src} alt={asset.alt || `${car.name} · ${asset.label}`} />
                     <figcaption>{asset.label}</figcaption>
                   </figure>
                 ))}
@@ -396,7 +447,15 @@ export function CarDetailPage() {
             <FileText size={28} weight="light" />
             <div>
               <p className="eyebrow">Nguồn dữ liệu sản phẩm</p>
-              <h2>{car.brochure}</h2>
+              {typeof car.brochure === 'object' ? (
+                <h2>
+                  <a href={car.brochure.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: 'inherit' }}>
+                    {car.brochure.title}
+                  </a>
+                </h2>
+              ) : (
+                <h2>{car.brochure}</h2>
+              )}
               <p>
                 Thông số được lấy từ brochure chính thức của mẫu xe. Quãng đường thực tế còn phụ thuộc phiên bản, nhiệt độ, địa hình và thói quen lái.
               </p>
@@ -405,7 +464,7 @@ export function CarDetailPage() {
         </section>
 
         <section className="detail-action">
-          <SmartImage src={car.hero} alt="" aria-hidden="true" />
+          <SmartImage src={car.actionMedia?.src || car.hero} alt="" aria-hidden="true" focalPoint={car.actionMedia?.focalPoint} />
           <div className="detail-action__wash" aria-hidden="true" />
           <div className="section-frame detail-action__content">
             <Reveal>
@@ -416,13 +475,17 @@ export function CarDetailPage() {
                 <IslandButton to={`/booking?car=${car.id}`} variant="light">
                   Đặt lịch lái thử
                 </IslandButton>
-                <IslandButton to={`/cars/${nextCar.id}`} variant="ghost-light">
-                  Xem {nextCar.name}
-                </IslandButton>
+                {nextCar && (
+                  <IslandButton to={`/models/${nextCar.id}`} variant="ghost-light">
+                    Xem {nextCar.name}
+                  </IslandButton>
+                )}
               </div>
             </Reveal>
           </div>
         </section>
+
+        <SiteFooter />
 
         <div className="detail-booking-dock">
           <div>

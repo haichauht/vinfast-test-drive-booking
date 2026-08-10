@@ -16,6 +16,7 @@ env/
 .env
 .env.local
 .env.production
+backend/cloudflare/r2-cors.json
 
 # IDE
 .vscode/
@@ -66,3 +67,5 @@ out/
 SKILLS.md
 setup.md
 summary_code/
+CODEXreview.md
+docs/docs

@@ -1,3 +1,24 @@
+/**
+ * pages/AfterSalesPage.jsx — Trang "Hậu mãi" tại đường dẫn /after-sales.
+ *
+ * Trang nội dung thuần, không có thao tác nghiệp vụ. Chỉ lấy warrantyTables từ backend
+ * (GET /api/v1/content/after-sales); phần chữ còn lại nằm ngay trong file này.
+ *
+ * Thứ tự các mục trên trang:
+ *  1. Hero "An tâm được thiết kế dài lâu" — ảnh nền phóng to rồi thu nhỏ dần khi cuộn.
+ *  2. Thanh sub-nav dính (Phạm vi · Pin cao áp · Phụ tùng · Loại trừ · Hỗ trợ).
+ *  3. Phạm vi bảo hành + 3 thẻ nguyên tắc  → mảng warrantyPrinciples ngay dưới đây.
+ *  4. Sổ bảo hành điện tử + link mở PDF chính sách.
+ *  5. Bảo hành pin cao áp — dữ liệu TỪ BACKEND (displayedWarranty).
+ *  6. Phụ tùng & phụ kiện — lưới bento, nội dung viết thẳng trong JSX.
+ *  7. Điều cần lưu ý (accordion)         → mảng exclusions.
+ *  8. Câu hỏi thường gặp (accordion)     → mảng questions.
+ *  9. Liên hệ (hotline 1900 23 23 89, email) + footer.
+ *
+ * Sửa CHỮ: 3 mảng warrantyPrinciples / exclusions / questions nằm ngay đầu file, dễ tìm nhất.
+ * Sửa ANIMATION: khối useGSAP (~dòng 79) — parallax hero và hiệu ứng trồi lên của .policy-card.
+ * Sửa GIAO DIỆN: mục "Ownership chapters" trong index.css (dùng chung với trang Pin & trạm sạc).
+ */
 import { useRef } from 'react'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
@@ -14,7 +35,8 @@ import {
 import { AppShell } from '../components/AppShell'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
-import { highVoltageWarranty, ownershipMedia } from '../data/ownership'
+import { ownershipMedia } from '../data/ownership'
+import { usePageContent } from '../hooks/useSiteData'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
@@ -71,6 +93,8 @@ const questions = [
 ]
 
 export function AfterSalesPage() {
+  const { data: afterSalesContent } = usePageContent('after-sales')
+  const displayedWarranty = afterSalesContent?.warrantyTables || []
   const root = useRef(null)
 
   useGSAP(
@@ -208,7 +232,7 @@ export function AfterSalesPage() {
               <h2>Thời hạn được đọc theo năm hoặc quãng đường—điều kiện nào đến trước.</h2>
             </Reveal>
             <div className="battery-warranty__grid">
-              {highVoltageWarranty.map((item, index) => (
+              {displayedWarranty.map((item, index) => (
                 <article className="policy-card battery-term" key={item.term}>
                   <span className="battery-term__index">0{index + 1}</span>
                   <div>

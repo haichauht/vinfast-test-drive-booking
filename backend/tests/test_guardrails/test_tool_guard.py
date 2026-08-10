@@ -1,0 +1,262 @@
+from unittest.mock import MagicMock
+
+import pytest
+from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.tools import tool
+from langgraph.graph import END, StateGraph
+from src.agents.state import AgentState
+from src.config import Settings
+from src.guardrails.tool_guard import build_guarded_tool_node, inspect_tool_calls
+
+
+def _state(tool_calls, **overrides):
+    values = {
+        "query": "Tìm thông tin VF8",
+        "messages": [AIMessage(content="", tool_calls=tool_calls)],
+    }
+    values.update(overrides)
+    return values
+
+
+def _call(name, args=None, call_id="call-1"):
+    return {"name": name, "args": args or {}, "id": call_id, "type": "tool_call"}
+
+
+def test_allows_tool_inside_active_skill_allowlist():
+    decision = inspect_tool_calls(
+        _state([_call("search_knowledge", {"query": "VF8"})]),
+        allowed_tool_names={"search_knowledge"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is True
+
+
+def test_blocks_tool_outside_active_skill_allowlist():
+    decision = inspect_tool_calls(
+        _state([_call("confirm_test_drive_booking", {"booking_id": "b1"})]),
+        allowed_tool_names={"search_knowledge"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "TOOL_NOT_ALLOWED"
+
+
+def test_blocks_duplicate_tool_calls_in_same_message():
+    calls = [
+        _call("search_knowledge", {"query": "VF8"}, "call-1"),
+        _call("search_knowledge", {"query": "VF8"}, "call-2"),
+    ]
+    decision = inspect_tool_calls(
+        _state(calls),
+        allowed_tool_names={"search_knowledge"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "DUPLICATE_TOOL_CALL"
+
+
+def test_blocks_booking_confirmation_without_explicit_user_confirmation():
+    call = _call(
+        "confirm_test_drive_booking",
+        {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
+    )
+    decision = inspect_tool_calls(
+        _state([call], query="Cho tôi xem lại thông tin"),
+        allowed_tool_names={"confirm_test_drive_booking"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "EXPLICIT_CONFIRMATION_REQUIRED"
+
+
+def test_allows_booking_confirmation_after_explicit_user_confirmation():
+    call = _call(
+        "confirm_test_drive_booking",
+        {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
+    )
+    decision = inspect_tool_calls(
+        _state([call], query="Tôi xác nhận chốt lịch này"),
+        allowed_tool_names={"confirm_test_drive_booking"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is True
+
+
+def test_blocks_batch_containing_a_mutating_tool():
+    calls = [
+        _call("get_booking_draft", {"booking_id": "b1"}, "call-1"),
+        _call("update_booking_draft", {"booking_id": "b1"}, "call-2"),
+    ]
+    decision = inspect_tool_calls(
+        _state(calls),
+        allowed_tool_names={"get_booking_draft", "update_booking_draft"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "MUTATION_BATCH_NOT_ALLOWED"
+
+
+def test_blocks_invalid_tool_state_without_ai_tool_message():
+    decision = inspect_tool_calls(
+        {"messages": []},
+        allowed_tool_names={"search_knowledge"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "INVALID_TOOL_STATE"
+
+
+def test_blocks_more_tool_calls_than_configured_limit():
+    calls = [
+        _call("search_knowledge", {"query": "VF8"}, "call-1"),
+        _call("get_booking_draft", {"booking_id": "b1"}, "call-2"),
+    ]
+    decision = inspect_tool_calls(
+        _state(calls),
+        allowed_tool_names={"search_knowledge", "get_booking_draft"},
+        settings=Settings(guardrails_max_tool_calls_per_message=1),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "TOOL_CALL_LIMIT_EXCEEDED"
+
+
+def test_blocks_tool_arguments_that_are_not_an_object():
+    message = AIMessage.model_construct(
+        content="",
+        tool_calls=[
+            {
+                "name": "search_knowledge",
+                "args": "VF8",
+                "id": "call-invalid-args",
+                "type": "tool_call",
+            }
+        ],
+    )
+    decision = inspect_tool_calls(
+        {"messages": [message]},
+        allowed_tool_names={"search_knowledge"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "INVALID_TOOL_ARGUMENTS"
+
+
+def test_blocks_tool_arguments_that_exceed_payload_limits():
+    decision = inspect_tool_calls(
+        _state([_call("search_knowledge", {"query": "x" * 5001})]),
+        allowed_tool_names={"search_knowledge"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "TOOL_PAYLOAD_LIMIT_EXCEEDED"
+
+
+def test_allows_multiple_distinct_read_only_tools_within_budget():
+    calls = [
+        _call("search_knowledge", {"query": "VF8"}, "call-1"),
+        _call("get_booking_draft", {"booking_id": "b1"}, "call-2"),
+    ]
+    decision = inspect_tool_calls(
+        _state(calls),
+        allowed_tool_names={"search_knowledge", "get_booking_draft"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is True
+
+
+def test_allows_structured_confirmation_without_natural_language_confirmation():
+    call = _call(
+        "confirm_test_drive_booking",
+        {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
+    )
+    decision = inspect_tool_calls(
+        _state([call], query="Cho tôi xem lại", requested_action="confirm_booking"),
+        allowed_tool_names={"confirm_test_drive_booking"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is True
+
+
+def test_blocks_two_mutating_tools_in_one_message():
+    calls = [
+        _call("hold_test_drive_slot", {"slot_id": "s1", "ui_action_id": "ui-1"}, "call-1"),
+        _call("update_booking_draft", {"booking_id": "b1"}, "call-2"),
+    ]
+    decision = inspect_tool_calls(
+        _state(calls),
+        allowed_tool_names={"hold_test_drive_slot", "update_booking_draft"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "MUTATION_BATCH_NOT_ALLOWED"
+
+
+@pytest.mark.asyncio
+async def test_guarded_tool_node_does_not_execute_blocked_confirmation():
+    executed = MagicMock()
+
+    @tool("confirm_test_drive_booking")
+    def fake_confirmation(booking_id: str) -> dict:
+        """Fake high-impact tool used to verify that blocking prevents execution."""
+        executed(booking_id)
+        return {"booking_id": booking_id}
+
+    node = build_guarded_tool_node([fake_confirmation], skill_name="booking")
+    result = await node(
+        _state(
+            [_call("confirm_test_drive_booking", {"booking_id": "b1"})],
+            query="Chỉ hiển thị thông tin",
+        )
+    )
+
+    executed.assert_not_called()
+    assert len(result["messages"]) == 1
+    assert isinstance(result["messages"][0], ToolMessage)
+    assert result["messages"][0].status == "error"
+    assert "EXPLICIT_CONFIRMATION_REQUIRED" in result["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_guarded_tool_node_executes_when_guardrails_are_disabled(monkeypatch):
+    executed = MagicMock()
+
+    @tool("confirm_test_drive_booking")
+    def fake_confirmation(booking_id: str) -> dict:
+        """Fake tool for the explicit guardrails-disabled configuration branch."""
+        executed(booking_id)
+        return {"booking_id": booking_id}
+
+    monkeypatch.setattr(
+        "src.guardrails.tool_guard.get_settings",
+        lambda: Settings(guardrails_enabled=False),
+    )
+    node = build_guarded_tool_node([fake_confirmation], skill_name="booking")
+    graph = StateGraph(AgentState)
+    graph.add_node("tools", node)
+    graph.set_entry_point("tools")
+    graph.add_edge("tools", END)
+    agent = graph.compile()
+    result = await agent.ainvoke(
+        _state(
+            [_call("confirm_test_drive_booking", {"booking_id": "b1"})],
+            query="Chỉ hiển thị thông tin",
+        )
+    )
+
+    executed.assert_called_once_with("b1")
+    tool_messages = [message for message in result["messages"] if isinstance(message, ToolMessage)]
+    assert len(tool_messages) == 1
+    assert tool_messages[0].status == "success"
