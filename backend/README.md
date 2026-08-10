@@ -1,173 +1,47 @@
 # VinFast Test Drive Booking Backend
 
-Backend cung cấp database SQLite, business services, các LangChain tools và FastAPI API cho hệ thống đặt lịch lái thử VinFast.
+FastAPI backend cho website VinFast, gồm catalogue/nội dung website dạng read-only, nghiệp vụ đặt lịch lái thử, LangGraph Agent, SQLite và các công cụ import/publish media.
 
-Agent chưa được kết nối vào booking flow chính. Giao diện demo gọi các Agent-facing tools hoặc UI-confirmed commands thông qua FastAPI để kiểm tra luồng nghiệp vụ thực tế.
+## Yêu cầu
 
-## Cấu trúc thư mục
+- Python 3.11+
+- `pip` và virtual environment (khuyến nghị)
+- Node.js/npm chỉ cần khi upload media lên Cloudflare R2 bằng Wrangler
 
-```text
-backend/
-├── logs/
-│   └── backend.log
-├── src/
-│   ├── agents/
-│   │   ├── graph.py
-│   │   ├── state.py
-│   │   ├── nodes/
-│   │   └── tools/
-│   ├── api/
-│   │   └── routes.py
-│   ├── models/
-│   │   └── schemas.py
-│   ├── services/
-│   │   ├── booking.py
-│   │   └── llm.py
-│   ├── config.py
-│   ├── database.py
-│   ├── dependencies.py
-│   ├── logging_config.py
-│   └── main.py
-├── Dockerfile
-├── Makefile
-└── requirements.txt
-```
+## Chạy local
 
-## Thành phần chính
-
-### Database
-
-`src/database.py` quản lý kết nối và khởi tạo SQLite schema.
-
-Database lưu:
-
-- Mẫu xe và phiên bản xe.
-- Showroom và tọa độ địa lý.
-- Xe demo vật lý.
-- Slot lái thử.
-- Booker và Driver.
-- Booking và khai báo giấy phép.
-- Notification plan và notification jobs.
-- OTP challenge và booking access session.
-- Audit events.
-- Sales staff và phân công sales theo slot.
-- Idempotency records cho các UI commands quan trọng.
-
-Các write operation quan trọng sử dụng `BEGIN IMMEDIATE` để xử lý cạnh tranh trên SQLite.
-
-### Booking Service
-
-`src/services/booking.py` chứa business logic chính:
-
-- Tìm mẫu xe, showroom và slot.
-- Tính khoảng cách showroom bằng Haversine.
-- Giữ slot trong 15 phút.
-- Đọc và cập nhật booking draft.
-- Xác nhận booking.
-- Xác minh OTP và tạo access session.
-- Tra cứu và chỉnh sửa booking.
-- Dời hoặc hủy booking.
-- Tạo notification jobs và audit events.
-- Giải phóng hold hết hạn.
-- Import mock dataset.
-- Cung cấp dữ liệu dashboard.
-
-Business rules, transaction và state transition nằm trong service; tool và API chỉ đóng vai trò adapter.
-
-### Agent-facing tools
-
-Các booking tools nằm trong:
-
-```text
-src/agents/tools/<tool_name>/
-├── __init__.py
-├── tool.py
-└── TOOL.md
-```
-
-Sáu tools chính:
-
-1. `search_test_drive_options`
-2. `get_booking_draft`
-3. `update_booking_draft`
-4. `request_booking_access`
-5. `verify_booking_access`
-6. `get_booking_details`
-
-Các tool sử dụng decorator `@tool` của LangChain và gọi trực tiếp `BookingService`.
-
-Các thao tác giữ, xác nhận, dời và hủy booking không phải Agent tools. Chúng là UI-confirmed commands và được backend gọi trực tiếp sau khi người dùng bấm nút xác nhận.
-
-### API
-
-`src/api/routes.py` cung cấp các endpoint chính:
-
-| Method | Endpoint | Chức năng |
-|---|---|---|
-| `POST` | `/api/v1/chat` | Entry point của LangGraph Agent mẫu |
-| `GET` | `/api/v1/status` | Trạng thái Agent |
-| `POST` | `/api/v1/demo/action` | Chạy tool hoặc UI command từ giao diện demo |
-| `POST` | `/api/v1/admin/import/showrooms` | Import một file showroom CSV |
-| `POST` | `/api/v1/admin/import/eval-dataset` | Import bộ mock CSV theo dependency order |
-| `GET` | `/api/v1/dashboard` | Dữ liệu giám sát booking và slot |
-| `GET` | `/health` | Health check |
-
-Swagger UI được cung cấp tại `/docs`.
-
-### Import dữ liệu
-
-Importer đầy đủ nhận các file trong thư mục `eval/data` của repository root.
-
-Request tới endpoint:
-
-```text
-POST /api/v1/admin/import/eval-dataset
-```
-
-Body có dạng:
-
-```json
-{
-  "files": {
-    "01_vehicle_models.csv": "id,code,name,...",
-    "02_vehicle_variants.csv": "id,model_id,code,..."
-  }
-}
-```
-
-Importer:
-
-- Kiểm tra tên file và CSV header.
-- Kiểm tra foreign-key dependency.
-- Import theo thứ tự an toàn.
-- Upsert các record đã tồn tại.
-- Rollback toàn bộ nếu một file không hợp lệ.
-
-### Logging
-
-Backend ghi log tại:
-
-```text
-logs/backend.log
-```
-
-`backend.log` chứa request, latency, lifecycle và lỗi backend. Lỗi frontend được xem trong Browser DevTools Console, không ghi thành file ở backend.
-
-Log sử dụng rotating file:
-
-- `backend.log`: tối đa 5 MB, giữ 5 bản.
-
-Theo dõi log realtime trên PowerShell:
+Các lệnh dưới đây chạy từ thư mục `backend` để đường dẫn SQLite và media được resolve đúng:
 
 ```powershell
-Get-Content logs\backend.log -Wait
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## Cấu hình
+macOS/Linux:
 
-Backend đọc biến môi trường từ `.env` tại repository root hoặc trong `backend`.
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-Cấu hình quan trọng:
+Sau khi khởi động:
+
+- Health check: <http://localhost:8000/health>
+- Swagger UI: <http://localhost:8000/docs>
+- API base: `http://localhost:8000/api/v1`
+- Media local: `http://localhost:8000/media/...`
+
+Schema SQLite được khởi tạo tự động. Database mặc định nằm tại `backend/data/app.db`.
+
+## Cấu hình môi trường
+
+Backend đọc `.env` ở repository root trước, sau đó đọc `backend/.env`; giá trị trong `backend/.env` có độ ưu tiên cao hơn. Không commit file chứa secret.
 
 ```env
 APP_ENV=development
@@ -175,90 +49,121 @@ APP_HOST=0.0.0.0
 APP_PORT=8000
 LOG_LEVEL=INFO
 CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+
 DATABASE_URL=sqlite:///./data/app.db
+
+OPENAI_API_KEY=
+OPENROUTER_API_KEY=
+MODEL_NAME=gpt-4o-mini
+CLASSIFIER_MODEL_NAME=
+LLM_TEMPERATURE=0.7
+
+MEDIA_ROOT=./data/media
+MEDIA_BASE_URL=/media
+SITE_CATALOG_PATH=./data/site_catalog.json
+CHROMA_PERSIST_DIR=./data/chroma
 ```
 
-Phiên bản hiện tại chỉ hỗ trợ SQLite cho booking persistence.
+`DATABASE_URL` hiện chỉ hỗ trợ SQLite. Nếu không dùng Agent/LLM, có thể để trống các API key; catalogue, content và booking service vẫn chạy.
 
-## Chạy backend local
+## API chính
 
-Yêu cầu:
+| Method | Endpoint | Mục đích |
+|---|---|---|
+| `GET` | `/health` | Kiểm tra tiến trình FastAPI |
+| `GET` | `/api/v1/booking/health` | Kiểm tra booking service/database |
+| `GET` | `/api/v1/vehicles` | Danh sách xe; hỗ trợ lọc category, featured và test-drive eligibility |
+| `GET` | `/api/v1/vehicles/{vehicle_id}` | Chi tiết một mẫu xe |
+| `GET` | `/api/v1/content/{page}` | Nội dung `home`, `charging` hoặc `after-sales` |
+| `POST` | `/api/v1/chat` | Entry point của LangGraph Agent |
+| `GET` | `/api/v1/status` | Trạng thái Agent |
+| `POST` | `/api/v1/chat` | Tin nhắn Agent và structured booking actions từ frontend |
+| `POST` | `/api/v1/demo/action` | Adapter demo cũ, không còn được booking frontend sử dụng |
+| `POST` | `/api/v1/admin/import/showrooms` | Import showroom CSV |
+| `POST` | `/api/v1/admin/import/eval-dataset` | Import bộ CSV booking theo dependency order |
+| `GET` | `/api/v1/dashboard` | Thống kê booking/slot |
 
-- Python 3.11 trở lên.
-- Conda hoặc Python virtual environment.
+Catalogue/content trả `ETag`, hỗ trợ `If-None-Match` và cache revalidation.
 
-Từ repository root:
+## Catalogue và media
+
+Backend có snapshot mặc định trong `src/services/site_catalog.py`. Nếu `SITE_CATALOG_PATH` tồn tại, JSON đó được validate và dùng thay snapshot mặc định.
+
+Validate và publish một CMS snapshot:
 
 ```powershell
-cd backend
+python scripts/import_site_catalog.py path\to\input.json data\site_catalog.json
 ```
 
-### Sử dụng Conda
+Copy media hiện có từ frontend sang local media origin:
 
 ```powershell
-conda activate p053
-pip install -r requirements-dev.txt
-uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+python scripts/publish_site_media.py ..\frontend data\media
 ```
 
-### Sử dụng Python virtual environment
+Production có thể đặt `MEDIA_BASE_URL=https://cdn.example.com`; API sẽ tự chuyển các URL `/media/...` sang CDN origin. Upload Cloudflare R2:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements-dev.txt
-uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+.\scripts\upload_r2_media.ps1 -Bucket your-bucket -MediaRoot data\media -DryRun
+.\scripts\upload_r2_media.ps1 -Bucket your-bucket -MediaRoot data\media
 ```
 
-Sau khi backend chạy:
+## Test và kiểm tra code
 
-- Health check: http://localhost:8000/health
-- Swagger UI: http://localhost:8000/docs
-- Dashboard API: http://localhost:8000/api/v1/dashboard
+```powershell
+python -m pytest tests -v
+python -m ruff check src tests
+python -m ruff format --check src tests
+python -m mypy src
+```
 
-## Chạy bằng Docker
+Trên môi trường có `make`, có thể dùng `make run`, `make test` hoặc `make check`.
+
+## Docker
 
 Từ repository root:
 
 ```powershell
 Copy-Item .env.example .env
+docker compose up --build
 ```
 
-Sau đó sửa dòng database trong `.env` thành SQLite:
+Đổi `DATABASE_URL` trong `.env` về `sqlite:///./data/app.db` trước khi chạy vì backend hiện chưa hỗ trợ PostgreSQL. Backend mở ở port `8000`, frontend ở port `3000`; `backend/data` được mount để giữ database và media local.
 
-```env
-DATABASE_URL=sqlite:///./data/app.db
+## Kiến trúc chính
+
+```text
+backend/
+├── scripts/                 # Import catalogue, publish/upload media
+├── src/
+│   ├── agents/              # LangGraph, skills và tools
+│   ├── api/                 # Booking/Agent API và site catalogue API
+│   ├── models/              # Pydantic request/response models
+│   ├── services/booking/    # Transaction và business rules đặt lịch
+│   ├── services/site_catalog.py
+│   ├── config.py
+│   ├── database.py
+│   └── main.py
+└── tests/
 ```
 
-Khởi động service:
+Nghiệp vụ giữ slot, draft, xác nhận, OTP, tra cứu/chỉnh sửa booking, notification jobs, audit events và idempotency nằm trong booking service; API và Agent tools chỉ là adapter.
+
+## Chưa implement/productionize
+
+- Catalogue/content vẫn là snapshot Python/JSON read-only; chưa có CMS hoặc CRUD admin lưu vào database.
+- `/api/v1/demo/action` vẫn được giữ cho demo/test cũ nhưng booking frontend đã chuyển sang LangGraph `/api/v1/chat`.
+- `search_knowledge` chưa có RAG/vector search thực tế.
+- Frontend đã kết nối LangGraph nhưng streaming và persistence lịch sử hội thoại production chưa hoàn thiện.
+- Chưa có worker/gateway production để gửi notification ra SMS/email thực tế.
+- Authentication/authorization cho admin, rate limiting và secret management production chưa hoàn thiện.
+- Một số catalogue detail như màu xe, chapter và gallery vẫn rỗng hoặc chưa đủ media.
+- PostgreSQL trong `.env.example` chỉ là định hướng cũ; persistence hiện tại chỉ hỗ trợ SQLite.
+
+## Logging
+
+Log được ghi xoay vòng tại `backend/logs/backend.log` (tối đa 5 MB mỗi file, giữ 5 bản). Theo dõi realtime trên PowerShell:
 
 ```powershell
-docker compose up --build backend
+Get-Content logs\backend.log -Wait
 ```
-
-Backend được mở tại:
-
-```text
-http://localhost:8000
-```
-
-Docker Compose mount:
-
-```text
-backend/data → /app/data
-backend/logs → /app/logs
-```
-
-Vì vậy database và log được giữ lại khi container được tạo lại.
-
-## Khởi động lại database development
-
-Database mặc định nằm tại:
-
-```text
-backend/data/app.db
-```
-
-Nếu cần một database development mới, hãy dừng backend, sao lưu hoặc xóa file này rồi khởi động lại. Schema sẽ được tạo tự động khi application import `src.dependencies`.
-
-Không xóa database khi backend đang chạy.

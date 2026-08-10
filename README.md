@@ -1,210 +1,171 @@
-﻿# 🤖 AI20K Agent Template
+# VinFast Test Drive Booking
 
-Template chính thức cho học viên **VinUni AI20K Build Phase** — cung cấp sẵn cấu trúc dự án, code mẫu, và hướng dẫn kỹ thuật chi tiết để xây dựng AI Agent đạt điểm cao (35+/50).
+Ứng dụng demo đặt lịch lái thử VinFast gồm:
 
-> 📖 **Technical Guidebook:** [phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
+- `backend`: FastAPI, LangGraph agent, booking service, PostgreSQL/SQLite adapter.
+- `frontend`: Vite React UI cho trang sản phẩm, tư vấn và đặt lịch.
+- `admin`: Streamlit dashboard/import data.
+- `eval/data`: bộ CSV seed dữ liệu booking/catalog.
 
-## 🎯 Template này dùng để làm gì?
+## Chạy Bằng Docker
 
-Khi tham gia AI20K Build Phase, mỗi đội cần xây dựng một AI Agent hoàn chỉnh — từ kiến trúc, code, test, đến deploy. Thay vì bắt đầu từ con số không, template này cung cấp:
+Từ thư mục root:
 
-- **Cấu trúc thư mục chuẩn** — đã được thiết kế theo best practices (separation of concerns)
-- **Code mẫu** cho các phần cốt lõi: LangGraph agent, FastAPI API, config, schemas
-- **Docker + CI/CD sẵn** — Dockerfile multi-stage, GitHub Actions workflow
-- **Hướng dẫn kỹ thuật 10 chương** — từ clone template đến nộp bài Demo Day
-- **Checklist 10 deliverables** — đảm bảo không bỏ sót yêu cầu BTC
-- **AI Usage Logging tự động** — Pre-configured hooks cho Claude Code, Cursor, Codex, Gemini CLI, Antigravity, và GitHub Copilot
-
-## ⚡ Quick Start
-
-### Bước 1: Fork hoặc Clone
-
-```bash
-# Clone template
-git clone https://github.com/AI20K-Build-Cohort-2/starter-code-template.git team-YOUR_TEAM_NAME
-cd team-YOUR_TEAM_NAME
-
-# Xóa git history cũ và khởi tạo lại
-rm -rf .git
-git init
-git add .
-git commit -m "feat: khởi tạo dự án từ template"
+```powershell
+Copy-Item .env.example .env
+docker compose up --build
 ```
 
-### Bước 2: Setup môi trường
+Các service chính:
 
-```bash
-# Tạo virtual environment
-python3.11 -m venv .venv
-source .venv/bin/activate
+- Frontend: <http://localhost:3000>
+- Backend API: <http://localhost:8000>
+- Swagger: <http://localhost:8000/docs>
+- Admin dashboard: <http://localhost:8501>
+- PostgreSQL: `localhost:5432`
 
-# Cài dependencies
-pip install -e ".[dev]"
+## Setup Data
 
-# Cấu hình API keys
-cp .env.example .env
-# Mở .env và thêm OPENAI_API_KEY của bạn
-# Đồng thời cập nhật AI_LOG_API_KEY bằng key riêng từ link mời của BTC
-# (giá trị trong .env.example chỉ là placeholder)
+Mặc định Docker mount folder local:
+
+```text
+eval/data -> /app/eval/data
 ```
 
-### Bước 3: Cài AI Logging Hooks
+Khi database rỗng, `db-seed` sẽ import toàn bộ các file CSV trong `eval/data` theo thứ tự dependency:
 
-```bash
-# Linux / macOS / Git Bash
-bash scripts/setup_hooks.sh
-
-# Windows PowerShell
-# powershell -ExecutionPolicy Bypass -File scripts\setup_hooks.ps1
+```text
+01_vehicle_models.csv
+02_vehicle_variants.csv
+03_showrooms.csv
+04_sales_staff.csv
+05_demo_vehicles.csv
+06_test_drive_slots.csv
+07_slot_sales_assignments.csv
+08_people.csv
+09_bookings.csv
+10_booking_driver_details.csv
+11_notification_plans.csv
+12_notification_jobs.csv
+13_otp_challenges.csv
+14_booking_access_sessions.csv
+15_booking_events.csv
 ```
 
-Hooks tự động log mọi AI prompt khi dùng Claude Code, Cursor, Codex, Gemini CLI, Antigravity, hoặc GitHub Copilot. Không cần thao tác thủ công.
+Các file data gốc được lưu tại Google Drive:
 
-### Bước 4: Chạy server
+<REMOVED-PRIVATE-LINK>
 
-```bash
-# Chạy FastAPI backend
-uvicorn src.main:app --reload --port 8000
+Tải các file CSV từ Drive về `eval/data`, sau đó chạy:
 
-# Mở Swagger UI
-# http://localhost:8000/docs
+```powershell
+docker compose down -v
+docker compose up --build
 ```
 
-### Bước 5: Đọc hướng dẫn
+Khi import thành công, log `db-seed` sẽ có dạng:
 
-📖 Mở **[Technical Guidebook](https://phoenix.note.transformerlabs.ai/technical-book)** và làm theo từng chương.
-
-## 📁 Cấu trúc dự án
-
-```
-├── src/
-│   ├── agents/           # 🧠 LangGraph Agent
-│   │   ├── graph.py      #    State graph (nodes + edges)
-│   │   ├── state.py      #    State schema (TypedDict)
-│   │   ├── nodes/        #    Node functions
-│   │   └── tools/        #    Agent tools (@tool)
-│   ├── api/              # 🌐 FastAPI Backend
-│   │   └── routes.py     #    API endpoints
-│   ├── models/           # 📋 Pydantic schemas
-│   ├── services/         # 🔧 Business logic (LLM, etc.)
-│   ├── config.py         # ⚙️ Pydantic Settings
-│   └── main.py           # 🚀 App entry point
-├── tests/                # 🧪 pytest suite
-│   ├── test_agents/      #    Agent/graph tests
-│   └── test_api/         #    API endpoint tests
-├── scripts/              # 🔌 AI Logging Hooks
-│   ├── log_hook.py       #    Auto-log cho Claude/Cursor/Codex/Gemini/Copilot
-│   ├── log_antigravity.py#    Antigravity IDE prompt scanner
-│   ├── log_manual.py     #    Manual log cho ChatGPT / web tools
-│   ├── submit_log.py     #    Submit logs on git push
-│   └── setup_hooks.sh    #    One-time hook installer
-├── .claude/ .codex/ .cursor/ .gemini/  # Per-tool hook configs
-├── .agents/              # Antigravity rules + workflows
-├── .ai-log/              # 📊 AI usage logs (auto-generated)
-├── docs/
-│   ├── guide/            # 📖 Technical Guidebook (10 chapters)
-│   └── architecture_diagram.md
-├── eval/                 # 📊 Evaluation results
-├── presentation/         # 🎤 Demo Day slides
-├── .github/workflows/    # ⚡ CI/CD (GitHub Actions)
-├── .github/hooks/        # 🪝 Copilot hook config
-├── Dockerfile            # 🐳 Multi-stage build
-├── docker-compose.yml    # 🐙 Full stack orchestration
-└── README_boilerplate.md # 📝 README template cho đội của bạn
+```text
+Imported full eval dataset from /app/eval/data: ...
 ```
 
-## 📚 Technical Guidebook — 10 Chương
+## Reset Và Re-Import
 
-| Chương | Nội dung | Thời gian |
-|---------|----------|-----------|
-| 1 | Lời mở đầu — Mục tiêu, cách sử dụng | 15 phút |
-| 2 | Khởi tạo dự án — Clone, setup, git workflow | 4 giờ |
-| 3 | Thiết kế kiến trúc — 3-tier, diagrams, ADR | 6 giờ |
-| 4 | **LangGraph Agent** — State, nodes, edges, tools, RAG | 8 giờ |
-| 5 | FastAPI — Routes, validation, error handling, streaming | 6 giờ |
-| 6 | Giao diện — Next.js + Streamlit quickstart | 6 giờ |
-| 7 | DevOps — Docker, CI/CD, deploy, logging | 6 giờ |
-| 8 | Kiểm thử — Unit test, integration test, RAGAS | 4 giờ |
-| 9 | Demo Day — 10 deliverables, checklist, tips | 2 giờ |
-| 10 | Tài nguyên — Khóa học, docs, BMAD method | tham khảo |
+`docker compose down` chỉ tắt/xóa container, không xóa database volume. Booking đã tạo vẫn còn.
 
-📖 **Đọc online:** [phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
-
-## 📋 10 Deliverables cho Demo Day
-
-| # | Deliverable | File vị trí | Template có sẵn |
-|---|-------------|-------------|:---:|
-| 1 | Source Code | `src/` | ✅ |
-| 2 | README.md | `README_boilerplate.md` → copy thành `README.md` | ✅ |
-| 3 | Architecture Diagram | `docs/architecture_diagram.md` | ✅ |
-| 4 | AI Logs | LangSmith (3 env vars) + Auto AI Usage Logging | ✅ |
-| 5 | Live URL | Deploy lên Render/Vercel | ⚡ CI/CD sẵn |
-| 6 | Video Demo | `presentation/` | 📝 |
-| 7 | Pitch Deck | `presentation/` | 📝 |
-| 8 | Development Journal | `JOURNAL.md` | ✅ |
-| 9 | Worklog | `WORKLOG.md` | ✅ |
-| 10 | Evaluation Evidence | `eval/` | 📝 |
-
-## 🛠 Tech Stack
-
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| AI Agent | LangGraph + LangChain | Latest |
-| Backend | FastAPI + Uvicorn | 0.100+ |
-| LLM | OpenAI GPT-4o-mini | API |
-| Frontend | Next.js / Streamlit | 14+ / 1.30+ |
-| Database | SQLite (dev) / PostgreSQL (prod) | — |
-| DevOps | Docker + GitHub Actions | — |
-| Testing | pytest + pytest-asyncio | 8+ |
-
-## 📊 AI Usage Logging
-
-Template đã tích hợp sẵn auto-logging hooks cho 6 AI tools:
-
-| Tool | Cơ chế | Config |
-|------|--------|--------|
-| Claude Code | `.claude/settings.json` hooks | Tự động |
-| Cursor | `.cursor/hooks.json` | Tự động |
-| OpenAI Codex CLI | `.codex/hooks.json` | Tự động |
-| Gemini CLI | `.gemini/settings.json` | Tự động |
-| GitHub Copilot | `.github/hooks/hooks.json` | Tự động |
-| Antigravity IDE | Pre-push scan transcript | Tự động trên `git push` |
-
-Tất cả prompts và tool calls được log vào `.ai-log/session.jsonl` và tự động submit lên grading server mỗi khi `git push`.
-
-**ChatGPT / web tools khác** — log thủ công:
-```bash
-bash scripts/_pyrun.sh scripts/log_manual.py --tool chatgpt --prompt "What you asked"
+```powershell
+docker compose down
+docker compose up
 ```
 
-> ⚠️ Chạy `bash scripts/setup_hooks.sh` một lần sau khi clone để cài pre-push hook.
+`docker compose down -v` xóa cả PostgreSQL volume `postgres-data`. Lần `up` sau database rỗng và hệ thống import lại từ `eval/data`.
 
-## 📖 Đọc Technical Guidebook
+```powershell
+docker compose down -v
+docker compose up --build
+```
 
-**Online (khuyến nghị):** [phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
+Nếu đã sửa code seed/import, luôn dùng `--build`; nếu không Docker có thể chạy image cũ.
 
-Đăng nhập bằng GitHub (cùng account đã được BTC mời vào org `AI20K-Build-Cohort-2`)
-→ chọn tab **Technical Book** ở sidebar trái → đọc 10 chương + topic sections,
-có table of contents bên phải, hỗ trợ light/dark/cyberpunk theme.
+## Backup PostgreSQL
 
-**Offline:** mọi chương đều ở thư mục `docs/guide/` trong template này — mở bằng
-bất kỳ markdown viewer/editor nào (VS Code, Obsidian, GitHub UI, …).
+Backup trước khi xóa volume:
 
-## 🔗 Liên kết
+```powershell
+New-Item -ItemType Directory -Force backups
+docker compose exec postgres pg_dump -U vinfast -d vinfast_booking -Fc -f /tmp/vinfast_booking.dump
+docker compose cp postgres:/tmp/vinfast_booking.dump ./backups/vinfast_booking.dump
+```
 
-- 📖 **Technical Guidebook:** [phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
-- 🏫 **AI20K Program:** VinUni AI20K Build Phase
-- 👨‍🏫 **Mentor:** Đặng Hải Lộc
+Restore:
 
-## 📄 License
+```powershell
+docker compose cp ./backups/vinfast_booking.dump postgres:/tmp/vinfast_booking.dump
+docker compose exec postgres pg_restore -U vinfast -d vinfast_booking --clean --if-exists /tmp/vinfast_booking.dump
+```
 
-MIT — Sử dụng tự do cho mục đích giáo dục.
+## Chạy Local Không Docker
 
-## Danh sach thanh vien
+Backend:
 
-| Vai tro | Ho ten | MSSV |
-|---------|--------|------|
-| Team lead | Huynh Thi Hai Chau | 2A202601912 |
-| Thanh vien 1 | Le Binh Nguyen | 2A202601659 |
-| Thanh vien 2 | Nguyen Thien Loc | 2A202601479 |
-| Thanh vien 3 | Nguyen Hoang Minh | 2A202601764 |
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Frontend:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Nếu chạy SQLite local, cấu hình:
+
+```env
+DATABASE_URL=sqlite:///./data/app.db
+AUTO_LOAD_EVAL_DATA=true
+EVAL_DATA_DIR=../eval/data
+```
+
+Xóa `backend/data/app.db` nếu muốn import lại từ đầu.
+
+## Biến Môi Trường Quan Trọng
+
+```env
+DATABASE_URL=postgresql://vinfast:vinfast@postgres:5432/vinfast_booking
+AUTO_LOAD_EVAL_DATA=true
+EVAL_DATA_DIR=/app/eval/data
+OPENAI_API_KEY=
+OPENROUTER_API_KEY=
+MODEL_NAME=gpt-4o-mini
+CLASSIFIER_MODEL_NAME=
+MEDIA_ROOT=./data/media
+MEDIA_BASE_URL=/media
+CHROMA_PERSIST_DIR=./data/chroma
+```
+
+## Kiểm Tra
+
+Backend tests:
+
+```powershell
+python -m pytest backend/tests -q
+```
+
+Frontend build:
+
+```powershell
+cd frontend
+npm run build
+```
+
+## Ghi Chú Về Khoảng Cách
+
+Nếu frontend dùng GPS, backend tính khoảng cách bằng Haversine từ tọa độ người dùng tới tọa độ showroom.
+
+Nếu người dùng chỉ nhập địa chỉ dạng text, backend match token địa danh trong địa chỉ showroom. Khi tìm thấy showroom khớp địa danh, backend dùng tọa độ showroom khớp tốt nhất làm origin tạm để sắp xếp và trả `distance_km`. Frontend chỉ hiển thị khoảng cách khi backend trả `distance_km`; không tự ép giá trị thiếu thành `0 km`.

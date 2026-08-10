@@ -1,3 +1,41 @@
+/**
+ * pages/HomePage.jsx — TRANG CHỦ tại đường dẫn "/". Trang nhiều animation nhất dự án.
+ *
+ * Dữ liệu: danh sách xe từ useVehicleCatalog(), nội dung biên tập từ usePageContent('home').
+ * Xe hero chọn theo content.home.hero.vehicleId; ID sai thì lùi về xe featured đầu tiên,
+ * rồi mới tới xe đầu tiên trong catalogue.
+ *
+ * Thứ tự các mục trên trang (tìm nhanh bằng cách gõ tên class trong ngoặc):
+ *  1. Hero + tiêu đề lớn                                  (.home-hero)
+ *  2. Xe trên đường — ảnh parallax                        (.road-chapter)
+ *  3. Video dây chuyền nhà máy                            (.factory-film)
+ *  4. Toàn cảnh nhà máy                                   (.factory-origin)
+ *  5. Dải chữ chạy tên các dòng xe                        (.model-marquee)
+ *  6. DẢI THẺ XE — 2 tab Động cơ điện / Dòng xe dịch vụ   (.models-section, id="models")
+ *  7. CHƯƠNG THƯƠNG HIỆU LẠC HỒNG + góc nhìn canvas      (.lachong-passage)
+ *     → code ở components/home/LacHongPassage.jsx, thay khối VF 8 · VF 9 cũ
+ *  8. Giới thiệu trợ lý ViVi                              (.vivi-intro)
+ *  9. Cảnh editorial Lạc Hồng: text trái, model xe phải       (.drive-out)
+ * 10. Hệ sinh thái sở hữu                                 (.ownership-section, id="ecosystem")
+ * 11. Câu chuyện công nghệ — cột trái dính khi cuộn       (.technology-story, id="technology")
+ * 12. Cảm nhận khách hàng — chỉ hiện khi backend có data  (.voices-section)
+ * 13. CTA cuối trang + footer                             (.home-action, .site-footer)
+ *
+ * Component phụ trong file: VehicleRail (~dòng 30) — dải thẻ xe cuộn ngang, có 2 nút mũi tên,
+ * rê chuột vào thẻ là prefetch dữ liệu xe cho mượt. Bấm vào thẻ đi thẳng tới /booking?car=…
+ *
+ * ẢNH XE LỚN trên trang này là Lạc Hồng — xe trưng bày, CHƯA mở lái thử. Dải thẻ xe ở mục 6
+ * vẫn là xe thương mại VF 3–VF 9 và vẫn là cửa vào /booking. Đừng gộp Lạc Hồng vào dải đó.
+ *
+ * ANIMATION (khối useGSAP ~dòng 124): hero Lạc Hồng đi từ phải sang trái;
+ * xe chính diện tiến lại gần khi cuộn (.drive-out__car),
+ * parallax ảnh đường/nhà máy. Máy bật prefers-reduced-motion thì hiện thẳng, không animate.
+ * LƯU Ý: animation chỉ khởi tạo sau khi catalogue tải xong (`if (cars.length === 0) return`)
+ * — nếu không GSAP sẽ đo sai chiều cao trang.
+ *
+ * Sửa GIAO DIỆN: mục "Home hero", "Product rail", "Pinned technology story", "Voices + action"
+ * và "New home visual chapters" trong index.css.
+ */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useGSAP } from '@gsap/react'
@@ -14,7 +52,12 @@ import { AppShell } from '../components/AppShell'
 import { IslandButton } from '../components/IslandButton'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
-import { carGroups, carImage, cars } from '../data/cars'
+import { SiteFooter } from '../components/SiteFooter'
+import { prefetchVehicle } from '../api/vehicles'
+import { carGroups, carImage } from '../data/cars'
+import { LacHongPassage } from '../components/home/LacHongPassage'
+import { lacHongEmerge, lacHongHero } from '../data/lachong'
+import { usePageContent, useVehicleCatalog } from '../hooks/useSiteData'
 import {
   factoryAerial,
   factoryFilm,
@@ -24,34 +67,6 @@ import {
 } from '../data/media'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
-
-// TODO [BACKEND/CMS]: Replace testimonials and editorial home-page copy with
-// GET /api/v1/content/home?locale=vi-VN. Only return published records with
-// consent/publication status, stable ids and sortOrder; never expose raw CRM data.
-const stories = [
-  {
-    quote:
-      'Điều thuyết phục tôi không phải một con số đơn lẻ, mà là cảm giác chiếc xe phản hồi ngay và cabin vẫn yên tĩnh giữa giờ cao điểm.',
-    name: 'Nguyễn Khánh Linh',
-    role: 'Khách hàng VF 7 · TP. Hồ Chí Minh',
-  },
-  {
-    quote:
-      'Tôi thử xe cùng cả gia đình. Chỉ sau một vòng lái, mọi người đã biết hàng ghế nào sẽ là chỗ quen thuộc của mình.',
-    name: 'Trần Hoàng Phúc',
-    role: 'Khách hàng VF 9 · Hà Nội',
-  },
-  {
-    quote:
-      'Lịch thử xe được giữ đúng mẫu và đúng khung giờ. Tôi đến showroom, nhận xe và bắt đầu lái mà không phải chờ.',
-    name: 'Lê Ngọc An',
-    role: 'Khách hàng VF 6 · Đà Nẵng',
-  },
-]
-
-const flagshipVehicles = ['vf8', 'vf9']
-  .map((id) => cars.find((car) => car.id === id))
-  .filter(Boolean)
 
 function VehicleRail({ vehicles }) {
   const rail = useRef(null)
@@ -73,7 +88,13 @@ function VehicleRail({ vehicles }) {
     <>
       <div className="vehicle-rail" ref={rail}>
         {vehicles.map((car, index) => (
-          <Link className="vehicle-tile" to={`/cars/${car.id}`} key={car.id}>
+          <Link
+            className="vehicle-tile"
+            to={`/models/${car.id}`}
+            key={car.id}
+            onMouseEnter={() => prefetchVehicle(car.id)}
+            onFocus={() => prefetchVehicle(car.id)}
+          >
             <span className="vehicle-tile__shell">
               <span className="vehicle-tile__core">
                 <span className="vehicle-tile__meta">
@@ -85,6 +106,9 @@ function VehicleRail({ vehicles }) {
                   className={`vehicle-tile__image vehicle-shot vehicle-shot--${car.studioShot.mode}`}
                   src={car.studioShot.src}
                   alt={`${car.name} - ${car.body}`}
+                  fit={car.studioShot.fit}
+                  focalPoint={car.studioShot.focalPoint}
+                  aspectRatio={car.studioShot.aspectRatio}
                 />
                 <span className="vehicle-tile__copy">
                   <span>
@@ -118,10 +142,13 @@ export function HomePage() {
   const location = useLocation()
   const [activeGroup, setActiveGroup] = useState('personal')
   const [storyIndex, setStoryIndex] = useState(0)
+  const { cars } = useVehicleCatalog()
+  const { data: homeContent } = usePageContent('home')
+  const stories = homeContent?.testimonials || []
 
   const vehicles = useMemo(
     () => cars.filter((car) => car.category === activeGroup),
-    [activeGroup],
+    [cars, activeGroup],
   )
 
   useEffect(() => {
@@ -129,66 +156,102 @@ export function HomePage() {
     if (location.hash === '#models-electric') setActiveGroup('personal')
   }, [location.hash])
 
+  // Hero dùng media local nên phải chạy ngay ở lần paint đầu, không chờ catalogue backend.
+  // Tách timeline này khỏi các ScrollTrigger bên dưới để dữ liệu xe về muộn không làm replay.
   useGSAP(
     () => {
-      // BACKEND/MEDIA CONTRACT: GSAP owns timing and movement; the API only selects
-      // a whitelisted animationPreset and supplies correctly prepared media. Do not
-      // send executable animation code or arbitrary selectors from CMS/backend.
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       if (reduced) {
         gsap.set('[data-hero-reveal]', { opacity: 1, y: 0 })
-        gsap.set('.home-hero__car', { opacity: 1, x: 0 })
+        gsap.set('.home-hero__car img', { opacity: 1, scale: 1, xPercent: 0, yPercent: 0, filter: 'blur(0px)' })
+        gsap.set('.home-hero__line, .home-hero__depth span', { opacity: 1, scaleX: 1 })
         return
       }
 
       const heroTimeline = gsap.timeline({ defaults: { ease: 'power4.out' } })
       heroTimeline
-        .fromTo('.home-hero__car', { xPercent: -58, opacity: 0 }, { xPercent: 0, opacity: 1, duration: 1.65 })
+        .fromTo(
+          '.home-hero__car--lachong img',
+          { xPercent: 118, yPercent: 0, scale: 1, opacity: 0.72, filter: 'blur(2px)' },
+          { xPercent: 0, yPercent: 0, scale: 1, opacity: 1, filter: 'blur(0px)', duration: 2.35, ease: 'power3.inOut' },
+        )
+        .fromTo(
+          '.home-hero__depth span',
+          { scaleX: 0.06, opacity: 0 },
+          { scaleX: 1, opacity: 1, duration: 1.7, stagger: 0.12, ease: 'power2.out' },
+          0.22,
+        )
+        .fromTo(
+          '.home-hero__line',
+          { scaleX: 0.08, opacity: 0 },
+          { scaleX: 1, opacity: 1, duration: 1.8, ease: 'power3.out' },
+          0.42,
+        )
         .fromTo(
           '[data-hero-reveal]',
           { y: 58, opacity: 0, filter: 'blur(10px)' },
           { y: 0, opacity: 1, filter: 'blur(0px)', duration: 0.95, stagger: 0.1 },
-          '-=0.9',
+          0.28,
         )
+    },
+    { scope: root },
+  )
 
-      gsap.to('.home-hero__car', {
-        yPercent: 9,
-        ease: 'none',
-        scrollTrigger: {
-          trigger: '.home-hero',
-          start: 'top top',
-          end: 'bottom top',
-          scrub: 1,
-        },
-      })
+  useGSAP(
+    () => {
+      // The testing UI has its catalogue synchronously available. In this branch,
+      // wait for the API catalogue so GSAP measures the same complete DOM tree.
+      if (cars.length === 0) return undefined
 
+      // BACKEND/MEDIA CONTRACT: GSAP owns timing and movement; the API only selects
+      // a whitelisted animationPreset and supplies correctly prepared media. Do not
+      // send executable animation code or arbitrary selectors from CMS/backend.
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (reduced) return
+
+      // Xe tiến từ chiều sâu ra: nhỏ, mờ và nhoè ở xa, rõ dần và lớn dần khi cuộn tới.
+      // Chỉ chạm scale/opacity/filter nên trình duyệt không phải tính lại bố cục.
       gsap.fromTo(
-        '.scroll-drive__car',
-        { xPercent: -125, rotate: -0.6 },
+        '.drive-out__car',
+        { scale: 0.42, opacity: 0, filter: 'blur(5px)', yPercent: 16 },
         {
-          xPercent: 118,
-          rotate: 0.6,
+          scale: 1,
+          opacity: 1,
+          filter: 'blur(0px)',
+          yPercent: 0,
           ease: 'none',
           scrollTrigger: {
-            trigger: '.scroll-drive',
-            start: 'top bottom',
-            end: 'bottom top',
+            trigger: '.drive-out',
+            start: 'top 92%',
+            end: 'center 52%',
             scrub: 1,
           },
         },
       )
 
+      // Quầng sáng phía sau nở ra cùng nhịp, tạo cảm giác đèn pha rọi tới.
       gsap.fromTo(
-        '.scroll-drive__copy',
+        '.drive-out__aura',
+        { scale: 0.55, opacity: 0 },
+        {
+          scale: 1,
+          opacity: 1,
+          ease: 'none',
+          scrollTrigger: { trigger: '.drive-out', start: 'top 92%', end: 'center 52%', scrub: 1 },
+        },
+      )
+
+      gsap.fromTo(
+        '.drive-out__copy',
         { y: 70, opacity: 0 },
         {
           y: 0,
           opacity: 1,
           ease: 'power3.out',
           scrollTrigger: {
-            trigger: '.scroll-drive',
-            start: 'top 72%',
-            end: 'center 55%',
+            trigger: '.drive-out',
+            start: 'top 78%',
+            end: 'center 58%',
             scrub: 0.8,
           },
         },
@@ -236,27 +299,8 @@ export function HomePage() {
         },
       )
 
-      gsap.fromTo(
-        '.flagship-passage__card:first-child',
-        { xPercent: -18, opacity: 0 },
-        {
-          xPercent: 0,
-          opacity: 1,
-          ease: 'none',
-          scrollTrigger: { trigger: '.flagship-passage', start: 'top 82%', end: 'center 54%', scrub: 0.9 },
-        },
-      )
-
-      gsap.fromTo(
-        '.flagship-passage__card:last-child',
-        { xPercent: 18, opacity: 0 },
-        {
-          xPercent: 0,
-          opacity: 1,
-          ease: 'none',
-          scrollTrigger: { trigger: '.flagship-passage', start: 'top 82%', end: 'center 54%', scrub: 0.9 },
-        },
-      )
+      // Khối Lạc Hồng tự quản animation của nó trong components/home/LacHongPassage.jsx
+      // để bộ xem 360 và phần ảnh nằm chung một scope GSAP.
 
       gsap.fromTo(
         '.home-action__model',
@@ -268,17 +312,6 @@ export function HomePage() {
           scrollTrigger: { trigger: '.home-action', start: 'top 82%', end: 'center 50%', scrub: 0.9 },
         },
       )
-
-      const desktop = gsap.matchMedia()
-      desktop.add('(min-width: 980px)', () => {
-        ScrollTrigger.create({
-          trigger: '.technology-story',
-          start: 'top 16%',
-          end: 'bottom 82%',
-          pin: '.technology-story__intro',
-          pinSpacing: false,
-        })
-      })
 
       gsap.utils.toArray('.technology-panel').forEach((panel) => {
         gsap.fromTo(
@@ -298,9 +331,13 @@ export function HomePage() {
         )
       })
 
-      return () => desktop.revert()
+      const refreshFrame = window.requestAnimationFrame(() => ScrollTrigger.refresh())
+
+      return () => {
+        window.cancelAnimationFrame(refreshFrame)
+      }
     },
-    { scope: root },
+    { scope: root, dependencies: [cars.length], revertOnUpdate: true },
   )
 
   const nextStory = (direction) => {
@@ -316,15 +353,16 @@ export function HomePage() {
           </div>
           <div className="home-hero__copy">
             <p className="home-hero__kicker" data-hero-reveal>
-              Ô tô điện VinFast
+              VinFast · Chuyển động của người Việt
             </p>
             <h1 id="home-title" data-hero-reveal>
-              Chọn chiếc xe.
+              Từ Việt Nam.
               <br />
-              Lái theo cách của bạn.
+              Vươn tới tương lai.
             </h1>
             <p className="home-hero__lead" data-hero-reveal>
-              Xem từng mẫu xe qua hình ảnh thật, đối chiếu thông số chính thức và giữ lịch lái thử chỉ trong vài phút.
+              Một hệ sinh thái di chuyển được thiết kế, chế tạo và không ngừng hoàn thiện
+              để đưa tinh thần Việt đi xa hơn mỗi ngày.
             </p>
             <div className="home-hero__actions" data-hero-reveal>
               <IslandButton to="/#models" variant="dark">
@@ -336,10 +374,16 @@ export function HomePage() {
             </div>
           </div>
           <div className="home-hero__visual" aria-hidden="true">
+            {/* Ảnh xe lớn đầu trang là Lạc Hồng 900 LX (xe trưng bày), không phải xe trong
+                catalogue. Hai nút CTA phía trên vẫn dẫn vào dải xe thương mại và /booking. */}
+            <div className="home-hero__depth">
+              <span /><span /><span /><span />
+            </div>
             <SmartImage
-              className="home-hero__car"
-              src={cars.find((car) => car.id === 'vf7')?.intro}
+              className="home-hero__car home-hero__car--lachong"
+              src={lacHongHero.src}
               alt=""
+              fit="contain"
               eager
             />
             <span className="home-hero__line" />
@@ -371,7 +415,7 @@ export function HomePage() {
             <div className="factory-film__veil" aria-hidden="true" />
             <div className="factory-film__copy">
               <p>Từ dây chuyền lắp ráp</p>
-              <h2 id="factory-film-title">Mỗi hành trình bắt đầu từ một chuyển động được chế tạo chính xác.</h2>
+              <h2 id="factory-film-title">Mỗi hành trình bắt đầu từ một chuyển động được chế tạo <em className="no-orphan">chính xác.</em></h2>
               <span>Nhà máy VinFast · Hải Phòng</span>
             </div>
           </div>
@@ -406,7 +450,13 @@ export function HomePage() {
             <Reveal className="section-heading section-heading--wide">
               <p className="eyebrow">Ô tô</p>
               <h2>
-                Hai dòng xe, một lựa chọn vừa với <span className="inline-image inline-image--road" aria-hidden="true" /> hành trình của bạn.
+                Hai dòng xe, một lựa chọn vừa với{' '}
+                <span
+                  className="inline-image inline-image--road"
+                  style={{ '--inline-image-url': `url(${carImage('VF8/banner.webp')})` }}
+                  aria-hidden="true"
+                />{' '}
+                hành trình của bạn.
               </h2>
             </Reveal>
 
@@ -430,42 +480,12 @@ export function HomePage() {
           </div>
         </section>
 
-        <section id="flagship" className="flagship-passage" aria-labelledby="flagship-title">
-          <div className="section-frame">
-            <Reveal className="flagship-passage__heading">
-              <p className="eyebrow">Hai dấu ấn đường dài</p>
-              <h2 id="flagship-title">Không gian cho từng cách bạn đi.</h2>
-            </Reveal>
-            <div className="flagship-passage__grid">
-              {flagshipVehicles.map((car) => (
-                <Link className="flagship-passage__card" to={`/cars/${car.id}`} key={car.id}>
-                  <span className="flagship-passage__index" aria-hidden="true">
-                    {car.id === 'vf8' ? '08' : '09'}
-                  </span>
-                  <SmartImage
-                    className={`flagship-passage__media vehicle-shot vehicle-shot--${car.studioShot.mode}`}
-                    src={car.studioShot.src}
-                    alt={`${car.name} — ảnh xe studio đã tách nền`}
-                  />
-                  <span className="flagship-passage__copy">
-                    <small>{car.body} · {car.seats}</small>
-                    <strong>{car.name}</strong>
-                    <ArrowRight size={20} weight="light" />
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
+        <LacHongPassage />
 
         <section className="vivi-intro" id="vivi">
           <div className="section-frame vivi-intro__grid">
             <Reveal className="vivi-intro__portrait">
-              <div className="double-bezel">
-                <div className="double-bezel__core">
-                  <img src={viviPortrait} alt="ViVi, trợ lý đặt lịch lái thử VinFast" />
-                </div>
-              </div>
+              <img src={viviPortrait} alt="ViVi, trợ lý đặt lịch lái thử VinFast" />
             </Reveal>
             <Reveal className="vivi-intro__copy" delay={0.08}>
               <p className="eyebrow">ViVi đặt lịch</p>
@@ -483,17 +503,36 @@ export function HomePage() {
           </div>
         </section>
 
-        <section className="scroll-drive" aria-label="Chuyển động xe theo thao tác cuộn">
-          <div className="scroll-drive__copy">
-            <p className="eyebrow">Chuyển động thuần điện</p>
-            <h2>Chạm để xem. Cuộn để chiếc xe bắt đầu hành trình.</h2>
+        {/* Cảnh editorial Lạc Hồng: nội dung và model đứng ở hai vùng riêng biệt. */}
+        <section id="drive-out" className="drive-out" aria-label="Xe tiến lại gần theo thao tác cuộn">
+          <div className="drive-out__marquee" aria-hidden="true">
+            <div>
+              <span>Thiết kế tại Việt Nam</span><span>Chế tác cho tương lai</span>
+              <span>Thiết kế tại Việt Nam</span><span>Chế tác cho tương lai</span>
+            </div>
           </div>
-          <div className="scroll-drive__road" aria-hidden="true"><span /><span /><span /></div>
-          <SmartImage
-            className="scroll-drive__car"
-            src={cars.find((car) => car.id === 'vf8-the-he-moi')?.intro}
-            alt="VF 8 Thế hệ mới đang di chuyển"
-          />
+          <div className="section-frame drive-out__layout">
+            <div className="drive-out__copy">
+              <p className="eyebrow">Một dấu ấn đang tiến về phía trước</p>
+              <h2>Đường nét Việt.<br />Chuyển động hướng<br />tới tương lai.</h2>
+              <p>
+                Không chỉ là tỷ lệ của một mẫu xe. Đây là cách VinFast chuyển năng lực
+                thiết kế và chế tác trong nước thành một dấu ấn có thể nhận ra từ mọi góc nhìn.
+              </p>
+              <div className="drive-out__signature"><span>Thiết kế</span><strong>Tại Việt Nam</strong></div>
+            </div>
+
+            <div className="drive-out__visual">
+              <div className="drive-out__aura" aria-hidden="true" />
+              <div className="drive-out__lane" aria-hidden="true"><span /><span /><span /></div>
+              <SmartImage
+                className="drive-out__car"
+                src={lacHongEmerge.src}
+                alt={lacHongEmerge.alt}
+                fit="contain"
+              />
+            </div>
+          </div>
         </section>
 
         <section className="ownership-section" id="ecosystem">
@@ -561,7 +600,7 @@ export function HomePage() {
               <p>
                 Mỗi trang xe là một câu chuyện hình ảnh: ngoại thất, khoang lái, vận hành và dữ liệu kỹ thuật được dẫn theo nhịp cuộn.
               </p>
-              <IslandButton to="/cars/vf8" variant="dark">
+              <IslandButton to="/models/vf8" variant="dark">
                 Xem trải nghiệm VF 8
               </IslandButton>
             </div>
@@ -593,6 +632,8 @@ export function HomePage() {
                 },
               ].map((item) => {
                 const car = cars.find((entry) => entry.id === item.car)
+                if (!car) return null
+
                 return (
                   <article className="technology-panel" key={item.id}>
                     <div className="double-bezel double-bezel--dark">
@@ -611,7 +652,7 @@ export function HomePage() {
           </div>
         </section>
 
-        <section className="voices-section">
+        {stories.length > 0 && <section className="voices-section">
           <div className="section-frame voices-section__grid">
             <Reveal className="voices-section__title">
               <p className="eyebrow">Sau một vòng lái</p>
@@ -640,7 +681,7 @@ export function HomePage() {
               </div>
             </div>
           </div>
-        </section>
+        </section>}
 
         {/* TODO [BACKEND/HOME CTA]: This CTA accepts exactly one vehicle render.
             Background is presentation CSS; never return a second car as backdrop. */}
@@ -664,25 +705,7 @@ export function HomePage() {
           </div>
         </section>
 
-        <footer className="site-footer">
-          <div className="section-frame site-footer__inner">
-            <div>
-              <strong>VINFAST</strong>
-              <p>Thiết kế trải nghiệm xem xe và đặt lịch lái thử.</p>
-            </div>
-            <nav aria-label="Liên kết cuối trang">
-              <a href="#models">Ô tô</a>
-              <a href="#technology">Công nghệ</a>
-              <Link to="/after-sales">Hậu mãi</Link>
-              <Link to="/charging">Pin & trạm sạc</Link>
-              <Link to="/booking">Đặt lịch</Link>
-              <Link to="/agent">Trợ lý ViVi</Link>
-            </nav>
-            <p className="site-footer__legal">
-              Thông số được tổng hợp từ brochure chính thức và có thể thay đổi theo phiên bản, điều kiện vận hành hoặc chính sách của nhà sản xuất.
-            </p>
-          </div>
-        </footer>
+        <SiteFooter />
       </main>
     </AppShell>
   )

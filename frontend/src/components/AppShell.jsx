@@ -1,8 +1,26 @@
+/**
+ * components/AppShell.jsx — Khung bao ngoài của mọi trang: header, menu và dải cảnh báo backend.
+ *
+ * Dùng ở: HomePage, CarDetailPage, AfterSalesPage, ChargingPage.
+ * KHÔNG dùng ở BookingPage — trang đặt lịch cố ý có header riêng, gọn hơn.
+ *
+ * Chứa gì:
+ * - Mảng `links` (dòng ~8) và `productGroups` (dòng ~16): TOÀN BỘ menu nằm ở 2 mảng này.
+ *   Muốn thêm/xoá/đổi tên mục menu thì sửa ngay đây, không cần đụng chỗ khác.
+ * - Header sticky + logo + mega-menu "Ô tô" (2 nhóm: Động cơ điện / Dòng xe dịch vụ).
+ * - Nút "Đặt lịch lái thử": tự nhớ mẫu xe vừa xem và gắn kèm ?car=… vào link.
+ * - Menu overlay cho mobile (nút hamburger), đóng bằng phím Esc.
+ * - Dải băng vàng "Không thể kết nối backend" + nút thử lại.
+ * - Link "Đi đến nội dung chính" cho người dùng bàn phím/screen reader.
+ *
+ * Style tương ứng: mục "Floating navigation" trong index.css.
+ */
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { ArrowUpRight, Buildings, CaretDown, CarProfile } from '@phosphor-icons/react'
 import { Brand } from './Brand'
 import { IslandButton } from './IslandButton'
+import { useBackendStatus } from '../context/BackendStatusContext'
 
 const links = [
   { label: 'Công nghệ', to: '/#technology' },
@@ -20,19 +38,13 @@ const productGroups = [
 export function AppShell({ children, navTheme = 'light' }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [productsOpen, setProductsOpen] = useState(false)
-  const [bookingHref, setBookingHref] = useState('/booking')
+  const bookingHref = '/booking'
   const location = useLocation()
+  const { bookingStatus, retry } = useBackendStatus()
 
   useEffect(() => {
-    // TODO [BACKEND/SESSION]: Today this context is anonymous and tab-scoped.
-    // When draft persistence exists, restore `recentVehicleId` from
-    // GET /api/v1/test-drive/drafts/{draftId}; sessionStorage remains a safe
-    // fallback only for the non-PII vehicle id. Never persist customer fields here.
     setMenuOpen(false)
     setProductsOpen(false)
-    const routeCar = location.pathname.match(/^\/cars\/([^/]+)/)?.[1]
-    const recentCar = routeCar || window.sessionStorage.getItem('vinfast:last-viewed-car')
-    setBookingHref(recentCar ? `/booking?car=${recentCar}` : '/booking')
   }, [location.pathname, location.hash])
 
   useEffect(() => {
@@ -124,6 +136,13 @@ export function AppShell({ children, navTheme = 'light' }) {
           </div>
         </div>
       </header>
+
+      {bookingStatus === 'unavailable' && (
+        <div className="backend-status-banner flex items-center justify-center gap-[18px] bg-[#fff3cd] px-6 py-2.5 text-[13px] text-[#5f4700] max-sm:items-start max-sm:justify-between max-sm:px-4" role="status">
+          <span>Không thể kết nối backend. Dữ liệu sản phẩm và dịch vụ đặt lịch hiện không khả dụng.</span>
+          <button type="button" onClick={retry}>Thử kết nối lại</button>
+        </div>
+      )}
 
       <div
         id="mobile-navigation"
