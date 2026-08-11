@@ -762,6 +762,7 @@ export function BookingPage() {
   const [messages, setMessages] = useState(shouldOfferResume && Array.isArray(restoredUi.messages) ? restoredUi.messages : [])
   const [draft, setDraft] = useState('')
   const [agentTyping, setAgentTyping] = useState(false)
+  const [checkingVehicleName, setCheckingVehicleName] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [address, setAddress] = useState({ province: '', detail: '' })
   const [locationSuggestions, setLocationSuggestions] = useState([])
@@ -901,12 +902,6 @@ export function BookingPage() {
     return cars.find((car) => candidates.includes(normalize(car.id)) || candidates.includes(normalize(car.name))) || null
   }
 
-  const showVehiclePanel = (car) => {
-    if (!car) return
-    setSelectedCarId(car.id)
-    setWorkspaceHidden(false)
-    setActiveView('car')
-  }
   const requestUserLocation = () => {
     if (!navigator.geolocation) {
       setBackendError("Trình duyệt của bạn không hỗ trợ định vị GPS.")
@@ -1360,10 +1355,10 @@ export function BookingPage() {
     addMessage('user', value)
     setBackendError('')
 
-    // Keep the visual model panel deterministic even when the LLM responds before
-    // a tool result reaches the browser. This mirrors clicking a vehicle suggestion.
+    // Vehicle text is only a hint for the pending status. The panel changes after
+    // the Agent tool confirms an active model in applyAgentToolResult().
     const mentionedCar = resolveAgentCar(value)
-    if (mentionedCar) showVehiclePanel(mentionedCar)
+    setCheckingVehicleName(mentionedCar?.name || '')
 
     setAgentTyping(true)
     try {
@@ -1389,6 +1384,7 @@ export function BookingPage() {
       addMessage('assistant', `Không thể kết nối ViVi: ${error.message}`)
     } finally {
       setAgentTyping(false)
+      setCheckingVehicleName('')
       sendingRef.current = false
       setIsSending(false)
     }
@@ -1880,10 +1876,11 @@ export function BookingPage() {
               {agentTyping && (
                 <div className="vivi-message vivi-message--assistant">
                   <ViViAvatar compact />
-                  <div className="vivi-typing" aria-label="ViVi đang trả lời">
+                  <div className="vivi-typing" aria-label={checkingVehicleName ? `ViVi đang kiểm tra ${checkingVehicleName}` : 'ViVi đang trả lời'}>
                     <span />
                     <span />
                     <span />
+                    {checkingVehicleName && <small>ViVi đang kiểm tra {checkingVehicleName}…</small>}
                   </div>
                 </div>
               )}
