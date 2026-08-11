@@ -238,20 +238,20 @@ async def booking_skill_node(state: AgentState) -> dict:
         has_tool_calls=has_tool_calls,
     )
     if has_tool_calls:
-        for tool_call in response.tool_calls:
+        for llm_tool_call in response.tool_calls:
             trace_event(
                 "tool.call",
                 trace_id=trace_id,
                 node="booking_skill",
                 source="llm",
-                tool=tool_call.get("name"),
-                args=tool_call.get("args"),
-                tool_call_id=tool_call.get("id"),
+                tool=llm_tool_call.get("name"),
+                args=llm_tool_call.get("args"),
+                tool_call_id=llm_tool_call.get("id"),
             )
-            arguments = tool_call.get("args")
+            arguments = llm_tool_call.get("args")
             tool_logger.info(
                 "tool_dispatched tool=%s mode=llm input=%s",
-                tool_call.get("name", "unknown"),
+                llm_tool_call.get("name", "unknown"),
                 _safe_tool_input(arguments if isinstance(arguments, dict) else {}),
             )
 

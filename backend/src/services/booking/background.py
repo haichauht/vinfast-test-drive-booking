@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 from zoneinfo import ZoneInfo
 
+from src.services.booking.base import BookingBase
 from src.services.booking.common import iso, parse_utc
 
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
-class BackgroundJobService:
+class BackgroundJobService(BookingBase):
     def dispatch_due_notifications(self, batch_size: int = 100) -> dict:
         with self.db.transaction(immediate=True) as c:
             rows = c.execute(
