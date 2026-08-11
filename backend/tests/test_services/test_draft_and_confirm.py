@@ -50,6 +50,25 @@ def test_update_draft_with_separate_booker_and_driver(booking_service, catalog):
     assert draft["driver"]["full_name"] == "Nguyen Van Nam"
 
 
+def test_switching_to_same_driver_clears_previous_driver_license_declaration(booking_service, catalog):
+    held = booking_service.hold_slot(catalog["slot_main"], "hold:reset-driver-license")
+    separate = booking_service.update_booking_draft(
+        held["booking_id"],
+        booker_patch={"full_name": "Huynh Thi Hai Chau", "phone": BOOKER_PHONE},
+        driver_patch={"full_name": "Nguyen Van Nam", "phone": "0912345678"},
+        license_patch={"has_driving_license": True, "declared_license_class": "B1", "validity_acknowledged": True},
+        expected_version=1,
+    )
+
+    draft = booking_service.update_booking_draft(
+        held["booking_id"], driver_same_as_booker=True, expected_version=separate["version"]
+    )
+
+    assert draft["driver_person_id"] == draft["booker_person_id"]
+    assert draft["license_declaration"]["has_driving_license"] is None
+    assert draft["license_declaration"]["declared_license_class"] is None
+
+
 # test case of Chau + kiểm tra optimistic concurrency từ chối version cũ
 def test_update_draft_rejects_stale_version(booking_service, ready_draft_factory):
     prepared = ready_draft_factory()
@@ -66,7 +85,7 @@ def test_update_draft_rejects_stale_version(booking_service, ready_draft_factory
 
 
 # test case of Chau + kiểm tra không được cập nhật draft sau khi hold hết hạn
-def test_update_draft_rejects_expired_hold(booking_service, catalog):
+def test_update_draft_rejects_expired_hold_and_durably_releases_slot(booking_service, booking_db, catalog):
     held = booking_service.hold_slot(catalog["slot_main"], "hold:expired-update")
     booking_service.now = lambda: FIXED_NOW + timedelta(minutes=16)
 
@@ -78,6 +97,12 @@ def test_update_draft_rejects_expired_hold(booking_service, catalog):
         )
 
     assert error.value.code == "HOLD_EXPIRED"
+    with booking_db.connect() as connection:
+        booking = connection.execute("SELECT status FROM bookings WHERE id=?", (held["booking_id"],)).fetchone()
+        slot = connection.execute("SELECT status,current_booking_id FROM test_drive_slots WHERE id=?", (catalog["slot_main"],)).fetchone()
+    assert booking["status"] == "expired"
+    assert slot["status"] == "available"
+    assert slot["current_booking_id"] is None
 
 
 # test case of Chau + kiểm tra xác nhận booking cập nhật đúng booking slot GPLX và notification

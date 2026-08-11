@@ -10,8 +10,8 @@ except ImportError:  # pragma: no cover - exercised only when dependency is miss
     psycopg = None
     dict_row = None
 
-from .guard import QueryGuard, translate_qmark_placeholders
 from .errors import DatabaseIntegrityError
+from .guard import QueryGuard, translate_qmark_placeholders
 from .rows import to_db_row
 from .schema import SCHEMA_SQL
 

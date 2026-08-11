@@ -800,6 +800,8 @@ export function BookingPage() {
   const holdActionIdsRef = useRef(new Map())
   const confirmActionIdsRef = useRef(new Map())
   const holdExpiredRef = useRef(false)
+  const otpChallengeIdRef = useRef('')
+  const otpCodeRef = useRef('')
   const sendingRef = useRef(false)
 
   const selectedCar = getCar(selectedCarId)
@@ -941,14 +943,12 @@ export function BookingPage() {
           }
         } catch (error) {
           setAgentTyping(false)
-          setBackendError(error.message)
           addMessage('assistant', `Có lỗi xảy ra khi truy vấn dữ liệu showroom: ${error.message}`)
         }
       },
       (error) => {
         setAgentTyping(false)
         console.error("Lỗi lấy vị trí: ", error)
-        setBackendError("Không thể truy cập vị trí. Vui lòng bật định vị hoặc nhập địa chỉ thủ công.")
         addMessage('assistant', 'Tôi không nhận được phản hồi định vị. Hãy nhắn cho tôi quận/huyện hoặc tỉnh/thành phố của bạn (ví dụ: "Quận 1, TP HCM") để tôi tìm showroom nhé!')
       }
     )
@@ -1140,7 +1140,6 @@ export function BookingPage() {
       }
     } catch (error) {
       setAgentTyping(false)
-      setBackendError(error.message)
       setStage('need_address')
       setActiveView('car')
       reply(`Không tìm được showroom từ địa chỉ này: ${error.message}`)
@@ -1294,7 +1293,6 @@ export function BookingPage() {
       reply(`${showroom.name} đã được chọn. ViVi đã tìm thấy ${result.slots?.length || 0} khung giờ trống cho bạn.`)
     } catch (error) {
       setAgentTyping(false)
-      setBackendError(error.message)
       reply(`Không tải được lịch trống: ${error.message}`)
     }
   }
@@ -1343,7 +1341,6 @@ export function BookingPage() {
           }
         }
       }
-      setBackendError(error.message)
       reply(`Không thể giữ khung giờ: ${error.message}`)
     }
   }
@@ -1389,7 +1386,6 @@ export function BookingPage() {
       applyAgentToolResult(result)
       addMessage('assistant', result.response)
     } catch (error) {
-      setBackendError(error.message)
       addMessage('assistant', `Không thể kết nối ViVi: ${error.message}`)
     } finally {
       setAgentTyping(false)
@@ -1406,21 +1402,33 @@ export function BookingPage() {
     addMessage('user', 'Tôi muốn tra cứu lịch đã đặt.')
     setStage('lookup')
     setAccessError('')
+    otpChallengeIdRef.current = ''
     // A lookup/edit session also needs reschedule permission for the calendar
     // icon. The backend grants update_details as part of this purpose.
     setAccessFlow({ phase: 'request', purpose: 'reschedule', challengeId: '', expiresAt: 0 })
     reply('Để bảo vệ lịch của bạn, hãy nhập mã lịch và số điện thoại. Tôi sẽ gửi OTP qua Zalo đã liên kết.')
   }
 
-  const changeAccessValue = (field, value) => setAccessValue((current) => ({ ...current, [field]: value }))
+  const changeAccessValue = (field, value) => {
+    if (field === 'otpCode') otpCodeRef.current = value
+    setAccessValue((current) => ({ ...current, [field]: value }))
+  }
 
   const requestAccessOtp = async (event) => {
     event?.preventDefault()
     setAccessBusy(true); setAccessError('')
     try {
       const result = await requestBookingAccess({ phone: accessValue.phone.trim(), purpose: accessFlow?.purpose || 'update_details' })
+      if (!result?.challenge_id || !result?.expires_at) {
+        throw new Error('Không thể khởi tạo phiên xác thực OTP. Vui lòng gửi lại mã.')
+      }
       const expiresAt = new Date(result.expires_at).getTime()
+      if (Number.isNaN(expiresAt)) {
+        throw new Error('Thời hạn OTP không hợp lệ. Vui lòng gửi lại mã.')
+      }
+      otpChallengeIdRef.current = result.challenge_id
       setAccessFlow((current) => ({ phase: 'verify', purpose: current?.purpose || 'update_details', challengeId: result.challenge_id, expiresAt }))
+      otpCodeRef.current = ''
       setAccessValue((current) => ({ ...current, otpCode: '' }))
       setAccessSecondsLeft(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)))
       setResendSecondsLeft(result.retry_after_seconds || 60)
@@ -1430,15 +1438,22 @@ export function BookingPage() {
         const seconds = Number(error.message.match(/\d+/)?.[0] || 0)
         setResendSecondsLeft(seconds)
       }
-      setAccessError(error.message)
+      setAccessError('')
+      addMessage('assistant', error.message)
     } finally { setAccessBusy(false) }
   }
 
   const verifyAccessOtp = async (otpOverride = '') => {
-    if (!accessFlow?.challengeId) return
+    const challengeId = otpChallengeIdRef.current || accessFlow?.challengeId
+    if (!challengeId) {
+      setAccessError('')
+      addMessage('assistant', 'Phiên OTP chưa sẵn sàng hoặc đã hết hạn. Vui lòng gửi lại mã.')
+      return
+    }
     setAccessBusy(true); setAccessError('')
     try {
-      const verified = await verifyBookingAccess({ challengeId: accessFlow.challengeId, otpCode: otpOverride || accessValue.otpCode })
+      const otpCode = typeof otpOverride === 'string' && otpOverride ? otpOverride : otpCodeRef.current
+      const verified = await verifyBookingAccess({ challengeId, otpCode })
       const booking = await getVerifiedBooking({ accessToken: verified.access_session_token, bookingId: verified.booking_id })
       const bookings = await listVerifiedBookings({ accessToken: verified.access_session_token })
       setAccessibleBookings(bookings.data || bookings)
@@ -1467,12 +1482,16 @@ export function BookingPage() {
       setActiveView('bookings')
       const isCancellation = accessFlow?.purpose === 'cancel'
       setAccessFlow({ phase: isCancellation ? 'confirm_cancel' : 'edit', purpose: accessFlow?.purpose, challengeId: '', expiresAt: 0 })
+      otpChallengeIdRef.current = ''
+      otpCodeRef.current = ''
       addMessage('assistant', isCancellation ? 'Xác thực thành công. Vui lòng kiểm tra phiếu bên dưới và xác nhận nếu bạn muốn hủy lịch.' : 'Xác thực thành công. Bạn có thể cập nhật thông tin lịch đã đặt bên dưới.')
-    } catch (error) { setAccessError(error.message) } finally { setAccessBusy(false) }
+    } catch (error) { setAccessError(''); addMessage('assistant', error.message) } finally { setAccessBusy(false) }
   }
 
   const cancelAccessOtp = () => {
     setAccessFlow(null); setAccessError(''); setAccessSecondsLeft(0); setResendSecondsLeft(0)
+    otpChallengeIdRef.current = ''
+    otpCodeRef.current = ''
     addMessage('assistant', 'Tôi đã dừng bước xác thực. Khi cần xem hoặc chỉnh sửa lịch, bạn có thể yêu cầu lại bất cứ lúc nào.')
   }
   const resumeConversation = () => {
@@ -1638,7 +1657,7 @@ export function BookingPage() {
       addMessage('user', 'Tôi đã hoàn tất thông tin người lái.')
       reply('ViVi đã lưu phiếu tạm cho bạn. Bạn hãy kiểm tra lại thông tin và bấm “Xác nhận đặt lịch” nhé.')
     } catch (error) {
-      setBackendError(error.message)
+      reply(`Chưa thể lưu thông tin: ${error.message}`)
     }
   }
 
@@ -1662,7 +1681,7 @@ export function BookingPage() {
       setSuccessCinematic(true)
     } catch (error) {
       setSubmitting(false)
-      setBackendError(error.message)
+      reply(`Chưa thể xác nhận lịch: ${error.message}`)
     }
   }
 
