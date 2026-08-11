@@ -12,18 +12,18 @@ from pathlib import Path
 VEHICLES = {
     "vf3": "src/media/local/vehicle-media/VF3/xám.png",
     "vf5": "src/media/local/vehicle-media/VF5/trắng.webp",
-    "vf6": "src/media/local/common/vf6-front-model-cutout.png",
+    "vf6": "src/media/local/by-model/vf6/studio.png",
     "vf7": "src/media/local/vehicle-media/VF7/product-CE18.webp",
-    "vf-mpv-7": "src/media/local/common/vf-mpv-7-model-cutout.png",
+    "vf-mpv-7": "src/media/local/by-model/vf-mpv-7/studio.png",
     "vf8": "src/media/local/vehicle-media/VF8/product-CE18.webp",
     "vf8-the-he-moi": "src/media/local/vehicle-media/VF8 All the new/VF8PH-23.webp",
     "vf9": "src/media/local/common/vf9-studio.png",
     "herio-green": "src/media/local/vehicle-media/Dịch vụ_Herio Green/trắng.png",
     "minio-green": "src/media/local/vehicle-media/Dịch vụ_MINIO Green/Minio.webp",
     "nerio-green": "src/media/local/common/nerio-green-studio.png",
-    "limo-green": "src/media/local/common/limo-green-studio.webp",
+    "limo-green": "src/media/local/by-model/limo-green/studio.webp",
     "ec-van": "src/media/local/vehicle-media/Dịch vụ_ EC Van/ecvan-jade.webp",
-    "ebus": "src/media/local/vehicle-media/Dịch vụ_EBus/ebus-img-01.webp",
+    "ebus": "src/media/local/by-model/ebus/studio.webp",
 }
 
 CONTENT = {
@@ -32,10 +32,10 @@ CONTENT = {
     "content/after-sales/hero.webp": "src/media/local/common/after-sales-hero.webp",
     "content/after-sales/consultation.webp": "src/media/local/common/after-sales-consultation.webp",
     "content/charging/hero.webp": "src/media/local/vehicle-media/Trạm sạc/pin-tramsac-6_1660273722.png.webp",
-    "content/charging/250kw.webp": "src/media/local/vehicle-media/Trạm sạc/pin-tramsac-7_1660273744.png.webp",
-    "content/charging/150kw.webp": "src/media/local/vehicle-media/Trạm sạc/pin-tramsac-8_1660273763.png.webp",
-    "content/charging/60kw.webp": "src/media/local/vehicle-media/Trạm sạc/img_1705981400.png.webp",
-    "content/charging/30kw.webp": "src/media/local/vehicle-media/Trạm sạc/pin-tramsac-9_1660273785.png.webp",
+    "content/charging/250kw.png": "src/media/local/vehicle-media/Trạm sạc/charger-250-cutout-v2.png",
+    "content/charging/150kw.png": "src/media/local/vehicle-media/Trạm sạc/charger-150-cutout-v2.png",
+    "content/charging/60kw.png": "src/media/local/vehicle-media/Trạm sạc/charger-60-cutout-v2.png",
+    "content/charging/30kw.png": "src/media/local/vehicle-media/Trạm sạc/charger-30-cutout-v2.png",
 }
 
 COMMON_TO_VEHICLE_MEDIA = {
@@ -52,6 +52,10 @@ VIDEOS = {
 
 LEGACY_KEYS = [
     "content/home/factory.webp",
+    "content/charging/250kw.webp",
+    "content/charging/150kw.webp",
+    "content/charging/60kw.webp",
+    "content/charging/30kw.webp",
     *[
         f"vehicles/{vehicle_id}/{name}.webp"
         for vehicle_id in ("vf3", "vf6", "vf-mpv-7", "vf9", "herio-green", "nerio-green")

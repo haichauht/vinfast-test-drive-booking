@@ -9,7 +9,7 @@
  *  2. Video nội thất (CHỈ mẫu limo-green)                     (.detail-film)
  *  3. Popup gợi ý đặt lịch, tự hiện sau 2,2 giây              (.test-drive-nudge)
  *  4. Câu tuyên ngôn — chữ sáng dần từng từ khi cuộn          (.car-manifesto)
- *  5. Model GLB tương tác VF3/VF9 + cinematic chạy ngang      (Vehicle3DExperience)
+ *  5. Model GLB tương tác cho mẫu có asset web hợp lệ          (Vehicle3DExperience)
  *  6. Thước phim giới thiệu, nếu backend có video             (ModelFilm, ~dòng 68)
  *  7. Thông số nổi bật                                        (.detail-specs, id="specifications")
  *  8. Các chương ảnh: ngoại thất → khoang lái → chi tiết      (.detail-story)
@@ -24,7 +24,7 @@
  *   ngắn hơn (-34%, 0,95 giây) — trạng thái ghi trong sessionStorage theo từng mẫu xe.
  * - Chỉ chạy kiểu đó khi backend có `motionImage` (ảnh tách nền). Không có thì xe phóng to dần.
  * - Chữ tuyên ngôn sáng dần từng từ, ảnh từng chương phóng to theo thao tác cuộn.
- * - VF3/VF9: GLB chạy xuyên trái → phải trong 1,9 giây khi sân khấu đã hiện rõ,
+ * - Mẫu có GLB hợp lệ: model chạy xuyên trái → phải khi sân khấu đã hiện rõ,
  *   sau đó popup thành model xoay/zoom.
  *
  * sessionStorage lưu 3 khoá (chỉ ID và cờ giao diện, KHÔNG lưu thông tin cá nhân):
@@ -36,69 +36,18 @@ import { Link, useParams } from 'react-router-dom'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { ArrowLeft, ArrowRight, Check, FileText, X } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowRight, FileText, X } from '@phosphor-icons/react'
 import { AppShell } from '../components/AppShell'
 import { IslandButton } from '../components/IslandButton'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
 import { SiteFooter } from '../components/SiteFooter'
 import { Vehicle3DExperience } from '../components/Vehicle3DExperience'
+import { VehicleColorConfigurator } from '../components/VehicleColorConfigurator'
 import { useVehicleCatalog, useVehicleDetail } from '../hooks/useSiteData'
 import { limoInteriorFilm } from '../data/media'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
-
-function ColorExplorer({ car }) {
-  const availableColors = car.colors.filter((color) => color.image)
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  const selected = availableColors[selectedIndex]
-  const displayImage = selected?.image
-
-  if (availableColors.length < 2) return null
-
-  return (
-    <section className="color-explorer" aria-labelledby="color-title">
-      <div className="section-frame color-explorer__grid">
-        <div className="color-explorer__copy">
-          <p className="eyebrow">Bảng màu</p>
-          <h2 id="color-title">Một sắc độ cho cá tính riêng.</h2>
-          <p>
-            Chọn một màu để xem chiếc xe đổi diện mạo. Sắc độ ngoài đời có thể khác đôi chút tuỳ ánh sáng và góc nhìn.
-          </p>
-          <div className="color-list" role="radiogroup" aria-label={`Chọn màu ${car.name}`}>
-            {availableColors.map((color, index) => (
-              <button
-                key={`${color.name}-${index}`}
-                className={selectedIndex === index ? 'is-active' : ''}
-                type="button"
-                role="radio"
-                aria-checked={selectedIndex === index}
-                onClick={() => setSelectedIndex(index)}
-              >
-                <span className="color-list__swatch" style={{ background: color.hex }} aria-hidden="true" />
-                <span>{color.name}</span>
-                {selectedIndex === index && <Check size={15} weight="light" aria-hidden="true" />}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="double-bezel color-explorer__visual">
-          <div className="double-bezel__core">
-            <SmartImage
-              key={displayImage}
-              src={displayImage}
-              alt={`${car.name} màu ${selected?.name || 'đang chọn'}`}
-            />
-            <div className="color-explorer__caption">
-              <span>{car.name}</span>
-              <strong>{selected?.name}</strong>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
 
 function ModelFilm({ car }) {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -440,7 +389,7 @@ export function CarDetailPage() {
           </section>
         )}
 
-        <ColorExplorer key={car.id} car={car} />
+        <VehicleColorConfigurator key={car.id} vehicle={car} />
 
         <section className="brochure-note">
           <div className="section-frame brochure-note__inner">
