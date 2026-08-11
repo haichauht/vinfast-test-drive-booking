@@ -65,10 +65,12 @@ export async function apiPost(path, payload, { signal } = {}) {
   const body = await response.json().catch(() => ({}))
   if (!response.ok || body.success === false) {
     const detail = body.detail || body.error || {}
-    throw new ApiError(detail.message || body.message || 'Yêu cầu không thành công.', {
-      code: detail.code,
+    const validationDetail = Array.isArray(detail) ? detail[0] : detail
+    const message = validationDetail?.msg || validationDetail?.message || body.message || 'Yêu cầu không thành công.'
+    throw new ApiError(message, {
+      code: validationDetail?.code,
       status: response.status,
-      retryable: detail.retryable ?? response.status >= 500,
+      retryable: validationDetail?.retryable ?? response.status >= 500,
     })
   }
   return body.data ?? body

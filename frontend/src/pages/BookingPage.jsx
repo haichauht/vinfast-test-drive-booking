@@ -98,6 +98,7 @@ import {
   updateVerifiedBooking,
   verifyBookingAccess,
 } from '../api/booking'
+import { CHAT_MESSAGE_MAX_LENGTH } from '../api/contracts'
 import { actionId } from '../api/ids'
 import { useBackendStatus } from '../context/BackendStatusContext'
 import { BookingCustomerForm as CustomerForm } from '../components/booking/BookingCustomerForm'
@@ -761,6 +762,7 @@ export function BookingPage() {
   const [messages, setMessages] = useState(shouldOfferResume && Array.isArray(restoredUi.messages) ? restoredUi.messages : [])
   const [draft, setDraft] = useState('')
   const [agentTyping, setAgentTyping] = useState(false)
+  const [isSending, setIsSending] = useState(false)
   const [address, setAddress] = useState({ province: '', detail: '' })
   const [locationSuggestions, setLocationSuggestions] = useState([])
   const [nearbyShowrooms, setNearbyShowrooms] = useState(Array.isArray(restoredUi.nearbyShowrooms) ? restoredUi.nearbyShowrooms : [])
@@ -798,11 +800,13 @@ export function BookingPage() {
   const holdActionIdsRef = useRef(new Map())
   const confirmActionIdsRef = useRef(new Map())
   const holdExpiredRef = useRef(false)
+  const sendingRef = useRef(false)
 
   const selectedCar = getCar(selectedCarId)
   // ĐÃ XONG: showroom và khung giờ lấy thật từ backend qua searchBookingOptions().
   // Mỗi slot đã mang id thật của backend; cặp ngày/giờ trong UI chỉ để hiển thị.
   const selectedShowroom = nearbyShowrooms.find((showroom) => showroom.id === showroomId)
+  const composerDisabled = isSending || agentTyping
 
   const completeBookingSuccess = useCallback(() => {
     setSuccessCinematic(false)
@@ -1327,6 +1331,18 @@ export function BookingPage() {
     } catch (error) {
       setAgentTyping(false)
       setConfirmSlotOpen(false)
+      if (error.code === 'SLOT_NO_LONGER_AVAILABLE') {
+        setPendingSlot(null)
+        setSelectedSlot(null)
+        if (selectedCar && selectedShowroom) {
+          try {
+            const refreshed = await searchBookingOptions({ vehicleModel: selectedCar.name, showroomId: selectedShowroom.id })
+            setSlots(groupSlots(refreshed.slots || []))
+          } catch {
+            setSlots([])
+          }
+        }
+      }
       setBackendError(error.message)
       reply(`Không thể giữ khung giờ: ${error.message}`)
     }
@@ -1334,8 +1350,15 @@ export function BookingPage() {
 
   const handlePrompt = async (event) => {
     event.preventDefault()
+    if (sendingRef.current) return
     const value = draft.trim()
     if (!value) return
+    if (value.length > CHAT_MESSAGE_MAX_LENGTH) {
+      setBackendError(`Tin nhắn không được vượt quá ${CHAT_MESSAGE_MAX_LENGTH.toLocaleString('vi-VN')} ký tự.`)
+      return
+    }
+    sendingRef.current = true
+    setIsSending(true)
     setDraft('')
     addMessage('user', value)
     setBackendError('')
@@ -1347,70 +1370,31 @@ export function BookingPage() {
 
     setAgentTyping(true)
     try {
-      const waitingForArea = selectedCar && (stage === 'need_address' || stage === 'need_ward')
-      const selectingNearestShowroom = selectedCar
-        && userLocation
-        && nearbyShowrooms.length > 0
-        && /(?:gần nhất|gan nhat|nearest)/i.test(value)
-      const selectingNamedShowroom = selectedCar && stage === 'choose_showroom' && /vinfast/i.test(value)
-      if (selectingNearestShowroom) {
-        await chooseShowroom(nearbyShowrooms[0], true)
-      } else if (selectingNamedShowroom) {
-        const data = await searchBookingOptions({ vehicleModel: selectedCar.name, showroomQuery: value })
-        applyAgentToolResult({
-          tool_name: 'search_test_drive_options',
-          tool_input: { showroom_query: value },
-          action_data: data,
-        })
-        addMessage(
-          'assistant',
-          data.selected_showroom
-            ? `Tôi đã mở lịch trống của ${data.selected_showroom.name}. Mời bạn chọn khung giờ phù hợp.`
-            : 'Tôi chưa tìm thấy showroom này. Bạn hãy chọn một showroom từ danh sách hoặc thử nhập tên khác nhé.',
-        )
-      } else if (waitingForArea) {
-        const data = await searchBookingOptions({ vehicleModel: selectedCar.name, address: value })
-        applyAgentToolResult({
-          tool_name: 'search_test_drive_options',
-          tool_input: { address: value },
-          action_data: data,
-        })
-        addMessage(
-          'assistant',
-          data.showrooms?.length
-            ? `Tôi đã tìm thấy ${data.showrooms.length} showroom có ${selectedCar.name} tại khu vực bạn chọn. Mời bạn chọn trên bản đồ.`
-            : `Tôi chưa tìm thấy showroom có ${selectedCar.name} tại khu vực này. Bạn hãy thử khu vực lân cận nhé.`,
-        )
-      } else {
-        const result = await sendBookingMessage(value, {
-          stage,
-          recipient,
-          selectedVehicle: selectedCar ? { id: selectedCar.id, name: selectedCar.name } : null,
-          selectedShowroom: selectedShowroom ? { id: selectedShowroom.id, name: selectedShowroom.name } : null,
-          selectedSlot,
-          bookingId: bookingId || null,
-          channel: 'booking',
-        })
-        applyAgentToolResult(result)
-        addMessage('assistant', result.response)
-      }
-      if (/(?:hủy|huy|xóa|xoa)\s*(?:lịch|booking)?/i.test(value)) {
-        setStage('lookup')
-        setAccessError('')
-        setAccessProfile(null)
-        setAccessFlow({ phase: 'request', purpose: 'cancel', challengeId: '', expiresAt: 0 })
-      }
-      if (/(?:đổi|doi)\s*(?:xe|mẫu xe|giờ|gio|thời gian|lịch)/i.test(value)) {
-        setStage('lookup')
-        setAccessError('')
-        setAccessProfile(null)
-        setAccessFlow({ phase: 'request', purpose: 'reschedule', challengeId: '', expiresAt: 0 })
-      }
+      const result = await sendBookingMessage(value, {
+        stage,
+        recipient,
+        selectedVehicle: selectedCar ? { id: selectedCar.id, name: selectedCar.name } : null,
+        selectedShowroom: selectedShowroom ? { id: selectedShowroom.id, name: selectedShowroom.name } : null,
+        selectedSlot,
+        nearbyShowrooms: nearbyShowrooms.map((showroom) => ({
+          id: showroom.id,
+          name: showroom.name,
+          address: showroom.address,
+          distance: showroom.distance,
+        })),
+        userLocation,
+        bookingId: bookingId || null,
+        channel: 'booking',
+      })
+      applyAgentToolResult(result)
+      addMessage('assistant', result.response)
     } catch (error) {
       setBackendError(error.message)
       addMessage('assistant', `Không thể kết nối ViVi: ${error.message}`)
     } finally {
       setAgentTyping(false)
+      sendingRef.current = false
+      setIsSending(false)
     }
   }
 
@@ -1983,18 +1967,18 @@ export function BookingPage() {
                   <button type="button" onClick={() => { setStage('collect_info'); setActiveView('schedule') }}>Chỉnh lại thông tin</button>
                 </div>
               ) : (
-                <form className="vivi-prompt" onSubmit={handlePrompt}>
+                <form className="vivi-prompt" onSubmit={handlePrompt} aria-busy={composerDisabled}>
                   <label htmlFor="vivi-booking-prompt">Nhắn cho ViVi</label>
                   <div>
-                    <textarea id="vivi-booking-prompt" rows="2" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={stage === 'need_address' || stage === 'need_ward' ? 'Ví dụ: Phường Bến Nghé, TP. Hồ Chí Minh' : 'Nhập mẫu xe, địa chỉ, showroom hoặc thời gian…'} onKeyDown={(event) => {
+                    <textarea id="vivi-booking-prompt" rows="2" value={draft} maxLength={CHAT_MESSAGE_MAX_LENGTH} disabled={composerDisabled} onChange={(event) => setDraft(event.target.value)} placeholder={composerDisabled ? 'ViVi đang trả lời...' : stage === 'need_address' || stage === 'need_ward' ? 'Ví dụ: Phường Bến Nghé, TP. Hồ Chí Minh' : 'Nhập mẫu xe, địa chỉ, showroom hoặc thời gian…'} onKeyDown={(event) => {
                       if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault()
-                        event.currentTarget.form?.requestSubmit()
+                        if (!composerDisabled) event.currentTarget.form?.requestSubmit()
                       }
                     }} />
-                    <button type="submit" aria-label="Gửi tin nhắn"><PaperPlaneTilt size={18} weight="light" /></button>
+                    <button type="submit" aria-label="Gửi tin nhắn" disabled={composerDisabled || !draft.trim()}><PaperPlaneTilt size={18} weight="light" /></button>
                   </div>
-                  <small>Enter để gửi · Shift + Enter để xuống dòng</small>
+                  <small>Enter để gửi · Shift + Enter để xuống dòng · {draft.length.toLocaleString('vi-VN')}/{CHAT_MESSAGE_MAX_LENGTH.toLocaleString('vi-VN')}</small>
                 </form>
               )}
               </>}

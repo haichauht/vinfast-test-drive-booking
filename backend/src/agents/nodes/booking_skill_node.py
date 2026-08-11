@@ -60,6 +60,16 @@ STRUCTURED_ACTION_RESPONSES = {
     "verify_access": "Xác thực thành công.",
 }
 
+PUBLIC_TOOL_ERRORS = {
+    "SLOT_NO_LONGER_AVAILABLE": "Khung giờ này đã qua hoặc không còn khả dụng, vui lòng chọn giờ khác.",
+    "HOLD_EXPIRED": "Thời gian giữ chỗ đã hết hạn, vui lòng chọn lại khung giờ.",
+    "VEHICLE_NOT_READY": "Xe demo hiện không sẵn sàng cho khung giờ này, vui lòng chọn lịch khác.",
+    "VERSION_CONFLICT": "Thông tin đặt lịch đã thay đổi, vui lòng tải lại và thử lại.",
+    "INVALID_INPUT": "Thông tin gửi lên chưa hợp lệ, vui lòng kiểm tra lại.",
+}
+
+DEFAULT_PUBLIC_TOOL_ERROR = "Không thể hoàn tất thao tác đặt lịch. Vui lòng kiểm tra lại hoặc thử lại."
+
 
 def _decode_tool_result(message: ToolMessage) -> object:
     content = message.content
@@ -69,6 +79,25 @@ def _decode_tool_result(message: ToolMessage) -> object:
         return json.loads(content)
     except json.JSONDecodeError:
         return content
+
+
+def _public_tool_error(decoded: object) -> tuple[str, str]:
+    code = ""
+    if isinstance(decoded, dict):
+        raw_code = decoded.get("code") or decoded.get("error_code")
+        code = str(raw_code or "")
+    else:
+        text = str(decoded or "")
+        for known_code in PUBLIC_TOOL_ERRORS:
+            if known_code in text:
+                code = known_code
+                break
+        if not code and ("Slot đã bắt đầu" in text or "Slot da bat dau" in text or "đã qua" in text):
+            code = "SLOT_NO_LONGER_AVAILABLE"
+
+    if code in PUBLIC_TOOL_ERRORS:
+        return code, PUBLIC_TOOL_ERRORS[code]
+    return "AGENT_ACTION_FAILED", DEFAULT_PUBLIC_TOOL_ERROR
 
 
 def _tool_call_input(messages: list, tool_message: ToolMessage) -> dict[str, Any]:
@@ -119,6 +148,7 @@ async def booking_skill_node(state: AgentState) -> dict:
         if isinstance(last_message, ToolMessage):
             failed = getattr(last_message, "status", "success") == "error"
             decoded = _decode_tool_result(last_message)
+            error_code, public_error = _public_tool_error(decoded)
             trace_event(
                 "tool.result",
                 trace_id=trace_id,
@@ -133,7 +163,7 @@ async def booking_skill_node(state: AgentState) -> dict:
                 "error" if failed else "success",
             )
             response_text = (
-                "Không thể hoàn tất thao tác đặt lịch. Vui lòng kiểm tra lại hoặc thử lại."
+                public_error
                 if failed
                 else STRUCTURED_ACTION_RESPONSES[requested_action]
             )
@@ -144,7 +174,7 @@ async def booking_skill_node(state: AgentState) -> dict:
                 "action_tool": tool.name,
                 "action_input": state.get("action_payload") or {},
                 "action_result": None if failed else decoded,
-                "action_error": str(decoded) if failed else "",
+                "action_error": error_code if failed else "",
             }
 
         action_payload = state.get("action_payload") or {}
@@ -255,6 +285,7 @@ async def booking_skill_node(state: AgentState) -> dict:
     if isinstance(last_message, ToolMessage):
         failed = getattr(last_message, "status", "success") == "error"
         decoded = _decode_tool_result(last_message)
+        error_code, public_error = _public_tool_error(decoded)
         trace_event(
             "tool.result",
             trace_id=trace_id,
@@ -275,8 +306,10 @@ async def booking_skill_node(state: AgentState) -> dict:
                 "action_tool": last_message.name or "",
                 "action_input": _tool_call_input(messages, last_message),
                 "action_result": None if failed else decoded,
-                "action_error": str(decoded) if failed else "",
+                "action_error": error_code if failed else "",
             }
         )
+        if failed and not output.get("response"):
+            output["response"] = public_error
 
     return output
