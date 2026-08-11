@@ -5,7 +5,6 @@ from zoneinfo import ZoneInfo
 
 from src.services.booking.common import iso, parse_utc
 
-
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 

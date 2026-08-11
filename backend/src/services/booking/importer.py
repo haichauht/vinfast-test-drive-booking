@@ -307,10 +307,17 @@ class ImportService:
         "15_booking_events.csv": (("booking_id", "bookings", "id", "09_bookings.csv"),),
     }
 
-    @staticmethod
-    def _assert_dataset_references(c, filename, rows, references):
+    @classmethod
+    def _assert_dataset_references(cls, c, filename, rows, references):
+        allowed_identifiers = {table: set(columns) for table, columns in cls.DATASET_FILES.values()}
         problems = []
         for column, parent_table, parent_column, parent_file in references:
+            if (
+                column not in rows[0]
+                or parent_table not in allowed_identifiers
+                or parent_column not in allowed_identifiers[parent_table]
+            ):
+                raise ValueError("Invalid internal dataset reference configuration.")
             values = {row[column] for row in rows if row[column]}
             if not values:
                 continue

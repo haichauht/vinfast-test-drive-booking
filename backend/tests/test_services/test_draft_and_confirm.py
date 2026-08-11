@@ -50,6 +50,25 @@ def test_update_draft_with_separate_booker_and_driver(booking_service, catalog):
     assert draft["driver"]["full_name"] == "Nguyen Van Nam"
 
 
+def test_switching_to_same_driver_clears_previous_driver_license_declaration(booking_service, catalog):
+    held = booking_service.hold_slot(catalog["slot_main"], "hold:reset-driver-license")
+    separate = booking_service.update_booking_draft(
+        held["booking_id"],
+        booker_patch={"full_name": "Huynh Thi Hai Chau", "phone": BOOKER_PHONE},
+        driver_patch={"full_name": "Nguyen Van Nam", "phone": "0912345678"},
+        license_patch={"has_driving_license": True, "declared_license_class": "B1", "validity_acknowledged": True},
+        expected_version=1,
+    )
+
+    draft = booking_service.update_booking_draft(
+        held["booking_id"], driver_same_as_booker=True, expected_version=separate["version"]
+    )
+
+    assert draft["driver_person_id"] == draft["booker_person_id"]
+    assert draft["license_declaration"]["has_driving_license"] is None
+    assert draft["license_declaration"]["declared_license_class"] is None
+
+
 # test case of Chau + kiểm tra optimistic concurrency từ chối version cũ
 def test_update_draft_rejects_stale_version(booking_service, ready_draft_factory):
     prepared = ready_draft_factory()

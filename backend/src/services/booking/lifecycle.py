@@ -32,7 +32,8 @@ class LifecycleService:
             slot = c.execute(
                 "SELECT s.*,d.is_active vehicle_active,d.operational_status,d.battery_soc,d.minimum_booking_soc,"
                 "v.required_license_class FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id "
-                "JOIN vehicle_variants x ON x.id=d.variant_id JOIN vehicle_models v ON v.id=x.model_id WHERE s.id=?",
+                "JOIN vehicle_variants x ON x.id=d.variant_id JOIN vehicle_models v ON v.id=x.model_id WHERE s.id=?"
+                + (" FOR UPDATE OF s" if c.dialect == "postgres" else ""),
                 (slot_id,),
             ).fetchone()
             if not slot or slot["status"] != "available":
@@ -158,7 +159,10 @@ class LifecycleService:
     def _expire_hold_if_due(self, booking_id: str) -> bool:
         """Durably release an expired hold in its own complete transaction."""
         with self.db.transaction(immediate=True) as c:
-            booking = c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone()
+            booking = c.execute(
+                "SELECT * FROM bookings WHERE id=?" + (" FOR UPDATE" if c.dialect == "postgres" else ""),
+                (booking_id,),
+            ).fetchone()
             if (
                 not booking
                 or booking["status"] != "held"
@@ -176,7 +180,7 @@ class LifecycleService:
         )
         c.execute(
             "UPDATE test_drive_slots SET status='available',held_until=NULL,current_booking_id=NULL,updated_at=? "
-            "WHERE id=? AND current_booking_id=?",
+            "WHERE id=? AND current_booking_id=? AND status='held'",
             (now, booking["slot_id"], booking["id"]),
         )
         self._event(c, booking["id"], "hold_expired")
@@ -246,11 +250,25 @@ class LifecycleService:
                                 now,
                             ),
                         )
+                        if role == "driver":
+                            c.execute(
+                                "UPDATE booking_driver_details SET has_driving_license=NULL,declared_license_class=NULL,"
+                                "validity_acknowledged=0,license_check_status='not_provided',checked_at=NULL,"
+                                "checked_by=NULL,rejection_reason=NULL,updated_at=? WHERE booking_id=?",
+                                (now, booking_id),
+                            )
                         c.execute(f"UPDATE bookings SET {role}_person_id=? WHERE id=?", (pid, booking_id))
             if driver_same_as_booker:
                 booker_id = c.execute("SELECT booker_person_id FROM bookings WHERE id=?", (booking_id,)).fetchone()[0]
                 if not booker_id:
                     raise BookingError("INVALID_INPUT", "Cần nhập thông tin Booker trước.")
+                if b["driver_person_id"] != booker_id:
+                    c.execute(
+                        "UPDATE booking_driver_details SET has_driving_license=NULL,declared_license_class=NULL,"
+                        "validity_acknowledged=0,license_check_status='not_provided',checked_at=NULL,checked_by=NULL,"
+                        "rejection_reason=NULL,updated_at=? WHERE booking_id=?",
+                        (iso(self.now()), booking_id),
+                    )
                 c.execute("UPDATE bookings SET driver_person_id=? WHERE id=?", (booker_id, booking_id))
             if license_patch:
                 allowed = {}
@@ -311,6 +329,10 @@ class LifecycleService:
             cached = self._idempotent_response(c, ui_action_id, "confirm_booking", request_payload)
             if cached:
                 return cached
+            c.execute(
+                "SELECT id FROM bookings WHERE id=?" + (" FOR UPDATE" if c.dialect == "postgres" else ""),
+                (booking_id,),
+            )
             draft = self._draft(c, booking_id)
             if draft["status"] != "held" or draft["remaining_seconds"] <= 0:
                 raise BookingError("HOLD_EXPIRED", "Giữ chỗ đã hết hạn.")
@@ -320,7 +342,8 @@ class LifecycleService:
                 raise BookingError("INVALID_INPUT", "Draft chưa đủ thông tin.")
             slot = c.execute(
                 "SELECT s.*,d.is_active vehicle_active,d.operational_status,d.battery_soc,d.minimum_booking_soc "
-                "FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id WHERE s.id=?",
+                "FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id WHERE s.id=?"
+                + (" FOR UPDATE OF s" if c.dialect == "postgres" else ""),
                 (draft["slot_id"],),
             ).fetchone()
             if slot["status"] != "held" or slot["current_booking_id"] != booking_id:
@@ -418,8 +441,9 @@ class LifecycleService:
     def expire_held_bookings(self) -> int:
         count = 0
         with self.db.transaction(immediate=True) as c:
+            lock = " FOR UPDATE SKIP LOCKED" if c.dialect == "postgres" else ""
             for b in c.execute(
-                "SELECT * FROM bookings WHERE status='held' AND hold_expires_at<=?", (iso(self.now()),)
+                "SELECT * FROM bookings WHERE status='held' AND hold_expires_at<=?" + lock, (iso(self.now()),)
             ).fetchall():
                 self._expire_hold_in_transaction(c, b)
                 count += 1
