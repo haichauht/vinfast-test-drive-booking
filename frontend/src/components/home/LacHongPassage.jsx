@@ -15,7 +15,7 @@ import { lacHongDisclaimer, lacHongModels, lacHongSpin } from '../../data/lachon
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
-const statement = 'Từ năng lực chế tác Việt đến một biểu tượng mang dấu ấn riêng.'
+const statement = 'Năng lực thiết kế và chế tác Việt trong từng chi tiết.'
 
 export function LacHongPassage() {
   const root = useRef(null)
@@ -118,8 +118,8 @@ export function LacHongPassage() {
             ))}
           </h2>
           <p>
-            Lạc Hồng là một lát cắt trong hành trình VinFast làm chủ thiết kế, công nghệ
-            và năng lực chế tác — nơi bản sắc Việt được chuyển thành một ngôn ngữ có thể nhìn thấy.
+            Lạc Hồng thể hiện khả năng VinFast phát triển một sản phẩm mang yêu cầu riêng
+            về thiết kế, vật liệu và không gian ngay tại Việt Nam.
           </p>
         </div>
       </div>
@@ -142,7 +142,7 @@ export function LacHongPassage() {
           <div className="lachong-spin-block__intro">
             <div>
               <p className="eyebrow">Góc nhìn tương tác</p>
-              <h3>Chạm vào một góc nhìn của năng lực Việt.</h3>
+              <h3>Quan sát Lạc Hồng 900 LX từ mọi góc nhìn.</h3>
             </div>
             <p>Giữ và kéo trực tiếp trên xe. Góc nhìn chỉ chuyển động theo tay bạn.</p>
           </div>

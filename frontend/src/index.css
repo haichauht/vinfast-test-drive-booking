@@ -1837,96 +1837,252 @@ svg {
 }
 
 .color-explorer {
-  padding: 176px 0;
+  padding: clamp(112px, 12vw, 176px) 0;
   background: var(--surface);
+}
+
+.color-explorer__stage {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(34px, 4vw, 68px);
+  border: 1px solid rgba(23, 26, 32, 0.08);
+  border-radius: clamp(26px, 3vw, 42px);
+  background:
+    radial-gradient(circle at 76% 31%, rgba(255, 255, 255, 0.96) 0, rgba(255, 255, 255, 0.42) 27%, transparent 54%),
+    linear-gradient(132deg, #f1f0ed 0%, #e4e5e3 100%);
+  box-shadow: 0 32px 90px -64px rgba(23, 26, 32, 0.62), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+.color-explorer__stage::after {
+  position: absolute;
+  right: 5%;
+  bottom: 23%;
+  width: 55%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(23, 26, 32, 0.12), transparent);
+  content: '';
+  pointer-events: none;
 }
 
 .color-explorer__grid {
   display: grid;
-  grid-template-columns: minmax(300px, 0.72fr) minmax(0, 1.28fr);
-  gap: 8vw;
-  align-items: center;
+  position: relative;
+  z-index: 1;
+  grid-template-areas:
+    'intro visual'
+    'specs visual'
+    '. palette';
+  grid-template-columns: minmax(290px, 0.7fr) minmax(0, 1.3fr);
+  grid-template-rows: auto 1fr auto;
+  column-gap: clamp(42px, 6vw, 96px);
+  min-height: clamp(640px, 52vw, 790px);
 }
 
-.color-explorer h2 {
-  font-size: clamp(2.7rem, 4.9vw, 5.15rem);
+.color-explorer__copy {
+  grid-area: intro;
+  align-self: start;
+  padding-top: clamp(4px, 1vw, 18px);
+}
+
+.color-explorer__copy h2 {
+  max-width: 12ch;
+  margin: 0;
+  font-size: clamp(2.35rem, 4vw, 4.8rem);
+  font-weight: 510;
+  letter-spacing: -0.06em;
+  line-height: 0.96;
+  text-wrap: balance;
 }
 
 .color-explorer__copy > p:not(.eyebrow) {
-  max-width: 49ch;
-  margin: 26px 0 0;
+  max-width: 46ch;
+  margin: 24px 0 0;
   color: var(--muted);
-  line-height: 1.65;
+  font-size: clamp(0.88rem, 1vw, 1rem);
+  line-height: 1.7;
 }
 
-.color-list {
+.color-explorer__specs {
   display: grid;
-  gap: 1px;
-  margin-top: 42px;
-  background: var(--line);
-  border-block: 1px solid var(--line);
+  grid-area: specs;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-self: end;
+  gap: 0;
+  margin: clamp(38px, 5vw, 72px) 0 8px;
+  border-top: 1px solid rgba(23, 26, 32, 0.16);
 }
 
-.color-list button {
+.color-explorer__spec {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 13px;
-  align-items: center;
-  padding: 13px 3px;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  padding: 20px 20px 22px 0;
+  border-bottom: 1px solid rgba(23, 26, 32, 0.12);
+}
+
+.color-explorer__spec:nth-child(even) {
+  padding-right: 0;
+  padding-left: 20px;
+  border-left: 1px solid rgba(23, 26, 32, 0.12);
+}
+
+.color-explorer__spec dd,
+.color-explorer__spec dt {
+  margin: 0;
+}
+
+.color-explorer__spec dd {
+  order: -1;
+  overflow-wrap: anywhere;
+  font-family: var(--font-display);
+  font-size: clamp(1.55rem, 2.2vw, 2.45rem);
+  font-weight: 620;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.color-explorer__spec dt {
   color: var(--muted);
-  background: var(--surface);
-  cursor: pointer;
-  text-align: left;
-  transition: color 0.45s var(--ease-heavy), padding 0.45s var(--ease-heavy);
-}
-
-.color-list button:hover,
-.color-list button.is-active {
-  padding-left: 9px;
-  color: var(--ink);
-}
-
-.color-list__swatch {
-  width: 25px;
-  height: 25px;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(23, 26, 32, 0.16), inset 0 2px 3px rgba(255, 255, 255, 0.35);
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 
 .color-explorer__visual {
-  aspect-ratio: 1.22 / 1;
+  display: grid;
+  grid-area: visual;
+  min-width: 0;
+  min-height: 430px;
+  place-items: center;
+  padding: 10px 0 0;
 }
 
-.color-explorer__visual .smart-image {
+.color-explorer__image {
+  --color-image-scale: 1.08;
+  width: 100%;
+  height: clamp(390px, 38vw, 560px);
+  overflow: visible;
+  background: transparent;
+  animation: color-image-enter 0.24s var(--ease-soft) both;
+}
+
+.color-explorer__image img {
+  width: 100%;
   height: 100%;
-  background: linear-gradient(145deg, #f2f3f2, #e6e8e7);
-}
-
-.color-explorer__visual .smart-image img {
   object-fit: contain;
-  padding: 4%;
-  filter: drop-shadow(0 30px 22px rgba(25, 32, 42, 0.16));
-  animation: color-image-enter 0.8s var(--ease-heavy) both;
+  filter: drop-shadow(0 30px 24px rgba(25, 32, 42, 0.18));
+  transform: scale(var(--color-image-scale));
 }
 
 @keyframes color-image-enter {
-  from { opacity: 0; transform: translateX(38px); }
+  from { opacity: 0; transform: translateX(16px); }
   to { opacity: 1; transform: translateX(0); }
 }
 
-.color-explorer__caption {
-  position: absolute;
-  right: 24px;
-  bottom: 20px;
-  left: 24px;
-  display: flex;
-  justify-content: space-between;
-  color: var(--muted);
-  font-size: 0.72rem;
+.color-explorer__palette {
+  display: grid;
+  grid-area: palette;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px clamp(22px, 4vw, 60px);
+  align-items: end;
+  padding-top: 4px;
 }
 
-.color-explorer__caption strong {
-  color: var(--ink);
+.color-explorer__name {
+  grid-column: 1 / -1;
+  margin: 0;
+  text-align: center;
+}
+
+.color-explorer__name span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.color-explorer__name strong {
+  display: block;
+  font-size: clamp(1.45rem, 2.2vw, 2.25rem);
+  font-weight: 540;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.color-explorer__groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px clamp(30px, 4vw, 66px);
+  min-width: 0;
+}
+
+.color-explorer__groups.has-multiple-groups {
+  align-items: start;
+}
+
+.color-explorer__group {
+  display: grid;
+  gap: 12px;
+}
+
+.color-explorer__group > p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  font-weight: 570;
+}
+
+.color-explorer__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 11px;
+}
+
+.color-explorer__swatches button {
+  position: relative;
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  padding: 4px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s var(--ease-heavy);
+}
+
+.color-explorer__swatches button > span {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(23, 26, 32, 0.15), inset 0 2px 3px rgba(255, 255, 255, 0.25);
+}
+
+.color-explorer__swatches button:hover {
+  transform: translateY(-2px) scale(1.035);
+}
+
+.color-explorer__swatches button.is-active {
+  border-color: var(--blue);
+  transform: scale(1.05);
+}
+
+.color-explorer__swatches button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.color-explorer__action {
+  justify-self: end;
+}
+
+.color-explorer__action .island-button {
+  min-width: 208px;
 }
 
 .brochure-note {
@@ -3386,8 +3542,30 @@ svg {
     border-top: 1px solid var(--line);
   }
 
+  .color-explorer__grid {
+    grid-template-areas:
+      'intro'
+      'visual'
+      'palette'
+      'specs';
+    grid-template-rows: auto;
+    min-height: 0;
+  }
+
+  .color-explorer__copy h2 {
+    max-width: 15ch;
+  }
+
   .color-explorer__visual {
-    order: -1;
+    min-height: 0;
+  }
+
+  .color-explorer__image {
+    height: clamp(390px, 62vw, 560px);
+  }
+
+  .color-explorer__specs {
+    margin-top: 20px;
   }
 
   .agent-page__capabilities {
@@ -3709,8 +3887,63 @@ svg {
     border-left: 0;
   }
 
+  .color-explorer__stage {
+    padding: 28px 22px 30px;
+    border-radius: 28px;
+  }
+
+  .color-explorer__grid {
+    gap: 38px;
+  }
+
+  .color-explorer__copy h2 {
+    font-size: clamp(2.25rem, 10.5vw, 3.8rem);
+  }
+
+  .color-explorer__copy > p:not(.eyebrow) {
+    margin-top: 18px;
+  }
+
   .color-explorer__visual {
-    aspect-ratio: 1 / 0.92;
+    margin-inline: -10px;
+  }
+
+  .color-explorer__image {
+    --color-image-scale: 1.14;
+    height: clamp(270px, 75vw, 390px);
+  }
+
+  .color-explorer__palette {
+    grid-template-columns: 1fr;
+    gap: 26px;
+  }
+
+  .color-explorer__name {
+    grid-column: auto;
+    text-align: left;
+  }
+
+  .color-explorer__groups {
+    gap: 22px 32px;
+  }
+
+  .color-explorer__swatches {
+    gap: 7px;
+  }
+
+  .color-explorer__swatches button {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+
+  .color-explorer__action,
+  .color-explorer__action .island-button {
+    width: 100%;
+  }
+
+  .color-explorer__action {
+    justify-self: stretch;
   }
 
   .brochure-note {
@@ -6492,8 +6725,6 @@ svg {
 }
 
 .page--detail .detail-hero__car.is-static-asset img { object-fit: cover; }
-.color-explorer__visual .smart-image { animation: color-image-in 0.55s var(--ease-heavy) both; }
-@keyframes color-image-in { from { opacity: 0; transform: translateX(-24px) scale(0.98); } to { opacity: 1; transform: translateX(0) scale(1); } }
 
 .agent-booking-page {
   display: grid;
@@ -8331,6 +8562,9 @@ small,
 }
 
 .charger-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(260px, 0.92fr);
+  min-height: 430px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 29px;
@@ -8339,17 +8573,10 @@ small,
 
 .charger-card__visual {
   position: relative;
-  min-height: 470px;
-  background: linear-gradient(145deg, #f8f9f8, #e6e9e8);
-}
-
-.charger-card__visual > span {
-  position: absolute;
-  top: 24px;
-  left: 25px;
-  z-index: 2;
-  color: var(--muted);
-  font-size: 0.66rem;
+  min-height: 430px;
+  overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: #191d22;
 }
 
 .charger-card__visual .smart-image,
@@ -8359,19 +8586,25 @@ small,
 }
 
 .charger-card__visual img {
-  padding: 8%;
+  padding: 5%;
   object-fit: contain;
+  filter: drop-shadow(0 26px 24px rgba(0, 0, 0, 0.28));
+  will-change: transform, opacity;
+}
+
+.charger-card__visual .smart-image {
   transition: transform 0.7s var(--ease-heavy);
 }
 
-.charger-card:hover .charger-card__visual img {
+.charger-card:hover .charger-card__visual .smart-image {
   transform: translateY(-8px) scale(1.025);
 }
 
 .charger-card__copy {
   display: grid;
-  grid-template-columns: minmax(0, 0.44fr) minmax(0, 0.56fr);
-  gap: 22px;
+  grid-template-columns: 1fr;
+  align-content: end;
+  gap: 34px;
   padding: 28px;
 }
 
@@ -8387,7 +8620,7 @@ small,
 }
 
 .charger-card__copy strong {
-  font-size: clamp(2.6rem, 5vw, 5.3rem);
+  font-size: clamp(2.6rem, 4.2vw, 4.5rem);
   font-weight: 500;
   letter-spacing: -0.07em;
   line-height: 0.9;
@@ -9323,8 +9556,8 @@ small,
   }
 
   .charger-lineup__intro {
-    position: sticky;
-    top: 158px;
+    position: relative;
+    top: auto;
     height: max-content;
   }
 }
@@ -10110,16 +10343,14 @@ small,
   padding: clamp(116px, 13vw, 190px) 0 clamp(90px, 10vw, 142px);
   overflow: hidden;
   color: rgba(255, 255, 255, 0.94);
-  background: #080b0f;
+  background: #000;
   isolation: isolate;
 }
 
 .vehicle-3d__ambient {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(54% 64% at 62% 50%, rgba(63, 91, 125, 0.22), transparent 70%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 28%, rgba(255, 255, 255, 0.02));
+  background: transparent;
   pointer-events: none;
 }
 
@@ -10192,7 +10423,7 @@ small,
 .vehicle-model-surface__poster.is-dark {
   width: 100%;
   height: 100%;
-  background: #020304;
+  background: #000;
 }
 
 .vehicle-model-surface__poster img {
@@ -10328,19 +10559,222 @@ small,
 .vehicle-3d__streak {
   display: block;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(153, 190, 255, 0.62), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.34), transparent);
 }
 
 .vehicle-3d__streak:nth-child(2) { width: 72%; margin-left: 18%; }
 .vehicle-3d__streak:nth-child(3) { width: 48%; margin-left: 43%; }
 
 .vehicle-3d--station {
-  min-height: min(940px, 100dvh);
-  background: #090c10;
+  min-height: auto;
+  padding-block: clamp(112px, 12vw, 176px);
+  background: #000;
 }
 
 .vehicle-3d--station .vehicle-3d__ambient {
-  background: radial-gradient(52% 60% at 62% 50%, rgba(31, 91, 132, 0.16), transparent 72%);
+  background: transparent;
+}
+
+.charging-station-3d__inner {
+  position: relative;
+}
+
+.charging-station-3d__copy {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(300px, 0.3fr);
+  align-items: end;
+  gap: clamp(34px, 7vw, 110px);
+  margin-bottom: clamp(54px, 7vw, 94px);
+}
+
+.charging-station-3d__copy .eyebrow {
+  grid-column: 1 / -1;
+  margin: 0 0 -18px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.charging-station-3d__copy h2 {
+  max-width: 13ch;
+  margin: 0;
+  font-size: clamp(3rem, 5.7vw, 6.3rem);
+  font-weight: 520;
+  letter-spacing: -0.067em;
+  line-height: 0.94;
+  text-wrap: balance;
+}
+
+.charging-station-3d__copy > p:last-child {
+  max-width: 46ch;
+  margin: 0;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+
+.charging-station-3d__grid {
+  display: block;
+  border-block: 1px solid rgba(255, 255, 255, 0.11);
+  background: #020304;
+}
+
+.charging-station-3d__stage {
+  position: relative;
+  min-width: 0;
+  min-height: clamp(520px, 48vw, 690px);
+  overflow: hidden;
+  background: #020304;
+  will-change: transform, opacity;
+}
+
+.charging-station-3d__stage--overview {
+  width: 100%;
+  min-height: clamp(600px, 53vw, 780px);
+}
+
+.charging-station-3d__stage .vehicle-model-surface {
+  position: absolute;
+  inset: 0;
+}
+
+.charging-station-3d__label {
+  position: absolute;
+  z-index: 5;
+  top: 26px;
+  left: 28px;
+  display: grid;
+  gap: 5px;
+  pointer-events: none;
+}
+
+.charging-station-3d__label span {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.charging-station-3d__label strong {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.78rem;
+  font-weight: 590;
+}
+
+.charging-station-3d__controls {
+  position: absolute;
+  z-index: 6;
+  right: 24px;
+  bottom: 22px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.55s var(--ease-soft), transform 0.55s var(--ease-heavy);
+}
+
+.vehicle-3d--station.is-interactive .charging-station-3d__controls {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.charging-station-3d__controls span,
+.charging-station-3d__controls button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: rgba(255, 255, 255, 0.56);
+  background: transparent;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 570;
+}
+
+.charging-station-3d__controls button {
+  padding: 0 0 7px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.44);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  transition: border-color 0.3s var(--ease-soft), transform 0.3s var(--ease-heavy);
+}
+
+.charging-station-3d__controls button:hover {
+  border-color: #fff;
+  transform: translateY(-2px);
+}
+
+.charging-station-3d__controls button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 6px;
+}
+
+.charging-station-3d__credit {
+  display: block;
+  margin-top: 14px;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.58rem;
+}
+
+@media (max-width: 1180px) {
+  .charger-card {
+    grid-template-columns: 1fr;
+  }
+
+  .charger-card__visual {
+    min-height: 390px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .charging-station-3d__copy {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .charging-station-3d__copy .eyebrow {
+    grid-column: auto;
+    margin-bottom: -8px;
+  }
+
+  .charging-station-3d__copy > p:last-child {
+    max-width: 58ch;
+  }
+}
+
+@media (max-width: 820px) {
+  .charging-station-3d__stage--overview {
+    min-height: 580px;
+  }
+}
+
+@media (max-width: 560px) {
+  .charging-station-3d__copy h2 {
+    font-size: clamp(2.8rem, 13vw, 4.4rem);
+  }
+
+  .charging-station-3d__stage--overview {
+    min-height: 500px;
+  }
+
+  .charging-station-3d__label {
+    top: 20px;
+    left: 20px;
+  }
+
+  .charging-station-3d__controls {
+    right: 18px;
+    bottom: 16px;
+    left: 18px;
+  }
+
+  .charging-station-3d__controls > span {
+    display: none;
+  }
 }
 
 /* Booking terminal transition: z-index cao hơn topbar/modals, nhưng chỉ mount

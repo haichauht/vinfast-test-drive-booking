@@ -105,7 +105,8 @@ import { ShowroomMap as BookingShowroomMap } from '../components/booking/Showroo
 import { BookingTicket, SchedulePanel } from '../components/booking/BookingSummary'
 import { BookingAccessPanel } from '../components/booking/BookingAccessPanel'
 import { CancellationConfirmModal, RescheduleConfirmModal } from '../components/booking/BookingManagementModals'
-import { BookingSuccessCinematic, BookingSuccessVehicleModel, preloadVehicle3dRuntime } from '../components/Vehicle3DExperience'
+import { BookingSuccessVehicleModel, preloadVehicle3dRuntime } from '../components/Vehicle3DExperience'
+import { BookingSuccessCinematic } from '../components/BookingSuccessCinematic'
 import { getVehicle3dModel } from '../data/vehicle3d'
 
 const vinfastLogo = commonMedia.vinfastLogo

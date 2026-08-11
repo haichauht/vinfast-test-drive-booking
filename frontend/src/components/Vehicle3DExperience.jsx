@@ -2,7 +2,7 @@
  * Sân khấu GLB dùng chung.
  *
  * - Vehicle3DExperience: cinematic chạy xuyên màn hình rồi mở model tương tác
- *   trong trang chi tiết VF3/VF9.
+ *   trong trang chi tiết của mọi mẫu có GLB web hợp lệ.
  * - BookingSuccessCinematic: che tối màn hình sau khi backend xác nhận, đưa xe
  *   vào từ trái, phanh, xoay đuôi về phía người xem và chạy vào chiều sâu.
  *
@@ -35,6 +35,7 @@ const applyModelFinish = (viewer, config) => {
   const pbr = material?.pbrMetallicRoughness
   if (!pbr) return
 
+  if (finish.removeBaseColorTexture) pbr.baseColorTexture?.setTexture(null)
   pbr.setBaseColorFactor(finish.baseColor)
   pbr.setMetallicFactor(finish.metallicFactor)
   pbr.setRoughnessFactor(finish.roughnessFactor)
@@ -129,12 +130,14 @@ function ModelSurface({
         interaction-prompt={interactive ? interactionPrompt : 'none'}
         interaction-prompt-style="basic"
         camera-orbit={initialOrbit || config.orbit}
+        camera-target={config.cameraTarget}
         field-of-view={config.fieldOfView}
         min-field-of-view="20deg"
         max-field-of-view="42deg"
         shadow-intensity={config.shadowIntensity || '1.15'}
         shadow-softness="0.88"
         exposure={config.exposure || '1.04'}
+        environment-image={config.environmentImage}
         tone-mapping="aces"
       >
         <div className={`vehicle-model-surface__poster is-${posterMode}`} slot="poster">
@@ -194,15 +197,15 @@ export function Vehicle3DExperience({ car, onEnter }) {
         .fromTo(
           stage,
           { xPercent: -148, scale: 0.56, opacity: 0.92 },
-          { xPercent: 152, scale: 0.56, opacity: 1, duration: 1.9 },
+          { xPercent: 152, scale: 0.56, opacity: 1, duration: 2.55, ease: 'power2.inOut' },
         )
         .fromTo(
           streaks,
           { scaleX: 0, opacity: 0 },
-          { scaleX: 1, opacity: 0.66, duration: 0.58, stagger: 0.06, ease: 'power2.out' },
-          0.24,
+          { scaleX: 1, opacity: 0.48, duration: 0.76, stagger: 0.08, ease: 'power2.out' },
+          0.34,
         )
-        .to(streaks, { opacity: 0, duration: 0.48 }, 1.12)
+        .to(streaks, { opacity: 0, duration: 0.62 }, 1.72)
         .set(stage, { xPercent: 0, scale: 0.72, opacity: 0 })
         .call(() => {
           if (viewer.current) viewer.current.cameraOrbit = config.orbit
@@ -213,7 +216,7 @@ export function Vehicle3DExperience({ car, onEnter }) {
       const trigger = ScrollTrigger.create({
         trigger: root.current,
         // Bắt đầu khi sân khấu đã nằm rõ trong viewport để người dùng nhìn đủ
-        // toàn bộ nhịp xe chạy ngang 1,9 giây, thay vì chỉ thấy đoạn cuối.
+        // toàn bộ nhịp xe chạy ngang 2,55 giây, thay vì chỉ thấy đoạn cuối.
         start: 'top 52%',
         once: true,
         onEnter: () => {
@@ -252,7 +255,7 @@ export function Vehicle3DExperience({ car, onEnter }) {
           <p>Giữ và kéo để xoay · cuộn để tiến gần hoặc lùi xa.</p>
         </div>
         <div className="vehicle-3d__viewer">
-          <ModelSurface car={car} config={config} viewerRef={viewer} interactive={interactive} eager initialOrbit={config.sideOrbit} />
+          <ModelSurface car={car} config={config} viewerRef={viewer} interactive={interactive} eager initialOrbit={config.sideOrbit} posterMode="dark" />
           <div className="vehicle-3d__controls">
             <span><CursorClick size={17} weight="light" /> Kéo để quan sát</span>
             <button type="button" onClick={resetCamera}><ArrowCounterClockwise size={16} weight="light" /> Đặt lại góc nhìn</button>
@@ -279,8 +282,8 @@ export function ChargingStation3DExperience({ poster }) {
 
   useGSAP(
     () => {
-      const stage = root.current?.querySelector('.vehicle-3d__viewer')
-      const copy = root.current?.querySelector('.vehicle-3d__copy')
+      const stage = root.current?.querySelector('.charging-station-3d__stage')
+      const copy = root.current?.querySelector('.charging-station-3d__copy')
       if (!stage) return undefined
 
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -291,8 +294,13 @@ export function ChargingStation3DExperience({ poster }) {
 
       const timeline = gsap.timeline({ paused: true, onComplete: () => setInteractive(true) })
       timeline
-        .fromTo(stage, { y: 84, scale: 0.82, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 1.65, ease: 'power4.out' })
-        .fromTo(copy, { y: 42, opacity: 0 }, { y: 0, opacity: 1, duration: 0.9, ease: 'power3.out' }, 0.3)
+        .fromTo(copy, { y: 38, opacity: 0 }, { y: 0, opacity: 1, duration: 0.9, ease: 'power3.out' })
+        .fromTo(
+          stage,
+          { y: 76, scale: 0.86, opacity: 0 },
+          { y: 0, scale: 1, opacity: 1, duration: 1.55, ease: 'power4.out' },
+          0.18,
+        )
 
       const trigger = ScrollTrigger.create({
         trigger: root.current,
@@ -309,43 +317,59 @@ export function ChargingStation3DExperience({ poster }) {
     { scope: root },
   )
 
-  const resetCamera = () => {
-    if (!viewer.current) return
-    viewer.current.cameraOrbit = chargingStation3dModel.orbit
-    viewer.current.fieldOfView = chargingStation3dModel.fieldOfView
-    viewer.current.jumpCameraToGoal?.()
+  const resetCamera = (target, orbit, fieldOfView) => {
+    if (!target.current) return
+    target.current.cameraOrbit = orbit
+    target.current.fieldOfView = fieldOfView
+    target.current.jumpCameraToGoal?.()
   }
 
   return (
     <section id="charging-3d" className={`vehicle-3d vehicle-3d--station ${interactive ? 'is-interactive' : ''}`} ref={root} aria-labelledby="charging-station-3d-title">
       <div className="vehicle-3d__ambient" aria-hidden="true" />
-      <div className="section-frame vehicle-3d__inner">
-        <div className="vehicle-3d__copy">
+      <div className="section-frame charging-station-3d__inner">
+        <header className="charging-station-3d__copy">
           <p className="eyebrow">Trạm sạc tương tác</p>
-          <h2 id="charging-station-3d-title">Quan sát hạ tầng từ mọi góc nhìn.</h2>
-          <p>Kéo để xoay mô hình · cuộn để tiến gần hoặc lùi xa.</p>
+          <h2 id="charging-station-3d-title">Quan sát toàn bộ trạm sạc.</h2>
+          <p>Một góc nhìn cân đối cho toàn bộ hệ thống. Giữ và kéo trực tiếp trên mô hình để xem thiết bị từ mọi phía.</p>
+        </header>
+
+        <div className="charging-station-3d__grid">
+          <article className="charging-station-3d__stage charging-station-3d__stage--overview">
+            <div className="charging-station-3d__label">
+              <span>Mô hình tương tác</span>
+              <strong>Hạ tầng trạm sạc</strong>
+            </div>
+            <ModelSurface
+              car={station}
+              config={chargingStation3dModel}
+              viewerRef={viewer}
+              interactive={interactive}
+              eager
+              initialOrbit={chargingStation3dModel.orbit}
+              posterMode="dark"
+              interactionPrompt="none"
+            />
+            <div className="charging-station-3d__controls">
+              <span><CursorClick size={17} weight="light" /> Giữ và kéo để xoay</span>
+              <button
+                type="button"
+                onClick={() => resetCamera(viewer, chargingStation3dModel.orbit, chargingStation3dModel.fieldOfView)}
+              >
+                <ArrowCounterClockwise size={16} weight="light" /> Về toàn cảnh
+              </button>
+            </div>
+          </article>
         </div>
-        <div className="vehicle-3d__viewer">
-          <ModelSurface
-            car={station}
-            config={chargingStation3dModel}
-            viewerRef={viewer}
-            interactive={interactive}
-            initialOrbit={chargingStation3dModel.sideOrbit}
-          />
-          <div className="vehicle-3d__controls">
-            <span><CursorClick size={17} weight="light" /> Giữ và kéo để xoay</span>
-            <button type="button" onClick={resetCamera}><ArrowCounterClockwise size={16} weight="light" /> Về góc ban đầu</button>
-          </div>
-          <span className="vehicle-3d__credit">3D · {chargingStation3dModel.credit.author}</span>
-        </div>
+
+        <span className="charging-station-3d__credit">3D · {chargingStation3dModel.credit.author}</span>
       </div>
     </section>
   )
 }
 
 /**
- * Model 3D cỡ nhỏ dùng riêng ở phiếu booking thành công. Chỉ VF3/VF9 có GLB
+ * Model 3D cỡ nhỏ dùng riêng ở phiếu booking thành công. Chỉ những mẫu có GLB
  * được duyệt; các mẫu khác tiếp tục dùng ảnh studio alpha ở BookingPage.
  * Kích thước do ô .studio-vehicle__stage sở hữu để không làm lệch bố cục phiếu.
  */
