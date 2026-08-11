@@ -211,7 +211,15 @@ class CatalogService:
                     raise BookingError("INVALID_INPUT", "Preferred time must be a valid HH:MM value.")
                 hour, minute = (int(x) for x in preferred_time.split(":"))
                 target = hour * 60 + minute
-                order_sql = f"ABS((CAST(substr(s.start_at,12,2) AS INTEGER)*60 + CAST(substr(s.start_at,15,2) AS INTEGER)) - {target}), s.start_at"
+                slot_minutes_sql = (
+                    "(EXTRACT(HOUR FROM s.start_at::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh') * 60 "
+                    "+ EXTRACT(MINUTE FROM s.start_at::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh'))"
+                    if c.dialect == "postgres"
+                    else "(CAST(strftime('%H', datetime(s.start_at, '+7 hours')) AS INTEGER) * 60 "
+                    "+ CAST(strftime('%M', datetime(s.start_at, '+7 hours')) AS INTEGER))"
+                )
+                order_sql = f"ABS({slot_minutes_sql} - ?), s.start_at"
+                values.append(target)
             slots = [
                 dict(r)
                 for r in c.execute(
