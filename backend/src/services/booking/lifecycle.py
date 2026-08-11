@@ -259,10 +259,13 @@ class LifecycleService:
                             )
                         c.execute(f"UPDATE bookings SET {role}_person_id=? WHERE id=?", (pid, booking_id))
             if driver_same_as_booker:
-                booker_id = c.execute("SELECT booker_person_id FROM bookings WHERE id=?", (booking_id,)).fetchone()[0]
+                current_people = c.execute(
+                    "SELECT booker_person_id,driver_person_id FROM bookings WHERE id=?", (booking_id,)
+                ).fetchone()
+                booker_id = current_people["booker_person_id"] if current_people else None
                 if not booker_id:
                     raise BookingError("INVALID_INPUT", "Cần nhập thông tin Booker trước.")
-                if b["driver_person_id"] != booker_id:
+                if current_people["driver_person_id"] != booker_id:
                     c.execute(
                         "UPDATE booking_driver_details SET has_driving_license=NULL,declared_license_class=NULL,"
                         "validity_acknowledged=0,license_check_status='not_provided',checked_at=NULL,checked_by=NULL,"
