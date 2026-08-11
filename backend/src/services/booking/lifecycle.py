@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
+from zoneinfo import ZoneInfo
 
-from src.services.booking.common import iso, new_id, normalize_phone
+from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
 from src.services.booking.errors import BookingError
 
 _id = new_id
+VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 class LifecycleService:
@@ -35,7 +37,7 @@ class LifecycleService:
             ).fetchone()
             if not slot or slot["status"] != "available":
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Khung giờ này không còn khả dụng.", retryable=True)
-            if datetime.fromisoformat(slot["start_at"]) <= self.now():
+            if parse_utc(slot["start_at"]) <= parse_utc(self.now()):
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Slot đã bắt đầu hoặc đã qua.", retryable=True)
             if not slot["vehicle_active"] or slot["operational_status"] != "available":
                 raise BookingError("VEHICLE_NOT_READY", "Xe demo hiện không sẵn sàng.", retryable=True)
@@ -84,11 +86,7 @@ class LifecycleService:
             raise BookingError("BOOKING_DRAFT_NOT_AVAILABLE", "Booking draft không khả dụng.")
         if require_held and booking["status"] != "held":
             raise BookingError("BOOKING_DRAFT_NOT_AVAILABLE", "Booking draft không khả dụng.")
-        if require_held and datetime.fromisoformat(booking["hold_expires_at"]) <= self.now():
-            self._expire_hold_in_transaction(c, booking)
-            # Expiry reconciliation is durable even though the caller receives
-            # a domain error after it. The transaction context would otherwise roll it back.
-            c.commit()
+        if require_held and parse_utc(booking["hold_expires_at"]) <= parse_utc(self.now()):
             raise BookingError("HOLD_EXPIRED", "Hold đã hết hạn.")
         booking["booker"] = (
             self._row(c.execute("SELECT * FROM people WHERE id=?", (booking["booker_person_id"],)).fetchone())
@@ -119,14 +117,14 @@ class LifecycleService:
             lic["validity_acknowledged"] = bool(lic["validity_acknowledged"])
         if lic.get("has_driving_license") is not True and lic.get("has_driving_license") != 1:
             missing.append("license.has_driving_license")
-        remaining = max(0, int((datetime.fromisoformat(booking["hold_expires_at"]) - self.now()).total_seconds()))
+        remaining = max(0, int((parse_utc(booking["hold_expires_at"]) - parse_utc(self.now())).total_seconds()))
         slot_row = c.execute("SELECT * FROM test_drive_slots WHERE id=?", (booking["slot_id"],)).fetchone()
         if slot_row:
             slot = dict(slot_row)
             showroom_row = c.execute("SELECT * FROM showrooms WHERE id=?", (slot["showroom_id"],)).fetchone()
             booking["showroom"] = dict(showroom_row) if showroom_row else None
             booking["slot_id"] = slot["id"]
-            dt = datetime.fromisoformat(slot["start_at"])
+            dt = parse_utc(slot["start_at"]).astimezone(VIETNAM_TZ)
             weekdays_vi = {
                 0: "Thứ 2",
                 1: "Thứ 3",
@@ -152,8 +150,23 @@ class LifecycleService:
         return booking
 
     def get_booking_draft(self, booking_id: str) -> dict:
+        if self._expire_hold_if_due(booking_id):
+            raise BookingError("HOLD_EXPIRED", "Hold đã hết hạn.")
         with self.db.transaction(immediate=True) as c:
             return self._draft(c, booking_id)
+
+    def _expire_hold_if_due(self, booking_id: str) -> bool:
+        """Durably release an expired hold in its own complete transaction."""
+        with self.db.transaction(immediate=True) as c:
+            booking = c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone()
+            if (
+                not booking
+                or booking["status"] != "held"
+                or parse_utc(booking["hold_expires_at"]) > parse_utc(self.now())
+            ):
+                return False
+            self._expire_hold_in_transaction(c, booking)
+            return True
 
     def _expire_hold_in_transaction(self, c, booking) -> None:
         now = iso(self.now())
@@ -179,15 +192,15 @@ class LifecycleService:
         notification_plan_patch=None,
         expected_version=None,
     ) -> dict:
+        if self._expire_hold_if_due(booking_id):
+            raise BookingError("HOLD_EXPIRED", "Hold đã hết hạn.")
         with self.db.transaction(immediate=True) as c:
             b = c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone()
             if not b:
                 raise BookingError("BOOKING_NOT_FOUND", "Không tìm thấy booking.")
             if b["status"] != "held":
                 raise BookingError("BOOKING_DRAFT_NOT_AVAILABLE", "Booking draft không khả dụng.")
-            if datetime.fromisoformat(b["hold_expires_at"]) <= self.now():
-                self._expire_hold_in_transaction(c, b)
-                c.commit()
+            if parse_utc(b["hold_expires_at"]) <= parse_utc(self.now()):
                 raise BookingError("HOLD_EXPIRED", "Hold đã hết hạn.")
             if expected_version is not None and b["version"] != expected_version:
                 raise BookingError("VERSION_CONFLICT", "Draft đã được cập nhật ở nơi khác.", retryable=True)
@@ -292,6 +305,8 @@ class LifecycleService:
 
     def confirm_booking(self, booking_id: str, ui_action_id: str, expected_version: int) -> dict:
         request_payload = {"booking_id": booking_id, "expected_version": expected_version}
+        if self._expire_hold_if_due(booking_id):
+            raise BookingError("HOLD_EXPIRED", "Giữ chỗ đã hết hạn.")
         with self.db.transaction(immediate=True) as c:
             cached = self._idempotent_response(c, ui_action_id, "confirm_booking", request_payload)
             if cached:
@@ -310,7 +325,7 @@ class LifecycleService:
             ).fetchone()
             if slot["status"] != "held" or slot["current_booking_id"] != booking_id:
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Khung giờ không thuộc lịch đặt này.")
-            if datetime.fromisoformat(slot["start_at"]) <= self.now():
+            if parse_utc(slot["start_at"]) <= parse_utc(self.now()):
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Slot đã bắt đầu hoặc đã qua.")
             if not slot["vehicle_active"] or slot["operational_status"] != "available":
                 raise BookingError("VEHICLE_NOT_READY", "Xe demo không còn sẵn sàng.", retryable=True)
@@ -353,13 +368,13 @@ class LifecycleService:
             return result
 
     def _create_jobs(self, c, bid, start, *, confirmation_type: str = "booking_confirmation"):
-        start_dt = datetime.fromisoformat(start)
+        start_dt = parse_utc(start)
         now = iso(self.now())
         recipient_channels, plan = self._notification_recipient_channels(c, bid)
         schedule = [(confirmation_type, self.now())]
-        if plan["reminder_24h_enabled"] and start_dt - timedelta(hours=24) > self.now():
+        if plan["reminder_24h_enabled"] and start_dt - timedelta(hours=24) > parse_utc(self.now()):
             schedule.append(("reminder_24h", start_dt - timedelta(hours=24)))
-        if plan["reminder_2h_enabled"] and start_dt - timedelta(hours=2) > self.now():
+        if plan["reminder_2h_enabled"] and start_dt - timedelta(hours=2) > parse_utc(self.now()):
             schedule.append(("reminder_2h", start_dt - timedelta(hours=2)))
         for recipient, channels in recipient_channels:
             for typ, when in schedule:

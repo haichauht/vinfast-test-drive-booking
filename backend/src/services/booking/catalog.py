@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from src.services.booking.common import iso, new_id
+from src.services.booking.common import iso
 from src.services.booking.errors import BookingError
 from src.services.booking.location import Coordinates, HaversineMapProvider
-
 
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 _SHOWROOM_TOKEN_CACHE: dict[str, tuple[tuple[str, str, str], frozenset[str]]] = {}
@@ -46,7 +45,7 @@ def _showroom_location_tokens(showroom: dict) -> frozenset[str]:
 def _to_vietnam_time(iso_str: str) -> datetime:
     dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(VIETNAM_TZ)
 
 
@@ -220,7 +219,7 @@ class CatalogService:
                     (*values, min(max(limit, 1), 30)),
                 )
             ]
-            WEEKDAYS_VI = {
+            weekdays_vi = {
                 0: "Thứ 2",
                 1: "Thứ 3",
                 2: "Thứ 4",
@@ -234,7 +233,7 @@ class CatalogService:
                 dt_end = _to_vietnam_time(s["end_at"])
                 s["start_at"] = dt_start.isoformat()
                 s["end_at"] = dt_end.isoformat()
-                day_label = WEEKDAYS_VI[dt_start.weekday()]
+                day_label = weekdays_vi[dt_start.weekday()]
                 date_str = dt_start.strftime("%d/%m")
                 time_str = dt_start.strftime("%H:%M")
                 s["formatted_schedule"] = f"{day_label}, {date_str} {time_str}"

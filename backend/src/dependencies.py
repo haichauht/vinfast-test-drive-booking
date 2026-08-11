@@ -19,4 +19,5 @@ booking_service = BookingService(
     otp_ttl_seconds=settings.booking_access_otp_ttl_seconds,
     otp_resend_cooldown_seconds=settings.booking_access_otp_resend_cooldown_seconds,
     otp_max_attempts=settings.booking_access_otp_max_attempts,
+    otp_secret=settings.booking_access_otp_secret or "development-secret",
 )

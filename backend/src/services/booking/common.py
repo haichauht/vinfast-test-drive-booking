@@ -12,6 +12,23 @@ def iso(value: datetime) -> str:
     return value.astimezone(UTC).isoformat()
 
 
+def parse_utc(value: str | datetime) -> datetime:
+    """Parse a persisted timestamp into one UTC-aware datetime.
+
+    Legacy CSV rows without an offset are interpreted as UTC. New imports are
+    normalized back to an explicit ``+00:00`` representation before storage.
+    """
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def normalize_timestamp(value: str | datetime) -> str:
+    """Return the canonical persisted representation for an instant in time."""
+    return iso(parse_utc(value))
+
+
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
 

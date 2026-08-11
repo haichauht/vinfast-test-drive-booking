@@ -5,8 +5,8 @@ from typing import Any, cast
 from langchain_core.messages import SystemMessage, ToolMessage
 
 from src.agents.state import AgentState
-from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.tools import search_knowledge
+from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.utils import get_system_prompt, window_messages
 from src.services.llm import get_llm
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from zoneinfo import ZoneInfo
 
-from src.services.booking.common import iso
+from src.services.booking.common import iso, parse_utc
+
+
+VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 class BackgroundJobService:
@@ -91,7 +94,7 @@ class BackgroundJobService:
             ).fetchone()
         if not row:
             return "Lịch lái thử VinFast của bạn đã được cập nhật."
-        start = datetime.fromisoformat(row["start_at"])
+        start = parse_utc(row["start_at"]).astimezone(VIETNAM_TZ)
         weekdays = ("Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật")
         heading = "Lịch lái thử đã xác nhận" if notification_type == "booking_confirmation" else "Cập nhật lịch lái thử"
         staff = row["staff_name"] or "Sẽ được VinFast liên hệ"

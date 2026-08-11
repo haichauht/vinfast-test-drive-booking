@@ -1,5 +1,6 @@
 import pytest
 from src.services.booking import BookingError
+from src.services.booking.importer import ImportService
 
 VALID_SHOWROOM_CSV = """code,name,address,latitude,longitude,phone,email,timezone,is_active
 SR-NEW,Showroom New,123 Test Street,10.75,106.70,0900000000,new@example.com,Asia/Ho_Chi_Minh,1
@@ -54,6 +55,24 @@ def test_import_showrooms_csv_rejects_invalid_coordinates(booking_service):
 def test_import_eval_dataset_rejects_unknown_file(booking_service):
     with pytest.raises(BookingError) as error:
         booking_service.import_eval_dataset({"malicious.csv": "id,name\n1,test\n"})
+
+    assert error.value.code == "INVALID_INPUT"
+
+
+def test_slot_timestamp_import_normalizes_to_explicit_utc():
+    rows = [{"start_at": "2026-08-03T09:00:00+07:00", "end_at": "2026-08-03T10:30:00+07:00", "held_until": ""}]
+
+    ImportService._normalize_slot_timestamps(rows, filename="06_test_drive_slots.csv")
+
+    assert rows[0]["start_at"] == "2026-08-03T02:00:00+00:00"
+    assert rows[0]["end_at"] == "2026-08-03T03:30:00+00:00"
+
+
+def test_slot_timestamp_import_rejects_end_before_start():
+    rows = [{"start_at": "2026-08-03T09:00:00+07:00", "end_at": "2026-08-03T08:30:00+07:00", "held_until": ""}]
+
+    with pytest.raises(BookingError) as error:
+        ImportService._normalize_slot_timestamps(rows, filename="06_test_drive_slots.csv")
 
     assert error.value.code == "INVALID_INPUT"
 

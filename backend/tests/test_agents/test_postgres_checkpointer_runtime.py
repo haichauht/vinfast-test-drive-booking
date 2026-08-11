@@ -1,5 +1,4 @@
 import pytest
-
 from src.agents.graph import agent, close_persistent_agent, get_agent, initialize_persistent_agent, uses_postgres
 
 
