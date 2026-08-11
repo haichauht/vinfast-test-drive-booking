@@ -1,6 +1,7 @@
 from src.database import Database
 from src.services.booking.access import AccessService
 from src.services.booking.background import BackgroundJobService
+from src.services.booking.base import BookingBase
 from src.services.booking.catalog import CatalogService
 from src.services.booking.common import utcnow
 from src.services.booking.dashboard import DashboardService
@@ -18,6 +19,7 @@ from src.services.booking.staff import StaffOperationService
 
 
 class BookingService(
+    BookingBase,
     CatalogService,
     LifecycleService,
     AccessService,

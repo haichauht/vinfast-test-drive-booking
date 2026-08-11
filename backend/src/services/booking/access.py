@@ -7,14 +7,13 @@ import secrets
 from datetime import timedelta
 
 from src.database.rows import DbRow
-from src.services.booking.base import BookingBase
 from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
 from src.services.booking.errors import BookingError
 
 _id = new_id
 
 
-class AccessService(BookingBase):
+class AccessService:
     def request_access(
         self,
         contact_value: str,

@@ -4,8 +4,6 @@ from collections.abc import Iterable, Sequence
 from typing import Any
 
 try:
-    psycopg: Any | None
-    dict_row: Any | None
     import psycopg
     from psycopg.rows import dict_row
 except ImportError:  # pragma: no cover - exercised only when dependency is missing.
@@ -18,7 +16,7 @@ from .rows import to_db_row
 from .schema import SCHEMA_SQL
 
 
-def _require_psycopg() -> Any:
+def _require_psycopg():
     if psycopg is None:
         raise RuntimeError("PostgreSQL DATABASE_URL requires psycopg. Install backend requirements first.")
     return psycopg

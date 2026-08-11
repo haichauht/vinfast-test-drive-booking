@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from src.services.booking.base import BookingBase
 from src.services.booking.common import iso
 from src.services.booking.errors import BookingError
 from src.services.booking.location import Coordinates, HaversineMapProvider
@@ -50,7 +49,7 @@ def _to_vietnam_time(iso_str: str) -> datetime:
     return dt.astimezone(VIETNAM_TZ)
 
 
-class CatalogService(BookingBase):
+class CatalogService:
     def list_active_vehicle_models(self) -> list[dict]:
         with self.db.connect() as c:
             models = [dict(row) for row in c.execute("SELECT * FROM vehicle_models WHERE is_active=1 ORDER BY code")]

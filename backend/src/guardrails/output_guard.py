@@ -37,9 +37,9 @@ class OutputGuard:
         secret_values = _collect_secret_values(result)
         response = self._sanitize_text(result.get("response", ""), secret_values=secret_values)
         action_error = self._sanitize_text(result.get("action_error", ""), secret_values=secret_values)
-        raw_tool_input = result.get("action_input")
         tool_input = _redact_mapping(
-            raw_tool_input if isinstance(raw_tool_input, Mapping) else {}, blocked_keys=PUBLIC_TOOL_INPUT_SECRET_KEYS
+            result.get("action_input") if isinstance(result.get("action_input"), Mapping) else {},
+            blocked_keys=PUBLIC_TOOL_INPUT_SECRET_KEYS,
         )
         action_data = _redact_value(result.get("action_result"), blocked_keys=NEVER_PUBLIC_ACTION_DATA_KEYS)
         return ProtectedOutput(
