@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-import unicodedata
 from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -9,21 +7,10 @@ from zoneinfo import ZoneInfo
 from src.services.booking.common import iso
 from src.services.booking.errors import BookingError
 from src.services.booking.location import Coordinates, HaversineMapProvider
+from src.services.booking.location_normalizer import normalize_location_tokens
 
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 _SHOWROOM_TOKEN_CACHE: dict[str, tuple[tuple[str, str, str], frozenset[str]]] = {}
-
-
-def _normalize_location_tokens(value: str) -> set[str]:
-    """Normalize a Vietnamese locality string into searchable tokens."""
-    ascii_value = unicodedata.normalize("NFD", value.casefold().replace("đ", "d"))
-    ascii_value = "".join(character for character in ascii_value if unicodedata.category(character) != "Mn")
-    tokens = set(re.findall(r"[a-z0-9]+", ascii_value.replace("đ", "d")))
-    ignored = {
-        "duong", "phuong", "xa", "quan", "huyen", "thi", "tran",
-        "thanh", "pho", "tp", "so",
-    }
-    return {token for token in tokens if token not in ignored and (len(token) > 1 or token.isdigit())}
 
 
 def _showroom_location_tokens(showroom: dict) -> frozenset[str]:
@@ -36,7 +23,7 @@ def _showroom_location_tokens(showroom: dict) -> frozenset[str]:
     )
     cached = _SHOWROOM_TOKEN_CACHE.get(showroom_id)
     if cached is None or cached[0] != version:
-        tokens = frozenset(_normalize_location_tokens(f"{version[1]} {version[2]}"))
+        tokens = frozenset(normalize_location_tokens(f"{version[1]} {version[2]}"))
         _SHOWROOM_TOKEN_CACHE[showroom_id] = (version, tokens)
         return tokens
     return cached[1]
@@ -263,6 +250,6 @@ class CatalogService:
     def _address_match_score(address: str, showroom: dict) -> int:
         """Rank available showrooms by locality tokens without a remote geocoder."""
 
-        requested = _normalize_location_tokens(address)
+        requested = normalize_location_tokens(address)
         candidate = _showroom_location_tokens(showroom)
         return len(requested & candidate)
