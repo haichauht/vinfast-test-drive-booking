@@ -24,6 +24,14 @@ import { ApiError, apiPost } from './client'
 import { actionId } from './ids'
 
 const CONVERSATION_KEY = 'vinfast:booking-conversation-id'
+const PUBLIC_ACTION_ERROR_MESSAGES = {
+  SLOT_NO_LONGER_AVAILABLE: 'Khung giờ này đã qua hoặc không còn khả dụng, vui lòng chọn giờ khác.',
+  HOLD_EXPIRED: 'Thời gian giữ chỗ đã hết hạn, vui lòng chọn lại khung giờ.',
+  VEHICLE_NOT_READY: 'Xe demo hiện không sẵn sàng cho khung giờ này, vui lòng chọn lịch khác.',
+  VERSION_CONFLICT: 'Thông tin đặt lịch đã thay đổi, vui lòng tải lại và thử lại.',
+  INVALID_INPUT: 'Thông tin gửi lên chưa hợp lệ, vui lòng kiểm tra lại.',
+  AGENT_ACTION_FAILED: 'Agent không hoàn tất được thao tác đặt lịch.',
+}
 
 const readConversationId = () => {
   if (typeof window === 'undefined') return ''
@@ -51,8 +59,9 @@ const agentRequest = async ({ message, action, actionPayload = {}, context = {} 
 const agentAction = async (action, message, actionPayload) => {
   const result = await agentRequest({ message, action, actionPayload })
   if (result.action_error || result.action_data == null) {
-    throw new ApiError(result.action_error || result.response || 'Agent không hoàn tất được thao tác đặt lịch.', {
-      code: 'AGENT_ACTION_FAILED',
+    const code = result.action_error || 'AGENT_ACTION_FAILED'
+    throw new ApiError(PUBLIC_ACTION_ERROR_MESSAGES[code] || result.response || PUBLIC_ACTION_ERROR_MESSAGES.AGENT_ACTION_FAILED, {
+      code,
       retryable: true,
     })
   }
