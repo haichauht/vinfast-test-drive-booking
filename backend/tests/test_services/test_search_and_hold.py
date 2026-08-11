@@ -1,10 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from zoneinfo import ZoneInfo
 
 import pytest
-from src.services.booking import catalog as catalog_module
 from src.services.booking import BookingError
-from zoneinfo import ZoneInfo
+from src.services.booking import catalog as catalog_module
 
 from tests.conftest import FIXED_NOW
 

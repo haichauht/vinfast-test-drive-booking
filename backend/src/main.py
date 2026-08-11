@@ -9,9 +9,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from src.agents.graph import close_persistent_agent, initialize_persistent_agent
 from src.api.routes import router
 from src.api.site_routes import router as site_router
-from src.agents.graph import close_persistent_agent, initialize_persistent_agent
 from src.bootstrap import initialize_database
 from src.config import get_settings
 from src.dependencies import booking_service, database, zalo_client

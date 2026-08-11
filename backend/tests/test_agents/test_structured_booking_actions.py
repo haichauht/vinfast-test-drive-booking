@@ -79,3 +79,25 @@ async def test_structured_action_runs_through_the_compiled_graph_and_tool_node()
     assert result["action_tool"] == "hold_test_drive_slot"
     assert result["action_result"] is None
     assert result["action_error"]
+
+
+@pytest.mark.asyncio
+async def test_structured_action_strips_toolnode_exception_wrapper_from_user_error():
+    result = await booking_skill_node(
+        {
+            "messages": [
+                HumanMessage(content="Tôi xác nhận slot này"),
+                ToolMessage(
+                    content="Error: BookingError('Slot đã bắt đầu hoặc đã qua.')\n Please fix your mistakes.",
+                    tool_call_id="call-1",
+                    name="hold_test_drive_slot",
+                    status="error",
+                ),
+            ],
+            "requested_action": "hold_slot",
+            "action_payload": {"slot_id": "slot-1", "ui_action_id": "hold-1"},
+        }
+    )
+
+    assert result["response"] == "Slot đã bắt đầu hoặc đã qua."
+    assert result["action_error"] == "Slot đã bắt đầu hoặc đã qua."

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 
-from src.services.booking.common import iso, new_id, normalize_phone
+from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
 from src.services.booking.errors import BookingError
 
 _id = new_id
@@ -168,7 +167,7 @@ class ManagementService:
                 or new["rescheduled_from_booking_id"] != current_booking_id
             ):
                 raise BookingError("BOOKING_NOT_EDITABLE", "Cặp booking dời lịch không hợp lệ.")
-            if datetime.fromisoformat(new["hold_expires_at"]) <= self.now():
+            if parse_utc(new["hold_expires_at"]) <= parse_utc(self.now()):
                 raise BookingError("HOLD_EXPIRED", "Giữ chỗ lịch mới đã hết hạn.")
             new_slot = c.execute("SELECT * FROM test_drive_slots WHERE id=?", (new["slot_id"],)).fetchone()
             if new_slot["current_booking_id"] != new_booking_id:

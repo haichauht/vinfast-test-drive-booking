@@ -66,7 +66,7 @@ def test_update_draft_rejects_stale_version(booking_service, ready_draft_factory
 
 
 # test case of Chau + kiểm tra không được cập nhật draft sau khi hold hết hạn
-def test_update_draft_rejects_expired_hold(booking_service, catalog):
+def test_update_draft_rejects_expired_hold_and_durably_releases_slot(booking_service, booking_db, catalog):
     held = booking_service.hold_slot(catalog["slot_main"], "hold:expired-update")
     booking_service.now = lambda: FIXED_NOW + timedelta(minutes=16)
 
@@ -78,6 +78,12 @@ def test_update_draft_rejects_expired_hold(booking_service, catalog):
         )
 
     assert error.value.code == "HOLD_EXPIRED"
+    with booking_db.connect() as connection:
+        booking = connection.execute("SELECT status FROM bookings WHERE id=?", (held["booking_id"],)).fetchone()
+        slot = connection.execute("SELECT status,current_booking_id FROM test_drive_slots WHERE id=?", (catalog["slot_main"],)).fetchone()
+    assert booking["status"] == "expired"
+    assert slot["status"] == "available"
+    assert slot["current_booking_id"] is None
 
 
 # test case of Chau + kiểm tra xác nhận booking cập nhật đúng booking slot GPLX và notification

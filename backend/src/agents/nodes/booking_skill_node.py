@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -24,6 +25,7 @@ from src.services.llm import get_llm
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "booking_skill" / "SKILL.md"
 tool_logger = logging.getLogger("agent.tools")
 _SENSITIVE_TOOL_FIELDS = {"otp_code", "access_session_token", "zalo_bot_token", "api_key", "token"}
+_BOOKING_ERROR_MESSAGE_RE = re.compile(r"BookingError\((?:'|\")(?P<message>.*?)(?:'|\")\)")
 
 
 def _safe_tool_input(payload: dict[str, Any]) -> dict[str, Any]:
@@ -83,6 +85,19 @@ def _tool_call_input(messages: list, tool_message: ToolMessage) -> dict[str, Any
     return {}
 
 
+def _tool_error_message(decoded: object) -> str:
+    """Return a safe, conversational error instead of ToolNode's exception wrapper."""
+    if isinstance(decoded, dict):
+        error = decoded.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            return error["message"]
+    if isinstance(decoded, str):
+        match = _BOOKING_ERROR_MESSAGE_RE.search(decoded)
+        if match:
+            return match.group("message")
+    return "Thao tác chưa thể hoàn tất lúc này. Bạn vui lòng thử lại nhé."
+
+
 def _structured_tool_call_id(action: str, payload: dict[str, Any]) -> str:
     """Use a stable ID so a graph retry represents the same UI command."""
     canonical = json.dumps(
@@ -132,11 +147,7 @@ async def booking_skill_node(state: AgentState) -> dict:
                 tool.name,
                 "error" if failed else "success",
             )
-            response_text = (
-                "Không thể hoàn tất thao tác đặt lịch. Vui lòng kiểm tra lại hoặc thử lại."
-                if failed
-                else STRUCTURED_ACTION_RESPONSES[requested_action]
-            )
+            response_text = _tool_error_message(decoded) if failed else STRUCTURED_ACTION_RESPONSES[requested_action]
             response = AIMessage(content=response_text)
             return {
                 "messages": [response],
@@ -144,7 +155,7 @@ async def booking_skill_node(state: AgentState) -> dict:
                 "action_tool": tool.name,
                 "action_input": state.get("action_payload") or {},
                 "action_result": None if failed else decoded,
-                "action_error": str(decoded) if failed else "",
+                "action_error": response_text if failed else "",
             }
 
         action_payload = state.get("action_payload") or {}
