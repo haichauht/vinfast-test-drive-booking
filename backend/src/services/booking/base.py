@@ -2,11 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
-from datetime import datetime
-from typing import Any
 
-from src.database import Database
 from src.services.booking.common import iso, new_id, row_to_dict
 from src.services.booking.errors import BookingError
 
@@ -14,22 +10,6 @@ _id = new_id
 
 
 class BookingBase:
-    """Shared typed contract for the BookingService mixins.
-
-    Concrete implementations live in sibling mixins on ``BookingService``.
-    The declarations make those dependencies explicit to static type checkers.
-    """
-
-    db: Database
-    now: Callable[[], datetime]
-    map_provider: Any
-    messaging_provider: Any
-    otp_sender: Any
-    otp_secret: bytes
-    otp_max_attempts: int
-    otp_ttl_seconds: int
-    otp_resend_cooldown_seconds: int
-    access_session_ttl_seconds: int
     IDEMPOTENCY_PREFIXES = {
         "hold_slot": "hold:",
         "confirm_booking": "confirm:",
@@ -93,22 +73,3 @@ class BookingBase:
             "VALUES(?,?,?,'succeeded',?,?)",
             (action_id, operation, cls._request_hash(payload), json.dumps(response), created_at),
         )
-
-    # Implemented by sibling service mixins in the composed BookingService.
-    def _require_access(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError
-
-    def _draft(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError
-
-    def _create_jobs(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError
-
-    def _create_transactional_notification_jobs(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError
-
-    def _hash(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError
-
-    def hold_slot(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError

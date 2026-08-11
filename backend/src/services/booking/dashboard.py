@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from src.services.booking.base import BookingBase
 from src.services.booking.common import iso, new_id
 
 _id = new_id
 
 
-class DashboardService(BookingBase):
+class DashboardService:
     def get_dashboard(self, limit: int = 50) -> dict:
         """Return a read-only operational snapshot without OTP or raw license data."""
         with self.db.connect() as c:

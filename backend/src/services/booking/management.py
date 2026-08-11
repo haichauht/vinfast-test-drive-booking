@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import json
 
-from src.services.booking.base import BookingBase
 from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
 from src.services.booking.errors import BookingError
 
 _id = new_id
 
 
-class ManagementService(BookingBase):
+class ManagementService:
     @staticmethod
     def _delete_unreferenced_person(c, person_id: str | None) -> None:
         """Remove a transient clone only when no booking or notification needs it."""
