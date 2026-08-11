@@ -1,3 +1,18 @@
+/**
+ * components/Reveal.jsx — Hiệu ứng "trồi lên khi cuộn tới" dùng chung cho các trang marketing.
+ *
+ * Bọc quanh khối nội dung nào thì khối đó mờ + nhoè + nằm thấp hơn 56px, khi cuộn tới
+ * 88% chiều cao màn hình sẽ trồi lên rõ dần. Chỉ chạy MỘT LẦN (once: true), không lặp lại.
+ *
+ * Props: `as` đổi thẻ HTML (mặc định div) · `delay` trễ vài mili giây để tạo hiệu ứng
+ * so le giữa nhiều khối · `y` khoảng cách trồi lên.
+ *
+ * Thông số animation (duration 1.05s, ease power4.out) nằm ngay trong file này.
+ * Tôn trọng prefers-reduced-motion: máy bật giảm chuyển động thì hiện thẳng, không animate.
+ *
+ * Dùng ở: HomePage, CarDetailPage, AfterSalesPage, ChargingPage.
+ * LƯU Ý: hiệu ứng phức tạp hơn (parallax, pin, scrub) được viết riêng trong từng trang, không ở đây.
+ */
 import { useRef } from 'react'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'

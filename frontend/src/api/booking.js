@@ -1,6 +1,37 @@
+/**
+ * api/booking.js — Toàn bộ lệnh đặt lịch lái thử gửi lên backend, gồm cả tin nhắn cho ViVi.
+ *
+ * Điểm quan trọng: TẤT CẢ thao tác đặt lịch đều đi qua MỘT endpoint duy nhất
+ * POST /api/v1/chat của LangGraph Agent, phân biệt nhau bằng trường `action`.
+ * Có `action` thì backend gọi thẳng tool và BỎ QUA LLM — nên luồng đặt lịch vẫn chạy
+ * bình thường dù chưa có OpenAI key. Chỉ chat tự do (sendBookingMessage) mới cần key.
+ *
+ * Nhóm 1 — đặt lịch mới (qua /chat):
+ * - sendBookingMessage(): người dùng gõ tin nhắn tự do cho ViVi.
+ * - searchBookingOptions(): tìm showroom có đúng mẫu xe + khung giờ trống (theo địa chỉ hoặc GPS).
+ * - holdBookingSlot(): giữ chỗ một khung giờ (backend trả hạn giữ, UI đếm ngược).
+ * - saveBookingCustomer(): lưu tên/điện thoại/email người đặt và người lái.
+ * - confirmHeldBooking(): chốt đặt lịch, trả về mã lịch.
+ *
+ * Nhóm 2 — tra cứu/sửa/huỷ lịch đã đặt (qua POST /api/v1/demo/action):
+ * - requestBookingAccess() → verifyBookingAccess(): xin và xác thực OTP gửi qua Zalo.
+ * - getVerifiedBooking() · updateVerifiedBooking() · cancelVerifiedBooking().
+ * - holdVerifiedReschedule() → confirmVerifiedReschedule(): đổi sang khung giờ khác.
+ *
+ * conversation_id được giữ trong sessionStorage để ViVi nhớ mạch hội thoại trong cùng tab.
+ */
 import { ApiError, apiPost } from './client'
+import { actionId } from './ids'
 
 const CONVERSATION_KEY = 'vinfast:booking-conversation-id'
+const PUBLIC_ACTION_ERROR_MESSAGES = {
+  SLOT_NO_LONGER_AVAILABLE: 'Khung giờ này đã qua hoặc không còn khả dụng, vui lòng chọn giờ khác.',
+  HOLD_EXPIRED: 'Thời gian giữ chỗ đã hết hạn, vui lòng chọn lại khung giờ.',
+  VEHICLE_NOT_READY: 'Xe demo hiện không sẵn sàng cho khung giờ này, vui lòng chọn lịch khác.',
+  VERSION_CONFLICT: 'Thông tin đặt lịch đã thay đổi, vui lòng tải lại và thử lại.',
+  INVALID_INPUT: 'Thông tin gửi lên chưa hợp lệ, vui lòng kiểm tra lại.',
+  AGENT_ACTION_FAILED: 'Agent không hoàn tất được thao tác đặt lịch.',
+}
 
 const readConversationId = () => {
   if (typeof window === 'undefined') return ''
@@ -28,8 +59,9 @@ const agentRequest = async ({ message, action, actionPayload = {}, context = {} 
 const agentAction = async (action, message, actionPayload) => {
   const result = await agentRequest({ message, action, actionPayload })
   if (result.action_error || result.action_data == null) {
-    throw new ApiError(result.action_error || result.response || 'Agent không hoàn tất được thao tác đặt lịch.', {
-      code: 'AGENT_ACTION_FAILED',
+    const code = result.action_error || 'AGENT_ACTION_FAILED'
+    throw new ApiError(PUBLIC_ACTION_ERROR_MESSAGES[code] || result.response || PUBLIC_ACTION_ERROR_MESSAGES.AGENT_ACTION_FAILED, {
+      code,
       retryable: true,
     })
   }
@@ -56,11 +88,13 @@ export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, 
     address,
     latitude,
     longitude,
-    limit: 24,
+    // The weekly calendar needs enough inventory to expose the following week
+    // without inventing client-side availability. Backend currently caps this at 30.
+    limit: 30,
   },
 )
 
-export const holdBookingSlot = (slotId, uiActionId = `hold:${crypto.randomUUID()}`) => agentAction(
+export const holdBookingSlot = (slotId, uiActionId = actionId('hold')) => agentAction(
   'hold_slot',
   'Tôi xác nhận chọn khung giờ này. Hãy giữ chỗ giúp tôi.',
   {
@@ -92,7 +126,7 @@ export const saveBookingCustomer = ({ bookingId, version, recipient, person }) =
   },
 )
 
-export const confirmHeldBooking = ({ bookingId, version, uiActionId = `confirm:${crypto.randomUUID()}` }) => agentAction(
+export const confirmHeldBooking = ({ bookingId, version, uiActionId = actionId('confirm') }) => agentAction(
   'confirm_booking',
   'Tôi đã kiểm tra thông tin và xác nhận đặt lịch lái thử.',
   {
@@ -139,7 +173,7 @@ export const updateVerifiedBooking = ({ bookingId, accessToken, bookerPatch, dri
 export const cancelVerifiedBooking = ({ bookingId, accessToken, reason = '' }) => bookingManagementAction('cancel_booking', {
   booking_id: bookingId,
   access_session_token: accessToken,
-  ui_action_id: `cancel:${crypto.randomUUID()}`,
+  ui_action_id: actionId('cancel'),
   reason,
 })
 
@@ -147,12 +181,12 @@ export const holdVerifiedReschedule = ({ bookingId, slotId, accessToken }) => bo
   current_booking_id: bookingId,
   new_slot_id: slotId,
   access_session_token: accessToken,
-  ui_action_id: `reschedule-hold:${crypto.randomUUID()}`,
+  ui_action_id: actionId('reschedule-hold'),
 })
 
 export const confirmVerifiedReschedule = ({ bookingId, newBookingId, accessToken }) => bookingManagementAction('confirm_reschedule', {
   current_booking_id: bookingId,
   new_booking_id: newBookingId,
   access_session_token: accessToken,
-  ui_action_id: `reschedule-confirm:${crypto.randomUUID()}`,
+  ui_action_id: actionId('reschedule-confirm'),
 })

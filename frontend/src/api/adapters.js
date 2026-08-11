@@ -1,3 +1,18 @@
+/**
+ * api/adapters.js — Phiên dịch dữ liệu backend sang đúng tên trường mà giao diện đang dùng.
+ *
+ * Lý do tồn tại: backend trả `bodyType`, `displayPrice`, `thumbnail.url`… còn các trang được
+ * viết từ trước với `body`, `price`, `hero`. File này ngồi giữa để KHÔNG phải sửa lại JSX.
+ * Backend đổi tên trường thì chỉ cần sửa ở đây, không cần đụng vào các trang.
+ *
+ * Chứa gì:
+ * - mediaView(): gom một ảnh thành { src, alt, focalPoint, aspectRatio, fit } cho <SmartImage>.
+ * - vehicleSummaryToCar(): dữ liệu xe rút gọn → thẻ xe ở trang chủ, menu, bảng đổi xe.
+ * - vehicleDetailToCar(): thêm mô tả, brochure, bảng màu, chapters, gallery, video giới thiệu,
+ *   ảnh motion (ảnh tách nền dùng cho animation xe chạy ở trang chi tiết).
+ *
+ * Sửa ở đây khi: giao diện thiếu một trường dữ liệu, hoặc backend đổi tên trường trong API.
+ */
 import { vehicleImage } from '../media/assets'
 
 const vehicleMediaPrefix = '/media/vehicle-media/'

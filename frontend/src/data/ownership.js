@@ -1,3 +1,20 @@
+/**
+ * data/ownership.js — Ảnh và số liệu chính sách cho 2 trang Hậu mãi và Pin & trạm sạc.
+ *
+ * Nội dung được gõ lại từ brochure chính thức của VinFast, chưa lấy từ CMS.
+ *
+ * Chứa gì:
+ * - ownershipMedia: bảng tra ảnh — hero 2 trang, ảnh tư vấn, 4 loại trụ sạc (250/150/60/30 kW),
+ *   sạc treo tường, sạc di động, và 2 link PDF brochure (bảo hành, pin ô tô).
+ * - highVoltageWarranty: bảng thời hạn bảo hành pin cao áp (10 năm/200.000 km · 8 năm/160.000 km
+ *   · 7 năm/160.000 km) kèm danh sách mẫu xe áp dụng.
+ * - chargingUnits: danh mục 4 trụ sạc với công suất, số cổng, dải điện áp, chuẩn IP, nhiệt độ.
+ *
+ * ⚠️ Hai mảng cuối hiện đã bị backend GHI ĐÈ khi API trả dữ liệu:
+ *   AfterSalesPage dùng content.warrantyTables, ChargingPage dùng content.chargingUnits.
+ *   Sửa số liệu ở file này sẽ KHÔNG đổi trên web nếu backend đang trả về dữ liệu tương ứng.
+ *   Phần ảnh (ownershipMedia) thì vẫn dùng thật.
+ */
 import { brochureByKeyword, commonMedia, vehicleAssetByName } from '../media/assets'
 
 const chargingImage = (fileName) => vehicleAssetByName('Trạm sạc', fileName)
@@ -12,10 +29,12 @@ export const ownershipMedia = {
   chargingBrochure: brochureByKeyword('pin ô tô'),
   chargingStationDay: chargingImage('pin-tramsac-5_1660273699.png.webp'),
   chargingStationNight: chargingImage('pin-tramsac-6_1660273722.png.webp'),
-  charger250: chargingImage('pin-tramsac-7_1660273744.png.webp'),
-  charger150: chargingImage('pin-tramsac-8_1660273763.png.webp'),
-  charger60: chargingImage('img_1705981400.png.webp'),
-  charger30: chargingImage('pin-tramsac-9_1660273785.png.webp'),
+  // Product cutouts v2: 1.5K PNG có alpha thật. Giữ file brochure cũ làm
+  // nguồn tham chiếu, nhưng không dùng trực tiếp vì chỉ cao 180 px và có nền.
+  charger250: chargingImage('charger-250-cutout-v2.png'),
+  charger150: chargingImage('charger-150-cutout-v2.png'),
+  charger60: chargingImage('charger-60-cutout-v2.png'),
+  charger30: chargingImage('charger-30-cutout-v2.png'),
   wallCharger: chargingImage('pin-tramsac-11_1660273822.png.webp'),
   portableCharger: chargingImage('pin-tramsac-12_1660273840.png.webp'),
   portableChargerAlt: chargingImage('pin-tramsac-13_1660273860.png.webp'),
