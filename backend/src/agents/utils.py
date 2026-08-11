@@ -1,13 +1,11 @@
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
 
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_prompt.md"
 MAX_LLM_HISTORY_MESSAGES = 24
-
-
-from datetime import datetime
-
 
 def window_messages(messages: list[AnyMessage], limit: int = MAX_LLM_HISTORY_MESSAGES) -> list[AnyMessage]:
     """Keep recent conversation turns without separating tool calls from results."""
@@ -44,7 +42,7 @@ def get_system_prompt() -> str:
     try:
         with open(SYSTEM_PROMPT_PATH, encoding="utf-8") as f:
             content = f.read()
-            WEEKDAYS_VI = {
+            weekdays_vi = {
                 0: "Thứ 2",
                 1: "Thứ 3",
                 2: "Thứ 4",
@@ -53,8 +51,8 @@ def get_system_prompt() -> str:
                 5: "Thứ 7",
                 6: "Chủ nhật"
             }
-            now = datetime.now()
-            weekday_str = WEEKDAYS_VI[now.weekday()]
+            now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
+            weekday_str = weekdays_vi[now.weekday()]
             date_str = now.strftime("%Y-%m-%d %H:%M:%S")
             time_context = f"\n\n--- CURRENT TIME CONTEXT ---\nToday is: {weekday_str}, {date_str} (Vietnam Local Time)"
             return content + time_context

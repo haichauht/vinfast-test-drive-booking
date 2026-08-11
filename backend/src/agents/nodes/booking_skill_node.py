@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -24,6 +25,7 @@ from src.services.llm import get_llm
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "booking_skill" / "SKILL.md"
 tool_logger = logging.getLogger("agent.tools")
 _SENSITIVE_TOOL_FIELDS = {"otp_code", "access_session_token", "zalo_bot_token", "api_key", "token"}
+_BOOKING_ERROR_MESSAGE_RE = re.compile(r"BookingError\((?:'|\")(?P<message>.*?)(?:'|\")\)")
 
 
 def _safe_tool_input(payload: dict[str, Any]) -> dict[str, Any]:
@@ -97,7 +99,7 @@ def _public_tool_error(decoded: object) -> tuple[str, str]:
 
     if code in PUBLIC_TOOL_ERRORS:
         return code, PUBLIC_TOOL_ERRORS[code]
-    return "AGENT_ACTION_FAILED", DEFAULT_PUBLIC_TOOL_ERROR
+    return "AGENT_ACTION_FAILED", _tool_error_message(decoded)
 
 
 def _tool_call_input(messages: list, tool_message: ToolMessage) -> dict[str, Any]:
@@ -110,6 +112,19 @@ def _tool_call_input(messages: list, tool_message: ToolMessage) -> dict[str, Any
                 args = tool_call.get("args")
                 return args if isinstance(args, dict) else {}
     return {}
+
+
+def _tool_error_message(decoded: object) -> str:
+    """Return a safe, conversational error instead of ToolNode's exception wrapper."""
+    if isinstance(decoded, dict):
+        error = decoded.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            return error["message"]
+    if isinstance(decoded, str):
+        match = _BOOKING_ERROR_MESSAGE_RE.search(decoded)
+        if match:
+            return match.group("message")
+    return "Thao tác chưa thể hoàn tất lúc này. Bạn vui lòng thử lại nhé."
 
 
 def _structured_tool_call_id(action: str, payload: dict[str, Any]) -> str:

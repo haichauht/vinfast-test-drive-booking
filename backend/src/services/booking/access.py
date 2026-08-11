@@ -4,10 +4,10 @@ import hashlib
 import hmac
 import json
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from src.database.rows import DbRow
-from src.services.booking.common import iso, new_id, normalize_phone
+from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
 from src.services.booking.errors import BookingError
 
 _id = new_id
@@ -71,7 +71,7 @@ class AccessService:
                 (booking["id"], destination_hash),
             ).fetchone()
             if latest:
-                elapsed = (self.now() - datetime.fromisoformat(latest["created_at"])).total_seconds()
+                elapsed = (parse_utc(self.now()) - parse_utc(latest["created_at"])).total_seconds()
                 if elapsed < self.otp_resend_cooldown_seconds:
                     remaining = max(1, int(self.otp_resend_cooldown_seconds - elapsed))
                     raise BookingError("OTP_RATE_LIMITED", f"Vui lòng chờ {remaining} giây trước khi gửi lại OTP.", retryable=True)
@@ -143,7 +143,7 @@ class AccessService:
                 raise BookingError(
                     "OTP_LOCKED" if ch["status"] == "locked" else "OTP_INVALID", "OTP không còn dùng được."
                 )
-            if datetime.fromisoformat(ch["expires_at"]) <= self.now():
+            if parse_utc(ch["expires_at"]) <= parse_utc(self.now()):
                 c.execute("UPDATE otp_challenges SET status='expired' WHERE id=?", (challenge_id,))
                 raise BookingError("OTP_EXPIRED", "OTP đã hết hạn.")
             salt, digest = ch["code_hash"].split(":", 1)
@@ -199,7 +199,7 @@ class AccessService:
                 "SELECT * FROM booking_access_sessions WHERE token_hash=?",
                 (self._hash(access_session_token, "session"),),
             ).fetchone()
-            if not session or session["revoked_at"] or datetime.fromisoformat(session["expires_at"]) <= self.now():
+            if not session or session["revoked_at"] or parse_utc(session["expires_at"]) <= parse_utc(self.now()):
                 raise BookingError("ACCESS_SESSION_EXPIRED", "Phiên truy cập đã hết hạn.")
             if "read_booking" not in json.loads(session["permissions_json"]):
                 raise BookingError("ACCESS_DENIED", "Không có quyền đọc booking.")
@@ -240,7 +240,7 @@ class AccessService:
     def list_bookings(self, access_session_token: str) -> list[dict]:
         with self.db.connect() as c:
             session = c.execute("SELECT * FROM booking_access_sessions WHERE token_hash=?", (self._hash(access_session_token, "session"),)).fetchone()
-            if not session or session["revoked_at"] or datetime.fromisoformat(session["expires_at"]) <= self.now():
+            if not session or session["revoked_at"] or parse_utc(session["expires_at"]) <= parse_utc(self.now()):
                 raise BookingError("ACCESS_SESSION_EXPIRED", "Phiên truy cập đã hết hạn.")
             anchor = c.execute("SELECT * FROM bookings WHERE id=?", (session["booking_id"],)).fetchone()
             ids = [anchor["booker_person_id"], anchor["driver_person_id"]]
@@ -269,7 +269,7 @@ class AccessService:
         session = c.execute(
             "SELECT * FROM booking_access_sessions WHERE token_hash=?", (self._hash(token, "session"),)
         ).fetchone()
-        if not session or session["revoked_at"] or datetime.fromisoformat(session["expires_at"]) <= self.now():
+        if not session or session["revoked_at"] or parse_utc(session["expires_at"]) <= parse_utc(self.now()):
             raise BookingError("ACCESS_SESSION_EXPIRED", "Phiên truy cập đã hết hạn.")
         anchor = c.execute("SELECT * FROM bookings WHERE id=?", (session["booking_id"],)).fetchone()
         if not anchor or not self._same_phone_owner(c, anchor, booking_id):

@@ -1,10 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from zoneinfo import ZoneInfo
 
 import pytest
-from src.services.booking import catalog as catalog_module
 from src.services.booking import BookingError
-from zoneinfo import ZoneInfo
+from src.services.booking import catalog as catalog_module
 
 from tests.conftest import FIXED_NOW
 
@@ -83,6 +83,31 @@ def test_search_slots_returns_future_visible_slots(booking_service, catalog):
     assert all(slot["start_at"] > FIXED_NOW.isoformat() for slot in result["slots"])
     assert catalog["slot_blocked"] not in {slot["id"] for slot in result["slots"]}
     assert catalog["slot_past"] not in {slot["id"] for slot in result["slots"]}
+
+
+def test_search_slots_excludes_past_slots_with_a_positive_utc_offset(booking_service, booking_db, catalog):
+    """A +07:00 timestamp must be compared as an instant, not as text against UTC."""
+    with booking_db.transaction(immediate=True) as connection:
+        connection.execute(
+            "UPDATE test_drive_slots SET start_at=?, end_at=? WHERE id=?",
+            (
+                "2026-08-03T08:30:00+07:00",  # 01:30 UTC: already past FIXED_NOW (02:00 UTC)
+                "2026-08-03T10:00:00+07:00",
+                catalog["slot_past"],
+            ),
+        )
+
+    result = booking_service.search_options(vehicle_model="VF6", showroom_id=catalog["showroom_q7"], limit=30)
+
+    assert catalog["slot_past"] not in {slot["id"] for slot in result["slots"]}
+
+
+def test_search_slots_orders_by_preferred_time_in_vietnam_timezone(booking_service, catalog):
+    result = booking_service.search_options(
+        vehicle_model="VF6", showroom_id=catalog["showroom_q7"], preferred_time="19:00", limit=10
+    )
+
+    assert result["slots"][0]["id"] == catalog["slot_later"]
 
 
 # test case of Chau + kiểm tra từ chối giờ mong muốn sai định dạng

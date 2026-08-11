@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from src.services.booking.common import iso
+from src.services.booking.common import iso, parse_utc
 from src.services.booking.errors import BookingError
 
 
@@ -145,6 +145,4 @@ class StaffOperationService:
 
     @staticmethod
     def _parse_time(value):
-        from datetime import datetime
-
-        return datetime.fromisoformat(value)
+        return parse_utc(value)
