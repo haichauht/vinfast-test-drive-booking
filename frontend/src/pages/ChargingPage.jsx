@@ -39,7 +39,7 @@ import { AppShell } from '../components/AppShell'
 import { ChargingStation3DExperience } from '../components/Vehicle3DExperience'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
-import { ownershipMedia } from '../data/ownership'
+import { chargingUnits as fallbackChargingUnits, ownershipMedia } from '../data/ownership'
 import { usePageContent } from '../hooks/useSiteData'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
@@ -68,11 +68,20 @@ const overstayFees = [
   { time: 'Từ phút 121', price: '4.000 đ/phút' },
 ]
 
+const fallbackChargingUnitByPower = new Map(
+  fallbackChargingUnits.map((unit) => [unit.power, unit]),
+)
+
 export function ChargingPage() {
   const { data: chargingContent } = usePageContent('charging')
-  const displayedChargingUnits = (chargingContent?.chargingUnits || []).map((unit) => ({
+  const contentChargingUnits = chargingContent?.chargingUnits?.length
+    ? chargingContent.chargingUnits
+    : fallbackChargingUnits
+  const displayedChargingUnits = contentChargingUnits.map((unit) => ({
     ...unit,
-    image: unit.image?.url || '',
+    // Thông số tiếp tục lấy từ API; product cutout alpha do frontend sở hữu để
+    // không phụ thuộc việc media origin đã publish bản PNG mới hay chưa.
+    image: fallbackChargingUnitByPower.get(unit.power)?.image || unit.image?.url || unit.image || '',
   }))
   const root = useRef(null)
 
@@ -116,6 +125,43 @@ export function ChargingPage() {
         )
       })
 
+      gsap.utils.toArray('.charger-card__visual img').forEach((image) => {
+        gsap.fromTo(
+          image,
+          { scale: 0.84, opacity: 0.38 },
+          {
+            scale: 1,
+            opacity: 1,
+            ease: 'none',
+            scrollTrigger: {
+              trigger: image,
+              start: 'top 92%',
+              end: 'center 58%',
+              scrub: 0.75,
+            },
+          },
+        )
+      })
+
+      // Desktop: giữ phần dẫn chuyện đứng yên bằng ScrollTrigger trong khi bốn
+      // cấu hình trụ đi qua. Mobile/tablet tiếp tục dùng flow tự nhiên.
+      const media = gsap.matchMedia()
+      media.add('(min-width: 981px)', () => {
+        const intro = root.current?.querySelector('.charger-lineup__intro')
+        const cards = root.current?.querySelector('.charger-lineup__cards')
+        if (!intro || !cards) return undefined
+        const pin = ScrollTrigger.create({
+          trigger: cards,
+          start: 'top top+=158',
+          end: 'bottom bottom-=72',
+          pin: intro,
+          pinSpacing: false,
+          invalidateOnRefresh: true,
+        })
+        return () => pin.kill()
+      })
+
+      return () => media.revert()
     },
     { scope: root },
   )
@@ -243,10 +289,9 @@ export function ChargingPage() {
               )}
             </div>
             <div className="charger-lineup__cards">
-              {displayedChargingUnits.map((unit, index) => (
+              {displayedChargingUnits.map((unit) => (
                 <article className="charger-card" key={unit.power}>
                   <div className="charger-card__visual">
-                    <span>0{index + 1}</span>
                     <SmartImage src={unit.image} alt={`Trụ ${unit.name} ${unit.power} VinFast`} />
                   </div>
                   <div className="charger-card__copy">
