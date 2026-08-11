@@ -73,6 +73,12 @@ PDF đang nhúng trong bundle qua `src/media/assets.js`. Contract thay thế đ�
 Draco còn 3,0 MB. Cấu hình góc camera ở `src/data/vehicle3d.js`. Khi backend phục vụ được model,
 trả `model3dUrl` + `model3dPreset` đã whitelist; **không trả góc camera, CSS hay JavaScript**.
 
+Nguồn VF 5 nhận ngày 11/08/2026 chưa được đưa vào runtime: file `_phys.gltf` là mesh va chạm
+không có material/texture, còn model chính phụ thuộc extension riêng `ENS_buffer` và
+`ENS_material` của Enscape. Cả hai buffer đều đã mã hoá và không phải glTF/GLB web tiêu chuẩn.
+Cần xuất lại VF 5 thành `.glb` PBR tiêu chuẩn (không có `ENS_*` trong `extensionsRequired`), kèm
+quyền sử dụng/credit, rồi mới chạy pipeline Draco và thêm `vf5` vào `vehicle3dModels`.
+
 **P2 — Streaming ViVi.** `sendBookingMessage` chờ trọn câu trả lời. Khi backend mở streaming,
 chỉ cần đổi hàm này, không phải đụng vào UI.
 
@@ -217,6 +223,23 @@ Ví dụ tối thiểu:
 }
 ```
 
+### Contract bộ chọn màu dùng chung
+
+`src/components/VehicleColorConfigurator.jsx` là implementation duy nhất cho mọi trang model;
+backend không tạo markup riêng theo từng xe. Payload hiện tại tiếp tục dùng `name`, `hex` và
+`image.url`. Các field dưới đây đều optional và tương thích ngược:
+
+- `group`: `standard`, `premium`, `advanced`, `special`, `two-tone` (hoặc key CMS ổn định).
+- `groupLabel`: nhãn tiếng Việt do CMS kiểm soát khi key không nằm trong whitelist frontend.
+- `secondaryHex` hoặc `hexes: [primary, secondary]`: chỉ dùng để vẽ swatch hai tông; ảnh xe vẫn
+  phải là asset thật của đúng cấu hình màu, frontend không dùng filter để nhuộm xe.
+- Thiếu `group` thì frontend render một dải màu duy nhất, không tự bịa nhóm. Thiếu `image.url`
+  thì màu đó bị loại khỏi selector; còn dưới hai ảnh hợp lệ thì toàn section tự ẩn.
+
+VF9 đang trỏ tới `VF9/CE*-cutout.webp`: đây là bản dẫn xuất giữ nguyên thân xe/bóng đổ và loại
+sàn trắng opaque của nguồn cũ. `backend/scripts/publish_site_media.py` copy nguyên thư mục
+`vehicle-media`, nên production/CDN phải publish đúng các key cutout này trước khi bật revision mới.
+
 ### Quy tắc media phục vụ animation
 
 - `studioImageMode` chỉ nhận `cutout`, `plate`, `photo`.
@@ -286,7 +309,9 @@ vô tình gắn lại mode `photo` trong những lần cập nhật sau.
 
 ### Contract nội dung hậu mãi, pin và trạm sạc
 
-Hai route `/after-sales` và `/charging` đang đọc fixture có nguồn từ brochure trong `src/data/ownership.js`. Khi nối CMS/API, không trả một khối HTML tự do. Backend nên trả các block có cấu trúc, ví dụ:
+Hai route `/after-sales` và `/charging` đọc dữ liệu có cấu trúc từ content API và dùng
+`src/data/ownership.js` làm fallback media/nội dung có nguồn từ brochure. Khi nối CMS/API,
+không trả một khối HTML tự do. Backend nên trả các block có cấu trúc, ví dụ:
 
 ```json
 {
@@ -323,6 +348,14 @@ Quy tắc bắt buộc:
 - Chính sách thuê pin phải có trạng thái `legacy_existing_customers_only` để UI không hiển thị như dịch vụ mở mới.
 - Thời hạn bảo hành pin trả theo `vehicleIds`, `durationMonths`, `distanceKm` và `whicheverComesFirst`; frontend chịu trách nhiệm format, không parse chuỗi pháp lý.
 - Danh mục trụ sạc trả `powerKw`, số cổng, điện áp vào/ra, chuẩn bảo vệ, nhiệt độ vận hành và media có `alt`, `width`, `height`, `revision`.
+- Bốn product cutout trụ sạc đã được dựng lại tại
+  `src/media/local/vehicle-media/Trạm sạc/charger-{250|150|60|30}-cutout-v2.png`.
+  Các file là PNG 1.4K–1.8K có alpha thật; không dùng lại ảnh brochure cao 180 px hoặc
+  composite nền xanh/trắng. `ChargingPage` ưu tiên cutout bundle theo `power` nhưng vẫn lấy
+  tên/thông số từ API, nên media origin chưa publish không làm trang quay lại ảnh mờ.
+- Khi publish backend, dùng các key `/media/content/charging/{250|150|60|30}kw.png` trong
+  `backend/scripts/publish_site_media.py`. Extension và `Content-Type` phải là PNG; không đổi
+  tên thành `.webp` nếu payload bên trong vẫn là PNG.
 - Không cho CMS gửi selector GSAP hoặc JavaScript. CMS chỉ chọn animation preset allowlist: `hero-scale`, `stagger-cards`, `pinned-chapter`, `static`.
 - Khi policy hết hiệu lực hoặc chưa publish, API phải trả trạng thái rõ ràng; frontend giữ bản bundled fallback kèm cảnh báo nguồn, không tự ghép dữ liệu cũ và mới.
 
@@ -384,9 +417,14 @@ Frontend hiện render GLB thật cho `vf3`, `vf9` và sân khấu trạm sạc 
 
 - CDN phải hỗ trợ `Range`, cache dài hạn theo URL có revision/hash, đúng
   `Content-Type: model/gltf-binary` và CORS cho origin frontend.
-- `posterUrl` là bắt buộc. Model VF9 hiện khoảng 41 MB, VF3 khoảng 15 MB và trạm sạc khoảng
-  93 MB; poster giữ bố cục ổn định trong lúc tải, còn GLB được browser tải khi section tương
-  ứng đi vào viewport hoặc prefetch sau khi user chọn xe trong booking.
+- `posterUrl` là bắt buộc khi model chuyển lên CDN. Runtime bundle hiện dùng các bản Draco:
+  VF9 khoảng 1,3 MB, VF3 khoảng 915 KB và trạm sạc khoảng 772 KB; file nguồn dựng có thể lớn
+  hơn nhiều nhưng không được đưa thẳng vào bundle production. Poster giữ bố cục ổn định trong
+  lúc tải, còn GLB được browser tải khi section tương ứng đi vào viewport hoặc prefetch sau
+  khi user chọn xe trong booking.
+- Sân khấu trạm sạc chỉ render **một viewport tương tác** từ một URL GLB. Camera toàn cảnh,
+  giới hạn zoom và nút reset thuộc preset frontend; backend không cần trả nhiều model hoặc
+  nhiều URL cho cùng một asset.
 - Ở màn booking thành công, frontend thay ảnh studio bằng GLB tương tác cho đúng hai mã
   `vf3` và `vf9`; kích thước stage không đổi. Nếu model lỗi hoặc thiết bị không hỗ trợ,
   component tự quay về `studioImage` alpha, không làm mất phiếu xác nhận.
@@ -397,9 +435,10 @@ Frontend hiện render GLB thật cho `vf3`, `vf9` và sân khấu trạm sạc 
 - Hai GLB VF3/VF9 hiện đã được kiểm tra trực tiếp: `0deg` là đầu/lưới tản nhiệt,
   `-90deg` là mặt bên với mũi xe hướng sang phải và `180deg` là đuôi/cốp. Cinematic
   booking phải dùng lần lượt `sideOrbit` rồi `rearOrbit`; không hoán đổi hai góc này.
-- Preset `drive-through-3d` chạy ngang **1,9 giây** và chỉ bắt đầu khi section đã nằm rõ trong
-  viewport. VF9 hiện có preset sơn đen áp trực tiếp lên material thân `Car_Paint.002`; backend
-  không cần và không được gửi tên material hoặc thông số PBR tùy ý.
+- Preset `drive-through-3d` chạy ngang **2,55 giây** và chỉ bắt đầu khi section đã nằm rõ
+  trong viewport. VF9 hiện có preset sơn đen áp trực tiếp lên material runtime
+  `PaletteMaterial001`; backend không cần và không được gửi tên material hoặc thông số PBR
+  tùy ý.
 - Giữ attribution/license trong payload và giao diện. Nếu model mới thay đổi license hoặc
   tác giả, backend phải publish revision mới.
 
@@ -627,3 +666,97 @@ Thuộc tính chung chỉ gồm `eventId`, `anonymousSessionId`, `draftId`, `veh
 - [ ] Giá sạc, phí lưu trụ, số cổng sạc và thời hạn bảo hành hiển thị đúng `revision/effectiveAt`; thuê pin luôn gắn nhãn khách hàng hiện hữu.
 - [ ] Analytics và log không chứa PII/raw prompt.
 - [ ] Mobile, keyboard, screen reader và timezone `Asia/Ho_Chi_Minh` được kiểm tra.
+
+## 13. Cinematic xác nhận lịch — ranh giới merge an toàn
+
+Phần motion sau khi confirm được cô lập tại:
+
+- `src/components/BookingSuccessCinematic.jsx`: timeline GSAP, camera VF3/VF9,
+  particle khói lốp và fallback ảnh studio.
+- `src/components/BookingSuccessCinematic.css`: sân khấu full-screen `#000000` và
+  các layer chỉ phục vụ chuyển động.
+- `BookingPage.jsx`: chỉ import component và mount khi `successCinematic === true`.
+
+Backend không cần truyền preset motion và không cần đổi response. Contract giữ nguyên:
+
+1. `confirmHeldBooking()` phải thành công và trả `booking_code` trước.
+2. Frontend mới bật `successCinematic`.
+3. `onComplete` chỉ chuyển UI sang stage `success`; không gọi API lần hai.
+4. Nếu GLB VF3/VF9 lỗi hoặc quá 6 giây chưa sẵn sàng, cinematic dùng ảnh studio rồi
+   vẫn mở phiếu thành công. Booking không phụ thuộc model 3D.
+
+Các phase `blackout`, `brand-prelude`, `side-approach`, `drift`, `rear-retreat`,
+`confirmed` được đặt trên `data-phase` của `.booking-film` để QA/automation quan sát
+mà không đọc GSAP internals. `brand-prelude` luôn hoàn tất trước label
+`vehicle-approach`: wordmark VinFast hiện tĩnh, chính diện trên nền đen rồi biến mất
+trước khi xe xuất hiện; không xoay hoặc lật logo. Timing và preset camera hoàn toàn do
+frontend sở hữu; backend không cần bổ sung field vào booking response.
+
+Motion mới không thêm package; tiếp tục dùng `gsap`, `@gsap/react` và
+`@google/model-viewer` đã có. Khi merge nhánh backend, ưu tiên giữ nguyên khối
+`submitBooking()` hiện tại và chỉ resolve import component nếu `BookingPage.jsx` có conflict.
+
+Ở trang chi tiết VF3/VF9, `Vehicle3DExperience` dùng sân khấu đen tuyệt đối, poster
+dark và fly-by 2,55 giây. Đây là presentation-only; không liên quan dữ liệu xe từ API.
+Trang trạm sạc giữ theme/model viewer riêng, không dùng override màu đen của xe.
+
+### Bất biến hình học và vật liệu
+
+- `.booking-film__rig` sở hữu việc căn giữa viewport và tuyệt đối không được animate.
+- GSAP chỉ di chuyển `.booking-film__vehicle`; điểm phanh/drift cuối luôn là `x: 0`.
+- Khói/vệt lốp phải lấy điểm phát từ `getBoundingClientRect()` của vehicle sau transform,
+  không dùng phần trăm viewport cố định.
+- GLB VF9 đã qua pipeline texture palette. Mesh sơn tên
+  `Plane.014_Car Paint.002_0`, nhưng material mà model-viewer expose là
+  `PaletteMaterial001`. Cấu hình paint phải trỏ tới material này và bỏ base-color
+  palette texture trước khi đặt màu để VF9 hiển thị đen trung tính, không còn ánh đỏ.
+
+## 14. TODO backend sau khi merge PR này
+
+Danh sách này là hàng đợi triển khai ngắn gọn cho backend. Contract chi tiết và các
+trạng thái lỗi vẫn lấy theo các mục phía trên; không đưa timing GSAP, selector CSS hoặc
+markup presentation vào response API.
+
+### P0 — catalogue, media và booking thật
+
+- [ ] **Catalogue màu xe:** giữ thứ tự màu ổn định theo `sortOrder`; trả `name`, `hex`
+  và `image.url` cho từng cấu hình. Khi có phân nhóm, trả đồng bộ `group`/`groupLabel`
+  cho cả danh sách; màu hai tông dùng `secondaryHex` hoặc `hexes`, không yêu cầu
+  frontend nhuộm ảnh bằng CSS filter.
+- [ ] **Publish asset VF9:** đưa đủ `VF9/CE*-cutout.webp` lên CDN trước khi đổi revision
+  catalogue. Kiểm tra response có alpha thật, `Content-Type: image/webp`, URL không 404
+  và mỗi màu trỏ đúng ảnh xe tương ứng.
+- [ ] **Publish asset trạm sạc:** giữ các key
+  `/media/content/charging/{250|150|60|30}kw.png`, alpha PNG và model GLB duy nhất theo
+  contract tại mục 5; không trả hai record 3D trùng nhau.
+- [ ] **Catalogue model 3D:** VF3, VF5, VF9 và trạm sạc cần URL ổn định kèm
+  `posterUrl`, `revision`, checksum/credit; server hỗ trợ MIME, CORS và byte range.
+- [ ] **Booking inventory:** endpoint showroom/slot phải lọc theo `vehicleId` trước
+  khoảng cách, trả `inventorySlotId`, timezone và trạng thái còn chỗ. Frontend không
+  tự sinh hoặc coi lịch minh họa là slot thật.
+- [ ] **Hold và confirm:** triển khai lifecycle giữ chỗ, idempotency key và xử lý
+  409/410. Chỉ trả thành công khi đã có `bookingCode`, showroom, thời gian và sale
+  assignment chính thức; cinematic không được kích hoạt từ response tạm.
+- [ ] **Ticket thành công:** response cuối phải đủ người đặt, người lái, điện thoại,
+  email nullable, xe, showroom, giờ hẹn, tư vấn viên và trạng thái giấy phép lái xe.
+  Không dùng fixture hoặc dữ liệu draft để dựng phiếu đã xác nhận.
+
+### P1 — độ bền tích hợp và vận hành
+
+- [ ] Thêm integration test khóa số lượng màu/ảnh theo từng model, URL media hợp lệ,
+  VF9 dùng asset cutout và Limo Green/eBus tiếp tục trả `studioImage.mode = "cutout"`.
+- [ ] Thêm cache revision/ETag cho catalogue và media metadata; khi asset đổi phải tăng
+  revision để browser không giữ nhầm màu hoặc poster cũ.
+- [ ] Giữ response tương thích ngược: thiếu field optional thì frontend dùng một dải
+  màu và fallback poster/ảnh tĩnh; không để lỗi video/GLB chặn trang hoặc booking.
+- [ ] Hoàn thiện lookup, reschedule và cancel sau verification; log/analytics phải
+  redact PII và không lưu raw chat text.
+- [ ] Chạy nghiệm thu theo checklist mục 12 trên desktop/mobile, keyboard, reduced
+  motion và timezone `Asia/Ho_Chi_Minh` trước khi bật dữ liệu production.
+
+### Definition of Done cho backend
+
+- [ ] `GET /api/v1/vehicles` và booking endpoints vượt contract/integration tests.
+- [ ] Toàn bộ URL ảnh/video/3D được smoke-test từ origin production, không chỉ local.
+- [ ] Reload hoặc retry không tạo booking trùng và không làm mất draft hợp lệ.
+- [ ] Frontend build không cần hard-code thêm theo model sau khi chuyển sang payload thật.

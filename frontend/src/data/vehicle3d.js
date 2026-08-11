@@ -49,7 +49,10 @@ export const vehicle3dModels = {
     fieldOfView: '29deg',
     // Chỉ đổi vật liệu sơn thân; đèn hậu đỏ, kính và chrome vẫn giữ nguyên.
     paint: {
-      materialName: 'Car_Paint.002',
+      // Sau bước Draco/texture palette, `Car Paint.002` trở thành tên mesh;
+      // material thật mà model-viewer expose là PaletteMaterial001.
+      materialName: 'PaletteMaterial001',
+      removeBaseColorTexture: true,
       baseColor: [0.012, 0.014, 0.018, 1],
       metallicFactor: 0.9,
       roughnessFactor: 0.3,
@@ -66,11 +69,15 @@ export const getVehicle3dModel = (vehicleId) => vehicle3dModels[vehicleId] || nu
 
 export const chargingStation3dModel = {
   src: chargingStationModelUrl,
-  orbit: '35deg 65deg 155%',
-  sideOrbit: '35deg 65deg 155%',
-  fieldOfView: '33deg',
-  exposure: '0.62',
-  shadowIntensity: '1.4',
+  // GLB này có tâm hình học lệch lên trên vì chứa cả mái và nền trạm. Camera
+  // target đã được đo trực tiếp trong model-viewer để toàn bộ cụm nằm giữa stage.
+  orbit: '30deg 67deg 360%',
+  sideOrbit: '30deg 67deg 360%',
+  cameraTarget: '7.112m -4.8m -4.25m',
+  fieldOfView: '38deg',
+  exposure: '0.4',
+  shadowIntensity: '1.8',
+  environmentImage: 'neutral',
   credit: {
     author: 'Kho media VinFast P-053',
     license: 'Asset do dự án cung cấp',
