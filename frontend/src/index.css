@@ -4887,6 +4887,10 @@ svg {
   background: #fff;
 }
 
+.vivi-prompt[aria-busy="true"] > div {
+  background: #ecefed;
+}
+
 .vivi-prompt textarea {
   width: 100%;
   min-height: 43px;
@@ -4901,6 +4905,11 @@ svg {
   line-height: 1.4;
 }
 
+.vivi-prompt textarea:disabled {
+  color: #74787f;
+  cursor: not-allowed;
+}
+
 .vivi-prompt > div > button {
   display: grid;
   place-items: center;
@@ -4910,6 +4919,11 @@ svg {
   color: #fff;
   background: var(--blue);
   cursor: pointer;
+}
+
+.vivi-prompt > div > button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .vivi-prompt > small {
