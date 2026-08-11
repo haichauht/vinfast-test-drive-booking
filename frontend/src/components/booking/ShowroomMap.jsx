@@ -1,3 +1,22 @@
+/**
+ * components/booking/ShowroomMap.jsx — Bản đồ chọn showroom (bước 3 của luồng đặt lịch).
+ *
+ * ✅ ĐANG DÙNG THẬT: BookingPage.jsx import dưới tên BookingShowroomMap và render khi tab = 'map'.
+ * (BookingPage.jsx còn một bản ShowroomMap cũ ở dòng ~446 nhưng bản đó KHÔNG được render nữa.)
+ *
+ * Bố cục: danh sách showroom bên trái · bản đồ bên phải · thẻ xem trước + nút "Xem lịch" nổi dưới.
+ *
+ * Bản đồ dùng gì:
+ * - Thư viện Leaflet 1.9.4 tải TỪ CDN unpkg.com lúc chạy (không nằm trong package.json)
+ *   → mất mạng thì bản đồ không hiện, dù phần còn lại của web vẫn chạy.
+ * - Ô bản đồ (tile) lấy từ Google Maps. Chưa có API key nên chưa dùng được cho production.
+ * - LƯU Ý: package.json có cài mapbox-gl nhưng file này KHÔNG dùng tới.
+ * - Marker showroom là logo VinFast, marker vị trí người dùng là chấm tròn — cả hai vẽ bằng
+ *   L.divIcon với class .leaflet-showroom-marker / .leaflet-user-marker (style ở cuối index.css).
+ *
+ * Khoảng cách "km" chỉ hiện khi backend trả về, không tự bịa số 0.
+ * Sửa ở đây khi: đổi bố cục danh sách/bản đồ, đổi icon marker, đổi mức zoom (đang 11 và 14).
+ */
 import { useEffect, useRef, useState } from 'react'
 import { Crosshair, Minus, Plus } from '@phosphor-icons/react'
 import { commonMedia } from '../../media/assets'

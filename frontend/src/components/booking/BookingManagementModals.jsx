@@ -1,3 +1,16 @@
+/**
+ * components/booking/BookingManagementModals.jsx — 2 hộp thoại xác nhận khi sửa lịch đã đặt.
+ *
+ * ✅ ĐANG DÙNG THẬT: BookingPage.jsx render cả hai (~dòng 1788 và 1790).
+ *
+ * - CancellationConfirmModal: "Bạn muốn huỷ lịch <mã>?" — hiện ảnh xe + 7 dòng thông tin,
+ *   2 nút "Xác nhận huỷ lịch" / "Giữ lại lịch".
+ * - RescheduleConfirmModal: xác nhận đổi sang khung giờ mới, có ĐỒNG HỒ ĐẾM NGƯỢC thời gian
+ *   giữ chỗ. Hết giờ (secondsLeft <= 0) thì nút xác nhận tự khoá.
+ *
+ * Ngày giờ được format bằng toLocaleDateString('vi-VN') — thứ, ngày/tháng, giờ 24h.
+ * Style tương ứng: .slot-confirm-modal và .cancellation-confirm-modal trong index.css.
+ */
 import { X } from '@phosphor-icons/react'
 import { VehicleShot } from './VehicleWorkspace'
 

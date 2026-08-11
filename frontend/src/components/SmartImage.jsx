@@ -1,3 +1,17 @@
+/**
+ * components/SmartImage.jsx — Thẻ ảnh dùng chung, thay cho <img> ở gần như mọi nơi.
+ *
+ * Tự quản 3 trạng thái và gắn class tương ứng để CSS bắt được:
+ * - .smart-image--loading → hiện khung xương xám nhấp nháy (skeleton).
+ * - .smart-image--loaded  → ảnh hiện ra.
+ * - .smart-image--error   → hiện icon + chữ "Ảnh đang được cập nhật".
+ *
+ * THẤY CHỮ "Ảnh đang được cập nhật" TRÊN WEB nghĩa là ảnh 404, gần như luôn do
+ * backend/data/media chưa được publish. Xem frontend/RUN_LOCAL.md mục 2.
+ *
+ * Props hữu ích: `fit` (object-fit) · `focalPoint` (giữ tâm ảnh khi crop) ·
+ * `aspectRatio` (giữ chỗ trước để trang không bị giật) · `eager` (tải ngay, dùng cho ảnh hero).
+ */
 import { useState } from 'react'
 import { ImageBroken } from '@phosphor-icons/react'
 

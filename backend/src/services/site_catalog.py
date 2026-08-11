@@ -51,12 +51,10 @@ _VEHICLE_MEDIA_EXTENSIONS = {
     "nerio-green": "png",
 }
 
-# The published studio assets mostly are isolated vehicle renders. Marking all
-# of them as photos made the UI select object-fit: cover and crop/zoom the cars.
-_VEHICLE_STUDIO_MODES = {
-    "limo-green": "photo",
-    "ebus": "photo",
-}
+# All 14 files published under /media/vehicles/<id>/studio.* have a verified
+# alpha channel. Keep one truthful presentation mode so BookingTicket, the car
+# switcher and catalogue never wrap Limo Green/eBus in a fake white photo card.
+_VEHICLE_STUDIO_MODES: dict[str, str] = {}
 
 
 for order, vehicle in enumerate(_VEHICLES, start=1):
@@ -157,13 +155,13 @@ _COLORS_BY_VEHICLE: dict[str, list[dict[str, Any]]] = {
         _color("Trắng Brahminy · phối kim loại", "#e6e7e4", "VF8/product-1V18.webp"),
     ],
     "vf9": [
-        _color("Đen Jet Black", "#1f2123", "VF9/CE11.webp"),
-        _color("Trắng Infinity Blanc", "#ededeb", "VF9/CE18.webp"),
-        _color("Xám Zenith Grey", "#7c8083", "VF9/CE1V.webp"),
-        _color("Đỏ Crimson Red", "#9d2630", "VF9/CE1M.webp"),
-        _color("Xanh Urban Mint", "#9aa58e", "VF9/CE1W.webp"),
-        _color("Xanh Ivy Green", "#2e483d", "VF9/CE22.webp"),
-        _color("Bạc Desat Silver", "#b8b9b7", "VF9/CE17.webp"),
+        _color("Đen Jet Black", "#1f2123", "VF9/CE11-cutout.webp"),
+        _color("Trắng Infinity Blanc", "#ededeb", "VF9/CE18-cutout.webp"),
+        _color("Xám Zenith Grey", "#7c8083", "VF9/CE1V-cutout.webp"),
+        _color("Đỏ Crimson Red", "#9d2630", "VF9/CE1M-cutout.webp"),
+        _color("Xanh Urban Mint", "#9aa58e", "VF9/CE1W-cutout.webp"),
+        _color("Xanh Ivy Green", "#2e483d", "VF9/CE22-cutout.webp"),
+        _color("Bạc Desat Silver", "#b8b9b7", "VF9/CE17-cutout.webp"),
     ],
     "herio-green": [
         _color("Trắng", "#e9e9e5", "Dịch vụ_Herio Green/trắng.png"),
@@ -332,10 +330,10 @@ _CONTENT: dict[str, dict[str, Any]] = {
         "hero": {"title": "Pin và trạm sạc", "copy": "Hạ tầng sạc cho hành trình liền mạch.", "media": _media("/media/content/charging/hero.webp", "Trạm sạc VinFast")},
         "network": {"title": "Mạng lưới sạc toàn quốc", "copy": "Các điểm sạc được phát triển tại nhiều tỉnh thành."},
         "chargingUnits": [
-            {"power": "250 kW", "name": "Sạc siêu nhanh DC", "image": _media("/media/content/charging/250kw.webp", "Trụ sạc 250 kW"), "facts": ["Tủ đứng", "1 cổng / trụ", "200–1.000 VDC", "IP54"]},
-            {"power": "150 kW", "name": "Sạc siêu nhanh DC", "image": _media("/media/content/charging/150kw.webp", "Trụ sạc 150 kW"), "facts": ["Tủ đứng", "2 cổng / trụ", "200–1.000 VDC", "IP54"]},
-            {"power": "60 kW", "name": "Sạc nhanh DC", "image": _media("/media/content/charging/60kw.webp", "Trụ sạc 60 kW"), "facts": ["Tủ đứng", "2 cổng / trụ", "200–1.000 VDC", "IP54"]},
-            {"power": "30 kW", "name": "Sạc nhanh DC", "image": _media("/media/content/charging/30kw.webp", "Trụ sạc 30 kW"), "facts": ["Treo tường hoặc tủ đứng", "1 cổng / trụ", "CAN Protocol", "IP54"]},
+            {"power": "250 kW", "name": "Sạc siêu nhanh DC", "image": _media("/media/content/charging/250kw.png", "Trụ sạc 250 kW tách nền"), "facts": ["Tủ đứng", "1 cổng / trụ", "200–1.000 VDC", "IP54"]},
+            {"power": "150 kW", "name": "Sạc siêu nhanh DC", "image": _media("/media/content/charging/150kw.png", "Trụ sạc 150 kW tách nền"), "facts": ["Tủ đứng", "2 cổng / trụ", "200–1.000 VDC", "IP54"]},
+            {"power": "60 kW", "name": "Sạc nhanh DC", "image": _media("/media/content/charging/60kw.png", "Trụ sạc 60 kW tách nền"), "facts": ["Tủ đứng", "2 cổng / trụ", "200–1.000 VDC", "IP54"]},
+            {"power": "30 kW", "name": "Sạc nhanh DC", "image": _media("/media/content/charging/30kw.png", "Trụ sạc 30 kW tách nền"), "facts": ["Treo tường hoặc tủ đứng", "1 cổng / trụ", "CAN Protocol", "IP54"]},
         ],
         "guideMedia": [], "brochure": {"title": "Dịch vụ pin ô tô điện", "url": "/media/brochures/charging.pdf", "revision": REVISION},
     },

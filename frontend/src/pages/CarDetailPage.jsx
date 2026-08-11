@@ -1,70 +1,53 @@
+/**
+ * pages/CarDetailPage.jsx — TRANG CHI TIẾT XE tại đường dẫn /models/:carId (vd: /models/vf9).
+ *
+ * Dữ liệu: useVehicleDetail(carId) cho mẫu xe đang xem, useVehicleCatalog() để tìm "xe tiếp theo".
+ * ID không có trong catalogue → hiện màn "Không tìm thấy mẫu xe" thay vì trang lỗi.
+ *
+ * Thứ tự các mục trên trang:
+ *  1. Hero — tên xe cỡ lớn, ảnh xe chạy vào từ trái          (.detail-hero)
+ *  2. Video nội thất (CHỈ mẫu limo-green)                     (.detail-film)
+ *  3. Popup gợi ý đặt lịch, tự hiện sau 2,2 giây              (.test-drive-nudge)
+ *  4. Câu tuyên ngôn — chữ sáng dần từng từ khi cuộn          (.car-manifesto)
+ *  5. Model GLB tương tác cho mẫu có asset web hợp lệ          (Vehicle3DExperience)
+ *  6. Thước phim giới thiệu, nếu backend có video             (ModelFilm, ~dòng 68)
+ *  7. Thông số nổi bật                                        (.detail-specs, id="specifications")
+ *  8. Các chương ảnh: ngoại thất → khoang lái → chi tiết      (.detail-story)
+ *  9. Lưới ảnh đầy đủ, chỉ hiện khi có hơn 3 ảnh              (.detail-media)
+ * 10. Bảng màu bấm đổi được, cần ít nhất 2 màu                (ColorExplorer, ~dòng 16)
+ * 11. Nguồn dữ liệu + link brochure PDF                       (.brochure-note)
+ * 12. CTA cuối + link sang xe tiếp theo                       (.detail-action)
+ * 13. Thanh nổi dưới đáy: tên xe, giá, nút đặt lịch           (.detail-booking-dock)
+ *
+ * ANIMATION (khối useGSAP ~dòng 127) — phần tinh vi nhất dự án:
+ * - Xe chạy vào màn hình. Lần đầu xem mẫu này chạy dài (-132%, 1,7 giây), các lần sau
+ *   ngắn hơn (-34%, 0,95 giây) — trạng thái ghi trong sessionStorage theo từng mẫu xe.
+ * - Chỉ chạy kiểu đó khi backend có `motionImage` (ảnh tách nền). Không có thì xe phóng to dần.
+ * - Chữ tuyên ngôn sáng dần từng từ, ảnh từng chương phóng to theo thao tác cuộn.
+ * - Mẫu có GLB hợp lệ: model chạy xuyên trái → phải khi sân khấu đã hiện rõ,
+ *   sau đó popup thành model xoay/zoom.
+ *
+ * sessionStorage lưu 3 khoá (chỉ ID và cờ giao diện, KHÔNG lưu thông tin cá nhân):
+ * last-viewed-car · test-drive-nudge:<id> · vinfast-intro-seen:<id>.
+ * Muốn xem lại animation lần đầu hoặc popup gợi ý: mở tab ẩn danh, hoặc xoá sessionStorage.
+ */
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { ArrowLeft, ArrowRight, Check, FileText, Play, X } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowRight, FileText, X } from '@phosphor-icons/react'
 import { AppShell } from '../components/AppShell'
 import { IslandButton } from '../components/IslandButton'
 import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
 import { SiteFooter } from '../components/SiteFooter'
+import { Vehicle3DExperience } from '../components/Vehicle3DExperience'
+import { VehicleColorConfigurator } from '../components/VehicleColorConfigurator'
 import { useVehicleCatalog, useVehicleDetail } from '../hooks/useSiteData'
 import { limoInteriorFilm } from '../data/media'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
-
-function ColorExplorer({ car }) {
-  const availableColors = car.colors.filter((color) => color.image)
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  const selected = availableColors[selectedIndex]
-  const displayImage = selected?.image
-
-  if (availableColors.length < 2) return null
-
-  return (
-    <section className="color-explorer" aria-labelledby="color-title">
-      <div className="section-frame color-explorer__grid">
-        <div className="color-explorer__copy">
-          <p className="eyebrow">Bảng màu</p>
-          <h2 id="color-title">Một sắc độ cho cá tính riêng.</h2>
-          <p>
-            Chọn một màu để xem chiếc xe đổi diện mạo. Sắc độ ngoài đời có thể khác đôi chút tuỳ ánh sáng và góc nhìn.
-          </p>
-          <div className="color-list" role="radiogroup" aria-label={`Chọn màu ${car.name}`}>
-            {availableColors.map((color, index) => (
-              <button
-                key={`${color.name}-${index}`}
-                className={selectedIndex === index ? 'is-active' : ''}
-                type="button"
-                role="radio"
-                aria-checked={selectedIndex === index}
-                onClick={() => setSelectedIndex(index)}
-              >
-                <span className="color-list__swatch" style={{ background: color.hex }} aria-hidden="true" />
-                <span>{color.name}</span>
-                {selectedIndex === index && <Check size={15} weight="light" aria-hidden="true" />}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="double-bezel color-explorer__visual">
-          <div className="double-bezel__core">
-            <SmartImage
-              key={displayImage}
-              src={displayImage}
-              alt={`${car.name} màu ${selected?.name || 'đang chọn'}`}
-            />
-            <div className="color-explorer__caption">
-              <span>{car.name}</span>
-              <strong>{selected?.name}</strong>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
 
 function ModelFilm({ car }) {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -103,9 +86,12 @@ export function CarDetailPage() {
   const { cars } = useVehicleCatalog()
   const root = useRef(null)
   const [showTestDriveNudge, setShowTestDriveNudge] = useState(false)
+  const [exploring3d, setExploring3d] = useState(false)
 
   useEffect(() => {
     if (!car) return undefined
+    setExploring3d(false)
+    setShowTestDriveNudge(false)
     const dismissed = window.sessionStorage.getItem(`vinfast:test-drive-nudge:${car.id}`)
     if (dismissed) return undefined
 
@@ -298,14 +284,13 @@ export function CarDetailPage() {
             <video src={limoInteriorFilm} autoPlay muted loop playsInline preload="metadata" />
             <div className="detail-film__veil" aria-hidden="true" />
             <div className="section-frame detail-film__copy">
-              <Play size={24} weight="fill" />
               <p className="eyebrow">Không gian Limo Green</p>
               <h2 id="detail-film-title">Ba hàng ghế được nhìn trong chuyển động thật.</h2>
             </div>
           </section>
         )}
 
-        {showTestDriveNudge && (
+        {showTestDriveNudge && !exploring3d && (
           <aside className="test-drive-nudge" aria-live="polite">
             <button type="button" onClick={dismissNudge} aria-label="Đóng gợi ý đặt lịch">
               <X size={16} weight="light" />
@@ -328,6 +313,11 @@ export function CarDetailPage() {
             </p>
           </div>
         </section>
+
+        <Vehicle3DExperience car={car} onEnter={() => {
+          setExploring3d(true)
+          setShowTestDriveNudge(false)
+        }} />
 
         <ModelFilm car={car} />
 
@@ -399,7 +389,7 @@ export function CarDetailPage() {
           </section>
         )}
 
-        <ColorExplorer key={car.id} car={car} />
+        <VehicleColorConfigurator key={car.id} vehicle={car} />
 
         <section className="brochure-note">
           <div className="section-frame brochure-note__inner">
