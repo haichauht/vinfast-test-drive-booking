@@ -170,6 +170,7 @@ class ZaloPollingService:
 
 def _update_id(update: dict) -> int | None:
     try:
-        return int(update.get("update_id"))
+        value = update.get("update_id")
+        return int(value) if value is not None else None
     except (TypeError, ValueError):
         return None

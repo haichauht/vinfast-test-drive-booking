@@ -4,6 +4,7 @@ import secrets
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
+from src.services.booking.base import BookingBase
 from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
 from src.services.booking.errors import BookingError
 
@@ -11,7 +12,7 @@ _id = new_id
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
-class LifecycleService:
+class LifecycleService(BookingBase):
     def hold_slot(
         self,
         slot_id: str,

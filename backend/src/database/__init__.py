@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 from .errors import DatabaseIntegrityError
@@ -37,7 +38,7 @@ class Database:
         self._adapter.initialize()
 
     @contextmanager
-    def transaction(self, *, immediate: bool = False) -> Iterator[object]:
+    def transaction(self, *, immediate: bool = False) -> Iterator[Any]:
         connection = self.connect()
         try:
             if connection.dialect == "sqlite":

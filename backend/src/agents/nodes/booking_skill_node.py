@@ -148,6 +148,7 @@ def get_booking_prompt() -> str:
 
 
 async def booking_skill_node(state: AgentState) -> dict:
+    response: Any
     messages = list(state.get("messages") or [])
     requested_action = state.get("requested_action")
     metadata = state.get("metadata") or {}
@@ -182,9 +183,9 @@ async def booking_skill_node(state: AgentState) -> dict:
                 if failed
                 else STRUCTURED_ACTION_RESPONSES[requested_action]
             )
-            response = AIMessage(content=response_text)
+            tool_response = AIMessage(content=response_text)
             return {
-                "messages": [response],
+                "messages": [tool_response],
                 "response": response_text,
                 "action_tool": tool.name,
                 "action_input": state.get("action_payload") or {},
@@ -272,7 +273,7 @@ async def booking_skill_node(state: AgentState) -> dict:
         has_tool_calls=has_tool_calls,
     )
     if has_tool_calls:
-        for tool_call in response.tool_calls:
+        for tool_call in cast(list[dict[str, Any]], response.tool_calls):
             trace_event(
                 "tool.call",
                 trace_id=trace_id,
