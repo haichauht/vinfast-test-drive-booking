@@ -2,7 +2,7 @@ import json
 import logging
 import uuid
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
 
