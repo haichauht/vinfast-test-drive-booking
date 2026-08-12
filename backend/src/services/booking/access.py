@@ -17,9 +17,9 @@ _id = new_id
 class AccessService(BookingBase):
     def request_access(
         self,
+        booking_code: str | None,
         contact_value: str,
         purpose: str,
-        booking_code: str | None = None,
         preferred_channel: str = "sms",
         *,
         expose_otp: bool = False,
