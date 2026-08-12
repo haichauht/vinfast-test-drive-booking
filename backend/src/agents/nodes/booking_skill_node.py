@@ -195,7 +195,7 @@ async def booking_skill_node(state: AgentState) -> dict:
 
         action_payload = state.get("action_payload") or {}
         tool_logger.info("tool_dispatched tool=%s mode=structured input=%s", tool.name, _safe_tool_input(action_payload))
-        tool_call = AIMessage(
+        tool_call_message = AIMessage(
             content="",
             tool_calls=[
                 {
@@ -214,9 +214,9 @@ async def booking_skill_node(state: AgentState) -> dict:
             action=requested_action,
             tool=tool.name,
             args=action_payload,
-            tool_call_id=tool_call.tool_calls[0].get("id"),
+            tool_call_id=tool_call_message.tool_calls[0].get("id"),
         )
-        return {"messages": [tool_call], "tool_call_count": 1}
+        return {"messages": [tool_call_message], "tool_call_count": 1}
 
     context = json.dumps(state.get("context") or {}, ensure_ascii=False)
     prompt = (
