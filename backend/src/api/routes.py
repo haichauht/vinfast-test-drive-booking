@@ -225,9 +225,3 @@ async def client_log(request: ClientLogRequest):
     getattr(logging.getLogger("frontend"), level)(
         "%s | context=%s", safe_message, json.dumps(safe_context, ensure_ascii=False, default=str)
     )
-
-
-@router.get("/dashboard")
-async def dashboard(limit: int = 50):
-    """Read-only monitoring endpoint for the booking demo."""
-    return booking_service.get_dashboard(limit)
