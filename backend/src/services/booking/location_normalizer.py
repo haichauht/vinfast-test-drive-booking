@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 import unicodedata
 
-
 # Keys and values are accent-free because input is normalised before lookup.
 # Keep this allow-list narrow: abbreviations that can refer to more than one
 # locality must not silently be converted here.
