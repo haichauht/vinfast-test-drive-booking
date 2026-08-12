@@ -5,12 +5,12 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
-    branches: [testing, main, develop]
+    branches: [testing, main, develop, 'update/**']
   pull_request:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
-    branches: [testing, main, develop]
+    branches: [testing, main, develop, 'update/**']
 
 jobs:
   test:

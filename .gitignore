@@ -73,3 +73,5 @@ docs/docs
 # Local planning and reference notes
 plans/
 notes/
+
+.vercel
