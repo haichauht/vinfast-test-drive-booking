@@ -99,5 +99,6 @@ async def test_structured_action_strips_toolnode_exception_wrapper_from_user_err
         }
     )
 
-    assert result["response"] == "Slot đã bắt đầu hoặc đã qua."
-    assert result["action_error"] == "Slot đã bắt đầu hoặc đã qua."
+    expected_message = "Khung giờ này đã qua hoặc không còn khả dụng, vui lòng chọn giờ khác."
+    assert result["response"] == expected_message
+    assert result["action_error"] == "SLOT_NO_LONGER_AVAILABLE"
