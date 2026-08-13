@@ -2,7 +2,7 @@ import json
 import logging
 import uuid
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
 
@@ -76,7 +76,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         # Keep the module-level `agent` overrideable by existing tests, while
         # production resolves the graph initialized with the Postgres saver.
         active_agent = agent if agent is not _default_agent else get_agent()
-        result = await active_agent.ainvoke(
+        result = await cast(Any, active_agent).ainvoke(
             {
                 "query": safe_message,
                 "context": request.context,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import Any
 
 from src.services.booking.common import iso, new_id, row_to_dict
 from src.services.booking.errors import BookingError
@@ -21,6 +22,14 @@ class BookingBase:
         "test_drive_completed": "staff-complete:",
         "booking_marked_no_show": "staff-noshow:",
     }
+
+    def __getattr__(self, name: str) -> Any:
+        """Support attributes and helpers supplied by sibling booking mixins.
+
+        The concrete BookingService composes this base with the operational
+        service mixins and assigns shared dependencies in its initializer.
+        """
+        raise AttributeError(name)
 
     @staticmethod
     def _row(row):

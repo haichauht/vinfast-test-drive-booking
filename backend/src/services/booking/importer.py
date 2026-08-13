@@ -5,17 +5,18 @@ import io
 from pathlib import Path
 
 from src.database import DatabaseIntegrityError
+from src.services.booking.base import BookingBase
 from src.services.booking.common import iso, new_id, normalize_timestamp, parse_utc
 from src.services.booking.errors import BookingError
 
 _id = new_id
 
 
-class ImportService:
+class ImportService(BookingBase):
     @staticmethod
     def _validate_coordinates(latitude: object, longitude: object, *, context: str) -> tuple[float, float]:
         try:
-            lat, lon = float(latitude), float(longitude)
+            lat, lon = float(str(latitude)), float(str(longitude))
         except (TypeError, ValueError) as exc:
             raise BookingError("INVALID_INPUT", f"Invalid coordinates {context}.") from exc
         if not -90 <= lat <= 90 or not -180 <= lon <= 180:
@@ -347,7 +348,7 @@ class ImportService:
         if unknown:
             raise BookingError("INVALID_INPUT", f"File không được hỗ trợ: {', '.join(unknown)}")
         counts = {}
-        skipped = []
+        skipped: list[str] = []
         with self.db.transaction(immediate=True) as c:
             for filename, (table, expected) in self.DATASET_FILES.items():
                 if filename not in supplied:

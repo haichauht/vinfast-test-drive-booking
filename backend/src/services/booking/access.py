@@ -7,18 +7,19 @@ import secrets
 from datetime import timedelta
 
 from src.database.rows import DbRow
+from src.services.booking.base import BookingBase
 from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
 from src.services.booking.errors import BookingError
 
 _id = new_id
 
 
-class AccessService:
+class AccessService(BookingBase):
     def request_access(
         self,
+        booking_code: str | None,
         contact_value: str,
         purpose: str,
-        booking_code: str | None = None,
         preferred_channel: str = "sms",
         *,
         expose_otp: bool = False,
@@ -203,10 +204,9 @@ class AccessService:
                 raise BookingError("ACCESS_SESSION_EXPIRED", "Phiên truy cập đã hết hạn.")
             if "read_booking" not in json.loads(session["permissions_json"]):
                 raise BookingError("ACCESS_DENIED", "Không có quyền đọc booking.")
-            b = c.execute("SELECT * FROM bookings WHERE id=?", (session["booking_id"],)).fetchone()
             target_id = booking_id or c.execute("SELECT id FROM bookings WHERE booking_code=?", (booking_code,)).fetchone()
             target_id = target_id["id"] if target_id and not isinstance(target_id, str) else target_id
-            if not target_id or not self._same_phone_owner(c, b, target_id):
+            if target_id != session["booking_id"]:
                 raise BookingError("ACCESS_SESSION_SCOPE_MISMATCH", "Phiên không thuộc booking này.")
             target_booking = c.execute("SELECT * FROM bookings WHERE id=?", (target_id,)).fetchone()
             result = self._draft(c, target_id, require_held=False)
@@ -271,8 +271,7 @@ class AccessService:
         ).fetchone()
         if not session or session["revoked_at"] or parse_utc(session["expires_at"]) <= parse_utc(self.now()):
             raise BookingError("ACCESS_SESSION_EXPIRED", "Phiên truy cập đã hết hạn.")
-        anchor = c.execute("SELECT * FROM bookings WHERE id=?", (session["booking_id"],)).fetchone()
-        if not anchor or not self._same_phone_owner(c, anchor, booking_id):
+        if booking_id != session["booking_id"]:
             raise BookingError("ACCESS_SESSION_SCOPE_MISMATCH", "Phiên không thuộc booking này.")
         if permission not in json.loads(session["permissions_json"]):
             raise BookingError("ACCESS_DENIED", "Phiên không có quyền thực hiện thao tác này.")
