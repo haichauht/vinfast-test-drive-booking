@@ -776,6 +776,7 @@ export function BookingPage() {
   const [person, setPerson] = useState({ bookingName: '', driverName: '', phone: '', email: '', hasLicense: false, marketingConsent: true })
   const [formErrors, setFormErrors] = useState({})
   const [bookingCode, setBookingCode] = useState('')
+  const [bookingAdvisor, setBookingAdvisor] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [successCinematic, setSuccessCinematic] = useState(false)
   const [accessFlow, setAccessFlow] = useState(null)
@@ -1428,7 +1429,13 @@ export function BookingPage() {
       setAccessValue((current) => ({ ...current, otpCode: '' }))
       setAccessSecondsLeft(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)))
       setResendSecondsLeft(result.retry_after_seconds || 60)
-      addMessage('assistant', 'Tôi đã gửi mã OTP qua Zalo. Bạn vui lòng nhập mã để tiếp tục.')
+      const mockOtp = result.is_mock ? result.otp_code : ''
+      addMessage(
+        'assistant',
+        mockOtp
+          ? `Mã OTP mock của bạn là **${mockOtp}**. Nhập mã này để tiếp tục luồng kiểm thử.`
+          : 'Tôi đã gửi mã OTP qua Zalo. Bạn vui lòng nhập mã để tiếp tục.',
+      )
     } catch (error) {
       if (error.code === 'OTP_RATE_LIMITED') {
         const seconds = Number(error.message.match(/\d+/)?.[0] || 0)
@@ -1672,6 +1679,7 @@ export function BookingPage() {
       confirmActionIdsRef.current.delete(actionKey)
       setSubmitting(false)
       setBookingCode(confirmed.booking_code)
+      setBookingAdvisor(confirmed.advisor || null)
       // Phiếu chỉ xuất hiện sau cinematic. Backend vẫn là nguồn xác nhận cuối cùng;
       // animation không tự tạo booking và không chạy nếu request ở trên thất bại.
       setSuccessCinematic(true)
@@ -1700,7 +1708,7 @@ export function BookingPage() {
     if (!selectedCar) return null
     if (activeView === 'map') return <BookingShowroomMap car={selectedCar} showrooms={nearbyShowrooms} selectedId={showroomId} onSelect={setShowroomId} onConfirm={chooseShowroom} userLocation={userLocation} />
     if (activeView === 'schedule' && selectedShowroom) return <SchedulePanel car={selectedCar} showroom={selectedShowroom} slots={slots} pendingSlot={pendingSlot} onPick={chooseSlot} />
-    if (activeView === 'ticket' && selectedShowroom && selectedSlot) return <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} />
+    if (activeView === 'ticket' && selectedShowroom && selectedSlot) return <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} advisor={bookingAdvisor} />
     return <VehiclePanel car={selectedCar} />
   }
 
@@ -1784,7 +1792,7 @@ export function BookingPage() {
         <div className="booking-success-layout">
           <div className="booking-success-documents">
             <VehiclePanel car={selectedCar} success3d />
-            <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} compact />
+            <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} advisor={bookingAdvisor} compact />
           </div>
           <section className="vivi-studio vivi-studio--success">
             <div className="vivi-studio__head">

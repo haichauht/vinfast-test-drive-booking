@@ -1,5 +1,6 @@
 from src.config import get_settings
 from src.database import Database
+from src.internal_portal import InternalPortalService
 from src.services.booking import BookingService
 from src.services.booking.notifications import RoutingMessagingProvider
 from src.services.zalo_bot import ZaloBotClient, ZaloOtpSender
@@ -20,4 +21,8 @@ booking_service = BookingService(
     otp_resend_cooldown_seconds=settings.booking_access_otp_resend_cooldown_seconds,
     otp_max_attempts=settings.booking_access_otp_max_attempts,
     otp_secret=settings.booking_access_otp_secret or "development-secret",
+)
+internal_portal_service = InternalPortalService(
+    database,
+    session_ttl_seconds=settings.internal_session_ttl_seconds,
 )

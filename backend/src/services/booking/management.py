@@ -208,6 +208,11 @@ class ManagementService(BookingBase):
                 "UPDATE notification_jobs SET status='cancelled',updated_at=? WHERE booking_id=? AND status='pending'",
                 (now, current_booking_id),
             )
+            c.execute(
+                "INSERT INTO booking_reschedules(id,old_booking_id,new_booking_id,requested_by_person_id,reason,created_at) "
+                "VALUES(?,?,?,?,?,?)",
+                (_id("reschedule"), current_booking_id, new_booking_id, old["booker_person_id"], None, now),
+            )
             self._create_jobs(
                 c,
                 new_booking_id,

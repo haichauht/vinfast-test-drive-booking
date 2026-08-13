@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import os
 import csv
+import os
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+# ruff: noqa: E402 -- the script adds backend/ to sys.path before src imports.
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
@@ -15,11 +17,23 @@ from src.database import Database
 from src.services.booking import BookingService
 
 RESET_ORDER = (
+    "internal_audit_events",
+    "internal_notifications",
+    "vehicle_transfers",
+    "vehicle_unavailability",
+    "staff_unavailability",
+    "staff_shifts",
+    "internal_sessions",
+    "internal_user_showrooms",
+    "internal_users",
     "booking_access_sessions",
     "otp_challenges",
+    "zalo_processed_messages",
+    "zalo_identity_links",
     "notification_jobs",
     "notification_plans",
     "booking_events",
+    "booking_reschedules",
     "booking_driver_details",
     "idempotency_records",
     "bookings",
@@ -29,7 +43,13 @@ RESET_ORDER = (
     "vehicle_variants",
     "vehicle_models",
     "sales_staff",
+    "showroom_operating_hours",
+    "showroom_services",
+    "showroom_source_metadata",
     "showrooms",
+    "wards",
+    "districts",
+    "provinces",
     "people",
 )
 
@@ -225,24 +245,7 @@ def seed_db() -> None:
             )
             return
 
-        for table in (
-            "booking_access_sessions",
-            "otp_challenges",
-            "notification_jobs",
-            "notification_plans",
-            "booking_events",
-            "booking_driver_details",
-            "idempotency_records",
-            "bookings",
-            "slot_sales_assignments",
-            "test_drive_slots",
-            "demo_vehicles",
-            "vehicle_variants",
-            "vehicle_models",
-            "sales_staff",
-            "showrooms",
-            "people",
-        ):
+        for table in RESET_ORDER:
             connection.execute(f"DELETE FROM {table}")
 
         connection.executemany(
