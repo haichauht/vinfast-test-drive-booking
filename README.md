@@ -4,6 +4,8 @@
 
 - `backend`: FastAPI, LangGraph agent, booking service, PostgreSQL/SQLite adapter.
 - `frontend`: Vite React UI cho trang sản phẩm, tư vấn và đặt lịch.
+- `internal-portal/frontend`: React UI riêng cho Staff, Showroom Manager và Operations Admin.
+- `backend/src/internal_portal`: authentication, RBAC, showroom scope và Internal API dùng chung booking service.
 - `admin`: Streamlit dashboard/import data.
 - `eval/data`: bộ CSV seed dữ liệu booking/catalog.
 
@@ -19,10 +21,15 @@ docker compose up --build
 Các service chính:
 
 - Frontend: <http://localhost:3000>
-- Backend API: <http://localhost:8000>
-- Swagger: <http://localhost:8000/docs>
-- Admin dashboard: <http://localhost:8501>
+- Internal Portal: <http://localhost:3100>
+- Backend API: <http://localhost:8001>
+- Swagger: <http://localhost:8001/docs>
+- Legacy Streamlit admin (profile `legacy-admin`): <http://localhost:8501>
 - PostgreSQL: `localhost:5432`
+
+Docker Compose mặc định publish backend ở cổng host `8001` để tránh xung đột với
+các ứng dụng thường dùng cổng `8000`. Có thể đổi bằng `BACKEND_HOST_PORT` trong
+file `.env`; backend bên trong Docker network vẫn lắng nghe ở cổng `8000`.
 
 ## Setup Data
 
@@ -32,7 +39,12 @@ Mặc định Docker mount folder local:
 eval/data -> /app/eval/data
 ```
 
-Khi database rỗng, `db-seed` sẽ import toàn bộ các file CSV trong `eval/data` theo thứ tự dependency:
+Importer tự nhận diện một trong hai định dạng:
+
+- Legacy: các file `01_vehicle_models.csv` đến `15_booking_events.csv` nằm trực tiếp trong `eval/data`.
+- V5: package đầy đủ nằm trong `eval/data`, với 32 file CSV trong thư mục `eval/data/seed`.
+
+Khi database rỗng, backend sẽ import toàn bộ các file theo thứ tự dependency. Bộ legacy gồm:
 
 ```text
 01_vehicle_models.csv
@@ -51,6 +63,10 @@ Khi database rỗng, `db-seed` sẽ import toàn bộ các file CSV trong `eval/
 14_booking_access_sessions.csv
 15_booking_events.csv
 ```
+
+Bộ V5 bắt đầu bằng `seed/01_provinces.csv`, kết thúc bằng
+`seed/32_internal_audit_events.csv`, và bao gồm geography, showroom metadata,
+RBAC/Internal Portal, vận hành xe/nhân viên, booking, OTP, notification và audit.
 
 Các file data gốc được lưu tại Google Drive:
 

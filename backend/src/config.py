@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, ge=1, le=65535)
     app_host: str = "0.0.0.0"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://localhost:3100"
 
     # LLM
     openai_api_key: str = ""
@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     booking_access_otp_max_attempts: int = Field(default=2, ge=1, le=10)
     # A server-only pepper used in addition to each OTP's per-record salt.
     booking_access_otp_secret: str = ""
+
+    # Internal portal sessions are opaque, revocable bearer tokens stored as
+    # hashes in the database. Staff/manager/admin accounts are provisioned via
+    # scripts/manage_internal_user.py; no default credential is created.
+    internal_session_ttl_seconds: int = Field(default=28_800, ge=900, le=86_400)
 
     # Deterministic AI guardrails. These checks run before the agent, before
     # tool execution, and before a chat response crosses the public API.

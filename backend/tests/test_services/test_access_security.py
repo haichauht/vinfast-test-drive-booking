@@ -3,6 +3,7 @@ from datetime import timedelta
 
 import pytest
 from src.services.booking import BookingError, iso
+from src.services.booking.notifications import ProviderResult
 from src.services.zalo_bot import ZaloOtpSender
 
 from tests.conftest import BOOKER_PHONE, FIXED_NOW
@@ -16,6 +17,31 @@ def test_request_access_masks_destination_and_hides_otp(booking_service, confirm
 
     assert result["destination_masked"].endswith(BOOKER_PHONE[-3:])
     assert BOOKER_PHONE not in result["destination_masked"]
+    assert "otp_code" not in result
+
+
+def test_request_access_never_exposes_real_provider_otp(booking_service, confirmed_booking_factory):
+    class RealOtpSender:
+        def send(self, *, channel, destination, code, expires_in_seconds):
+            return ProviderResult(
+                provider="real_sms",
+                channel=channel,
+                provider_status="sent",
+                provider_message_id="message-1",
+                is_mock=False,
+            )
+
+    confirmed = confirmed_booking_factory()
+    booking_service.otp_sender = RealOtpSender()
+
+    result = booking_service.request_access(
+        confirmed["confirmed"]["booking_code"],
+        BOOKER_PHONE,
+        "lookup",
+        expose_otp=True,
+    )
+
+    assert result["is_mock"] is False
     assert "otp_code" not in result
 
 

@@ -12,6 +12,60 @@ class TableSchema:
 
 
 TABLES = {
+    "provinces": TableSchema(
+        "provinces",
+        frozenset(
+            {
+                "id",
+                "code",
+                "name",
+                "normalized_name",
+                "unit_type",
+                "effective_from",
+                "effective_to",
+                "is_active",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "districts": TableSchema(
+        "districts",
+        frozenset(
+            {
+                "id",
+                "province_id",
+                "code",
+                "name",
+                "normalized_name",
+                "unit_type",
+                "effective_from",
+                "effective_to",
+                "is_active",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "wards": TableSchema(
+        "wards",
+        frozenset(
+            {
+                "id",
+                "district_id",
+                "province_id",
+                "code",
+                "name",
+                "normalized_name",
+                "unit_type",
+                "effective_from",
+                "effective_to",
+                "is_active",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
     "vehicle_models": TableSchema(
         "vehicle_models",
         frozenset(
@@ -22,6 +76,8 @@ TABLES = {
                 "vehicle_type",
                 "required_license_class",
                 "license_requirement_note",
+                "seat_count",
+                "test_drive_eligible",
                 "is_active",
                 "created_at",
                 "updated_at",
@@ -39,6 +95,7 @@ TABLES = {
                 "battery_capacity_kwh",
                 "estimated_range_km",
                 "motor_power_kw",
+                "default_test_drive_minutes",
                 "is_active",
                 "created_at",
                 "updated_at",
@@ -52,13 +109,65 @@ TABLES = {
                 "id",
                 "code",
                 "name",
+                "province_id",
+                "district_id",
+                "ward_id",
                 "address",
+                "normalized_address",
                 "latitude",
                 "longitude",
                 "phone",
                 "email",
                 "timezone",
+                "region",
+                "map_visible",
                 "is_active",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "showroom_source_metadata": TableSchema(
+        "showroom_source_metadata",
+        frozenset(
+            {
+                "showroom_id",
+                "public_source_id",
+                "source_system",
+                "source_url",
+                "verification_status",
+                "quality_status",
+                "source_checked_at",
+                "notes",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "showroom_services": TableSchema(
+        "showroom_services",
+        frozenset(
+            {
+                "showroom_id",
+                "test_drive_enabled",
+                "service_enabled",
+                "delivery_enabled",
+                "charging_enabled",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "showroom_operating_hours": TableSchema(
+        "showroom_operating_hours",
+        frozenset(
+            {
+                "id",
+                "showroom_id",
+                "day_of_week",
+                "open_time",
+                "close_time",
+                "is_closed",
                 "created_at",
                 "updated_at",
             }
@@ -152,11 +261,14 @@ TABLES = {
                 "checked_in_at",
                 "completed_at",
                 "cancelled_at",
+                "no_show_at",
                 "cancellation_reason",
                 "rescheduled_from_booking_id",
                 "replaced_by_booking_id",
                 "assigned_sales_staff_id",
                 "source_channel",
+                "customer_note",
+                "internal_note",
                 "version",
                 "created_at",
                 "updated_at",
@@ -266,6 +378,10 @@ TABLES = {
         "booking_events",
         frozenset({"id", "booking_id", "event_type", "actor_type", "actor_id", "payload_json", "created_at"}),
     ),
+    "booking_reschedules": TableSchema(
+        "booking_reschedules",
+        frozenset({"id", "old_booking_id", "new_booking_id", "requested_by_person_id", "reason", "created_at"}),
+    ),
     "idempotency_records": TableSchema(
         "idempotency_records",
         frozenset(
@@ -286,9 +402,150 @@ TABLES = {
         "slot_sales_assignments",
         frozenset({"id", "slot_id", "sales_staff_id", "assignment_role", "status", "created_at", "updated_at"}),
     ),
+    "internal_users": TableSchema(
+        "internal_users",
+        frozenset(
+            {
+                "id",
+                "username",
+                "display_name",
+                "password_salt",
+                "password_hash",
+                "role",
+                "staff_id",
+                "is_active",
+                "last_login_at",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "internal_user_showrooms": TableSchema(
+        "internal_user_showrooms",
+        frozenset({"user_id", "showroom_id", "created_at"}),
+    ),
+    "internal_sessions": TableSchema(
+        "internal_sessions",
+        frozenset({"token_hash", "user_id", "expires_at", "revoked_at", "created_at"}),
+    ),
+    "internal_notifications": TableSchema(
+        "internal_notifications",
+        frozenset(
+            {
+                "id",
+                "recipient_user_id",
+                "booking_id",
+                "showroom_id",
+                "notification_type",
+                "title",
+                "body",
+                "read_at",
+                "created_at",
+            }
+        ),
+    ),
+    "staff_shifts": TableSchema(
+        "staff_shifts",
+        frozenset(
+            {
+                "id",
+                "sales_staff_id",
+                "showroom_id",
+                "start_at",
+                "end_at",
+                "status",
+                "created_by",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "staff_unavailability": TableSchema(
+        "staff_unavailability",
+        frozenset(
+            {
+                "id",
+                "sales_staff_id",
+                "showroom_id",
+                "start_at",
+                "end_at",
+                "reason",
+                "created_by",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "vehicle_unavailability": TableSchema(
+        "vehicle_unavailability",
+        frozenset(
+            {
+                "id",
+                "demo_vehicle_id",
+                "showroom_id",
+                "start_at",
+                "end_at",
+                "reason",
+                "created_by",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "vehicle_transfers": TableSchema(
+        "vehicle_transfers",
+        frozenset(
+            {
+                "id",
+                "demo_vehicle_id",
+                "from_showroom_id",
+                "to_showroom_id",
+                "requested_by",
+                "approved_by",
+                "completed_by",
+                "status",
+                "requested_at",
+                "approved_at",
+                "completed_at",
+                "reason",
+                # Legacy portal compatibility. New V5 rows derive these values.
+                "effective_at",
+                "created_at",
+                "updated_at",
+            }
+        ),
+    ),
+    "internal_audit_events": TableSchema(
+        "internal_audit_events",
+        frozenset(
+            {
+                "id",
+                "actor_user_id",
+                "action",
+                "resource_type",
+                "resource_id",
+                "showroom_id",
+                "payload_json",
+                "created_at",
+            }
+        ),
+    ),
     "zalo_identity_links": TableSchema(
         "zalo_identity_links",
-        frozenset({"phone", "chat_id", "linked_at", "updated_at"}),
+        frozenset(
+            {
+                "id",
+                "person_id",
+                "phone_hash",
+                "zalo_user_id",
+                "is_active",
+                "linked_at",
+                # Legacy columns remain available during migration.
+                "phone",
+                "chat_id",
+                "updated_at",
+            }
+        ),
     ),
     "zalo_processed_messages": TableSchema(
         "zalo_processed_messages",
@@ -297,22 +554,63 @@ TABLES = {
 }
 
 SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS provinces (
+ id TEXT PRIMARY KEY, code TEXT UNIQUE, name TEXT, normalized_name TEXT, unit_type TEXT,
+ effective_from TEXT, effective_to TEXT, is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+ created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS districts (
+ id TEXT PRIMARY KEY, province_id TEXT REFERENCES provinces(id), code TEXT UNIQUE, name TEXT,
+ normalized_name TEXT, unit_type TEXT, effective_from TEXT, effective_to TEXT,
+ is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)), created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS wards (
+ id TEXT PRIMARY KEY, district_id TEXT REFERENCES districts(id), province_id TEXT REFERENCES provinces(id),
+ code TEXT UNIQUE, name TEXT, normalized_name TEXT, unit_type TEXT, effective_from TEXT, effective_to TEXT,
+ is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)), created_at TEXT, updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS vehicle_models (
  id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
- vehicle_type TEXT NOT NULL, required_license_class TEXT NOT NULL,
- license_requirement_note TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+ vehicle_type TEXT NOT NULL, required_license_class TEXT,
+ license_requirement_note TEXT, seat_count INTEGER,
+ test_drive_eligible INTEGER NOT NULL DEFAULT 1 CHECK(test_drive_eligible IN (0,1)),
+ is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS vehicle_variants (
- id TEXT PRIMARY KEY, model_id TEXT NOT NULL REFERENCES vehicle_models(id), code TEXT NOT NULL UNIQUE,
+ id TEXT PRIMARY KEY, model_id TEXT NOT NULL REFERENCES vehicle_models(id), code TEXT NOT NULL,
  name TEXT NOT NULL, battery_capacity_kwh REAL, estimated_range_km REAL, motor_power_kw REAL,
- is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)), created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+ default_test_drive_minutes INTEGER,
+ is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ UNIQUE(model_id,code)
 );
 CREATE TABLE IF NOT EXISTS showrooms (
- id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, address TEXT NOT NULL,
+ id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+ province_id TEXT REFERENCES provinces(id), district_id TEXT REFERENCES districts(id), ward_id TEXT REFERENCES wards(id),
+ address TEXT NOT NULL, normalized_address TEXT,
  latitude REAL NOT NULL, longitude REAL NOT NULL, phone TEXT, email TEXT,
- timezone TEXT NOT NULL DEFAULT 'Asia/Ho_Chi_Minh', is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+ timezone TEXT NOT NULL DEFAULT 'Asia/Ho_Chi_Minh', region TEXT,
+ map_visible INTEGER NOT NULL DEFAULT 1 CHECK(map_visible IN (0,1)),
+ is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS showroom_source_metadata (
+ showroom_id TEXT PRIMARY KEY REFERENCES showrooms(id), public_source_id TEXT, source_system TEXT,
+ source_url TEXT, verification_status TEXT, quality_status TEXT, source_checked_at TEXT, notes TEXT,
+ created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS showroom_services (
+ showroom_id TEXT PRIMARY KEY REFERENCES showrooms(id),
+ test_drive_enabled INTEGER NOT NULL DEFAULT 0 CHECK(test_drive_enabled IN (0,1)),
+ service_enabled INTEGER NOT NULL DEFAULT 0 CHECK(service_enabled IN (0,1)),
+ delivery_enabled INTEGER NOT NULL DEFAULT 0 CHECK(delivery_enabled IN (0,1)),
+ charging_enabled INTEGER NOT NULL DEFAULT 0 CHECK(charging_enabled IN (0,1)),
+ created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS showroom_operating_hours (
+ id TEXT PRIMARY KEY, showroom_id TEXT NOT NULL REFERENCES showrooms(id), day_of_week INTEGER NOT NULL,
+ open_time TEXT, close_time TEXT, is_closed INTEGER NOT NULL DEFAULT 0 CHECK(is_closed IN (0,1)),
+ created_at TEXT, updated_at TEXT, UNIQUE(showroom_id,day_of_week), CHECK(day_of_week BETWEEN 0 AND 6)
 );
 CREATE TABLE IF NOT EXISTS demo_vehicles (
  id TEXT PRIMARY KEY, showroom_id TEXT NOT NULL REFERENCES showrooms(id), variant_id TEXT NOT NULL REFERENCES vehicle_variants(id),
@@ -342,10 +640,13 @@ CREATE TABLE IF NOT EXISTS bookings (
  id TEXT PRIMARY KEY, booking_code TEXT UNIQUE, slot_id TEXT NOT NULL REFERENCES test_drive_slots(id),
  booker_person_id TEXT REFERENCES people(id), driver_person_id TEXT REFERENCES people(id),
  status TEXT NOT NULL CHECK(status IN ('held','confirmed','expired','cancelled','rescheduled','checked_in','completed','no_show')),
- held_at TEXT NOT NULL, hold_expires_at TEXT NOT NULL, confirmed_at TEXT, checked_in_at TEXT, completed_at TEXT,
- cancelled_at TEXT, cancellation_reason TEXT, rescheduled_from_booking_id TEXT REFERENCES bookings(id),
- replaced_by_booking_id TEXT REFERENCES bookings(id), assigned_sales_staff_id TEXT REFERENCES sales_staff(id),
- source_channel TEXT NOT NULL DEFAULT 'web', version INTEGER NOT NULL DEFAULT 1,
+ held_at TEXT NOT NULL, hold_expires_at TEXT, confirmed_at TEXT, checked_in_at TEXT, completed_at TEXT,
+ cancelled_at TEXT, no_show_at TEXT, cancellation_reason TEXT,
+ rescheduled_from_booking_id TEXT REFERENCES bookings(id) DEFERRABLE INITIALLY DEFERRED,
+ replaced_by_booking_id TEXT REFERENCES bookings(id) DEFERRABLE INITIALLY DEFERRED,
+ assigned_sales_staff_id TEXT REFERENCES sales_staff(id),
+ source_channel TEXT NOT NULL DEFAULT 'web', customer_note TEXT, internal_note TEXT,
+ version INTEGER NOT NULL DEFAULT 1,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS booking_driver_details (
@@ -354,7 +655,7 @@ CREATE TABLE IF NOT EXISTS booking_driver_details (
  declared_license_class TEXT, required_license_class TEXT NOT NULL,
  validity_acknowledged INTEGER NOT NULL DEFAULT 0 CHECK(validity_acknowledged IN (0,1)),
  license_check_status TEXT NOT NULL DEFAULT 'not_provided'
-  CHECK(license_check_status IN ('not_provided','declared','pending_in_person','verified','rejected')),
+  CHECK(license_check_status IN ('not_provided','declared','pending','pending_in_person','verified','rejected','declared_ineligible')),
  checked_at TEXT, checked_by TEXT REFERENCES sales_staff(id), rejection_reason TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  CHECK(has_driving_license != 0 OR validity_acknowledged = 0)
@@ -369,7 +670,7 @@ CREATE TABLE IF NOT EXISTS notification_plans (
 CREATE TABLE IF NOT EXISTS notification_jobs (
  id TEXT PRIMARY KEY, booking_id TEXT NOT NULL REFERENCES bookings(id), recipient_person_id TEXT NOT NULL REFERENCES people(id),
  notification_type TEXT NOT NULL, channel TEXT NOT NULL, scheduled_at TEXT NOT NULL,
- status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','sent','failed','cancelled')),
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','retrying','sent','failed','cancelled')),
  attempt_count INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 3,
  last_attempt_at TEXT, sent_at TEXT, provider_name TEXT, provider_status TEXT, provider_message_id TEXT,
  is_mock INTEGER NOT NULL DEFAULT 1 CHECK(is_mock IN (0,1)), provider_response_json TEXT, error_message TEXT,
@@ -388,8 +689,9 @@ CREATE TABLE IF NOT EXISTS booking_access_sessions (
  expires_at TEXT NOT NULL, revoked_at TEXT, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS zalo_identity_links (
- phone TEXT PRIMARY KEY, chat_id TEXT NOT NULL UNIQUE,
- linked_at TEXT NOT NULL, updated_at TEXT NOT NULL
+ id TEXT PRIMARY KEY, person_id TEXT REFERENCES people(id), phone_hash TEXT UNIQUE, zalo_user_id TEXT UNIQUE,
+ is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)), linked_at TEXT NOT NULL,
+ phone TEXT UNIQUE, chat_id TEXT UNIQUE, updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS zalo_processed_messages (
  message_id TEXT PRIMARY KEY, processed_at TEXT NOT NULL
@@ -397,6 +699,11 @@ CREATE TABLE IF NOT EXISTS zalo_processed_messages (
 CREATE TABLE IF NOT EXISTS booking_events (
  id TEXT PRIMARY KEY, booking_id TEXT NOT NULL REFERENCES bookings(id), event_type TEXT NOT NULL,
  actor_type TEXT NOT NULL, actor_id TEXT, payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS booking_reschedules (
+ id TEXT PRIMARY KEY, old_booking_id TEXT NOT NULL REFERENCES bookings(id),
+ new_booking_id TEXT NOT NULL REFERENCES bookings(id), requested_by_person_id TEXT REFERENCES people(id),
+ reason TEXT, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS idempotency_records (
  action_id TEXT PRIMARY KEY, operation TEXT NOT NULL, request_hash TEXT,
@@ -407,6 +714,66 @@ CREATE TABLE IF NOT EXISTS slot_sales_assignments (
  id TEXT PRIMARY KEY, slot_id TEXT NOT NULL REFERENCES test_drive_slots(id), sales_staff_id TEXT NOT NULL REFERENCES sales_staff(id),
  assignment_role TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  UNIQUE(slot_id, sales_staff_id, assignment_role)
+);
+CREATE TABLE IF NOT EXISTS internal_users (
+ id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL,
+ password_salt TEXT NOT NULL, password_hash TEXT NOT NULL,
+ role TEXT NOT NULL CHECK(role IN ('staff','showroom_manager','operations_admin')),
+ staff_id TEXT REFERENCES sales_staff(id), is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+ last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ CONSTRAINT internal_users_role_staff_binding_check
+ CHECK((role='staff' AND staff_id IS NOT NULL) OR (role<>'staff' AND staff_id IS NULL))
+);
+CREATE TABLE IF NOT EXISTS internal_user_showrooms (
+ user_id TEXT NOT NULL REFERENCES internal_users(id) ON DELETE CASCADE,
+ showroom_id TEXT NOT NULL REFERENCES showrooms(id), created_at TEXT NOT NULL,
+ PRIMARY KEY(user_id,showroom_id)
+);
+CREATE TABLE IF NOT EXISTS internal_sessions (
+ token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES internal_users(id) ON DELETE CASCADE,
+ expires_at TEXT NOT NULL, revoked_at TEXT, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS internal_notifications (
+ id TEXT PRIMARY KEY, recipient_user_id TEXT NOT NULL REFERENCES internal_users(id) ON DELETE CASCADE,
+ booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+ showroom_id TEXT NOT NULL REFERENCES showrooms(id),
+ notification_type TEXT NOT NULL CHECK(notification_type IN ('booking_confirmed')),
+ title TEXT NOT NULL, body TEXT NOT NULL, read_at TEXT, created_at TEXT NOT NULL,
+ UNIQUE(recipient_user_id,booking_id,notification_type)
+);
+CREATE TABLE IF NOT EXISTS staff_shifts (
+ id TEXT PRIMARY KEY, sales_staff_id TEXT NOT NULL REFERENCES sales_staff(id),
+ showroom_id TEXT NOT NULL REFERENCES showrooms(id), start_at TEXT NOT NULL, end_at TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled','cancelled')),
+ created_by TEXT NOT NULL REFERENCES internal_users(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ CHECK(end_at > start_at)
+);
+CREATE TABLE IF NOT EXISTS staff_unavailability (
+ id TEXT PRIMARY KEY, sales_staff_id TEXT NOT NULL REFERENCES sales_staff(id),
+ showroom_id TEXT NOT NULL REFERENCES showrooms(id), start_at TEXT NOT NULL, end_at TEXT NOT NULL,
+ reason TEXT NOT NULL, created_by TEXT NOT NULL REFERENCES internal_users(id),
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL, CHECK(end_at > start_at)
+);
+CREATE TABLE IF NOT EXISTS vehicle_unavailability (
+ id TEXT PRIMARY KEY, demo_vehicle_id TEXT NOT NULL REFERENCES demo_vehicles(id),
+ showroom_id TEXT NOT NULL REFERENCES showrooms(id), start_at TEXT NOT NULL, end_at TEXT NOT NULL,
+ reason TEXT NOT NULL, created_by TEXT NOT NULL REFERENCES internal_users(id),
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL, CHECK(end_at > start_at)
+);
+CREATE TABLE IF NOT EXISTS vehicle_transfers (
+ id TEXT PRIMARY KEY, demo_vehicle_id TEXT NOT NULL REFERENCES demo_vehicles(id),
+ from_showroom_id TEXT NOT NULL REFERENCES showrooms(id), to_showroom_id TEXT NOT NULL REFERENCES showrooms(id),
+ requested_by TEXT NOT NULL REFERENCES internal_users(id), approved_by TEXT REFERENCES internal_users(id),
+ completed_by TEXT REFERENCES internal_users(id),
+ status TEXT NOT NULL CHECK(status IN ('requested','approved','completed','cancelled')),
+ requested_at TEXT, approved_at TEXT, completed_at TEXT, reason TEXT,
+ effective_at TEXT, created_at TEXT, updated_at TEXT,
+ CHECK(from_showroom_id <> to_showroom_id)
+);
+CREATE TABLE IF NOT EXISTS internal_audit_events (
+ id TEXT PRIMARY KEY, actor_user_id TEXT NOT NULL REFERENCES internal_users(id),
+ action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id TEXT,
+ showroom_id TEXT REFERENCES showrooms(id), payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_variants_model_active ON vehicle_variants(model_id,is_active);
 CREATE INDEX IF NOT EXISTS idx_showrooms_active ON showrooms(is_active);
@@ -421,5 +788,13 @@ CREATE INDEX IF NOT EXISTS idx_jobs_due ON notification_jobs(status,scheduled_at
 CREATE INDEX IF NOT EXISTS idx_events_timeline ON booking_events(booking_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_access_booking_expiry ON booking_access_sessions(booking_id,expires_at);
 CREATE INDEX IF NOT EXISTS idx_zalo_identity_chat ON zalo_identity_links(chat_id);
+CREATE INDEX IF NOT EXISTS idx_internal_sessions_user_expiry ON internal_sessions(user_id,expires_at);
+CREATE INDEX IF NOT EXISTS idx_internal_notifications_user_read ON internal_notifications(recipient_user_id,read_at,created_at);
+CREATE INDEX IF NOT EXISTS idx_internal_user_showrooms_showroom ON internal_user_showrooms(showroom_id,user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_users_staff_unique ON internal_users(staff_id) WHERE staff_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_staff_shifts_staff_time ON staff_shifts(sales_staff_id,start_at,end_at);
+CREATE INDEX IF NOT EXISTS idx_staff_unavailability_staff_time ON staff_unavailability(sales_staff_id,start_at,end_at);
+CREATE INDEX IF NOT EXISTS idx_vehicle_unavailability_vehicle_time ON vehicle_unavailability(demo_vehicle_id,start_at,end_at);
+CREATE INDEX IF NOT EXISTS idx_vehicle_transfers_vehicle_time ON vehicle_transfers(demo_vehicle_id,effective_at);
+CREATE INDEX IF NOT EXISTS idx_internal_audit_time ON internal_audit_events(created_at);
 """
-
