@@ -58,6 +58,12 @@ class AccessService(BookingBase):
             contact_value, purpose, booking_code = purpose, booking_code, contact_value
         if purpose not in permissions:
             raise BookingError("INVALID_INPUT", "Purpose khong hop le.")
+        eligible_statuses = (
+            ("confirmed", "checked_in", "completed", "no_show")
+            if purpose == "lookup"
+            else ("confirmed",)
+        )
+        status_placeholders = ",".join("?" for _ in eligible_statuses)
         normalized_code = (booking_code or "").strip().upper()
         if preferred_channel not in {"zalo", "sms", "email"}:
             raise BookingError("INVALID_INPUT", "Kênh OTP phải là zalo, sms hoặc email.")
@@ -73,22 +79,25 @@ class AccessService(BookingBase):
         )
         with self.db.transaction(immediate=True) as c:
             if normalized_code:
-                booking = c.execute("SELECT * FROM bookings WHERE booking_code=?", (normalized_code,)).fetchone()
+                booking = c.execute(
+                    f"SELECT * FROM bookings WHERE booking_code=? AND status IN ({status_placeholders})",
+                    (normalized_code, *eligible_statuses),
+                ).fetchone()
             elif preferred_channel == "email":
                 booking = c.execute(
                     "SELECT b.* FROM bookings b JOIN people booker ON booker.id=b.booker_person_id "
                     "LEFT JOIN people driver ON driver.id=b.driver_person_id "
-                    "WHERE lower(booker.email)=? OR lower(driver.email)=? "
-                    "ORDER BY COALESCE(b.confirmed_at,b.held_at) DESC LIMIT 1",
-                    (normalized, normalized),
+                    f"WHERE (lower(booker.email)=? OR lower(driver.email)=?) AND b.status IN ({status_placeholders}) "
+                    "ORDER BY COALESCE(b.confirmed_at,b.updated_at,b.held_at) DESC LIMIT 1",
+                    (normalized, normalized, *eligible_statuses),
                 ).fetchone()
             else:
                 booking = c.execute(
                     "SELECT b.* FROM bookings b JOIN people booker ON booker.id=b.booker_person_id "
                     "LEFT JOIN people driver ON driver.id=b.driver_person_id "
-                    "WHERE booker.normalized_phone=? OR driver.normalized_phone=? "
-                    "ORDER BY COALESCE(b.confirmed_at,b.held_at) DESC LIMIT 1",
-                    (normalized, normalized),
+                    f"WHERE (booker.normalized_phone=? OR driver.normalized_phone=?) AND b.status IN ({status_placeholders}) "
+                    "ORDER BY COALESCE(b.confirmed_at,b.updated_at,b.held_at) DESC LIMIT 1",
+                    (normalized, normalized, *eligible_statuses),
                 ).fetchone()
             if not booking:
                 raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Khong tim thay lich hen thuoc email nay.")
@@ -102,10 +111,7 @@ class AccessService(BookingBase):
                 raise BookingError("ZALO_NOT_CONFIGURED", "Kênh Zalo chưa được cấu hình.")
             if preferred_channel == "zalo" and not self.otp_sender.is_linked(contact_value):
                 raise BookingError("ZALO_NOT_LINKED", "Số điện thoại chưa liên kết với Zalo Bot.")
-            if booking["status"] == "held" or (
-                purpose in {"reschedule", "cancel", "update_details", "update_notifications"}
-                and booking["status"] != "confirmed"
-            ):
+            if booking["status"] not in eligible_statuses:
                 raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Không thể cấp quyền truy cập booking.")
             latest = c.execute(
                 "SELECT created_at FROM otp_challenges WHERE booking_id=? AND destination_hash=? "

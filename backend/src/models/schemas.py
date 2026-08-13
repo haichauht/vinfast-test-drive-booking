@@ -25,6 +25,12 @@ class ChatRequest(BaseModel):
         return v
 
 
+class UiDirective(BaseModel):
+    event: str = ""
+    phase: str = ""
+    allowed_actions: list[str] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
     response: str = Field(..., description="Phản hồi từ agent")
     analysis: str = Field(default="", description="Phân tích nội bộ")
@@ -33,6 +39,8 @@ class ChatResponse(BaseModel):
     tool_input: dict[str, Any] = Field(default_factory=dict)
     action_data: Any | None = None
     action_error: str = ""
+    intent: str = ""
+    ui: UiDirective | None = None
 
 
 class DemoActionRequest(BaseModel):

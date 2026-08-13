@@ -44,13 +44,33 @@ const rememberConversationId = (conversationId) => {
   }
 }
 
+const normalizeAgentContext = (context = {}) => ({
+  channel: 'booking',
+  mode: String(context.mode || ''),
+  phase: String(context.phase || context.stage || ''),
+  stage: String(context.stage || ''),
+  allowed_actions: Array.isArray(context.allowedActions) ? context.allowedActions : [],
+  selected_vehicle_id: context.selectedVehicle?.id || '',
+  selected_vehicle_name: context.selectedVehicle?.name || '',
+  selected_showroom_id: context.selectedShowroom?.id || '',
+  selected_showroom_name: context.selectedShowroom?.name || '',
+  selected_slot_id: context.selectedSlot?.slotId || '',
+  selected_slot_time: context.selectedSlot?.time || '',
+  selected_slot_date: context.selectedSlot?.dateLabel || '',
+  booking_id: context.bookingId || '',
+  recipient: context.recipient || '',
+  nearby_showrooms: Array.isArray(context.nearbyShowrooms)
+    ? context.nearbyShowrooms.map(({ id, name }) => ({ id, name })).slice(0, 10)
+    : [],
+})
+
 const agentRequest = async ({ message, action, actionPayload = {}, context = {} }) => {
   const result = await apiPost('/chat', {
     message,
     conversation_id: readConversationId(),
     ...(action ? { action } : {}),
     action_payload: actionPayload,
-    context: { channel: 'booking', ...context },
+    context: normalizeAgentContext(context),
   })
   rememberConversationId(result.conversation_id)
   return result
@@ -69,6 +89,10 @@ const agentAction = async (action, message, actionPayload) => {
 }
 
 export const sendBookingMessage = (message, context = {}) => agentRequest({ message, context })
+
+export const resetBookingConversation = () => {
+  if (typeof window !== 'undefined') window.sessionStorage.removeItem(CONVERSATION_KEY)
+}
 
 export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, address, latitude, longitude }) => agentAction(
   'search_options',
