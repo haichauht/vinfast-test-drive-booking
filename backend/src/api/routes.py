@@ -25,6 +25,7 @@ from src.models.schemas import (
     CsvImportRequest,
     DatasetImportRequest,
     DemoActionRequest,
+    UiDirective,
 )
 from src.services.booking import BookingError
 
@@ -44,6 +45,43 @@ SECURITY_STATE_DATASET_FILES = {
     "14_booking_access_sessions.csv",
     "15_zalo_identity_links.csv",
 }
+
+
+def _chat_ui_directive(result: dict[str, Any]) -> UiDirective | None:
+    tool = str(result.get("action_tool") or "")
+    data = result.get("action_result") if isinstance(result.get("action_result"), dict) else {}
+    phase = ""
+    event = ""
+
+    if tool == "request_booking_access":
+        phase = "access_request" if data.get("requires_contact_value") else "access_verify"
+        event = "ACCESS_REQUESTED" if data.get("requires_contact_value") else "ACCESS_VERIFY"
+    elif tool == "verify_booking_access":
+        phase, event = "booking_list", "ACCESS_VERIFIED"
+    elif tool == "search_test_drive_options":
+        phase = "choose_slot" if data.get("search_stage") == "slot_selection" else "choose_showroom"
+        event = "SEARCH_OPTIONS"
+    elif tool == "hold_test_drive_slot":
+        phase, event = "collect_info", "SLOT_HELD"
+    elif tool == "update_booking_draft":
+        phase, event = "review", "DRAFT_UPDATED"
+    elif tool == "confirm_test_drive_booking":
+        phase, event = "success", "BOOKING_CONFIRMED"
+
+    if not event:
+        return None
+
+    actions_by_phase = {
+        "access_request": ["request_access", "cancel_access"],
+        "access_verify": ["verify_access", "cancel_access"],
+        "booking_list": ["select_booking", "exit_manage_booking"],
+        "choose_showroom": ["select_showroom", "switch_vehicle", "start_lookup"],
+        "choose_slot": ["select_slot", "switch_vehicle", "start_lookup"],
+        "collect_info": ["update_draft"],
+        "review": ["confirm_booking", "edit_draft"],
+        "success": ["start_lookup"],
+    }
+    return UiDirective(event=event, phase=phase, allowed_actions=actions_by_phase.get(phase, []))
 
 
 def require_operations_admin(
@@ -136,6 +174,8 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             tool_input=protected.tool_input,
             action_data=protected.action_data,
             action_error=protected.action_error,
+            intent=str(result.get("intent") or ""),
+            ui=_chat_ui_directive(result),
         )
         trace_event(
             "chat.response",

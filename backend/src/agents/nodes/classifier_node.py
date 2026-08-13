@@ -173,7 +173,19 @@ async def classifier_node(state: AgentState) -> dict:
             )
             else "advise"
         )
-        fallback_sub_intent = "booking_lookup" if context.get("stage") == "lookup" else "fallback_domain"
+        lookup_phrases = (
+            "tra cứu lịch",
+            "tra cuu lich",
+            "xem lịch đã đặt",
+            "xem lich da dat",
+            "tìm lịch đã đặt",
+            "tim lich da dat",
+            "booking của tôi",
+            "booking cua toi",
+        )
+        fallback_sub_intent = (
+            "booking_lookup" if any(phrase in lower_query for phrase in lookup_phrases) else "fallback_domain"
+        )
         trace_event(
             "classifier.fallback_route",
             trace_id=trace_id,
