@@ -2,18 +2,19 @@ import json
 import logging
 import uuid
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
 
-from src.agents.graph import agent
+from src.agents.graph import agent, get_agent
 from src.agents.tools import (
     get_booking_details,
     get_booking_draft,
     verify_booking_access,
 )
-from src.agents.trace import trace_event
+from src.agents.trace import redact, trace_event
 from src.dependencies import booking_service
+from src.guardrails import get_guardrails
 from src.models.schemas import (
     ChatRequest,
     ChatResponse,
@@ -25,6 +26,7 @@ from src.models.schemas import (
 from src.services.booking import BookingError
 
 router = APIRouter()
+_default_agent = agent
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -34,11 +36,35 @@ async def chat(request: ChatRequest) -> ChatResponse:
         # Tạo conversation_id mới nếu client không truyền
         conversation_id = request.conversation_id or str(uuid.uuid4())
         trace_id = str(uuid.uuid4())
+        guardrails = get_guardrails()
+        input_decision = guardrails.inspect_input(
+            message=request.message,
+            conversation_id=conversation_id,
+            context=request.context,
+            action=request.action,
+            action_payload=request.action_payload,
+        )
+        if not input_decision.allowed:
+            trace_event(
+                "guardrail.input_blocked",
+                trace_id=trace_id,
+                conversation_id=conversation_id,
+                code=input_decision.code,
+                reason=input_decision.reason,
+                details=input_decision.details,
+            )
+            return ChatResponse(
+                response=input_decision.user_message,
+                conversation_id=conversation_id,
+                action_error=input_decision.code,
+            )
+
+        safe_message = input_decision.sanitized_text or request.message
         trace_event(
             "chat.request",
             trace_id=trace_id,
             conversation_id=conversation_id,
-            message=request.message,
+            message=safe_message,
             context=request.context,
             action=request.action,
             action_payload=request.action_payload,
@@ -47,9 +73,12 @@ async def chat(request: ChatRequest) -> ChatResponse:
         logging.getLogger("agent.requests").info(
             "chat_started conversation_id=%s requested_action=%s", conversation_id, request.action or "llm"
         )
-        result = await agent.ainvoke(
+        # Keep the module-level `agent` overrideable by existing tests, while
+        # production resolves the graph initialized with the Postgres saver.
+        active_agent = agent if agent is not _default_agent else get_agent()
+        result = await cast(Any, active_agent).ainvoke(
             {
-                "query": request.message,
+                "query": safe_message,
                 "context": request.context,
                 "requested_action": request.action,
                 "action_payload": request.action_payload,
@@ -67,14 +96,15 @@ async def chat(request: ChatRequest) -> ChatResponse:
             result.get("action_tool") or "none",
             "error" if result.get("action_error") else "success",
         )
+        protected = guardrails.protect_output(result)
         response = ChatResponse(
-            response=result.get("response", ""),
-            analysis=result.get("analysis", ""),
+            response=protected.response,
+            analysis=protected.analysis,
             conversation_id=conversation_id,
             tool_name=result.get("action_tool", ""),
-            tool_input=result.get("action_input", {}),
-            action_data=result.get("action_result"),
-            action_error=result.get("action_error", ""),
+            tool_input=protected.tool_input,
+            action_data=protected.action_data,
+            action_error=protected.action_error,
         )
         trace_event(
             "chat.response",
@@ -130,10 +160,11 @@ async def demo_action(request: DemoActionRequest):
         "confirm_booking": ("ConfirmBookingCommand", booking_service.confirm_booking),
         "request_access": (
             "request_booking_access",
-            lambda **kw: booking_service.request_access(**kw, expose_otp=True),
+            lambda **kw: booking_service.request_access(**kw),
         ),
         "verify_access": ("verify_booking_access", lambda **kw: verify_booking_access.invoke(kw)),
         "get_details": ("get_booking_details", lambda **kw: get_booking_details.invoke(kw)),
+        "list_bookings": ("list_bookings", booking_service.list_bookings),
         "update_details": ("UpdateBookingDetailsCommand", booking_service.update_booking_details),
         "hold_reschedule": ("HoldRescheduleSlotCommand", booking_service.hold_reschedule_slot),
         "confirm_reschedule": ("ConfirmRescheduleCommand", booking_service.confirm_reschedule),
@@ -141,6 +172,18 @@ async def demo_action(request: DemoActionRequest):
     }
     if request.action not in actions:
         raise HTTPException(status_code=400, detail="Unknown demo action")
+    action_decision = get_guardrails().inspect_demo_action(action=request.action, payload=p)
+    if not action_decision.allowed:
+        trace_event(
+            "guardrail.demo_action_blocked",
+            code=action_decision.code,
+            reason=action_decision.reason,
+            details=action_decision.details,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={"code": action_decision.code, "message": action_decision.user_message},
+        )
     name, handler = actions[request.action]
     try:
         data = handler(**p)
@@ -177,15 +220,8 @@ async def import_eval_dataset(request: DatasetImportRequest):
 @router.post("/client-log", status_code=204)
 async def client_log(request: ClientLogRequest):
     level = request.level.lower() if request.level.lower() in {"debug", "info", "warning", "error"} else "error"
-    safe_context = {
-        k: v for k, v in request.context.items() if k not in {"otp_code", "access_session_token", "contact_value"}
-    }
+    safe_message = redact(request.message)
+    safe_context = redact(request.context)
     getattr(logging.getLogger("frontend"), level)(
-        "%s | context=%s", request.message, json.dumps(safe_context, ensure_ascii=False, default=str)
+        "%s | context=%s", safe_message, json.dumps(safe_context, ensure_ascii=False, default=str)
     )
-
-
-@router.get("/dashboard")
-async def dashboard(limit: int = 50):
-    """Read-only monitoring endpoint for the booking demo."""
-    return booking_service.get_dashboard(limit)

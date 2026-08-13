@@ -17,7 +17,7 @@ def _mock_bound_llm(response):
     return llm, bound
 
 
-# test case of Chau + kiểm tra booking skill chỉ bind đúng sáu booking tools
+# test case of Chau + kiểm tra booking skill chỉ bind đúng tám booking tools
 @pytest.mark.asyncio
 async def test_booking_skill_binds_only_booking_tools_and_returns_text(monkeypatch):
     llm, bound = _mock_bound_llm(AIMessage(content="Đã tìm thấy lịch lái thử"))
@@ -31,11 +31,13 @@ async def test_booking_skill_binds_only_booking_tools_and_returns_text(monkeypat
     bound_names = [item.name for item in llm.bind_tools.call_args.args[0]]
     assert bound_names == [
         "search_test_drive_options",
+        "hold_test_drive_slot",
         "get_booking_draft",
         "update_booking_draft",
         "request_booking_access",
         "verify_booking_access",
         "get_booking_details",
+        "confirm_test_drive_booking",
     ]
     sent_messages = bound.ainvoke.await_args.args[0]
     assert isinstance(sent_messages[0], SystemMessage)

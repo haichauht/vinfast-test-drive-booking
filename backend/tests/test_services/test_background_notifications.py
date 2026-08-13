@@ -1,4 +1,3 @@
-import pytest
 from src.services.booking.notifications import (
     InMemoryMessagingProvider,
 )
@@ -16,7 +15,8 @@ def test_dispatch_due_notifications_sends_due_confirmation(booking_service, book
     assert len(provider.messages) == 1
     assert provider.messages[0]["channel"] == "sms"
     assert provider.messages[0]["destination"] == "0901234567"
-    assert "confirmation" in provider.messages[0]["body"]
+    assert "Lịch lái thử đã xác nhận" in provider.messages[0]["body"]
+    assert booking["confirmed"]["booking_code"] in provider.messages[0]["body"]
     with booking_db.connect() as connection:
         sent = connection.execute(
             "SELECT status,attempt_count,provider_name,provider_status,provider_message_id,"
@@ -112,7 +112,6 @@ class _ExplodingProvider:
         raise RuntimeError("provider unavailable")
 
 
-@pytest.mark.xfail(reason="Known defect: exception từ provider làm dispatcher crash và để job kẹt ở processing")
 # test case of Chau + kiểm tra lỗi provider được cô lập và job còn khả năng retry thay vì kẹt processing
 def test_provider_exception_does_not_crash_dispatcher_or_stick_job(
     booking_service, booking_db, confirmed_booking_factory

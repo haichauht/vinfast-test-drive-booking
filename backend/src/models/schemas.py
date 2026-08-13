@@ -2,9 +2,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+CHAT_MESSAGE_MAX_LENGTH = 5000
+
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1, max_length=5000, description="Tin nhắn từ user")
+    message: str = Field(..., min_length=1, max_length=CHAT_MESSAGE_MAX_LENGTH, description="Tin nhắn từ user")
     conversation_id: str = Field(
         default="", max_length=100, description="ID phiên hội thoại (để nhớ lịch sử nhiều lượt)"
     )

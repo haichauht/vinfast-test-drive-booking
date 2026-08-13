@@ -45,3 +45,37 @@ def test_service_rewrites_media_urls_for_cdn():
 
     assert vehicle["thumbnail"]["url"] == "https://cdn.example.com/assets/vehicles/vf7/thumbnail.webp"
     assert vehicle["motion"]["imageUrl"] == "https://cdn.example.com/assets/vehicles/vf7/studio.webp"
+
+
+def test_booking_studio_assets_are_published_as_cutouts():
+    service = SiteCatalogService()
+
+    vehicles = service.snapshot()["vehicles"]
+
+    assert len(vehicles) == 14
+    assert {vehicle["studioImage"]["mode"] for vehicle in vehicles} == {"cutout"}
+
+
+def test_vf9_color_configurator_uses_clean_cutout_assets():
+    service = SiteCatalogService()
+
+    colors = service.get_vehicle("vf9")["colors"]
+    image_urls = [color["image"]["url"] for color in colors]
+
+    assert len(colors) == 7
+    assert len(set(image_urls)) == len(image_urls)
+    assert all(url.endswith("-cutout.webp") for url in image_urls)
+
+
+def test_charging_catalogue_publishes_high_resolution_alpha_assets():
+    service = SiteCatalogService()
+
+    charging_units = service.snapshot()["content"]["charging"]["chargingUnits"]
+    image_urls = {unit["power"]: unit["image"]["url"] for unit in charging_units}
+
+    assert image_urls == {
+        "250 kW": "/media/content/charging/250kw.png",
+        "150 kW": "/media/content/charging/150kw.png",
+        "60 kW": "/media/content/charging/60kw.png",
+        "30 kW": "/media/content/charging/30kw.png",
+    }

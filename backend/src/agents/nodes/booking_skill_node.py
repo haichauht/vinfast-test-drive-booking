@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -24,6 +25,7 @@ from src.services.llm import get_llm
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "booking_skill" / "SKILL.md"
 tool_logger = logging.getLogger("agent.tools")
 _SENSITIVE_TOOL_FIELDS = {"otp_code", "access_session_token", "zalo_bot_token", "api_key", "token"}
+_BOOKING_ERROR_MESSAGE_RE = re.compile(r"BookingError\((?:'|\")(?P<message>.*?)(?:'|\")\)")
 
 
 def _safe_tool_input(payload: dict[str, Any]) -> dict[str, Any]:
@@ -60,6 +62,16 @@ STRUCTURED_ACTION_RESPONSES = {
     "verify_access": "Xác thực thành công.",
 }
 
+PUBLIC_TOOL_ERRORS = {
+    "SLOT_NO_LONGER_AVAILABLE": "Khung giờ này đã qua hoặc không còn khả dụng, vui lòng chọn giờ khác.",
+    "HOLD_EXPIRED": "Thời gian giữ chỗ đã hết hạn, vui lòng chọn lại khung giờ.",
+    "VEHICLE_NOT_READY": "Xe demo hiện không sẵn sàng cho khung giờ này, vui lòng chọn lịch khác.",
+    "VERSION_CONFLICT": "Thông tin đặt lịch đã thay đổi, vui lòng tải lại và thử lại.",
+    "INVALID_INPUT": "Thông tin gửi lên chưa hợp lệ, vui lòng kiểm tra lại.",
+}
+
+DEFAULT_PUBLIC_TOOL_ERROR = "Không thể hoàn tất thao tác đặt lịch. Vui lòng kiểm tra lại hoặc thử lại."
+
 
 def _decode_tool_result(message: ToolMessage) -> object:
     content = message.content
@@ -69,6 +81,25 @@ def _decode_tool_result(message: ToolMessage) -> object:
         return json.loads(content)
     except json.JSONDecodeError:
         return content
+
+
+def _public_tool_error(decoded: object) -> tuple[str, str]:
+    code = ""
+    if isinstance(decoded, dict):
+        raw_code = decoded.get("code") or decoded.get("error_code")
+        code = str(raw_code or "")
+    else:
+        text = str(decoded or "")
+        for known_code in PUBLIC_TOOL_ERRORS:
+            if known_code in text:
+                code = known_code
+                break
+        if not code and ("Slot đã bắt đầu" in text or "Slot da bat dau" in text or "đã qua" in text):
+            code = "SLOT_NO_LONGER_AVAILABLE"
+
+    if code in PUBLIC_TOOL_ERRORS:
+        return code, PUBLIC_TOOL_ERRORS[code]
+    return "AGENT_ACTION_FAILED", _tool_error_message(decoded)
 
 
 def _tool_call_input(messages: list, tool_message: ToolMessage) -> dict[str, Any]:
@@ -81,6 +112,19 @@ def _tool_call_input(messages: list, tool_message: ToolMessage) -> dict[str, Any
                 args = tool_call.get("args")
                 return args if isinstance(args, dict) else {}
     return {}
+
+
+def _tool_error_message(decoded: object) -> str:
+    """Return a safe, conversational error instead of ToolNode's exception wrapper."""
+    if isinstance(decoded, dict):
+        error = decoded.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            return error["message"]
+    if isinstance(decoded, str):
+        match = _BOOKING_ERROR_MESSAGE_RE.search(decoded)
+        if match:
+            return match.group("message")
+    return "Thao tác chưa thể hoàn tất lúc này. Bạn vui lòng thử lại nhé."
 
 
 def _structured_tool_call_id(action: str, payload: dict[str, Any]) -> str:
@@ -104,6 +148,7 @@ def get_booking_prompt() -> str:
 
 
 async def booking_skill_node(state: AgentState) -> dict:
+    response: Any
     messages = list(state.get("messages") or [])
     requested_action = state.get("requested_action")
     metadata = state.get("metadata") or {}
@@ -119,6 +164,7 @@ async def booking_skill_node(state: AgentState) -> dict:
         if isinstance(last_message, ToolMessage):
             failed = getattr(last_message, "status", "success") == "error"
             decoded = _decode_tool_result(last_message)
+            error_code, public_error = _public_tool_error(decoded)
             trace_event(
                 "tool.result",
                 trace_id=trace_id,
@@ -133,23 +179,23 @@ async def booking_skill_node(state: AgentState) -> dict:
                 "error" if failed else "success",
             )
             response_text = (
-                "Không thể hoàn tất thao tác đặt lịch. Vui lòng kiểm tra lại hoặc thử lại."
+                public_error
                 if failed
                 else STRUCTURED_ACTION_RESPONSES[requested_action]
             )
-            response = AIMessage(content=response_text)
+            tool_response = AIMessage(content=response_text)
             return {
-                "messages": [response],
+                "messages": [tool_response],
                 "response": response_text,
                 "action_tool": tool.name,
                 "action_input": state.get("action_payload") or {},
                 "action_result": None if failed else decoded,
-                "action_error": str(decoded) if failed else "",
+                "action_error": error_code if failed else "",
             }
 
         action_payload = state.get("action_payload") or {}
         tool_logger.info("tool_dispatched tool=%s mode=structured input=%s", tool.name, _safe_tool_input(action_payload))
-        tool_call = AIMessage(
+        tool_call_message = AIMessage(
             content="",
             tool_calls=[
                 {
@@ -168,9 +214,9 @@ async def booking_skill_node(state: AgentState) -> dict:
             action=requested_action,
             tool=tool.name,
             args=action_payload,
-            tool_call_id=tool_call.tool_calls[0].get("id"),
+            tool_call_id=tool_call_message.tool_calls[0].get("id"),
         )
-        return {"messages": [tool_call], "tool_call_count": 1}
+        return {"messages": [tool_call_message], "tool_call_count": 1}
 
     context = json.dumps(state.get("context") or {}, ensure_ascii=False)
     prompt = (
@@ -227,7 +273,7 @@ async def booking_skill_node(state: AgentState) -> dict:
         has_tool_calls=has_tool_calls,
     )
     if has_tool_calls:
-        for tool_call in response.tool_calls:
+        for tool_call in cast(list[dict[str, Any]], response.tool_calls):
             trace_event(
                 "tool.call",
                 trace_id=trace_id,
@@ -255,6 +301,7 @@ async def booking_skill_node(state: AgentState) -> dict:
     if isinstance(last_message, ToolMessage):
         failed = getattr(last_message, "status", "success") == "error"
         decoded = _decode_tool_result(last_message)
+        error_code, public_error = _public_tool_error(decoded)
         trace_event(
             "tool.result",
             trace_id=trace_id,
@@ -275,8 +322,10 @@ async def booking_skill_node(state: AgentState) -> dict:
                 "action_tool": last_message.name or "",
                 "action_input": _tool_call_input(messages, last_message),
                 "action_result": None if failed else decoded,
-                "action_error": str(decoded) if failed else "",
+                "action_error": error_code if failed else "",
             }
         )
+        if failed and not output.get("response"):
+            output["response"] = public_error
 
     return output

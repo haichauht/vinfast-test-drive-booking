@@ -1,30 +1,18 @@
 from __future__ import annotations
 
 import re
-import unicodedata
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from src.services.booking.common import iso, new_id
+from src.services.booking.base import BookingBase
+from src.services.booking.common import iso
 from src.services.booking.errors import BookingError
 from src.services.booking.location import Coordinates, HaversineMapProvider
-
+from src.services.booking.location_normalizer import normalize_location_tokens
 
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 _SHOWROOM_TOKEN_CACHE: dict[str, tuple[tuple[str, str, str], frozenset[str]]] = {}
-
-
-def _normalize_location_tokens(value: str) -> set[str]:
-    """Normalize a Vietnamese locality string into searchable tokens."""
-    ascii_value = unicodedata.normalize("NFD", value.casefold().replace("đ", "d"))
-    ascii_value = "".join(character for character in ascii_value if unicodedata.category(character) != "Mn")
-    tokens = set(re.findall(r"[a-z0-9]+", ascii_value.replace("đ", "d")))
-    ignored = {
-        "duong", "phuong", "xa", "quan", "huyen", "thi", "tran",
-        "thanh", "pho", "tp", "so",
-    }
-    return {token for token in tokens if token not in ignored and (len(token) > 1 or token.isdigit())}
 
 
 def _showroom_location_tokens(showroom: dict) -> frozenset[str]:
@@ -37,7 +25,7 @@ def _showroom_location_tokens(showroom: dict) -> frozenset[str]:
     )
     cached = _SHOWROOM_TOKEN_CACHE.get(showroom_id)
     if cached is None or cached[0] != version:
-        tokens = frozenset(_normalize_location_tokens(f"{version[1]} {version[2]}"))
+        tokens = frozenset(normalize_location_tokens(f"{version[1]} {version[2]}"))
         _SHOWROOM_TOKEN_CACHE[showroom_id] = (version, tokens)
         return tokens
     return cached[1]
@@ -46,11 +34,11 @@ def _showroom_location_tokens(showroom: dict) -> frozenset[str]:
 def _to_vietnam_time(iso_str: str) -> datetime:
     dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(VIETNAM_TZ)
 
 
-class CatalogService:
+class CatalogService(BookingBase):
     def list_active_vehicle_models(self) -> list[dict]:
         with self.db.connect() as c:
             models = [dict(row) for row in c.execute("SELECT * FROM vehicle_models WHERE is_active=1 ORDER BY code")]
@@ -90,7 +78,7 @@ class CatalogService:
                     (f"%{query}%",),
                 ).fetchone()
         if not row:
-            raise BookingError("VEHICLE_NOT_FOUND", "KhÃ´ng tÃ¬m tháº¥y máº«u xe.")
+            raise BookingError("VEHICLE_NOT_FOUND", "Không tìm thấy mẫu xe.")
         return dict(row)
 
     def search_options(
@@ -105,7 +93,7 @@ class CatalogService:
         longitude: float | None = None,
         preferred_date: str | None = None,
         preferred_time: str | None = None,
-        limit: int = 5,
+        limit: int = 24,
         **_: Any,
     ) -> dict:
         if (latitude is None) != (longitude is None):
@@ -124,7 +112,7 @@ class CatalogService:
                 )
             ]
             if vehicle_variant and not variants:
-                raise BookingError("VEHICLE_NOT_FOUND", "KhÃ´ng tÃ¬m tháº¥y phiÃªn báº£n xe.")
+                raise BookingError("VEHICLE_NOT_FOUND", "Không tìm thấy phiên bản xe.")
             variant_ids = [v["id"] for v in variants]
             if not variant_ids:
                 return {
@@ -142,8 +130,19 @@ class CatalogService:
                     (showroom_query, showroom_query, f"%{showroom_query}%", f"%{showroom_query}%", showroom_query),
                 ).fetchone()
                 if not showroom:
+                    candidates = [
+                        dict(row)
+                        for row in c.execute("SELECT * FROM showrooms WHERE is_active=1").fetchall()
+                    ]
+                    ranked = sorted(
+                        ((self._address_match_score(showroom_query, candidate), candidate) for candidate in candidates),
+                        key=lambda item: item[0],
+                        reverse=True,
+                    )
+                    showroom = next((candidate for score, candidate in ranked if score > 0), None)
+                if not showroom:
                     raise BookingError(
-                        "SHOWROOM_NOT_FOUND", "KhÃ´ng tÃ¬m tháº¥y showroom theo tÃªn hoáº·c Ä‘á»‹a chá»‰."
+                        "SHOWROOM_NOT_FOUND", "Không tìm thấy showroom theo tên hoặc địa chỉ."
                     )
                 showroom_id = showroom["id"]
             if not showroom_id:
@@ -160,9 +159,6 @@ class CatalogService:
                     )
                     matched = [(score, showroom) for score, showroom in ranked if score > 0]
                     showrooms = [showroom for _, showroom in matched]
-                    if matched and latitude is None and longitude is None:
-                        latitude = matched[0][1]["latitude"]
-                        longitude = matched[0][1]["longitude"]
                 if latitude is not None and longitude is not None:
                     origin = Coordinates(latitude, longitude)
                     destinations = [Coordinates(s["latitude"], s["longitude"]) for s in showrooms]
@@ -184,7 +180,17 @@ class CatalogService:
             )
             if not selected:
                 raise BookingError("SHOWROOM_NOT_FOUND", "Showroom not found.")
-            values: list[Any] = [showroom_id, *variant_ids, iso(self.now())]
+            now = iso(self.now())
+            # Slot timestamps in the dataset may carry a local UTC offset (for
+            # example +07:00) while `now` is stored as UTC. Comparing those ISO
+            # strings lexicographically can make an already-past local slot look
+            # newer than the UTC value. Normalize both operands in SQL instead.
+            future_slot_sql = (
+                "s.start_at::timestamptz > ?::timestamptz"
+                if c.dialect == "postgres"
+                else "datetime(s.start_at) > datetime(?)"
+            )
+            values: list[Any] = [showroom_id, *variant_ids, now, now]
             date_sql, order_sql = "", "s.start_at"
             if preferred_date:
                 date_sql = " AND substr(s.start_at,1,10)=?"
@@ -194,15 +200,23 @@ class CatalogService:
                     raise BookingError("INVALID_INPUT", "Preferred time must be a valid HH:MM value.")
                 hour, minute = (int(x) for x in preferred_time.split(":"))
                 target = hour * 60 + minute
-                order_sql = f"ABS((CAST(substr(s.start_at,12,2) AS INTEGER)*60 + CAST(substr(s.start_at,15,2) AS INTEGER)) - {target}), s.start_at"
+                slot_minutes_sql = (
+                    "(EXTRACT(HOUR FROM s.start_at::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh') * 60 "
+                    "+ EXTRACT(MINUTE FROM s.start_at::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh'))"
+                    if c.dialect == "postgres"
+                    else "(CAST(strftime('%H', datetime(s.start_at, '+7 hours')) AS INTEGER) * 60 "
+                    "+ CAST(strftime('%M', datetime(s.start_at, '+7 hours')) AS INTEGER))"
+                )
+                order_sql = f"ABS({slot_minutes_sql} - ?), s.start_at"
+                values.append(target)
             slots = [
                 dict(r)
                 for r in c.execute(
-                    f"SELECT s.*,d.asset_code,v.name variant_name FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id WHERE s.showroom_id=? AND d.variant_id IN ({marks}) AND s.status='available' AND s.start_at>? AND d.is_active=1 AND d.operational_status='available' AND d.battery_soc IS NOT NULL AND d.battery_soc>=d.minimum_booking_soc {date_sql} ORDER BY {order_sql} LIMIT ?",
-                    (*values, min(limit, 5)),
+                    f"SELECT s.*,d.asset_code,v.name variant_name FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id WHERE s.showroom_id=? AND d.variant_id IN ({marks}) AND (s.status IN ('available','booked') OR (s.status='held' AND s.held_until>?)) AND {future_slot_sql} AND d.is_active=1 AND d.operational_status='available' AND d.battery_soc IS NOT NULL AND d.battery_soc>=d.minimum_booking_soc {date_sql} ORDER BY {order_sql} LIMIT ?",
+                    (*values, min(max(limit, 1), 30)),
                 )
             ]
-            WEEKDAYS_VI = {
+            weekdays_vi = {
                 0: "Thứ 2",
                 1: "Thứ 3",
                 2: "Thứ 4",
@@ -216,7 +230,7 @@ class CatalogService:
                 dt_end = _to_vietnam_time(s["end_at"])
                 s["start_at"] = dt_start.isoformat()
                 s["end_at"] = dt_end.isoformat()
-                day_label = WEEKDAYS_VI[dt_start.weekday()]
+                day_label = weekdays_vi[dt_start.weekday()]
                 date_str = dt_start.strftime("%d/%m")
                 time_str = dt_start.strftime("%H:%M")
                 s["formatted_schedule"] = f"{day_label}, {date_str} {time_str}"
@@ -238,6 +252,6 @@ class CatalogService:
     def _address_match_score(address: str, showroom: dict) -> int:
         """Rank available showrooms by locality tokens without a remote geocoder."""
 
-        requested = _normalize_location_tokens(address)
+        requested = normalize_location_tokens(address)
         candidate = _showroom_location_tokens(showroom)
         return len(requested & candidate)

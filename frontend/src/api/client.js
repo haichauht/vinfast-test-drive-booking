@@ -1,3 +1,17 @@
+/**
+ * api/client.js — Lõi gọi API. MỌI request từ frontend tới backend đều đi qua file này.
+ *
+ * Chứa gì:
+ * - API_BASE_URL: mặc định "/api/v1" (Vite proxy sang backend cổng 8000).
+ *   Ghi đè bằng biến VITE_API_BASE_URL trong frontend/.env.local khi deploy.
+ * - apiGet(): có cache trong bộ nhớ + ETag/If-None-Match. Backend trả 304 thì dùng lại bản cũ.
+ *   Mất mạng mà đã có cache thì trả cache thay vì báo lỗi.
+ * - apiPost(): gửi JSON, không cache.
+ * - ApiError: kiểu lỗi chuẩn có code/status/retryable — các trang dựa vào đây để hiện thông báo.
+ * - clearApiCache(): xoá toàn bộ cache.
+ *
+ * Sửa ở đây khi: đổi địa chỉ backend, đổi câu thông báo lỗi mạng, hoặc bật/tắt cache.
+ */
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
 const memoryCache = new Map()
 
@@ -51,10 +65,12 @@ export async function apiPost(path, payload, { signal } = {}) {
   const body = await response.json().catch(() => ({}))
   if (!response.ok || body.success === false) {
     const detail = body.detail || body.error || {}
-    throw new ApiError(detail.message || body.message || 'Yêu cầu không thành công.', {
-      code: detail.code,
+    const validationDetail = Array.isArray(detail) ? detail[0] : detail
+    const message = validationDetail?.msg || validationDetail?.message || body.message || 'Yêu cầu không thành công.'
+    throw new ApiError(message, {
+      code: validationDetail?.code,
       status: response.status,
-      retryable: detail.retryable ?? response.status >= 500,
+      retryable: validationDetail?.retryable ?? response.status >= 500,
     })
   }
   return body.data ?? body
