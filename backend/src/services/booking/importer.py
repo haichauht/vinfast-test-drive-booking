@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 from pathlib import Path
 
 from src.database import DatabaseIntegrityError
@@ -13,6 +14,12 @@ _id = new_id
 
 
 class ImportService(BookingBase):
+    @staticmethod
+    def _report_import_progress(message: str) -> None:
+        """Print opt-in bulk-import progress for long-running seed commands."""
+        if os.getenv("IMPORT_PROGRESS", "").lower() in {"1", "true", "yes"}:
+            print(f"[seed] {message}", flush=True)
+
     @staticmethod
     def _validate_coordinates(latitude: object, longitude: object, *, context: str) -> tuple[float, float]:
         try:
@@ -360,6 +367,7 @@ class ImportService(BookingBase):
                 if not rows:
                     counts[table] = 0
                     continue
+                self._report_import_progress(f"Importing {filename} -> {table} ({len(rows):,} rows)")
                 if filename == "06_test_drive_slots.csv":
                     self._normalize_slot_timestamps(rows, filename=filename)
                 if filename == "03_showrooms.csv":
@@ -382,7 +390,7 @@ class ImportService(BookingBase):
                 conflict = "booking_id" if "booking_id" in insert_columns and "id" not in insert_columns else "id"
                 sql = f"INSERT INTO {table}({','.join(insert_columns)}) VALUES({marks}) ON CONFLICT({conflict}) DO UPDATE SET {updates}"
                 try:
-                    for row in rows:
+                    for index, row in enumerate(rows, start=1):
                         if filename == "10_booking_driver_details.csv":
                             has_license = (
                                 "1" if row.get("declared_license_class") or row.get("license_number") else None
@@ -398,12 +406,15 @@ class ImportService(BookingBase):
                         if filename == "14_booking_access_sessions.csv":
                             values.insert(1, self._hash(row["id"], "mock-session"))
                         c.execute(sql, values)
+                        if index % 5_000 == 0:
+                            self._report_import_progress(f"  {table}: {index:,}/{len(rows):,} rows")
                 except DatabaseIntegrityError as exc:
                     raise BookingError(
                         "INVALID_INPUT",
                         f"Không thể import {filename}: thiếu dữ liệu phụ thuộc hoặc vi phạm constraint ({exc}).",
                     ) from exc
                 counts[table] = len(rows)
+                self._report_import_progress(f"Finished {table} ({len(rows):,} rows)")
         return {
             "imported": counts,
             "total_rows": sum(counts.values()),
