@@ -5,12 +5,12 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
-    branches: [testing, main, develop]
+    branches: [main]
   pull_request:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
-    branches: [testing, main, develop]
+    branches: [testing, develop, main]
 
 jobs:
   test:
@@ -87,4 +87,3 @@ jobs:
             if (!response.ok) {
               core.setFailed(`Render deploy hook failed: ${response.status} ${await response.text()}`);
             }
-

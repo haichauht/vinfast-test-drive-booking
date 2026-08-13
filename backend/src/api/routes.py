@@ -19,8 +19,6 @@ from src.models.schemas import (
     ChatRequest,
     ChatResponse,
     ClientLogRequest,
-    CsvImportRequest,
-    DatasetImportRequest,
     DemoActionRequest,
 )
 from src.services.booking import BookingError
@@ -196,25 +194,6 @@ async def demo_action(request: DemoActionRequest):
             "tool": name,
             "error": {"code": exc.code, "retryable": exc.retryable},
         }
-
-
-@router.post("/admin/import/showrooms")
-async def import_showrooms(request: CsvImportRequest):
-    try:
-        return {"success": True, "data": booking_service.import_showrooms_csv(request.csv_text)}
-    except BookingError as exc:
-        raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)})
-
-
-@router.post("/admin/import/eval-dataset")
-async def import_eval_dataset(request: DatasetImportRequest):
-    try:
-        return {"success": True, "data": booking_service.import_eval_dataset(request.files)}
-    except BookingError as exc:
-        logging.getLogger("import").warning(
-            "Dataset import rejected files=%s code=%s message=%s", sorted(request.files), exc.code, str(exc)
-        )
-        raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)})
 
 
 @router.post("/client-log", status_code=204)

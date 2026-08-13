@@ -69,6 +69,8 @@ def _seed_showrooms_from_csv(path: Path, now_str: str, limit: int = 8) -> list[t
 
 def seed_db() -> None:
     settings = get_settings()
+    os.environ.setdefault("IMPORT_PROGRESS", "true")
+    print(f"[seed] Connecting to database; eval data directory: {settings.eval_data_dir}", flush=True)
     database = Database(settings.database_url)
     database.initialize()
     service = BookingService(database)
