@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from src.services.booking.base import BookingBase
 from src.services.booking.common import iso, parse_utc
 from src.services.booking.errors import BookingError
 
 
-class StaffOperationService:
+class StaffOperationService(BookingBase):
     def _staff_booking(self, c, booking_id: str, staff_id: str):
         row = c.execute(
             "SELECT b.*,t.showroom_id,t.start_at FROM bookings b "

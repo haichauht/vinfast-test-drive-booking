@@ -12,7 +12,7 @@ def test_get_system_prompt_reads_configured_file(monkeypatch, tmp_path):
 
     class FixedDateTime:
         @classmethod
-        def now(cls):
+        def now(cls, tz=None):
             return fixed_now
 
     monkeypatch.setattr(utils, "datetime", FixedDateTime)

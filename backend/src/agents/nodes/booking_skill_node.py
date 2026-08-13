@@ -148,6 +148,7 @@ def get_booking_prompt() -> str:
 
 
 async def booking_skill_node(state: AgentState) -> dict:
+    response: Any
     messages = list(state.get("messages") or [])
     requested_action = state.get("requested_action")
     metadata = state.get("metadata") or {}
@@ -182,9 +183,9 @@ async def booking_skill_node(state: AgentState) -> dict:
                 if failed
                 else STRUCTURED_ACTION_RESPONSES[requested_action]
             )
-            response = AIMessage(content=response_text)
+            tool_response = AIMessage(content=response_text)
             return {
-                "messages": [response],
+                "messages": [tool_response],
                 "response": response_text,
                 "action_tool": tool.name,
                 "action_input": state.get("action_payload") or {},
@@ -194,7 +195,7 @@ async def booking_skill_node(state: AgentState) -> dict:
 
         action_payload = state.get("action_payload") or {}
         tool_logger.info("tool_dispatched tool=%s mode=structured input=%s", tool.name, _safe_tool_input(action_payload))
-        tool_call = AIMessage(
+        tool_call_message = AIMessage(
             content="",
             tool_calls=[
                 {
@@ -213,9 +214,9 @@ async def booking_skill_node(state: AgentState) -> dict:
             action=requested_action,
             tool=tool.name,
             args=action_payload,
-            tool_call_id=tool_call.tool_calls[0].get("id"),
+            tool_call_id=tool_call_message.tool_calls[0].get("id"),
         )
-        return {"messages": [tool_call], "tool_call_count": 1}
+        return {"messages": [tool_call_message], "tool_call_count": 1}
 
     context = json.dumps(state.get("context") or {}, ensure_ascii=False)
     prompt = (
@@ -272,7 +273,7 @@ async def booking_skill_node(state: AgentState) -> dict:
         has_tool_calls=has_tool_calls,
     )
     if has_tool_calls:
-        for tool_call in response.tool_calls:
+        for tool_call in cast(list[dict[str, Any]], response.tool_calls):
             trace_event(
                 "tool.call",
                 trace_id=trace_id,
