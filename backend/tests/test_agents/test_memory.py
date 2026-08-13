@@ -16,15 +16,15 @@ async def test_two_threads_do_not_share_state():
         {"query": "Đặt lịch lái thử xe VF3 tại Hà Nội"},
         config=_cfg("memory-thread-A"),
     )
-    # Thread B: general intent
+    # Thread B: greeting is routed to the advice skill.
     result_b = await agent.ainvoke(
         {"query": "Xin chào bạn nhé!"},
         config=_cfg("memory-thread-B"),
     )
 
-    # Thread A phải là booking, Thread B phải là general — không được lẫn nhau
+    # Thread A is booking and Thread B is advise — state must not leak between them.
     assert result_a.get("active_skill") == "booking"
-    assert result_b.get("intent") == "general"
+    assert result_b.get("active_skill") == "advise"
 
 
 @pytest.mark.asyncio

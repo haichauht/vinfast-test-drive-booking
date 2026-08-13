@@ -1,10 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from zoneinfo import ZoneInfo
 
 import pytest
-from src.services.booking import catalog as catalog_module
 from src.services.booking import BookingError
-from zoneinfo import ZoneInfo
+from src.services.booking import catalog as catalog_module
+from src.services.booking.location_normalizer import normalize_location_tokens
 
 from tests.conftest import FIXED_NOW
 
@@ -34,6 +35,14 @@ def test_search_showrooms_sorted_by_distance(booking_service, catalog):
     assert result["showrooms"][0]["distance_km"] <= result["showrooms"][1]["distance_km"]
 
 
+def test_address_search_filters_showrooms_without_calculating_distance(booking_service, catalog):
+    result = booking_service.search_options(vehicle_model="VF6", address="Quận 7")
+
+    assert result["search_stage"] == "showroom_selection"
+    assert result["showrooms"][0]["id"] == catalog["showroom_q7"]
+    assert all("distance_km" not in showroom for showroom in result["showrooms"])
+
+
 def test_address_match_reuses_cached_showroom_tokens():
     catalog_module._SHOWROOM_TOKEN_CACHE.clear()
     showroom = {
@@ -55,6 +64,33 @@ def test_address_match_reuses_cached_showroom_tokens():
     assert len(catalog_module._SHOWROOM_TOKEN_CACHE) == 1
 
 
+@pytest.mark.parametrize(
+    ("alias", "expected_tokens"),
+    [
+        ("HN", {"ha", "noi"}),
+        ("Hà Nội", {"ha", "noi"}),
+        ("HCM", {"ho", "chi", "minh"}),
+        ("TP.HCM", {"ho", "chi", "minh"}),
+        ("Sài Gòn", {"ho", "chi", "minh"}),
+        ("SG", {"ho", "chi", "minh"}),
+    ],
+)
+def test_location_aliases_expand_to_canonical_city_tokens(alias, expected_tokens):
+    assert expected_tokens <= normalize_location_tokens(alias)
+
+
+@pytest.mark.parametrize("alias", ["HCM", "TP HCM", "Sài Gòn", "SG"])
+def test_city_aliases_match_showroom_location(alias):
+    showroom = {
+        "id": "showroom-q7",
+        "updated_at": "2026-08-07T00:00:00+07:00",
+        "name": "VinFast Quận 7",
+        "address": "Quận 7, Thành phố Hồ Chí Minh",
+    }
+
+    assert catalog_module.CatalogService._address_match_score(alias, showroom) > 0
+
+
 def test_to_vietnam_time_normalizes_utc_and_naive_timestamps():
     utc_value = catalog_module._to_vietnam_time("2026-08-07T00:00:00Z")
     offset_value = catalog_module._to_vietnam_time("2026-08-07T00:00:00+00:00")
@@ -66,15 +102,40 @@ def test_to_vietnam_time_normalizes_utc_and_naive_timestamps():
 
 
 # test case of Chau + kiểm tra chỉ trả slot tương lai đang available và giới hạn tối đa năm slot
-def test_search_slots_returns_only_future_available_slots(booking_service, catalog):
+def test_search_slots_returns_future_visible_slots(booking_service, catalog):
     result = booking_service.search_options(vehicle_model="VF6", showroom_id=catalog["showroom_q7"], limit=20)
 
     assert result["search_stage"] == "slot_selection"
-    assert 0 < len(result["slots"]) <= 5
-    assert all(slot["status"] == "available" for slot in result["slots"])
+    assert 0 < len(result["slots"]) <= 20
+    assert all(slot["status"] in {"available", "held", "booked"} for slot in result["slots"])
     assert all(slot["start_at"] > FIXED_NOW.isoformat() for slot in result["slots"])
     assert catalog["slot_blocked"] not in {slot["id"] for slot in result["slots"]}
     assert catalog["slot_past"] not in {slot["id"] for slot in result["slots"]}
+
+
+def test_search_slots_excludes_past_slots_with_a_positive_utc_offset(booking_service, booking_db, catalog):
+    """A +07:00 timestamp must be compared as an instant, not as text against UTC."""
+    with booking_db.transaction(immediate=True) as connection:
+        connection.execute(
+            "UPDATE test_drive_slots SET start_at=?, end_at=? WHERE id=?",
+            (
+                "2026-08-03T08:30:00+07:00",  # 01:30 UTC: already past FIXED_NOW (02:00 UTC)
+                "2026-08-03T10:00:00+07:00",
+                catalog["slot_past"],
+            ),
+        )
+
+    result = booking_service.search_options(vehicle_model="VF6", showroom_id=catalog["showroom_q7"], limit=30)
+
+    assert catalog["slot_past"] not in {slot["id"] for slot in result["slots"]}
+
+
+def test_search_slots_orders_by_preferred_time_in_vietnam_timezone(booking_service, catalog):
+    result = booking_service.search_options(
+        vehicle_model="VF6", showroom_id=catalog["showroom_q7"], preferred_time="19:00", limit=10
+    )
+
+    assert result["slots"][0]["id"] == catalog["slot_later"]
 
 
 # test case of Chau + kiểm tra từ chối giờ mong muốn sai định dạng

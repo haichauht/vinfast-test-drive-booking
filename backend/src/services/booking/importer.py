@@ -5,29 +5,49 @@ import io
 from pathlib import Path
 
 from src.database import DatabaseIntegrityError
-from src.services.booking.common import iso, new_id
+from src.services.booking.base import BookingBase
+from src.services.booking.common import iso, new_id, normalize_timestamp, parse_utc
 from src.services.booking.errors import BookingError
 
 _id = new_id
 
 
-class ImportService:
+class ImportService(BookingBase):
     @staticmethod
     def _validate_coordinates(latitude: object, longitude: object, *, context: str) -> tuple[float, float]:
         try:
-            lat, lon = float(latitude), float(longitude)
+            lat, lon = float(str(latitude)), float(str(longitude))
         except (TypeError, ValueError) as exc:
             raise BookingError("INVALID_INPUT", f"Invalid coordinates {context}.") from exc
         if not -90 <= lat <= 90 or not -180 <= lon <= 180:
             raise BookingError("INVALID_INPUT", f"Coordinates out of range {context}.")
         return lat, lon
 
+    @staticmethod
+    def _normalize_slot_timestamps(rows: list[dict[str, str]], *, filename: str) -> None:
+        """Persist slot times as explicit UTC instants, never local text values."""
+        for line, row in enumerate(rows, start=2):
+            try:
+                start = parse_utc(row["start_at"])
+                end = parse_utc(row["end_at"])
+            except (TypeError, ValueError) as exc:
+                raise BookingError("INVALID_INPUT", f"Invalid slot timestamp at line {line} of {filename}.") from exc
+            if end <= start:
+                raise BookingError("INVALID_INPUT", f"Slot end_at must be after start_at at line {line} of {filename}.")
+            row["start_at"] = iso(start)
+            row["end_at"] = iso(end)
+            if row.get("held_until"):
+                try:
+                    row["held_until"] = normalize_timestamp(row["held_until"])
+                except (TypeError, ValueError) as exc:
+                    raise BookingError("INVALID_INPUT", f"Invalid held_until at line {line} of {filename}.") from exc
+
     def import_showrooms_csv(self, csv_text: str) -> dict:
         """Upsert showroom rows from a UTF-8 CSV document."""
         required = {"code", "name", "address", "latitude", "longitude"}
         reader = csv.DictReader(io.StringIO(csv_text.lstrip("\ufeff")))
         if not reader.fieldnames or not required.issubset(reader.fieldnames):
-            raise BookingError("INVALID_INPUT", "CSV thiáº¿u cá»™t báº¯t buá»™c: code,name,address,latitude,longitude.")
+            raise BookingError("INVALID_INPUT", "CSV thiếu cột bắt buộc: code,name,address,latitude,longitude.")
         imported = 0
         with self.db.transaction(immediate=True) as c:
             for line, row in enumerate(reader, start=2):
@@ -288,10 +308,17 @@ class ImportService:
         "15_booking_events.csv": (("booking_id", "bookings", "id", "09_bookings.csv"),),
     }
 
-    @staticmethod
-    def _assert_dataset_references(c, filename, rows, references):
+    @classmethod
+    def _assert_dataset_references(cls, c, filename, rows, references):
+        allowed_identifiers = {table: set(columns) for table, columns in cls.DATASET_FILES.values()}
         problems = []
         for column, parent_table, parent_column, parent_file in references:
+            if (
+                column not in rows[0]
+                or parent_table not in allowed_identifiers
+                or parent_column not in allowed_identifiers[parent_table]
+            ):
+                raise ValueError("Invalid internal dataset reference configuration.")
             values = {row[column] for row in rows if row[column]}
             if not values:
                 continue
@@ -319,20 +346,22 @@ class ImportService:
             - {"16_import_order.csv", "17_dataset_summary.csv", "18_dataset_metadata.csv"}
         )
         if unknown:
-            raise BookingError("INVALID_INPUT", f"File khÃ´ng Ä‘Æ°á»£c há»— trá»£: {', '.join(unknown)}")
+            raise BookingError("INVALID_INPUT", f"File không được hỗ trợ: {', '.join(unknown)}")
         counts = {}
-        skipped = []
+        skipped: list[str] = []
         with self.db.transaction(immediate=True) as c:
             for filename, (table, expected) in self.DATASET_FILES.items():
                 if filename not in supplied:
                     continue
                 reader = csv.DictReader(io.StringIO(supplied[filename].lstrip("\ufeff")))
                 if reader.fieldnames != expected:
-                    raise BookingError("INVALID_INPUT", f"Header {filename} khÃ´ng Ä‘Ãºng. Cáº§n: {','.join(expected)}")
+                    raise BookingError("INVALID_INPUT", f"Header {filename} không đúng. Cần: {','.join(expected)}")
                 rows = list(reader)
                 if not rows:
                     counts[table] = 0
                     continue
+                if filename == "06_test_drive_slots.csv":
+                    self._normalize_slot_timestamps(rows, filename=filename)
                 if filename == "03_showrooms.csv":
                     for line, row in enumerate(rows, start=2):
                         self._validate_coordinates(
@@ -372,7 +401,7 @@ class ImportService:
                 except DatabaseIntegrityError as exc:
                     raise BookingError(
                         "INVALID_INPUT",
-                        f"KhÃ´ng thá»ƒ import {filename}: thiáº¿u dá»¯ liá»‡u phá»¥ thuá»™c hoáº·c vi pháº¡m constraint ({exc}).",
+                        f"Không thể import {filename}: thiếu dữ liệu phụ thuộc hoặc vi phạm constraint ({exc}).",
                     ) from exc
                 counts[table] = len(rows)
         return {

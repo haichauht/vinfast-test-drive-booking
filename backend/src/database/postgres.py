@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, cast
 
 try:
     import psycopg
     from psycopg.rows import dict_row
 except ImportError:  # pragma: no cover - exercised only when dependency is missing.
-    psycopg = None
-    dict_row = None
+    psycopg = cast(Any, None)
+    dict_row = cast(Any, None)
 
-from .guard import QueryGuard, translate_qmark_placeholders
 from .errors import DatabaseIntegrityError
+from .guard import QueryGuard, translate_qmark_placeholders
 from .rows import to_db_row
 from .schema import SCHEMA_SQL
 

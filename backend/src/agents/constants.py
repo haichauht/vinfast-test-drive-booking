@@ -22,12 +22,3 @@ OUT_OF_SCOPE_KEYWORDS: list[str] = [
     "viết script",
     "giải toán",
 ]
-
-# Keywords used as fallback when LLM classifier API fails
-GENERAL_GREETING_KEYWORDS: list[str] = [
-    "chào",
-    "hello",
-    "hi",
-    "tạm biệt",
-    "bạn là ai",
-]
