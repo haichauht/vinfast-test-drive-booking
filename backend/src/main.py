@@ -19,6 +19,7 @@ from src.dependencies import booking_service, database, zalo_client
 from src.internal_portal.errors import InternalPortalError
 from src.internal_portal.routes import router as internal_router
 from src.logging_config import configure_logging
+from src.security.rate_limit import RateLimitMiddleware
 from src.services.zalo_bot import ZaloPollingService
 
 
@@ -48,12 +49,16 @@ async def lifespan(app: FastAPI):
     async def dispatch_notifications() -> None:
         while True:
             try:
-                await asyncio.to_thread(booking_service.dispatch_due_notifications)
+                await asyncio.to_thread(
+                    booking_service.dispatch_due_notifications,
+                    settings.notification_batch_size,
+                    settings.notification_processing_timeout_seconds,
+                )
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logging.getLogger(__name__).exception("Notification dispatch failed")
-            await asyncio.sleep(5)
+            await asyncio.sleep(settings.notification_poll_interval_seconds)
 
     notification_task = asyncio.create_task(dispatch_notifications())
     yield
@@ -90,6 +95,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware, database=database, settings=settings)
 
 
 @app.exception_handler(InternalPortalError)
