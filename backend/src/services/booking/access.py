@@ -31,6 +31,11 @@ class AccessService(BookingBase):
             "update_details": ["read_booking", "update_details"],
             "update_notifications": ["read_booking", "update_notifications"],
         }
+        # Keep compatibility with the original positional API:
+        # request_access(booking_code, contact_value, purpose). New callers use
+        # explicit keywords in the order contact_value, purpose, booking_code.
+        if booking_code in permissions and purpose not in permissions:
+            contact_value, purpose, booking_code = purpose, booking_code, contact_value
         if purpose not in permissions:
             raise BookingError("INVALID_INPUT", "Purpose khong hop le.")
         normalized_code = (booking_code or "").strip().upper()
@@ -121,7 +126,7 @@ class AccessService(BookingBase):
             "missing_fields": [],
             "suggested_next_action": "enter_otp",
         }
-        if expose_otp:
+        if expose_otp and result["is_mock"]:
             result["otp_code"] = code
         return result
 
@@ -256,15 +261,6 @@ class AccessService(BookingBase):
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def _same_phone_owner(self, c, anchor, target_id: str) -> bool:
-        target = c.execute("SELECT * FROM bookings WHERE id=?", (target_id,)).fetchone()
-        if not target:
-            return False
-        anchor_ids = [anchor["booker_person_id"], anchor["driver_person_id"]]
-        target_ids = [target["booker_person_id"], target["driver_person_id"]]
-        anchor_phones = {row["normalized_phone"] for row in c.execute("SELECT normalized_phone FROM people WHERE id IN (?,?)", anchor_ids).fetchall() if row["normalized_phone"]}
-        target_phones = {row["normalized_phone"] for row in c.execute("SELECT normalized_phone FROM people WHERE id IN (?,?)", target_ids).fetchall() if row["normalized_phone"]}
-        return bool(anchor_phones & target_phones)
     def _require_access(self, c, token: str, booking_id: str, permission: str) -> DbRow:
         session = c.execute(
             "SELECT * FROM booking_access_sessions WHERE token_hash=?", (self._hash(token, "session"),)

@@ -13,11 +13,17 @@
  *
  * Sửa ở đây khi: giao diện thiếu một trường dữ liệu, hoặc backend đổi tên trường trong API.
  */
-import { vehicleImage } from '../media/assets'
+import { modelImage, vehicleImage } from '../media/assets'
 
 const vehicleMediaPrefix = '/media/vehicle-media/'
+const catalogueVehicleMediaPattern = /\/media\/vehicles\/([^/?]+)\/(?:thumbnail|studio)\.[^/?#]+/i
 
 const resolveVehicleMedia = (url = '') => {
+  const catalogueMatch = url.match(catalogueVehicleMediaPattern)
+  if (catalogueMatch) {
+    return modelImage(decodeURIComponent(catalogueMatch[1])) || url
+  }
+
   const markerIndex = url.indexOf(vehicleMediaPrefix)
   if (markerIndex === -1) return url
   const relativePath = decodeURI(url.slice(markerIndex + vehicleMediaPrefix.length))
@@ -41,9 +47,9 @@ export const vehicleSummaryToCar = (vehicle) => ({
   seats: `${vehicle.seats} chỗ`,
   price: vehicle.displayPrice,
   tagline: vehicle.tagline,
-  hero: vehicle.thumbnail?.url || '',
+  hero: mediaView(vehicle.thumbnail).src,
   heroMedia: mediaView(vehicle.thumbnail),
-  intro: vehicle.thumbnail?.url || '',
+  intro: mediaView(vehicle.thumbnail).src,
   studioShot: {
     ...mediaView(vehicle.studioImage),
     mode: vehicle.studioImage?.mode || 'photo',
@@ -69,11 +75,11 @@ export const vehicleDetailToCar = (vehicle) => ({
   actionMedia: mediaView(vehicle.actionMedia),
   presentationFilm: vehicle.presentationFilm ? {
     src: vehicle.presentationFilm.url,
-    poster: vehicle.presentationFilm.posterUrl,
+    poster: resolveVehicleMedia(vehicle.presentationFilm.posterUrl || ''),
     mimeType: vehicle.presentationFilm.mimeType,
     eyebrow: vehicle.presentationFilm.eyebrow,
     title: vehicle.presentationFilm.title,
     copy: vehicle.presentationFilm.copy,
   } : null,
-  motionImage: vehicle.motion?.imageUrl || '',
+  motionImage: resolveVehicleMedia(vehicle.motion?.imageUrl || ''),
 })

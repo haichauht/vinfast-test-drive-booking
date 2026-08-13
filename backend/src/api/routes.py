@@ -2,9 +2,9 @@ import json
 import logging
 import uuid
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
@@ -13,18 +13,44 @@ from src.agents.tools import (
     verify_booking_access,
 )
 from src.agents.trace import redact, trace_event
-from src.dependencies import booking_service
+from src.config import get_settings
+from src.dependencies import booking_service, internal_portal_service
 from src.guardrails import get_guardrails
+from src.internal_portal import InternalPrincipal, InternalRole
+from src.internal_portal.routes import current_principal
 from src.models.schemas import (
     ChatRequest,
     ChatResponse,
     ClientLogRequest,
+    CsvImportRequest,
+    DatasetImportRequest,
     DemoActionRequest,
 )
 from src.services.booking import BookingError
 
 router = APIRouter()
 _default_agent = agent
+SECURITY_STATE_DATASET_FILES = {
+    "12_internal_users.csv",
+    "13_internal_user_showrooms.csv",
+    "14_internal_sessions.csv",
+    "26_idempotency_records.csv",
+    "29_otp_challenges.csv",
+    "30_booking_access_sessions.csv",
+    "31_zalo_identity_links.csv",
+    "32_internal_audit_events.csv",
+    # Equivalent runtime/security state in the legacy dataset.
+    "13_otp_challenges.csv",
+    "14_booking_access_sessions.csv",
+    "15_zalo_identity_links.csv",
+}
+
+
+def require_operations_admin(
+    principal: Annotated[InternalPrincipal, Depends(current_principal)],
+) -> InternalPrincipal:
+    internal_portal_service.require_roles(principal, InternalRole.OPERATIONS_ADMIN)
+    return principal
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -140,10 +166,21 @@ async def booking_health():
         return {"status": "ready", "service": "booking"}
     except Exception as exc:
         logging.getLogger(__name__).error("Booking readiness check failed: %s", exc)
-        raise HTTPException(status_code=503, detail={"code": "BOOKING_UNAVAILABLE", "message": "Dịch vụ đặt lịch tạm thời gián đoạn."})
+        raise HTTPException(
+            status_code=503, detail={"code": "BOOKING_UNAVAILABLE", "message": "Dịch vụ đặt lịch tạm thời gián đoạn."}
+        )
 
 
 AGENT_TOOLS = {"get_draft", "request_access", "verify_access", "get_details"}
+
+
+def _request_demo_access(**kwargs: Any) -> dict:
+    settings = get_settings()
+    expose_mock_otp = settings.app_env != "production"
+    kwargs.setdefault("booking_code", None)
+    if expose_mock_otp and not settings.zalo_bot_enabled and kwargs.get("preferred_channel") == "zalo":
+        kwargs["preferred_channel"] = "sms"
+    return booking_service.request_access(**kwargs, expose_otp=expose_mock_otp)
 
 
 @router.post("/demo/action")
@@ -158,7 +195,7 @@ async def demo_action(request: DemoActionRequest):
         "confirm_booking": ("ConfirmBookingCommand", booking_service.confirm_booking),
         "request_access": (
             "request_booking_access",
-            lambda **kw: booking_service.request_access(**kw),
+            _request_demo_access,
         ),
         "verify_access": ("verify_booking_access", lambda **kw: verify_booking_access.invoke(kw)),
         "get_details": ("get_booking_details", lambda **kw: get_booking_details.invoke(kw)),
@@ -185,6 +222,10 @@ async def demo_action(request: DemoActionRequest):
     name, handler = actions[request.action]
     try:
         data = handler(**p)
+        if request.action == "request_access":
+            allow_mock_otp = get_settings().app_env != "production" and data.get("is_mock") is True
+            if not allow_mock_otp:
+                data.pop("otp_code", None)
         kind = "Agent gọi tool" if request.action in AGENT_TOOLS else "Backend chạy UI command"
         return {"success": True, "message": f"{kind}: {name}", "tool": name, "data": data}
     except BookingError as exc:
@@ -194,6 +235,44 @@ async def demo_action(request: DemoActionRequest):
             "tool": name,
             "error": {"code": exc.code, "retryable": exc.retryable},
         }
+
+
+@router.post("/admin/import/showrooms")
+async def import_showrooms(
+    request: CsvImportRequest,
+    principal: Annotated[InternalPrincipal, Depends(require_operations_admin)],
+):
+    del principal
+    try:
+        return {"success": True, "data": booking_service.import_showrooms_csv(request.csv_text)}
+    except BookingError as exc:
+        raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)})
+
+
+@router.post("/admin/import/eval-dataset")
+async def import_eval_dataset(
+    request: DatasetImportRequest,
+    principal: Annotated[InternalPrincipal, Depends(require_operations_admin)],
+):
+    del principal
+    supplied_names = {name.replace("\\", "/").rsplit("/", 1)[-1] for name in request.files}
+    blocked = sorted(supplied_names & SECURITY_STATE_DATASET_FILES)
+    if blocked:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "SECURITY_STATE_IMPORT_FORBIDDEN",
+                "message": "Không được import tài khoản, phiên đăng nhập hoặc dữ liệu bảo mật qua API.",
+                "files": blocked,
+            },
+        )
+    try:
+        return {"success": True, "data": booking_service.import_eval_dataset(request.files)}
+    except BookingError as exc:
+        logging.getLogger("import").warning(
+            "Dataset import rejected files=%s code=%s message=%s", sorted(request.files), exc.code, str(exc)
+        )
+        raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)})
 
 
 @router.post("/client-log", status_code=204)

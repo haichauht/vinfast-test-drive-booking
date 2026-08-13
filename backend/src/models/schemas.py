@@ -40,6 +40,14 @@ class DemoActionRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class CsvImportRequest(BaseModel):
+    csv_text: str = Field(..., min_length=1)
+
+
+class DatasetImportRequest(BaseModel):
+    files: dict[str, str] = Field(..., min_length=1)
+
+
 class ClientLogRequest(BaseModel):
     level: str = "error"
     message: str = Field(..., min_length=1, max_length=2000)

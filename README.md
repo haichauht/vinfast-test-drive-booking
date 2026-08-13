@@ -2,6 +2,15 @@
 
 MVP công khai cho phép người dùng xem catalogue VinFast, trò chuyện với ViVi, tìm showroom, tạo lịch lái thử và tra cứu/sửa/hủy lịch bằng luồng OTP demo.
 
+## Thành phần ứng dụng
+
+- `backend`: FastAPI, LangGraph agent, booking service, PostgreSQL/SQLite adapter.
+- `frontend`: Vite React UI cho trang sản phẩm, tư vấn và đặt lịch.
+- `internal-portal/frontend`: React UI riêng cho Staff, Showroom Manager và Operations Admin.
+- `backend/src/internal_portal`: authentication, RBAC, showroom scope và Internal API dùng chung booking service.
+- `admin`: Streamlit dashboard/import data cũ, chỉ chạy qua Docker profile tùy chọn.
+- `eval/data`: bộ CSV seed dữ liệu booking/catalog.
+
 ## Môi trường đang triển khai
 
 | Thành phần | Dịch vụ | Địa chỉ |
@@ -53,7 +62,7 @@ change_logs/    Nhật ký thay đổi theo ngày
 .github/        Frontend và backend CI/CD workflows
 ```
 
-Các route public `/api/v1/dashboard` và `/api/v1/admin/import/*` đã được gỡ. Streamlit admin chỉ còn là Docker profile tùy chọn và không được chạy trên production.
+Route public cũ `/api/v1/dashboard` đã được gỡ. Các route `/api/v1/admin/import/*` chỉ chấp nhận tài khoản Internal Portal có quyền Operations Admin; request ẩn danh không thể import dữ liệu. Streamlit admin chỉ còn là Docker profile tùy chọn và không được chạy trên production.
 
 ## Chạy local bằng Docker
 
@@ -76,15 +85,106 @@ docker compose up -d backend frontend
 Các service mặc định:
 
 - Frontend: <http://localhost:3000>
-- Backend: <http://localhost:8000>
-- Swagger: <http://localhost:8000/docs>
+- Internal Portal: <http://localhost:3100>
+- Backend API: <http://localhost:8001>
+- Swagger: <http://localhost:8001/docs>
+- Legacy Streamlit admin (profile `legacy-admin`): <http://localhost:8501>
 - PostgreSQL: `localhost:5432`
 
-Service Streamlit admin nằm trong profile `admin`, không tự chạy cùng `docker compose up`.
+Docker Compose mặc định publish backend ở cổng host `8001` để tránh xung đột với
+các ứng dụng thường dùng cổng `8000`. Có thể đổi bằng `BACKEND_HOST_PORT` trong
+file `.env`; backend bên trong Docker network vẫn lắng nghe ở cổng `8000`.
 
 `docker compose down` giữ nguyên volume PostgreSQL. `docker compose down -v` xóa toàn bộ database local và chỉ nên dùng khi chủ động muốn tạo lại dữ liệu phát triển.
 
-## Chạy local không dùng Docker
+## Setup Data
+
+```text
+eval/data -> /app/eval/data
+```
+
+Importer tự nhận diện một trong hai định dạng:
+
+- Legacy: các file `01_vehicle_models.csv` đến `15_booking_events.csv` nằm trực tiếp trong `eval/data`.
+- V5: package đầy đủ nằm trong `eval/data`, với 32 file CSV trong thư mục `eval/data/seed`.
+
+Khi database rỗng, backend sẽ import toàn bộ các file theo thứ tự dependency. Bộ legacy gồm:
+
+```text
+01_vehicle_models.csv
+02_vehicle_variants.csv
+03_showrooms.csv
+04_sales_staff.csv
+05_demo_vehicles.csv
+06_test_drive_slots.csv
+07_slot_sales_assignments.csv
+08_people.csv
+09_bookings.csv
+10_booking_driver_details.csv
+11_notification_plans.csv
+12_notification_jobs.csv
+13_otp_challenges.csv
+14_booking_access_sessions.csv
+15_booking_events.csv
+```
+
+Bộ V5 bắt đầu bằng `seed/01_provinces.csv`, kết thúc bằng
+`seed/32_internal_audit_events.csv`, và bao gồm geography, showroom metadata,
+RBAC/Internal Portal, vận hành xe/nhân viên, booking, OTP, notification và audit.
+
+Các file data gốc được lưu tại Google Drive:
+
+<REMOVED-PRIVATE-LINK>
+
+Tải các file CSV từ Drive về `eval/data`, sau đó chạy:
+
+```powershell
+docker compose down -v
+docker compose up --build
+```
+
+Khi import thành công, log `db-seed` sẽ có dạng:
+
+```text
+Imported full eval dataset from /app/eval/data: ...
+```
+
+## Reset Và Re-Import
+
+`docker compose down` chỉ tắt/xóa container, không xóa database volume. Booking đã tạo vẫn còn.
+
+```powershell
+docker compose down
+docker compose up
+```
+
+`docker compose down -v` xóa cả PostgreSQL volume `postgres-data`. Lần `up` sau database rỗng và hệ thống import lại từ `eval/data`.
+
+```powershell
+docker compose down -v
+docker compose up --build
+```
+
+Nếu đã sửa code seed/import, luôn dùng `--build`; nếu không Docker có thể chạy image cũ.
+
+## Backup PostgreSQL
+
+Backup trước khi xóa volume:
+
+```powershell
+New-Item -ItemType Directory -Force backups
+docker compose exec postgres pg_dump -U vinfast -d vinfast_booking -Fc -f /tmp/vinfast_booking.dump
+docker compose cp postgres:/tmp/vinfast_booking.dump ./backups/vinfast_booking.dump
+```
+
+Restore:
+
+```powershell
+docker compose cp ./backups/vinfast_booking.dump postgres:/tmp/vinfast_booking.dump
+docker compose exec postgres pg_restore -U vinfast -d vinfast_booking --clean --if-exists /tmp/vinfast_booking.dump
+```
+
+## Chạy Local Không Docker
 
 Backend:
 

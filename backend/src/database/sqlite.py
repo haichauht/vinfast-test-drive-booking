@@ -105,11 +105,29 @@ class SQLiteDatabase:
 
     def _migrate_legacy_schema(self, connection: SQLiteConnection) -> None:
         additions = {
+            "vehicle_models": {
+                "seat_count": "INTEGER",
+                "test_drive_eligible": "INTEGER NOT NULL DEFAULT 1 CHECK(test_drive_eligible IN (0,1))",
+            },
+            "vehicle_variants": {"default_test_drive_minutes": "INTEGER"},
+            "showrooms": {
+                "province_id": "TEXT REFERENCES provinces(id)",
+                "district_id": "TEXT REFERENCES districts(id)",
+                "ward_id": "TEXT REFERENCES wards(id)",
+                "normalized_address": "TEXT",
+                "region": "TEXT",
+                "map_visible": "INTEGER NOT NULL DEFAULT 1 CHECK(map_visible IN (0,1))",
+            },
             "sales_staff": {
                 "role": "TEXT NOT NULL DEFAULT 'sales_consultant'",
                 "is_active": "INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1))",
             },
-            "bookings": {"assigned_sales_staff_id": "TEXT REFERENCES sales_staff(id)"},
+            "bookings": {
+                "assigned_sales_staff_id": "TEXT REFERENCES sales_staff(id)",
+                "no_show_at": "TEXT",
+                "customer_note": "TEXT",
+                "internal_note": "TEXT",
+            },
             "notification_plans": {"zalo_enabled": "INTEGER NOT NULL DEFAULT 0"},
             "notification_jobs": {
                 "max_attempts": "INTEGER NOT NULL DEFAULT 3",
@@ -126,6 +144,20 @@ class SQLiteDatabase:
                 "resource_id": "TEXT",
                 "error_code": "TEXT",
                 "expires_at": "TEXT",
+            },
+            "vehicle_transfers": {
+                "approved_by": "TEXT REFERENCES internal_users(id)",
+                "completed_by": "TEXT REFERENCES internal_users(id)",
+                "requested_at": "TEXT",
+                "approved_at": "TEXT",
+                "reason": "TEXT",
+            },
+            "zalo_identity_links": {
+                "id": "TEXT",
+                "person_id": "TEXT REFERENCES people(id)",
+                "phone_hash": "TEXT",
+                "zalo_user_id": "TEXT",
+                "is_active": "INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1))",
             },
         }
         for table, columns in additions.items():
