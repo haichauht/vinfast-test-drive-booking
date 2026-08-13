@@ -54,6 +54,12 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      # Jobs run in isolated runner workspaces; Vercel CLI needs Node/npx here.
+      - name: Set up Node.js for Vercel CLI
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Pull Vercel production configuration
         run: npx vercel@latest pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
