@@ -4,9 +4,10 @@ import hashlib
 import hmac
 import json
 import secrets
-from datetime import timedelta
+from datetime import UTC, timedelta
 
 from src.database.rows import DbRow
+from src.security.rate_limit import consume_rate_limit_counter
 from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
 from src.services.booking.errors import BookingError
 
@@ -14,12 +15,31 @@ _id = new_id
 
 
 class AccessService:
+    def _check_rate_counter(self, *, bucket_key: str, limit: int, window_seconds: int) -> None:
+        now_dt = self.now()
+        if now_dt.tzinfo is None:
+            now_dt = now_dt.replace(tzinfo=UTC)
+        with self.db.transaction(immediate=True) as c:
+            decision = consume_rate_limit_counter(
+                c,
+                bucket_key=bucket_key,
+                limit=limit,
+                window_seconds=window_seconds,
+                now=now_dt,
+            )
+            if not decision.allowed:
+                raise BookingError(
+                    "RATE_LIMIT_EXCEEDED",
+                    f"Vui lòng thử lại sau {decision.retry_after_seconds} giây.",
+                    retryable=True,
+                )
+
     def request_access(
         self,
         contact_value: str,
         purpose: str,
         booking_code: str | None = None,
-        preferred_channel: str = "sms",
+        preferred_channel: str = "email",
         *,
         expose_otp: bool = False,
     ) -> dict:
@@ -33,29 +53,35 @@ class AccessService:
         if purpose not in permissions:
             raise BookingError("INVALID_INPUT", "Purpose khong hop le.")
         normalized_code = (booking_code or "").strip().upper()
+        preferred_channel = "email"
         if preferred_channel not in {"zalo", "sms", "email"}:
             raise BookingError("INVALID_INPUT", "Kênh OTP phải là zalo, sms hoặc email.")
         contact = contact_value.strip()
-        normalized = contact.lower() if preferred_channel == "email" else normalize_phone(contact)
-        if not normalized or (preferred_channel == "email") != ("@" in normalized):
+        normalized = contact.lower()
+        if not normalized or "@" not in normalized:
             raise BookingError("INVALID_INPUT", "Thong tin lien he khong phu hop voi kenh OTP.")
         destination_hash = self._hash(normalized, "destination")
+        self._check_rate_counter(
+            bucket_key=f"otp_request:contact:{destination_hash}",
+            limit=self.otp_request_per_contact_per_hour,
+            window_seconds=3600,
+        )
         with self.db.transaction(immediate=True) as c:
             booking = c.execute("SELECT * FROM bookings WHERE booking_code=?", (normalized_code,)).fetchone() if normalized_code else c.execute(
                 "SELECT b.* FROM bookings b JOIN people booker ON booker.id=b.booker_person_id "
                 "LEFT JOIN people driver ON driver.id=b.driver_person_id "
-                "WHERE booker.normalized_phone=? OR driver.normalized_phone=? "
+                "WHERE lower(booker.email)=? OR lower(driver.email)=? "
                 "ORDER BY COALESCE(b.confirmed_at,b.held_at) DESC LIMIT 1",
                 (normalized, normalized),
             ).fetchone()
             if not booking:
-                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Không tìm thấy lịch hẹn thuộc số điện thoại này.")
+                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Khong tim thay lich hen thuoc email nay.")
             contact_matches = c.execute(
                 "SELECT 1 FROM people WHERE id IN (?,?) AND (lower(email)=? OR normalized_phone=? OR phone=?) LIMIT 1",
                 (booking["booker_person_id"], booking["driver_person_id"], normalized, normalized, contact),
             ).fetchone()
             if not contact_matches:
-                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Số điện thoại hoặc email không thuộc mã lịch này.")
+                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Email khong thuoc lich hen nay.")
             if preferred_channel == "zalo" and not hasattr(self.otp_sender, "is_linked"):
                 raise BookingError("ZALO_NOT_CONFIGURED", "Kênh Zalo chưa được cấu hình.")
             if preferred_channel == "zalo" and not self.otp_sender.is_linked(contact_value):
@@ -79,7 +105,7 @@ class AccessService:
                 "UPDATE otp_challenges SET status='superseded' WHERE booking_id=? AND status='pending'",
                 (booking["id"],),
             )
-            code = f"{secrets.randbelow(1000000):06d}"
+            code = f"{secrets.randbelow(1_000_000):06d}"
             salt = secrets.token_hex(8)
             challenge_id = _id("otp")
             expires_at = self.now() + timedelta(seconds=self.otp_ttl_seconds)
@@ -135,6 +161,15 @@ class AccessService:
         return "*" * max(0, len(value) - 3) + value[-3:]
 
     def verify_access(self, challenge_id: str, otp_code: str) -> dict:
+        with self.db.connect() as c:
+            challenge_exists = c.execute("SELECT id FROM otp_challenges WHERE id=?", (challenge_id,)).fetchone()
+        if not challenge_exists:
+            raise BookingError("OTP_INVALID", "OTP không hợp lệ.")
+        self._check_rate_counter(
+            bucket_key=f"otp_verify:challenge:{challenge_id}",
+            limit=self.otp_verify_per_challenge_per_minute,
+            window_seconds=60,
+        )
         with self.db.transaction(immediate=True) as c:
             ch = c.execute("SELECT * FROM otp_challenges WHERE id=?", (challenge_id,)).fetchone()
             if not ch:
@@ -244,15 +279,19 @@ class AccessService:
                 raise BookingError("ACCESS_SESSION_EXPIRED", "Phiên truy cập đã hết hạn.")
             anchor = c.execute("SELECT * FROM bookings WHERE id=?", (session["booking_id"],)).fetchone()
             ids = [anchor["booker_person_id"], anchor["driver_person_id"]]
-            phones = {row["normalized_phone"] for row in c.execute("SELECT normalized_phone FROM people WHERE id IN (?,?)", ids).fetchall() if row["normalized_phone"]}
-            if not phones:
+            emails = {
+                (row["normalized_email"] or "").lower()
+                for row in c.execute("SELECT normalized_email FROM people WHERE id IN (?,?)", ids).fetchall()
+                if row["normalized_email"]
+            }
+            if not emails:
                 return []
-            marks = ",".join("?" * len(phones))
+            marks = ",".join("?" * len(emails))
             rows = c.execute(
-                f"SELECT b.id,b.booking_code,b.status,b.confirmed_at,booker.full_name booker_name,booker.phone,booker.email,m.name vehicle_name,s.name showroom_name,t.start_at "
+                f"SELECT b.id,b.booking_code,b.status,b.confirmed_at,m.name vehicle_name,s.name showroom_name,t.start_at "
                 f"FROM bookings b JOIN people booker ON booker.id=b.booker_person_id JOIN test_drive_slots t ON t.id=b.slot_id JOIN demo_vehicles d ON d.id=t.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id JOIN vehicle_models m ON m.id=v.model_id JOIN showrooms s ON s.id=t.showroom_id "
-                f"LEFT JOIN people driver ON driver.id=b.driver_person_id WHERE b.booking_code IS NOT NULL AND b.status IN ('confirmed','checked_in','completed','no_show') AND (booker.normalized_phone IN ({marks}) OR driver.normalized_phone IN ({marks})) ORDER BY CASE WHEN t.start_at >= ? THEN 0 ELSE 1 END, CASE WHEN t.start_at >= ? THEN t.start_at END ASC, t.start_at DESC",
-                (*phones, *phones, iso(self.now()), iso(self.now())),
+                f"LEFT JOIN people driver ON driver.id=b.driver_person_id WHERE b.booking_code IS NOT NULL AND b.status IN ('confirmed','checked_in','completed','no_show') AND (booker.normalized_email IN ({marks}) OR driver.normalized_email IN ({marks})) ORDER BY CASE WHEN t.start_at >= ? THEN 0 ELSE 1 END, CASE WHEN t.start_at >= ? THEN t.start_at END ASC, t.start_at DESC",
+                (*emails, *emails, iso(self.now()), iso(self.now())),
             ).fetchall()
             return [dict(row) for row in rows]
 
@@ -262,9 +301,17 @@ class AccessService:
             return False
         anchor_ids = [anchor["booker_person_id"], anchor["driver_person_id"]]
         target_ids = [target["booker_person_id"], target["driver_person_id"]]
-        anchor_phones = {row["normalized_phone"] for row in c.execute("SELECT normalized_phone FROM people WHERE id IN (?,?)", anchor_ids).fetchall() if row["normalized_phone"]}
-        target_phones = {row["normalized_phone"] for row in c.execute("SELECT normalized_phone FROM people WHERE id IN (?,?)", target_ids).fetchall() if row["normalized_phone"]}
-        return bool(anchor_phones & target_phones)
+        anchor_emails = {
+            row["normalized_email"]
+            for row in c.execute("SELECT normalized_email FROM people WHERE id IN (?,?)", anchor_ids).fetchall()
+            if row["normalized_email"]
+        }
+        target_emails = {
+            row["normalized_email"]
+            for row in c.execute("SELECT normalized_email FROM people WHERE id IN (?,?)", target_ids).fetchall()
+            if row["normalized_email"]
+        }
+        return bool(anchor_emails & target_emails)
     def _require_access(self, c, token: str, booking_id: str, permission: str) -> DbRow:
         session = c.execute(
             "SELECT * FROM booking_access_sessions WHERE token_hash=?", (self._hash(token, "session"),)

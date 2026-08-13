@@ -41,7 +41,7 @@ async def test_classifier_sensitive_keyword_bypasses_llm(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("sub_intent", "expected_skill"),
-    [("booking", "booking"), ("vehicle_info", "advise")],
+    [("booking", "booking"), ("booking_lookup", "booking"), ("vehicle_info", "advise")],
 )
 async def test_classifier_maps_domain_sub_intent_to_active_skill(monkeypatch, sub_intent, expected_skill):
     structured = MagicMock()
@@ -54,8 +54,37 @@ async def test_classifier_maps_domain_sub_intent_to_active_skill(monkeypatch, su
 
     assert result["intent"] == "domain"
     assert result["active_skill"] == expected_skill
-    assert result["metadata"] == {"request_id": "r-1", "sub_intent": sub_intent}
+    assert result["metadata"]["request_id"] == "r-1"
+    assert result["metadata"]["sub_intent"] == sub_intent
+    assert result["metadata"]["llm_call_count"] == 1
+    assert result["intent_entities"] == {"contact_value": None}
     structured.ainvoke.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_classifier_extracts_booking_lookup_and_email_without_frontend_matching(monkeypatch):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        return_value=RouteSchema(
+            intent="domain",
+            sub_intent="booking_lookup",
+            contact_value="customer@example.com",
+        )
+    )
+    llm = MagicMock()
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+
+    result = await classifier_node(
+        {
+            "query": "Kiểm tra lịch của customer@example.com",
+            "context": {"channel": "booking", "stage": "choose_showroom"},
+        }
+    )
+
+    assert result["active_skill"] == "booking"
+    assert result["metadata"]["sub_intent"] == "booking_lookup"
+    assert result["intent_entities"] == {"contact_value": "customer@example.com"}
 
 
 # test case of Chau + kiểm tra classifier fallback chọn booking hoặc advise khi LLM lỗi

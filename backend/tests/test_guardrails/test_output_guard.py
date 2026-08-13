@@ -139,3 +139,20 @@ def test_does_not_redact_booking_codes_or_vehicle_model_numbers():
     )
 
     assert protected.response == "Mã lịch VF260803140F74 dành cho xe VF8."
+
+
+def test_preserves_booking_code_in_public_action_data():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": "Found bookings",
+            "action_result": {
+                "items": [
+                    {"id": "booking-1", "booking_code": "VF260803140F74"},
+                    {"id": "booking-2", "booking_code": "VF260803140ABC"},
+                ]
+            },
+        }
+    )
+
+    assert protected.action_data["items"][0]["booking_code"] == "VF260803140F74"
+    assert protected.action_data["items"][1]["booking_code"] == "VF260803140ABC"
