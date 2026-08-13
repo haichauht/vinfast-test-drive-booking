@@ -1,19 +1,95 @@
-version: "3.8"
-
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: vinfast_booking
+      POSTGRES_USER: vinfast
+      POSTGRES_PASSWORD: vinfast
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vinfast -d vinfast_booking"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db-seed:
+    image: vinfast-backend:dev
+    profiles: ["seed"]
+    # build:
+    #   context: ./backend
+    #   dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://vinfast:vinfast@postgres:5432/vinfast_booking
+      EVAL_DATA_DIR: /app/eval/data
+    command: ["python", "scripts/seed_dev_db.py"]
+    volumes:
+      - ./eval/data:/app/eval/data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   backend:
+    image: vinfast-backend:dev
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql://vinfast:vinfast@postgres:5432/vinfast_booking
+      EVAL_DATA_DIR: /app/eval/data
     volumes:
-      - ./data:/app/data
+      - ./backend/data:/app/data
+      - ./backend/logs:/app/logs
+      - ./eval/data:/app/eval/data:ro
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  admin:
+    image: vinfast-backend:dev
+    profiles: ["admin"]
+    # build:
+    #   context: ./backend
+    #   dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://vinfast:vinfast@postgres:5432/vinfast_booking
+    volumes:
+      - ./backend:/app
+      - ./eval/data:/app/eval/data:ro
+    command: ["streamlit", "run", "admin_app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: vinfast-frontend:dev
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+volumes:
+  postgres-data:
