@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 from datetime import UTC, datetime, timedelta
@@ -10,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 
 from src.database import Database
+from src.services.booking.common import new_id
 from src.services.booking.notifications import ProviderResult
 
 _LINK_COMMAND = re.compile(r"^\s*LIENKET\s+((?:\+84|0)\d{9,10})\s*$", re.IGNORECASE)
@@ -60,15 +62,26 @@ class ZaloOtpSender:
         self.client = client
 
     def is_linked(self, phone: str) -> bool:
+        normalized = normalize_phone(phone)
         with self.database.connect() as connection:
-            return connection.execute("SELECT 1 FROM zalo_identity_links WHERE phone=?", (normalize_phone(phone),)).fetchone() is not None
+            return self._linked_row(connection, normalized) is not None
+
+    @staticmethod
+    def _linked_row(connection, phone: str):
+        phone_hash = hashlib.sha256(phone.encode("utf-8")).hexdigest()
+        return connection.execute(
+            "SELECT COALESCE(z.chat_id,z.zalo_user_id) chat_id FROM zalo_identity_links z "
+            "LEFT JOIN people p ON p.id=z.person_id WHERE z.is_active=1 AND "
+            "(z.phone=? OR p.phone=? OR p.normalized_phone=? OR z.phone_hash=?) LIMIT 1",
+            (phone, phone, phone, phone_hash),
+        ).fetchone()
 
     def send(self, *, channel: str, destination: str, code: str, expires_in_seconds: int) -> ProviderResult:
         if channel != "zalo":
             raise ValueError("ZaloOtpSender only supports the zalo channel")
         phone = normalize_phone(destination)
         with self.database.connect() as connection:
-            row = connection.execute("SELECT chat_id FROM zalo_identity_links WHERE phone=?", (phone,)).fetchone()
+            row = self._linked_row(connection, phone)
         if row is None:
             raise RuntimeError("Zalo account is not linked to this phone number")
         payload = self.client.send_text(row["chat_id"], f"Mã xác thực lịch lái thử VinFast: {code}. Mã có hiệu lực trong {expires_in_seconds // 60} phút.")
@@ -84,8 +97,9 @@ class ZaloOtpSender:
     def send_message(self, *, channel: str, destination: str, body: str) -> ProviderResult:
         if channel != "zalo":
             raise ValueError("ZaloOtpSender only supports the zalo channel")
+        phone = normalize_phone(destination)
         with self.database.connect() as connection:
-            row = connection.execute("SELECT chat_id FROM zalo_identity_links WHERE phone=?", (normalize_phone(destination),)).fetchone()
+            row = self._linked_row(connection, phone)
         if row is None:
             raise RuntimeError("Zalo account is not linked to this phone number")
         payload = self.client.send_text(row["chat_id"], body)
@@ -159,12 +173,26 @@ class ZaloPollingService:
             self.client.send_text(chat_id, "Để liên kết số điện thoại, hãy nhắn: LIENKET 09xxxxxxxx")
             return
         phone = normalize_phone(match.group(1))
-        with self.database.connect() as connection:
-            connection.execute(
-                "INSERT INTO zalo_identity_links(phone,chat_id,linked_at,updated_at) VALUES(?,?,?,?) "
-                "ON CONFLICT(phone) DO UPDATE SET chat_id=excluded.chat_id,updated_at=excluded.updated_at",
-                (phone, chat_id, now, now),
-            )
+        phone_hash = hashlib.sha256(phone.encode("utf-8")).hexdigest()
+        with self.database.transaction(immediate=True) as connection:
+            existing = connection.execute(
+                "SELECT z.id FROM zalo_identity_links z LEFT JOIN people p ON p.id=z.person_id "
+                "WHERE z.phone=? OR p.phone=? OR p.normalized_phone=? OR z.phone_hash=? "
+                "OR z.chat_id=? OR z.zalo_user_id=? LIMIT 1",
+                (phone, phone, phone, phone_hash, chat_id, chat_id),
+            ).fetchone()
+            if existing:
+                connection.execute(
+                    "UPDATE zalo_identity_links SET phone=?,chat_id=?,zalo_user_id=COALESCE(zalo_user_id,?),"
+                    "is_active=1,updated_at=? WHERE id=?",
+                    (phone, chat_id, chat_id, now, existing["id"]),
+                )
+            else:
+                connection.execute(
+                    "INSERT INTO zalo_identity_links(id,phone,chat_id,zalo_user_id,is_active,linked_at,updated_at) "
+                    "VALUES(?,?,?,?,?,?,?)",
+                    (new_id("zalo"), phone, chat_id, chat_id, 1, now, now),
+                )
         self.client.send_text(chat_id, f"Đã liên kết số {phone} với Zalo này. Bạn có thể nhận mã OTP để quản lý lịch lái thử trên website.")
 
 

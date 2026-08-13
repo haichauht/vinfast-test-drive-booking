@@ -111,11 +111,29 @@ class PostgresDatabase:
 
     def _migrate_existing_schema(self, connection: PostgresConnection) -> None:
         additions = {
+            "vehicle_models": {
+                "seat_count": "INTEGER",
+                "test_drive_eligible": "INTEGER NOT NULL DEFAULT 1 CHECK(test_drive_eligible IN (0,1))",
+            },
+            "vehicle_variants": {"default_test_drive_minutes": "INTEGER"},
+            "showrooms": {
+                "province_id": "TEXT REFERENCES provinces(id)",
+                "district_id": "TEXT REFERENCES districts(id)",
+                "ward_id": "TEXT REFERENCES wards(id)",
+                "normalized_address": "TEXT",
+                "region": "TEXT",
+                "map_visible": "INTEGER NOT NULL DEFAULT 1 CHECK(map_visible IN (0,1))",
+            },
             "sales_staff": {
                 "role": "TEXT NOT NULL DEFAULT 'sales_consultant'",
                 "is_active": "INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1))",
             },
-            "bookings": {"assigned_sales_staff_id": "TEXT REFERENCES sales_staff(id)"},
+            "bookings": {
+                "assigned_sales_staff_id": "TEXT REFERENCES sales_staff(id)",
+                "no_show_at": "TEXT",
+                "customer_note": "TEXT",
+                "internal_note": "TEXT",
+            },
             "notification_plans": {"zalo_enabled": "INTEGER NOT NULL DEFAULT 0"},
             "notification_jobs": {
                 "max_attempts": "INTEGER NOT NULL DEFAULT 3",
@@ -133,12 +151,60 @@ class PostgresDatabase:
                 "error_code": "TEXT",
                 "expires_at": "TEXT",
             },
+            "vehicle_transfers": {
+                "approved_by": "TEXT REFERENCES internal_users(id)",
+                "completed_by": "TEXT REFERENCES internal_users(id)",
+                "requested_at": "TEXT",
+                "approved_at": "TEXT",
+                "reason": "TEXT",
+            },
+            "zalo_identity_links": {
+                "id": "TEXT",
+                "person_id": "TEXT REFERENCES people(id)",
+                "phone_hash": "TEXT",
+                "zalo_user_id": "TEXT",
+                "is_active": "INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1))",
+            },
         }
         for table, columns in additions.items():
             existing = self._columns(connection, table)
             for name, definition in columns.items():
                 if name not in existing:
                     connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+        self._migrate_v5_constraints(connection)
+
+    @staticmethod
+    def _migrate_v5_constraints(connection: PostgresConnection) -> None:
+        """Relax legacy-only constraints while preserving the existing API columns."""
+        statements = (
+            "ALTER TABLE vehicle_models ALTER COLUMN required_license_class DROP NOT NULL",
+            "ALTER TABLE vehicle_models ALTER COLUMN license_requirement_note DROP NOT NULL",
+            "ALTER TABLE bookings ALTER COLUMN hold_expires_at DROP NOT NULL",
+            "ALTER TABLE vehicle_variants DROP CONSTRAINT IF EXISTS vehicle_variants_code_key",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicle_variants_model_code_unique ON vehicle_variants(model_id,code)",
+            "ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_rescheduled_from_booking_id_fkey",
+            "ALTER TABLE bookings ADD CONSTRAINT bookings_rescheduled_from_booking_id_fkey FOREIGN KEY(rescheduled_from_booking_id) REFERENCES bookings(id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED",
+            "ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_replaced_by_booking_id_fkey",
+            "ALTER TABLE bookings ADD CONSTRAINT bookings_replaced_by_booking_id_fkey FOREIGN KEY(replaced_by_booking_id) REFERENCES bookings(id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED",
+            "ALTER TABLE booking_driver_details DROP CONSTRAINT IF EXISTS booking_driver_details_license_check_status_check",
+            "ALTER TABLE booking_driver_details ADD CONSTRAINT booking_driver_details_license_check_status_check CHECK(license_check_status IN ('not_provided','declared','pending','pending_in_person','verified','rejected','declared_ineligible'))",
+            "ALTER TABLE notification_jobs DROP CONSTRAINT IF EXISTS notification_jobs_status_check",
+            "ALTER TABLE notification_jobs ADD CONSTRAINT notification_jobs_status_check CHECK(status IN ('pending','processing','retrying','sent','failed','cancelled'))",
+            "ALTER TABLE vehicle_transfers DROP CONSTRAINT IF EXISTS vehicle_transfers_status_check",
+            "ALTER TABLE vehicle_transfers ADD CONSTRAINT vehicle_transfers_status_check CHECK(status IN ('requested','approved','completed','cancelled'))",
+            "ALTER TABLE vehicle_transfers ALTER COLUMN effective_at DROP NOT NULL",
+            "ALTER TABLE vehicle_transfers ALTER COLUMN created_at DROP NOT NULL",
+            "ALTER TABLE vehicle_transfers ALTER COLUMN updated_at DROP NOT NULL",
+            "ALTER TABLE internal_users DROP CONSTRAINT IF EXISTS internal_users_role_staff_binding_check",
+            "ALTER TABLE internal_users ADD CONSTRAINT internal_users_role_staff_binding_check CHECK((role='staff' AND staff_id IS NOT NULL) OR (role<>'staff' AND staff_id IS NULL)) NOT VALID",
+            "ALTER TABLE internal_users VALIDATE CONSTRAINT internal_users_role_staff_binding_check",
+            "UPDATE zalo_identity_links SET id='zalo_legacy_' || md5(phone) WHERE id IS NULL",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_zalo_identity_links_id_unique ON zalo_identity_links(id)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_zalo_identity_links_phone_hash_unique ON zalo_identity_links(phone_hash) WHERE phone_hash IS NOT NULL",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_zalo_identity_links_user_unique ON zalo_identity_links(zalo_user_id) WHERE zalo_user_id IS NOT NULL",
+        )
+        for statement in statements:
+            connection.execute(statement)
 
 
 def _split_statements(script: str) -> list[str]:

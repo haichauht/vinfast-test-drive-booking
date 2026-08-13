@@ -359,7 +359,8 @@ class LifecycleService(BookingBase):
             if slot["battery_soc"] is None or slot["battery_soc"] < slot["minimum_booking_soc"]:
                 raise BookingError("VEHICLE_NOT_READY", "Pin xe demo không còn đạt ngưỡng phục vụ.", retryable=True)
             assignment = c.execute(
-                "SELECT a.sales_staff_id FROM slot_sales_assignments a JOIN sales_staff s ON s.id=a.sales_staff_id "
+                "SELECT a.sales_staff_id,s.full_name,s.phone FROM slot_sales_assignments a "
+                "JOIN sales_staff s ON s.id=a.sales_staff_id AND s.status='active' AND s.is_active=1 "
                 "WHERE a.slot_id=? AND a.status='assigned' AND s.status='active' ORDER BY a.created_at LIMIT 1",
                 (draft["slot_id"],),
             ).fetchone()
@@ -389,10 +390,87 @@ class LifecycleService(BookingBase):
                         (now, booking_id),
                     )
             self._create_jobs(c, booking_id, slot["start_at"])
+            self._create_internal_booking_notifications(
+                c,
+                booking_id=booking_id,
+                booking_code=code,
+                showroom_id=slot["showroom_id"],
+                sales_staff_id=assignment["sales_staff_id"] if assignment else None,
+                start_at=slot["start_at"],
+            )
             self._event(c, booking_id, "booking_confirmed", "user")
-            result = {"booking_id": booking_id, "booking_code": code, "status": "confirmed", "confirmed_at": now}
+            result = {
+                "booking_id": booking_id,
+                "booking_code": code,
+                "status": "confirmed",
+                "confirmed_at": now,
+                "advisor": (
+                    {
+                        "id": assignment["sales_staff_id"],
+                        "full_name": assignment["full_name"],
+                        "phone": assignment["phone"],
+                    }
+                    if assignment
+                    else None
+                ),
+            }
             self._save_idempotency(c, ui_action_id, "confirm_booking", request_payload, result, now)
             return result
+
+    def _create_internal_booking_notifications(
+        self,
+        c,
+        *,
+        booking_id: str,
+        booking_code: str,
+        showroom_id: str,
+        sales_staff_id: str | None,
+        start_at: str,
+    ) -> None:
+        recipients = []
+        if sales_staff_id:
+            staff_user = c.execute(
+                "SELECT id FROM internal_users WHERE staff_id=? AND role='staff' AND is_active=1",
+                (sales_staff_id,),
+            ).fetchone()
+            if staff_user:
+                recipients.append(staff_user["id"])
+        manager_rows = c.execute(
+            "SELECT u.id FROM internal_users u JOIN internal_user_showrooms scope ON scope.user_id=u.id "
+            "WHERE scope.showroom_id=? AND u.role='showroom_manager' AND u.is_active=1",
+            (showroom_id,),
+        ).fetchall()
+        recipients.extend(row["id"] for row in manager_rows)
+        if not recipients:
+            return
+
+        showroom = c.execute("SELECT name FROM showrooms WHERE id=?", (showroom_id,)).fetchone()
+        start = parse_utc(start_at).astimezone(VIETNAM_TZ)
+        title = f"Booking mới {booking_code}"
+        body = (
+            f"{showroom['name']} có lịch lái thử lúc {start.strftime('%H:%M ngày %d/%m/%Y')}."
+            if showroom
+            else f"Có lịch lái thử lúc {start.strftime('%H:%M ngày %d/%m/%Y')}."
+        )
+        now = iso(self.now())
+        for recipient_user_id in dict.fromkeys(recipients):
+            c.execute(
+                "INSERT INTO internal_notifications("
+                "id,recipient_user_id,booking_id,showroom_id,notification_type,title,body,read_at,created_at"
+                ") VALUES(?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(recipient_user_id,booking_id,notification_type) DO NOTHING",
+                (
+                    _id("inotif"),
+                    recipient_user_id,
+                    booking_id,
+                    showroom_id,
+                    "booking_confirmed",
+                    title,
+                    body,
+                    None,
+                    now,
+                ),
+            )
 
     def _create_jobs(self, c, bid, start, *, confirmation_type: str = "booking_confirmation"):
         start_dt = parse_utc(start)

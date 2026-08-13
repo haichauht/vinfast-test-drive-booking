@@ -13,7 +13,10 @@ class StaffOperationService(BookingBase):
             "SELECT b.*,t.showroom_id,t.start_at FROM bookings b "
             "JOIN test_drive_slots t ON t.id=b.slot_id "
             "JOIN sales_staff s ON s.id=? AND s.showroom_id=t.showroom_id "
-            "WHERE b.id=? AND s.status='active' AND s.is_active=1",
+            "WHERE b.id=? AND s.status='active' AND s.is_active=1 "
+            "AND EXISTS (SELECT 1 FROM slot_sales_assignments ssa WHERE ssa.slot_id=t.id "
+            "AND ssa.sales_staff_id=s.id AND ssa.assignment_role='test_drive_consultant' "
+            "AND ssa.status='assigned')",
             (staff_id, booking_id),
         ).fetchone()
         if not row:
