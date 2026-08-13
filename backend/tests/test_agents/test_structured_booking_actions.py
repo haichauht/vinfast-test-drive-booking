@@ -1,24 +1,64 @@
 import json
 
 import pytest
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from src.agents.graph import agent
 from src.agents.nodes.booking_skill_node import booking_skill_node
 from src.agents.nodes.classifier_node import classifier_node
 
 
 @pytest.mark.asyncio
-async def test_booking_context_routes_to_booking_without_llm():
-    result = await classifier_node(
+async def test_classified_lookup_creates_booking_access_ui_tool_call():
+    result = await booking_skill_node(
         {
-            "query": "Tôi muốn tiếp tục",
-            "context": {"channel": "booking", "stage": "choose_showroom"},
+            "messages": [HumanMessage(content="Tôi muốn tra cứu lịch đã đặt")],
+            "metadata": {"sub_intent": "booking_lookup"},
+            "intent_entities": {"contact_value": None},
         }
     )
 
-    assert result["intent"] == "domain"
-    assert result["active_skill"] == "booking"
-    assert result["metadata"]["sub_intent"] == "booking"
+    tool_call = result["messages"][0].tool_calls[0]
+    assert tool_call["name"] == "request_booking_access"
+    assert tool_call["args"] == {"purpose": "lookup", "preferred_channel": "email"}
+
+
+@pytest.mark.asyncio
+async def test_booking_access_ui_directive_is_exposed_without_another_llm_call():
+    tool_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-access-form",
+                "name": "request_booking_access",
+                "args": {"purpose": "lookup", "preferred_channel": "email"},
+            }
+        ],
+    )
+    directive = {
+        "requires_contact_value": True,
+        "contact_type": "email",
+        "purpose": "lookup",
+        "suggested_next_action": "show_booking_access_email_form",
+    }
+
+    result = await booking_skill_node(
+        {
+            "messages": [
+                HumanMessage(content="Tôi muốn tra cứu lịch đã đặt"),
+                tool_call,
+                ToolMessage(
+                    content=json.dumps(directive),
+                    tool_call_id="call-access-form",
+                    name="request_booking_access",
+                ),
+            ],
+            "metadata": {"sub_intent": "booking_lookup"},
+        }
+    )
+
+    assert result["action_tool"] == "request_booking_access"
+    assert result["action_result"] == directive
+    assert result["action_input"] == {"purpose": "lookup", "preferred_channel": "email"}
 
 
 @pytest.mark.asyncio

@@ -40,6 +40,8 @@ class BookingService(
         otp_max_attempts: int = 5,
         otp_ttl_seconds: int = 300,
         otp_resend_cooldown_seconds: int = 60,
+        otp_request_per_contact_per_hour: int = 3,
+        otp_verify_per_challenge_per_minute: int = 5,
         access_session_ttl_seconds: int = 1800,
         now=utcnow,
     ):
@@ -54,5 +56,7 @@ class BookingService(
         self.otp_max_attempts = otp_max_attempts
         self.otp_ttl_seconds = otp_ttl_seconds
         self.otp_resend_cooldown_seconds = otp_resend_cooldown_seconds
+        self.otp_request_per_contact_per_hour = otp_request_per_contact_per_hour
+        self.otp_verify_per_challenge_per_minute = otp_verify_per_challenge_per_minute
         self.access_session_ttl_seconds = access_session_ttl_seconds
         self.now = now

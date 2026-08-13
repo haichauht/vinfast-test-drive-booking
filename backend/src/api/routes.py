@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
@@ -30,19 +30,20 @@ _default_agent = agent
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(request: Request, body: ChatRequest) -> ChatResponse:
     """Chat với AI agent."""
     try:
         # Tạo conversation_id mới nếu client không truyền
-        conversation_id = request.conversation_id or str(uuid.uuid4())
+        conversation_id = body.conversation_id or str(uuid.uuid4())
         trace_id = str(uuid.uuid4())
+        identity = getattr(request.state, "client_identity", None)
         guardrails = get_guardrails()
         input_decision = guardrails.inspect_input(
-            message=request.message,
+            message=body.message,
             conversation_id=conversation_id,
-            context=request.context,
-            action=request.action,
-            action_payload=request.action_payload,
+            context=body.context,
+            action=body.action,
+            action_payload=body.action_payload,
         )
         if not input_decision.allowed:
             trace_event(
@@ -59,19 +60,19 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 action_error=input_decision.code,
             )
 
-        safe_message = input_decision.sanitized_text or request.message
+        safe_message = input_decision.sanitized_text or body.message
         trace_event(
             "chat.request",
             trace_id=trace_id,
             conversation_id=conversation_id,
             message=safe_message,
-            context=request.context,
-            action=request.action,
-            action_payload=request.action_payload,
+            context=body.context,
+            action=body.action,
+            action_payload=body.action_payload,
         )
         config = {"configurable": {"thread_id": conversation_id}}
         logging.getLogger("agent.requests").info(
-            "chat_started conversation_id=%s requested_action=%s", conversation_id, request.action or "llm"
+            "chat_started conversation_id=%s requested_action=%s", conversation_id, body.action or "llm"
         )
         # Keep the module-level `agent` overrideable by existing tests, while
         # production resolves the graph initialized with the Postgres saver.
@@ -79,14 +80,20 @@ async def chat(request: ChatRequest) -> ChatResponse:
         result = await active_agent.ainvoke(
             {
                 "query": safe_message,
-                "context": request.context,
-                "requested_action": request.action,
-                "action_payload": request.action_payload,
+                "context": body.context,
+                "requested_action": body.action,
+                "action_payload": body.action_payload,
                 "action_result": None,
                 "action_tool": "",
                 "action_input": {},
                 "action_error": "",
-                "metadata": {"trace_id": trace_id},
+                "metadata": {
+                    "trace_id": trace_id,
+                    "conversation_id": conversation_id,
+                    "anon_session_id": getattr(identity, "session_id", "unknown"),
+                    "client_ip": getattr(identity, "client_ip", "unknown"),
+                    "llm_call_count": 0,
+                },
             },
             config=config,
         )
@@ -114,13 +121,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
             intent=result.get("intent"),
             active_skill=result.get("active_skill"),
             tool_call_count=result.get("tool_call_count"),
+            llm_call_count=(result.get("metadata") or {}).get("llm_call_count"),
         )
         return response
     except Exception as e:
         trace_event(
             "chat.error",
             trace_id=locals().get("trace_id", ""),
-            conversation_id=locals().get("conversation_id", request.conversation_id),
+            conversation_id=locals().get("conversation_id", body.conversation_id),
             error=str(e),
         )
         logging.getLogger(__name__).error("Internal error in chat endpoint: %s", e, exc_info=True)
@@ -187,8 +195,16 @@ async def demo_action(request: DemoActionRequest):
     name, handler = actions[request.action]
     try:
         data = handler(**p)
+        protected = get_guardrails().protect_output(
+            {
+                "response": "",
+                "action_input": p,
+                "action_result": data,
+                "action_error": "",
+            }
+        )
         kind = "Agent gọi tool" if request.action in AGENT_TOOLS else "Backend chạy UI command"
-        return {"success": True, "message": f"{kind}: {name}", "tool": name, "data": data}
+        return {"success": True, "message": f"{kind}: {name}", "tool": name, "data": protected.action_data}
     except BookingError as exc:
         return {
             "success": False,

@@ -127,6 +127,8 @@ class SQLiteDatabase:
                 "error_code": "TEXT",
                 "expires_at": "TEXT",
             },
+            "rate_limit_counters": {},
+            "llm_budget_ledger": {},
         }
         for table, columns in additions.items():
             existing = self._columns(connection, table)

@@ -10,11 +10,11 @@
  * - sendBookingMessage(): người dùng gõ tin nhắn tự do cho ViVi.
  * - searchBookingOptions(): tìm showroom có đúng mẫu xe + khung giờ trống (theo địa chỉ hoặc GPS).
  * - holdBookingSlot(): giữ chỗ một khung giờ (backend trả hạn giữ, UI đếm ngược).
- * - saveBookingCustomer(): lưu tên/điện thoại/email người đặt và người lái.
+ * - saveBookingCustomer(): lưu tên/email bắt buộc và số điện thoại nếu có.
  * - confirmHeldBooking(): chốt đặt lịch, trả về mã lịch.
  *
  * Nhóm 2 — tra cứu/sửa/huỷ lịch đã đặt (qua POST /api/v1/demo/action):
- * - requestBookingAccess() → verifyBookingAccess(): xin và xác thực OTP gửi qua Zalo.
+ * - requestBookingAccess() → verifyBookingAccess(): xin và xác thực OTP gửi qua email.
  * - getVerifiedBooking() · updateVerifiedBooking() · cancelVerifiedBooking().
  * - holdVerifiedReschedule() → confirmVerifiedReschedule(): đổi sang khung giờ khác.
  *
@@ -112,14 +112,14 @@ export const saveBookingCustomer = ({ bookingId, version, recipient, person }) =
     booker_patch: {
       full_name: person.bookingName,
       phone: person.phone,
-      ...(person.email ? { email: person.email } : {}),
+      email: person.email,
     },
     driver_same_as_booker: recipient === 'self',
     driver_patch: recipient === 'other'
       ? {
           full_name: person.driverName,
           phone: person.phone,
-          ...(person.email ? { email: person.email } : {}),
+          email: person.email,
         }
       : null,
     has_valid_license_commitment: person.hasLicense,
@@ -141,11 +141,11 @@ const bookingManagementAction = async (action, payload) => {
   return result
 }
 
-export const requestBookingAccess = ({ bookingCode, phone, purpose = 'lookup' }) => bookingManagementAction('request_access', {
-  booking_code: bookingCode,
-  contact_value: phone,
+export const requestBookingAccess = ({ bookingCode = '', email, purpose = 'lookup' }) => bookingManagementAction('request_access', {
+  ...(bookingCode.trim() ? { booking_code: bookingCode.trim() } : {}),
+  contact_value: email,
   purpose,
-  preferred_channel: 'zalo',
+  preferred_channel: 'email',
 })
 
 export const verifyBookingAccess = ({ challengeId, otpCode }) => bookingManagementAction('verify_access', {

@@ -157,14 +157,34 @@ def test_request_booking_access_forwards_safe_arguments(monkeypatch):
     result = request_booking_access.invoke(
         {
             "booking_code": "VF260804ABC123",
-            "contact_value": "0901234567",
+            "contact_value": "chau@example.com",
             "purpose": "lookup",
             "preferred_channel": "sms",
         }
     )
 
     assert "otp_code" not in result
-    service.request_access.assert_called_once_with("VF260804ABC123", "0901234567", "lookup", "sms")
+    service.request_access.assert_called_once_with(
+        contact_value="chau@example.com",
+        purpose="lookup",
+        booking_code="VF260804ABC123",
+        preferred_channel="email",
+    )
+
+
+def test_request_booking_access_opens_email_form_when_contact_is_missing(monkeypatch):
+    service = MagicMock()
+    monkeypatch.setattr(request_module, "booking_service", service)
+
+    result = request_booking_access.invoke({"purpose": "lookup"})
+
+    assert result == {
+        "requires_contact_value": True,
+        "contact_type": "email",
+        "purpose": "lookup",
+        "suggested_next_action": "show_booking_access_email_form",
+    }
+    service.request_access.assert_not_called()
 
 
 # test case of Chau + kiểm tra verify access tool forward challenge và OTP xuống service

@@ -8,7 +8,9 @@ from src.agents.state import AgentState
 from src.agents.tools import search_knowledge
 from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.utils import get_system_prompt, window_messages
+from src.dependencies import usage_budget_service
 from src.services.llm import get_llm
+from src.services.usage_budget import BudgetExceededError, LLMCallLimitExceededError, invoke_with_budget
 
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "advise_skill" / "SKILL.md"
 
@@ -52,7 +54,31 @@ async def advise_skill_node(state: AgentState) -> dict:
             tools=[tool.name for tool in tools],
             messages=messages_to_log(llm_messages),
         )
-        response = await llm_with_tools.ainvoke(llm_messages)
+        response = await invoke_with_budget(
+            llm_with_tools,
+            llm_messages,
+            model=getattr(llm, "model_name", "") or "chat",
+            metadata=metadata,
+            budget=usage_budget_service,
+            call_purpose="advise_skill",
+        )
+    except (BudgetExceededError, LLMCallLimitExceededError) as e:
+        from langchain_core.messages import AIMessage
+
+        budget_exceeded = isinstance(e, BudgetExceededError)
+        error_code = "LLM_BUDGET_EXCEEDED" if budget_exceeded else "LLM_CALL_LIMIT_EXCEEDED"
+        message = (
+            "Hệ thống đã đạt giới hạn chi phí AI trong hôm nay. Vui lòng thử lại sau."
+            if budget_exceeded
+            else "Yêu cầu này cần quá nhiều lượt xử lý AI. Vui lòng gửi lại yêu cầu ngắn gọn hơn."
+        )
+        safe_response = AIMessage(content=message)
+        return {
+            "messages": [safe_response],
+            "response": safe_response.content,
+            "action_error": error_code,
+            "metadata": metadata,
+        }
     except Exception as e:
         trace_event("llm.error", trace_id=trace_id, node="advise_skill", error=str(e))
         logging.getLogger(__name__).exception("Error in advise_skill_node")
@@ -63,6 +89,7 @@ async def advise_skill_node(state: AgentState) -> dict:
             "messages": [safe_response],
             "response": safe_response.content,
             "error": str(e),
+            "metadata": metadata,
         }
 
     # Extract response text for the API
@@ -93,6 +120,7 @@ async def advise_skill_node(state: AgentState) -> dict:
     output: dict[str, Any] = {
         "messages": [response],
         "tool_call_count": current_count + 1 if has_tool_calls else current_count,
+        "metadata": metadata,
     }
     if response_content:
         output["response"] = response_content

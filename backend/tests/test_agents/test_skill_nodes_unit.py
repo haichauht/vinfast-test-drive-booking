@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -35,6 +36,7 @@ async def test_booking_skill_binds_only_booking_tools_and_returns_text(monkeypat
         "get_booking_draft",
         "update_booking_draft",
         "request_booking_access",
+        "request_user_location",
         "verify_booking_access",
         "get_booking_details",
         "confirm_test_drive_booking",
@@ -97,6 +99,63 @@ def test_message_window_keeps_a_tool_call_and_its_result_together():
     window = window_messages(messages, limit=2)
 
     assert window == [tool_request, tool_result]
+
+
+@pytest.mark.asyncio
+async def test_classified_lookup_creates_booking_access_ui_tool_call():
+    result = await booking_skill_node(
+        {
+            "messages": [HumanMessage(content="Tôi muốn tra cứu lịch đã đặt")],
+            "metadata": {"sub_intent": "booking_lookup"},
+            "intent_entities": {"contact_value": None},
+        }
+    )
+
+    tool_call = result["messages"][0].tool_calls[0]
+    assert tool_call["name"] == "request_booking_access"
+    assert tool_call["args"] == {"purpose": "lookup", "preferred_channel": "email"}
+
+
+@pytest.mark.asyncio
+async def test_booking_access_ui_directive_is_exposed_without_another_llm_call(monkeypatch):
+    get_llm = MagicMock(side_effect=AssertionError("LLM must not be called after the UI directive"))
+    monkeypatch.setattr(booking_module, "get_llm", get_llm)
+    tool_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-access-form",
+                "name": "request_booking_access",
+                "args": {"purpose": "lookup", "preferred_channel": "email"},
+            }
+        ],
+    )
+    directive = {
+        "requires_contact_value": True,
+        "contact_type": "email",
+        "purpose": "lookup",
+        "suggested_next_action": "show_booking_access_email_form",
+    }
+
+    result = await booking_skill_node(
+        {
+            "messages": [
+                HumanMessage(content="Tôi muốn tra cứu lịch đã đặt"),
+                tool_call,
+                ToolMessage(
+                    content=json.dumps(directive),
+                    tool_call_id="call-access-form",
+                    name="request_booking_access",
+                ),
+            ],
+            "metadata": {"sub_intent": "booking_lookup"},
+        }
+    )
+
+    assert result["action_tool"] == "request_booking_access"
+    assert result["action_result"] == directive
+    assert result["action_input"] == {"purpose": "lookup", "preferred_channel": "email"}
+    get_llm.assert_not_called()
 
 
 # test case of Chau + kiểm tra advise skill chỉ bind knowledge tool và trả lời tư vấn

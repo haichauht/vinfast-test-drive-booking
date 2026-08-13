@@ -1,16 +1,29 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from src.services.booking.common import iso, parse_utc
+from src.services.booking.email_templates import render_booking_email
 
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 class BackgroundJobService:
-    def dispatch_due_notifications(self, batch_size: int = 100) -> dict:
+    def dispatch_due_notifications(self, batch_size: int = 100, processing_timeout_seconds: int = 300) -> dict:
+        stale_before = iso(self.now() - timedelta(seconds=processing_timeout_seconds))
         with self.db.transaction(immediate=True) as c:
+            c.execute(
+                "UPDATE notification_jobs SET status='pending',updated_at=?,error_message=? "
+                "WHERE status='processing' AND last_attempt_at<=? AND attempt_count<max_attempts",
+                (iso(self.now()), "processing_timeout_recovered", stale_before),
+            )
+            c.execute(
+                "UPDATE notification_jobs SET status='failed',updated_at=?,error_message=? "
+                "WHERE status='processing' AND last_attempt_at<=? AND attempt_count>=max_attempts",
+                (iso(self.now()), "processing_timeout_terminal", stale_before),
+            )
             rows = c.execute(
                 "SELECT j.*,p.phone,p.email,p.preferred_channel FROM notification_jobs j "
                 "JOIN people p ON p.id=j.recipient_person_id WHERE j.status='pending' AND j.scheduled_at<=? "
@@ -27,21 +40,28 @@ class BackgroundJobService:
         for row in rows:
             destination = row["email"] if row["channel"] == "email" else row["phone"]
             try:
+                rendered = self._render_notification(row["booking_id"], row["notification_type"])
                 result = (
                     self.messaging_provider.send_message(
                         channel=row["channel"],
                         destination=destination,
-                        body=self._render_notification(row["booking_id"], row["notification_type"]),
+                        subject=rendered.subject,
+                        body=rendered.plain_text,
+                        html_body=rendered.html,
                     )
                     if destination
                     else None
                 )
-                error_message = "recipient_channel_unavailable"
+                error_message = (
+                    "recipient_channel_unavailable"
+                    if result is None
+                    else (result.sanitized_response or {}).get("error") or result.provider_status
+                )
             except Exception as error:  # provider outages must not stop the remaining jobs
                 result = None
                 error_message = str(error)
             with self.db.transaction(immediate=True) as c:
-                if result:
+                if result and result.provider_status == "sent":
                     c.execute(
                         "UPDATE notification_jobs SET status='sent',sent_at=?,provider_name=?,provider_status=?,provider_message_id=?,is_mock=?,provider_response_json=?,updated_at=? WHERE id=? AND status='processing'",
                         (
@@ -64,11 +84,16 @@ class BackgroundJobService:
                     )
                     sent += 1
                 else:
-                    terminal = row["attempt_count"] + 1 >= row["max_attempts"]
+                    retryable = getattr(result, "retryable", True) if result else True
+                    terminal = not retryable or row["attempt_count"] + 1 >= row["max_attempts"]
                     c.execute(
-                        "UPDATE notification_jobs SET status=?,error_message=?,updated_at=? WHERE id=? AND status='processing'",
+                        "UPDATE notification_jobs SET status=?,provider_name=?,provider_status=?,is_mock=?,provider_response_json=?,error_message=?,updated_at=? WHERE id=? AND status='processing'",
                         (
                             "failed" if terminal else "pending",
+                            getattr(result, "provider", None),
+                            getattr(result, "provider_status", None),
+                            int(getattr(result, "is_mock", True)),
+                            json.dumps(getattr(result, "sanitized_response", None) or {}),
                             error_message,
                             iso(self.now()),
                             row["id"],
@@ -77,7 +102,7 @@ class BackgroundJobService:
                     failed += 1
         return {"claimed": len(rows), "sent": sent, "failed": failed, "is_mock": True}
 
-    def _render_notification(self, booking_id: str, notification_type: str) -> str:
+    def _render_notification(self, booking_id: str, notification_type: str):
         with self.db.connect() as c:
             row = c.execute(
                 "SELECT b.booking_code,booker.full_name booker_name,driver.full_name driver_name,"
@@ -91,6 +116,7 @@ class BackgroundJobService:
                 "LEFT JOIN sales_staff staff ON staff.id=b.assigned_sales_staff_id WHERE b.id=?",
                 (booking_id,),
             ).fetchone()
+        return render_booking_email(notification_type, row)
         if not row:
             return "Lịch lái thử VinFast của bạn đã được cập nhật."
         start = parse_utc(row["start_at"]).astimezone(VIETNAM_TZ)

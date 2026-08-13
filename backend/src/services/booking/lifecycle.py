@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import timedelta
 from zoneinfo import ZoneInfo
@@ -109,8 +110,11 @@ class LifecycleService:
         for role in ("booker", "driver"):
             if not booking[role]:
                 missing.append(role)
-            elif not booking[role]["phone"] and not booking[role]["email"]:
-                missing.append(f"{role}.contact")
+            else:
+                if not booking[role]["full_name"]:
+                    missing.append(f"{role}.full_name")
+                if not booking[role]["email"]:
+                    missing.append(f"{role}.email")
         lic = booking["license_declaration"] or {}
         if "has_driving_license" in lic and lic["has_driving_license"] is not None:
             lic["has_driving_license"] = bool(lic["has_driving_license"])
@@ -236,6 +240,8 @@ class LifecycleService:
                                 ((allowed["email"] or "").lower() or None, pid),
                             )
                     else:
+                        if not allowed.get("email"):
+                            raise BookingError("INVALID_INPUT", f"{role}.email la bat buoc.")
                         c.execute(
                             "INSERT INTO people(id,full_name,phone,email,preferred_channel,normalized_phone,normalized_email,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
                             (
@@ -243,7 +249,7 @@ class LifecycleService:
                                 allowed["full_name"],
                                 allowed.get("phone"),
                                 allowed.get("email"),
-                                allowed.get("preferred_channel", "sms"),
+                                allowed.get("preferred_channel", "email"),
                                 normalize_phone(allowed.get("phone")),
                                 (allowed.get("email") or "").lower() or None,
                                 now,
@@ -311,6 +317,7 @@ class LifecycleService:
                         "email_enabled",
                         "reminder_24h_enabled",
                         "reminder_2h_enabled",
+                        "custom_plan_json",
                     )
                 }
                 if allowed:
@@ -398,10 +405,11 @@ class LifecycleService:
         now = iso(self.now())
         recipient_channels, plan = self._notification_recipient_channels(c, bid)
         schedule = [(confirmation_type, self.now())]
-        if plan["reminder_24h_enabled"] and start_dt - timedelta(hours=24) > parse_utc(self.now()):
-            schedule.append(("reminder_24h", start_dt - timedelta(hours=24)))
-        if plan["reminder_2h_enabled"] and start_dt - timedelta(hours=2) > parse_utc(self.now()):
-            schedule.append(("reminder_2h", start_dt - timedelta(hours=2)))
+        for offset in self._reminder_offsets_minutes(plan):
+            scheduled_at = start_dt - timedelta(minutes=offset)
+            if scheduled_at > parse_utc(self.now()):
+                typ = "reminder_24h" if offset == 1440 else "reminder_2h" if offset == 120 else "reminder"
+                schedule.append((typ, scheduled_at))
         for recipient, channels in recipient_channels:
             for typ, when in schedule:
                 for channel in channels:
@@ -440,6 +448,29 @@ class LifecycleService:
                 channels = ["email" if person["email"] else "sms"]
             result.append((recipient, channels))
         return result, plan
+
+    @staticmethod
+    def _reminder_offsets_minutes(plan) -> list[int]:
+        offsets: list[int] = []
+        try:
+            custom = json.loads(plan["custom_plan_json"] or "{}")
+        except (TypeError, ValueError):
+            custom = {}
+        custom_offsets = custom.get("reminder_offsets_minutes") if isinstance(custom, dict) else None
+        if isinstance(custom_offsets, list):
+            for value in custom_offsets:
+                try:
+                    minutes = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if 0 < minutes <= 30 * 24 * 60:
+                    offsets.append(minutes)
+        else:
+            if plan["reminder_24h_enabled"]:
+                offsets.append(1440)
+            if plan["reminder_2h_enabled"]:
+                offsets.append(120)
+        return sorted(set(offsets), reverse=True)[:5]
 
     def expire_held_bookings(self) -> int:
         count = 0

@@ -1,6 +1,6 @@
 # Booking Skill: Process for Test Drive Appointments & Booking Management
 
-This skill details how to interact with the backend booking services using 8 unified MCP tools (`search_test_drive_options`, `hold_test_drive_slot`, `get_booking_draft`, `update_booking_draft`, `request_booking_access`, `verify_booking_access`, `get_booking_details`, `confirm_test_drive_booking`).
+This skill details how to interact with the backend booking services using 9 unified MCP tools (`search_test_drive_options`, `hold_test_drive_slot`, `get_booking_draft`, `update_booking_draft`, `request_booking_access`, `verify_booking_access`, `get_booking_details`, `confirm_test_drive_booking`, `request_user_location`).
 
 ---
 
@@ -22,6 +22,7 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 - The booking UI context is authoritative for the currently selected vehicle and step.
 - When the user asks to view, choose, or switch to another vehicle, call `search_test_drive_options` with `vehicle_model` even if no address is known yet. Confirm the switch and ask for a location; do not ask them to choose the vehicle again.
 - When the user gives a location, call `search_test_drive_options` with that `address` and the vehicle from the current UI context. Only ask for a vehicle if the context does not contain one.
+- When the user asks to use their current location (for example "gần tôi", "định vị tôi", or "vị trí hiện tại"), call `request_user_location`. The browser client will ask for GPS permission and then call `search_test_drive_options` with latitude/longitude.
 - A vehicle-only search updates the vehicle panel and provides location suggestions. A search containing an address updates the showroom map. State that transition clearly in the answer.
 - Do not invent vehicle, showroom, distance, or availability data. UI cards are populated from the completed tool result.
 
@@ -85,7 +86,10 @@ sequenceDiagram
     participant Tool as MCP Tools
 
     User->>Agent: Request lookup/edit/cancel booking
-    Agent->>Tool: request_booking_access(booking_code, contact_value, purpose)
+    Agent->>Tool: request_booking_access(purpose) when email is missing
+    Tool-->>Agent: Directs browser to show the email form
+    User->>Agent: Submit registered email through the form
+    Agent->>Tool: request_booking_access(contact_value=email, purpose, preferred_channel="email")
     Tool-->>Agent: Returns challenge_id & destination_masked
     Agent->>User: Notify that OTP has been sent to destination_masked. Prompt for OTP.
     User->>Agent: Provide OTP code
@@ -95,11 +99,15 @@ sequenceDiagram
 
 ### Step 3.1: Request OTP Access Challenge (`request_booking_access`)
 - **Inputs**:
-  - `booking_code`: The existing booking identifier.
-  - `contact_value`: Registered phone number or email address.
+  - `contact_value`: Registered email address. Use this as the primary identifier for lookup.
+  - `booking_code` (optional): Only include this if the user voluntarily provides a booking code.
   - `purpose`: Reason for lookup (`lookup`, `reschedule`, `cancel`, `update_details`, `update_notifications`).
 - **Security Rule**:
   - NEVER output the raw `contact_value` in the response. Always use `destination_masked` returned from the tool.
+  - `booking_code` is not an authentication secret. Always return and display its complete value exactly as provided by the tool; never mask or truncate it in chat messages or workspace data.
+- **Missing email behavior**:
+  - When the user requests lookup, reschedule, cancellation, detail updates, or notification updates without an email, call this tool immediately with the correct `purpose` and omit `contact_value`.
+  - The tool returns `requires_contact_value=true`; the browser renders the email form. Do not respond with only a chat request for the email.
 
 ### Step 3.2: Verify OTP Challenge (`verify_booking_access`)
 - **Inputs**:
@@ -119,6 +127,7 @@ sequenceDiagram
   - `access_session_token` (mandatory).
 - **Rules**:
   - Always enforce token check. Show only permissions allowed under the token's scope (`permissions[]`).
+  - After access is verified, show the full `booking_code`; continue protecting OTP codes, access tokens, and contact details.
 
 ---
 
