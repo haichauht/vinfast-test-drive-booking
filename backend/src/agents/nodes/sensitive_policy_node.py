@@ -7,6 +7,10 @@ async def sensitive_policy_node(state: AgentState) -> dict:
     Lưu ý: Node này chỉ cần đọc sub_intent từ metadata (đã được classifier_node set).
     Không cần check lại keyword vì classifier_node đã xử lý việc đó rồi.
     """
+    existing_policy_response = state.get("policy_response")
+    if existing_policy_response:
+        return {"response": existing_policy_response, "policy_response": existing_policy_response}
+
     sub_intent = (state.get("metadata") or {}).get("sub_intent", "")
 
     if sub_intent == "sovereignty":

@@ -59,26 +59,6 @@ services:
       timeout: 10s
       retries: 3
 
-  admin:
-    image: vinfast-backend:dev
-    profiles: ["legacy-admin"]
-    # build:
-    #   context: ./backend
-    #   dockerfile: Dockerfile
-    ports:
-      - "8501:8501"
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://vinfast:vinfast@postgres:5432/vinfast_booking
-    volumes:
-      - ./backend:/app
-      - ./eval/data:/app/eval/data:ro
-    command: ["streamlit", "run", "admin_app.py", "--server.address=0.0.0.0", "--server.port=8501"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   frontend:
     image: vinfast-frontend:dev
     build:
