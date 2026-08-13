@@ -57,6 +57,19 @@ def staff_ids(booking_db, catalog):
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
             rows,
         )
+        connection.execute(
+            "INSERT INTO slot_sales_assignments(id,slot_id,sales_staff_id,assignment_role,status,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (
+                "assign_staff_q7",
+                catalog["slot_main"],
+                "staff_q7",
+                "test_drive_consultant",
+                "assigned",
+                created,
+                created,
+            ),
+        )
     return {"q7": "staff_q7", "gv": "staff_gv", "inactive": "staff_inactive"}
 
 
@@ -89,7 +102,8 @@ def test_record_license_check_verified_updates_driver_details(
             (booking["booking_id"],),
         ).fetchone()
         event = connection.execute(
-            "SELECT event_type,payload_json FROM booking_events WHERE booking_id=? AND event_type='license_verified'",
+            "SELECT event_type,actor_id,payload_json FROM booking_events "
+            "WHERE booking_id=? AND event_type='license_verified'",
             (booking["booking_id"],),
         ).fetchone()
 
@@ -97,6 +111,7 @@ def test_record_license_check_verified_updates_driver_details(
     assert detail["checked_by"] == staff_ids["q7"]
     assert detail["checked_at"]
     assert detail["rejection_reason"] is None
+    assert event["actor_id"] == staff_ids["q7"]
     assert json.loads(event["payload_json"]) == {"staff_id": staff_ids["q7"]}
 
 

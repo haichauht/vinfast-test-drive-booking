@@ -1,5 +1,6 @@
 import importlib
 import logging
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -65,10 +66,9 @@ async def test_demo_action_blocks_fields_outside_action_contract(client, monkeyp
         json={
             "action": "request_access",
             "payload": {
-                "booking_code": "VF123",
                 "contact_value": "0901234567",
                 "purpose": "lookup",
-                "preferred_channel": "sms",
+                "preferred_channel": "zalo",
                 "expose_otp": True,
             },
         },
@@ -80,14 +80,61 @@ async def test_demo_action_blocks_fields_outside_action_contract(client, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_demo_request_access_never_exposes_raw_otp(client, monkeypatch):
+async def test_demo_request_access_exposes_mock_otp_outside_production(client, monkeypatch):
     request_access = MagicMock(
         return_value={
             "challenge_id": "challenge-1",
             "destination_masked": "*******567",
+            "is_mock": True,
+            "otp_code": "123456",
         }
     )
     monkeypatch.setattr(routes_module.booking_service, "request_access", request_access)
+    monkeypatch.setattr(
+        routes_module,
+        "get_settings",
+        lambda: SimpleNamespace(app_env="development", zalo_bot_enabled=False),
+    )
+
+    response = await client.post(
+        "/api/v1/demo/action",
+        json={
+            "action": "request_access",
+            "payload": {
+                "contact_value": "0901234567",
+                "purpose": "lookup",
+                "preferred_channel": "zalo",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["otp_code"] == "123456"
+    request_access.assert_called_once_with(
+        booking_code=None,
+        contact_value="0901234567",
+        purpose="lookup",
+        preferred_channel="sms",
+        expose_otp=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_demo_request_access_hides_otp_in_production(client, monkeypatch):
+    request_access = MagicMock(
+        return_value={
+            "challenge_id": "challenge-1",
+            "destination_masked": "*******567",
+            "is_mock": True,
+            "otp_code": "123456",
+        }
+    )
+    monkeypatch.setattr(routes_module.booking_service, "request_access", request_access)
+    monkeypatch.setattr(
+        routes_module,
+        "get_settings",
+        lambda: SimpleNamespace(app_env="production", zalo_bot_enabled=False),
+    )
 
     response = await client.post(
         "/api/v1/demo/action",
@@ -109,6 +156,7 @@ async def test_demo_request_access_never_exposes_raw_otp(client, monkeypatch):
         contact_value="0901234567",
         purpose="lookup",
         preferred_channel="sms",
+        expose_otp=False,
     )
 
 
