@@ -14,6 +14,8 @@ _id = new_id
 
 
 class ImportService(BookingBase):
+    DATASET_BATCH_SIZE = 5_000
+
     @staticmethod
     def _report_import_progress(message: str) -> None:
         """Print opt-in bulk-import progress for long-running seed commands."""
@@ -390,7 +392,8 @@ class ImportService(BookingBase):
                 conflict = "booking_id" if "booking_id" in insert_columns and "id" not in insert_columns else "id"
                 sql = f"INSERT INTO {table}({','.join(insert_columns)}) VALUES({marks}) ON CONFLICT({conflict}) DO UPDATE SET {updates}"
                 try:
-                    for index, row in enumerate(rows, start=1):
+                    prepared_rows = []
+                    for row in rows:
                         if filename == "10_booking_driver_details.csv":
                             has_license = (
                                 "1" if row.get("declared_license_class") or row.get("license_number") else None
@@ -405,9 +408,14 @@ class ImportService(BookingBase):
                             values = [None if row[col] == "" else row[col] for col in expected]
                         if filename == "14_booking_access_sessions.csv":
                             values.insert(1, self._hash(row["id"], "mock-session"))
-                        c.execute(sql, values)
-                        if index % 5_000 == 0:
-                            self._report_import_progress(f"  {table}: {index:,}/{len(rows):,} rows")
+                        prepared_rows.append(values)
+
+                    for start in range(0, len(prepared_rows), self.DATASET_BATCH_SIZE):
+                        batch = prepared_rows[start : start + self.DATASET_BATCH_SIZE]
+                        c.executemany(sql, batch)
+                        imported = start + len(batch)
+                        if imported < len(prepared_rows) or imported % self.DATASET_BATCH_SIZE == 0:
+                            self._report_import_progress(f"  {table}: {imported:,}/{len(rows):,} rows")
                 except DatabaseIntegrityError as exc:
                     raise BookingError(
                         "INVALID_INPUT",

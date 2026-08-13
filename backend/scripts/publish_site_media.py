@@ -99,9 +99,28 @@ def _copy(source: Path, destination: Path) -> None:
     shutil.copy2(source, destination)
 
 
+def _assert_separate_media_trees(source: Path, destination: Path) -> None:
+    """Reject overlapping trees before publishing can mutate source media."""
+    resolved_source = source.resolve()
+    resolved_destination = destination.resolve()
+    if (
+        resolved_source == resolved_destination
+        or resolved_source in resolved_destination.parents
+        or resolved_destination in resolved_source.parents
+    ):
+        raise ValueError(
+            "Frontend vehicle media source and publish destination must not overlap: "
+            f"{resolved_source} -> {resolved_destination}"
+        )
+
+
 def main() -> int:
     frontend_root = Path(sys.argv[1] if len(sys.argv) > 1 else "../frontend").resolve()
     media_root = Path(sys.argv[2] if len(sys.argv) > 2 else os.getenv("MEDIA_ROOT", "data/media")).resolve()
+    vehicle_media_source = frontend_root / "src" / "media" / "local" / "vehicle-media"
+    vehicle_media_destination = media_root / "vehicle-media"
+    _assert_separate_media_trees(vehicle_media_source, vehicle_media_destination)
+
     for legacy_key in LEGACY_KEYS:
         (media_root / legacy_key).unlink(missing_ok=True)
     for vehicle_id, relative_source in VEHICLES.items():
@@ -111,8 +130,6 @@ def main() -> int:
         _copy(source, media_root / "vehicles" / vehicle_id / f"studio{extension}")
     for destination, relative_source in CONTENT.items():
         _copy(frontend_root / relative_source, media_root / destination)
-    vehicle_media_source = frontend_root / "src" / "media" / "local" / "vehicle-media"
-    vehicle_media_destination = media_root / "vehicle-media"
     if vehicle_media_source.is_dir():
         shutil.copytree(vehicle_media_source, vehicle_media_destination, dirs_exist_ok=True)
     for source_key, destination_key in SAFE_VEHICLE_MEDIA_ALIASES.items():
