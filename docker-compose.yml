@@ -40,14 +40,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "${BACKEND_HOST_PORT:-8001}:8000"
     env_file:
       - .env
     environment:
       DATABASE_URL: postgresql://vinfast:vinfast@postgres:5432/vinfast_booking
       EVAL_DATA_DIR: /app/eval/data
     volumes:
-      - ./backend/data:/app/data
       - ./backend/logs:/app/logs
       - ./eval/data:/app/eval/data:ro
     restart: unless-stopped
@@ -62,7 +61,7 @@ services:
 
   admin:
     image: vinfast-backend:dev
-    profiles: ["admin"]
+    profiles: ["legacy-admin"]
     # build:
     #   context: ./backend
     #   dockerfile: Dockerfile
@@ -87,6 +86,16 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:80"
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  internal-portal:
+    build:
+      context: ./internal-portal/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3100:80"
     restart: unless-stopped
     depends_on:
       - backend

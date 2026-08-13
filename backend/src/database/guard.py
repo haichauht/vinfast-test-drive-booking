@@ -16,8 +16,10 @@ SYSTEM_TABLES = {"information_schema", "columns"}
 
 
 _TABLE_PATTERNS = (
-    re.compile(r"\bFROM\s+([a-z_][a-z0-9_]*)", re.IGNORECASE),
-    re.compile(r"\bJOIN\s+([a-z_][a-z0-9_]*)", re.IGNORECASE),
+    # The atomic identifier prevents backtracking into qualified columns such
+    # as ``EXTRACT(HOUR FROM s.start_at ...)``. Those are not table clauses.
+    re.compile(r"\bFROM\s+((?>[a-z_][a-z0-9_]*))(?!\s*\.)", re.IGNORECASE),
+    re.compile(r"\bJOIN\s+((?>[a-z_][a-z0-9_]*))(?!\s*\.)", re.IGNORECASE),
     re.compile(r"^\s*UPDATE\s+([a-z_][a-z0-9_]*)", re.IGNORECASE),
     re.compile(r"\bINTO\s+([a-z_][a-z0-9_]*)", re.IGNORECASE),
     re.compile(r"\bALTER\s+TABLE\s+([a-z_][a-z0-9_]*)", re.IGNORECASE),

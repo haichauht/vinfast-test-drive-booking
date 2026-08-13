@@ -128,6 +128,18 @@ export const commonImage = (fileName) =>
   cdnUrl('common', fileName) ||
   localAsset(commonImages, './local/common', fileName)
 
+/** Resolve a catalogue vehicle id to the image already bundled with the frontend. */
+export const modelImage = (vehicleId) => {
+  const relativePath = vehicleMediaMap[vehicleId]?.thumbnail || ''
+
+  if (!relativePath) return ''
+  if (relativePath.startsWith('common/')) {
+    return commonImage(relativePath.slice('common/'.length))
+  }
+
+  return vehicleImage(relativePath)
+}
+
 /** Lấy thẳng ảnh ghi đè theo mã xe, không qua đường dẫn cũ. Trả '' nếu chưa có file ghi đè. */
 export const modelOverride = (vehicleId, slot) => overrideUrl(vehicleId, slot)
 
