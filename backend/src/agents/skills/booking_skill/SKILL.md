@@ -18,9 +18,10 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 
 ### Execution Stages:
 
-### UI synchronization rules
+### UI synchronization rules & Tool Calling Mandate
+- **MANDATORY TOOL CALLING**: Whenever the user mentions any VinFast vehicle model (e.g. "VF3", "VF5", "VF6", "VF7", "VF8", "VF9", "VF 9", "xe VF5", etc.) or asks to view/change/switch vehicle, you MUST IMMEDIATELY call `search_test_drive_options` with `vehicle_model="<model>"` in your tool_calls. NEVER reply with text asking for location without first invoking `search_test_drive_options`. Calling the tool is required to sync the frontend side tab and vehicle selector UI.
 - The booking UI context is authoritative for the currently selected vehicle and step.
-- When the user asks to view, choose, or switch to another vehicle, call `search_test_drive_options` with `vehicle_model` even if no address is known yet. Confirm the switch and ask for a location; do not ask them to choose the vehicle again.
+- When the user asks to view, choose, or switch to another vehicle, call `search_test_drive_options` with `vehicle_model` even if no address is known yet.
 - When the user gives a location, call `search_test_drive_options` with that `address` and the vehicle from the current UI context. Only ask for a vehicle if the context does not contain one.
 - When the user asks to use their current location (for example "gần tôi", "định vị tôi", or "vị trí hiện tại"), call `request_user_location`. The browser client will ask for GPS permission and then call `search_test_drive_options` with latitude/longitude.
 - A vehicle-only search updates the vehicle panel and provides location suggestions. A search containing an address updates the showroom map. State that transition clearly in the answer.

@@ -3,6 +3,7 @@ import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import { r2ObjectKey } from '../src/media/r2-key-aliases.js'
 
 const MIME_TYPES = {
   '.gif': 'image/gif',
@@ -69,7 +70,8 @@ function runWrangler(arguments_) {
 }
 
 async function upload(filePath) {
-  const key = path.relative(sourceRoot, filePath).split(path.sep).join('/')
+  const sourceKey = path.relative(sourceRoot, filePath).split(path.sep).join('/')
+  const key = r2ObjectKey(sourceKey)
   const contentType = MIME_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream'
   const arguments_ = [
     'r2', 'object', 'put', `${bucket}/${key}`,
@@ -84,7 +86,7 @@ async function upload(filePath) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       await runWrangler(arguments_)
-      return key
+      return sourceKey === key ? key : `${sourceKey} -> ${key}`
     } catch (error) {
       lastError = error
       if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 1000))

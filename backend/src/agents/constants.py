@@ -22,3 +22,15 @@ OUT_OF_SCOPE_KEYWORDS: list[str] = [
     "viết script",
     "giải toán",
 ]
+
+LOOKUP_KEYWORDS: list[str] = [
+    "tra cứu lịch",
+    "tra cuu lich",
+    "xem lịch đã đặt",
+    "xem lich da dat",
+    "tìm lịch đã đặt",
+    "tim lich da dat",
+    "booking của tôi",
+    "booking cua toi",
+]
+

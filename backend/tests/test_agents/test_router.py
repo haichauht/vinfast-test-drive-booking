@@ -33,14 +33,14 @@ async def test_router_out_of_scope_coding():
 
 
 @pytest.mark.asyncio
-# test case of Chau + kiểm tra câu chào được route sang advise skill
+# test case of Chau + kiểm tra câu chào dùng booking skill trong MVP chỉ có booking
 async def test_router_general_greeting():
-    """Câu chào hỏi dùng advise skill; graph không có general response node."""
+    """MVP chỉ dùng booking skill cho các câu hỏi không nhạy cảm."""
     query = "Xin chào bạn nhé!"
     result = await agent.ainvoke({"query": query}, config=_cfg("test-greeting"))
 
     assert result.get("intent") == "domain"
-    assert result.get("active_skill") == "advise"
+    assert result.get("active_skill") == "booking"
     assert "response" in result
     assert len(result.get("response", "")) > 0
 
@@ -59,12 +59,12 @@ async def test_router_domain_booking():
 
 
 @pytest.mark.asyncio
-async def test_router_domain_advisory():
-    """Kiểm tra câu hỏi tư vấn thông số xe được định tuyến sang advise skill."""
+async def test_router_vehicle_question_uses_booking_skill():
+    """Câu hỏi về xe vẫn dùng booking skill khi advise chưa được phát triển."""
     query = "VF8 đi được bao nhiêu km sau một lần sạc đầy?"
     result = await agent.ainvoke({"query": query}, config=_cfg("test-advisory"))
 
     assert result.get("intent") == "domain"
-    assert result.get("active_skill") == "advise"
+    assert result.get("active_skill") == "booking"
     assert "response" in result
     assert "Mocked LLM" in result.get("response", "")
