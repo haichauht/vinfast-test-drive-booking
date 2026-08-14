@@ -44,10 +44,38 @@ COMMON_TO_VEHICLE_MEDIA = {
     "Dịch vụ_Limo Green/limo-green-studio.webp": "src/media/local/common/limo-green-studio.webp",
 }
 
+# Cloudflare blocks object keys containing path-like double dots. Keep the
+# original frontend files untouched, but publish stable CDN-safe aliases.
+SAFE_VEHICLE_MEDIA_ALIASES = {
+    "VF3/1..webp": "VF3/1.webp",
+    "VF3/2..png": "VF3/exterior.png",
+    "VF3/3..jpg": "VF3/cockpit.jpg",
+    "VF3/4..png": "VF3/rear.png",
+    "VF5/1..webp": "VF5/1.webp",
+    "VF5/3..webp": "VF5/3.webp",
+    "VF5/4..webp": "VF5/4.webp",
+    "VF5/5..webp": "VF5/5.webp",
+}
+
 VIDEOS = {
     "vf8": "src/media/local/vehicle-media/VF8/VF8.mp4",
     "vf8-the-he-moi": "src/media/local/vehicle-media/VF8 All the new/VF8.mp4",
     "vf9": "src/media/local/vehicle-media/VF9/VF9.mp4",
+}
+
+BROCHURES = {
+    "vf5": "src/media/local/brochures/VFVN_VF 5_Brochure Bản sửa 290126_1333PM.pdf",
+    "vf6": "src/media/local/brochures/VF6_Brochure.pdf",
+    "vf7": "src/media/local/brochures/VF7_Brochure.pdf",
+    "vf8": "src/media/local/brochures/VF8Brochure.pdf",
+    "vf8-the-he-moi": "src/media/local/brochures/VF 8 The he moi All News_Brochure_final 20.05.pdf",
+    "vf9": "src/media/local/brochures/VF 9_ Brochure.pdf",
+    "herio-green": "src/media/local/brochures/Dịch vụ_Catalogue-VinFast-Herio-Green.pdf",
+    "minio-green": "src/media/local/brochures/Dịch vụ_Brochure Minio Green 090126.pdf",
+    "nerio-green": "src/media/local/brochures/Dịch vụ_Catalogue-VinFast-Nerio-Green.pdf",
+    "limo-green": "src/media/local/brochures/Dịch  vụ_Brochure Limo Green 090126.pdf",
+    "ec-van": "src/media/local/brochures/Dịch vụ_brochure-ec-van-040726-e.pdf",
+    "ebus": "src/media/local/brochures/Dịch vụ_VinFast-eBus_Broschure_092025.pdf",
 }
 
 LEGACY_KEYS = [
@@ -71,9 +99,28 @@ def _copy(source: Path, destination: Path) -> None:
     shutil.copy2(source, destination)
 
 
+def _assert_separate_media_trees(source: Path, destination: Path) -> None:
+    """Reject overlapping trees before publishing can mutate source media."""
+    resolved_source = source.resolve()
+    resolved_destination = destination.resolve()
+    if (
+        resolved_source == resolved_destination
+        or resolved_source in resolved_destination.parents
+        or resolved_destination in resolved_source.parents
+    ):
+        raise ValueError(
+            "Frontend vehicle media source and publish destination must not overlap: "
+            f"{resolved_source} -> {resolved_destination}"
+        )
+
+
 def main() -> int:
     frontend_root = Path(sys.argv[1] if len(sys.argv) > 1 else "../frontend").resolve()
     media_root = Path(sys.argv[2] if len(sys.argv) > 2 else os.getenv("MEDIA_ROOT", "data/media")).resolve()
+    vehicle_media_source = frontend_root / "src" / "media" / "local" / "vehicle-media"
+    vehicle_media_destination = media_root / "vehicle-media"
+    _assert_separate_media_trees(vehicle_media_source, vehicle_media_destination)
+
     for legacy_key in LEGACY_KEYS:
         (media_root / legacy_key).unlink(missing_ok=True)
     for vehicle_id, relative_source in VEHICLES.items():
@@ -83,15 +130,18 @@ def main() -> int:
         _copy(source, media_root / "vehicles" / vehicle_id / f"studio{extension}")
     for destination, relative_source in CONTENT.items():
         _copy(frontend_root / relative_source, media_root / destination)
-    vehicle_media_source = frontend_root / "src" / "media" / "local" / "vehicle-media"
-    vehicle_media_destination = media_root / "vehicle-media"
     if vehicle_media_source.is_dir():
         shutil.copytree(vehicle_media_source, vehicle_media_destination, dirs_exist_ok=True)
+    for source_key, destination_key in SAFE_VEHICLE_MEDIA_ALIASES.items():
+        _copy(vehicle_media_source / source_key, vehicle_media_destination / destination_key)
+        (vehicle_media_destination / source_key).unlink(missing_ok=True)
     for destination, relative_source in COMMON_TO_VEHICLE_MEDIA.items():
         _copy(frontend_root / relative_source, vehicle_media_destination / destination)
     for vehicle_id, relative_source in VIDEOS.items():
         _copy(frontend_root / relative_source, media_root / "vehicles" / vehicle_id / "presentation.mp4")
-    total = len(VEHICLES) * 2 + len(CONTENT) + len(COMMON_TO_VEHICLE_MEDIA) + len(VIDEOS)
+    for vehicle_id, relative_source in BROCHURES.items():
+        _copy(frontend_root / relative_source, media_root / "brochures" / f"{vehicle_id}.pdf")
+    total = sum(1 for path in media_root.rglob("*") if path.is_file())
     print(f"Published {total} files into {media_root}")
     return 0
 
