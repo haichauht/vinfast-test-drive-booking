@@ -10,11 +10,11 @@
  * - sendBookingMessage(): người dùng gõ tin nhắn tự do cho ViVi.
  * - searchBookingOptions(): tìm showroom có đúng mẫu xe + khung giờ trống (theo địa chỉ hoặc GPS).
  * - holdBookingSlot(): giữ chỗ một khung giờ (backend trả hạn giữ, UI đếm ngược).
- * - saveBookingCustomer(): lưu tên/điện thoại/email người đặt và người lái.
+ * - saveBookingCustomer(): lưu tên/email bắt buộc và số điện thoại nếu có.
  * - confirmHeldBooking(): chốt đặt lịch, trả về mã lịch.
  *
  * Nhóm 2 — tra cứu/sửa/huỷ lịch đã đặt (qua POST /api/v1/demo/action):
- * - requestBookingAccess() → verifyBookingAccess(): xin và xác thực OTP gửi qua Zalo.
+ * - requestBookingAccess() → verifyBookingAccess(): xin và xác thực OTP gửi qua email.
  * - getVerifiedBooking() · updateVerifiedBooking() · cancelVerifiedBooking().
  * - holdVerifiedReschedule() → confirmVerifiedReschedule(): đổi sang khung giờ khác.
  *
@@ -44,13 +44,33 @@ const rememberConversationId = (conversationId) => {
   }
 }
 
+const normalizeAgentContext = (context = {}) => ({
+  channel: 'booking',
+  mode: String(context.mode || ''),
+  phase: String(context.phase || context.stage || ''),
+  stage: String(context.stage || ''),
+  allowed_actions: Array.isArray(context.allowedActions) ? context.allowedActions : [],
+  selected_vehicle_id: context.selectedVehicle?.id || '',
+  selected_vehicle_name: context.selectedVehicle?.name || '',
+  selected_showroom_id: context.selectedShowroom?.id || '',
+  selected_showroom_name: context.selectedShowroom?.name || '',
+  selected_slot_id: context.selectedSlot?.slotId || '',
+  selected_slot_time: context.selectedSlot?.time || '',
+  selected_slot_date: context.selectedSlot?.dateLabel || '',
+  booking_id: context.bookingId || '',
+  recipient: context.recipient || '',
+  nearby_showrooms: Array.isArray(context.nearbyShowrooms)
+    ? context.nearbyShowrooms.map(({ id, name }) => ({ id, name })).slice(0, 10)
+    : [],
+})
+
 const agentRequest = async ({ message, action, actionPayload = {}, context = {} }) => {
   const result = await apiPost('/chat', {
     message,
     conversation_id: readConversationId(),
     ...(action ? { action } : {}),
     action_payload: actionPayload,
-    context: { channel: 'booking', ...context },
+    context: normalizeAgentContext(context),
   })
   rememberConversationId(result.conversation_id)
   return result
@@ -70,7 +90,11 @@ const agentAction = async (action, message, actionPayload) => {
 
 export const sendBookingMessage = (message, context = {}) => agentRequest({ message, context })
 
-export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, address, latitude, longitude }) => agentAction(
+export const resetBookingConversation = () => {
+  if (typeof window !== 'undefined') window.sessionStorage.removeItem(CONVERSATION_KEY)
+}
+
+export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, address, latitude, longitude, showroomLimit = 5, slotLimit }) => agentAction(
   'search_options',
   showroomId
     ? `Kiểm tra lịch trống cho ${vehicleModel} tại showroom đã chọn.`
@@ -88,9 +112,8 @@ export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, 
     address,
     latitude,
     longitude,
-    // The weekly calendar needs enough inventory to expose the following week
-    // without inventing client-side availability. Backend currently caps this at 30.
-    limit: 30,
+    showroom_limit: showroomLimit,
+    ...(slotLimit === undefined ? {} : { slot_limit: slotLimit }),
   },
 )
 
@@ -112,14 +135,14 @@ export const saveBookingCustomer = ({ bookingId, version, recipient, person }) =
     booker_patch: {
       full_name: person.bookingName,
       phone: person.phone,
-      ...(person.email ? { email: person.email } : {}),
+      email: person.email,
     },
     driver_same_as_booker: recipient === 'self',
     driver_patch: recipient === 'other'
       ? {
           full_name: person.driverName,
           phone: person.phone,
-          ...(person.email ? { email: person.email } : {}),
+          email: person.email,
         }
       : null,
     has_valid_license_commitment: person.hasLicense,
@@ -141,11 +164,11 @@ const bookingManagementAction = async (action, payload) => {
   return result
 }
 
-export const requestBookingAccess = ({ bookingCode, phone, purpose = 'lookup' }) => bookingManagementAction('request_access', {
-  booking_code: bookingCode,
-  contact_value: phone,
+export const requestBookingAccess = ({ bookingCode = '', email, purpose = 'lookup' }) => bookingManagementAction('request_access', {
+  ...(bookingCode.trim() ? { booking_code: bookingCode.trim() } : {}),
+  contact_value: email,
   purpose,
-  preferred_channel: 'zalo',
+  preferred_channel: 'email',
 })
 
 export const verifyBookingAccess = ({ challengeId, otpCode }) => bookingManagementAction('verify_access', {

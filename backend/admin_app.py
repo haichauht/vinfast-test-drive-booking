@@ -14,6 +14,15 @@ DATA_DIR_CANDIDATES = (
 )
 
 RESET_ORDER = (
+    "internal_audit_events",
+    "internal_notifications",
+    "vehicle_transfers",
+    "vehicle_unavailability",
+    "staff_unavailability",
+    "staff_shifts",
+    "internal_sessions",
+    "internal_user_showrooms",
+    "internal_users",
     "booking_access_sessions",
     "otp_challenges",
     "zalo_processed_messages",
@@ -21,6 +30,7 @@ RESET_ORDER = (
     "notification_jobs",
     "notification_plans",
     "booking_events",
+    "booking_reschedules",
     "booking_driver_details",
     "idempotency_records",
     "bookings",
@@ -30,7 +40,13 @@ RESET_ORDER = (
     "vehicle_variants",
     "vehicle_models",
     "sales_staff",
+    "showroom_operating_hours",
+    "showroom_services",
+    "showroom_source_metadata",
     "showrooms",
+    "wards",
+    "districts",
+    "provinces",
     "people",
 )
 

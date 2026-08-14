@@ -66,6 +66,7 @@ class ManagementService(BookingBase):
                 if old_driver_id != booking["booker_person_id"]:
                     self._delete_unreferenced_person(c, old_driver_id)
             c.execute("UPDATE bookings SET version=version+1,updated_at=? WHERE id=?", (iso(self.now()), booking_id))
+            self._create_transactional_notification_jobs(c, booking_id, "booking_update")
             self._event(c, booking_id, "booking_details_updated", "user")
             return self._draft(c, booking_id, require_held=False)
 
@@ -207,6 +208,11 @@ class ManagementService(BookingBase):
             c.execute(
                 "UPDATE notification_jobs SET status='cancelled',updated_at=? WHERE booking_id=? AND status='pending'",
                 (now, current_booking_id),
+            )
+            c.execute(
+                "INSERT INTO booking_reschedules(id,old_booking_id,new_booking_id,requested_by_person_id,reason,created_at) "
+                "VALUES(?,?,?,?,?,?)",
+                (_id("reschedule"), current_booking_id, new_booking_id, old["booker_person_id"], None, now),
             )
             self._create_jobs(
                 c,

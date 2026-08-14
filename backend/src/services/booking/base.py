@@ -48,9 +48,10 @@ class BookingBase:
             "note",
         }
         safe_payload = {key: value for key, value in (payload or {}).items() if key.lower() not in blocked}
+        actor_id = safe_payload.get("staff_id") if actor == "staff" else None
         c.execute(
             "INSERT INTO booking_events VALUES(?,?,?,?,?,?,?)",
-            (_id("evt"), booking_id, event, actor, None, json.dumps(safe_payload), iso(self.now())),
+            (_id("evt"), booking_id, event, actor, actor_id, json.dumps(safe_payload), iso(self.now())),
         )
 
     @staticmethod

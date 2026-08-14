@@ -64,7 +64,7 @@ SITE_CATALOG_PATH=./data/site_catalog.json
 CHROMA_PERSIST_DIR=./data/chroma
 ```
 
-`DATABASE_URL` hiện chỉ hỗ trợ SQLite. Nếu không dùng Agent/LLM, có thể để trống các API key; catalogue, content và booking service vẫn chạy.
+`DATABASE_URL` hỗ trợ PostgreSQL cho production và SQLite cho test/phát triển nhỏ. Nếu không dùng Agent/LLM, có thể để trống các API key; catalogue, content và booking service vẫn chạy.
 
 ## API chính
 
@@ -79,9 +79,6 @@ CHROMA_PERSIST_DIR=./data/chroma
 | `GET` | `/api/v1/status` | Trạng thái Agent |
 | `POST` | `/api/v1/chat` | Tin nhắn Agent và structured booking actions từ frontend |
 | `POST` | `/api/v1/demo/action` | Adapter demo cũ, không còn được booking frontend sử dụng |
-| `POST` | `/api/v1/admin/import/showrooms` | Import showroom CSV |
-| `POST` | `/api/v1/admin/import/eval-dataset` | Import bộ CSV booking theo dependency order |
-| `GET` | `/api/v1/dashboard` | Thống kê booking/slot |
 
 Catalogue/content trả `ETag`, hỗ trợ `If-None-Match` và cache revalidation.
 
@@ -128,7 +125,7 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Đổi `DATABASE_URL` trong `.env` về `sqlite:///./data/app.db` trước khi chạy vì backend hiện chưa hỗ trợ PostgreSQL. Backend mở ở port `8000`, frontend ở port `3000`; `backend/data` được mount để giữ database và media local.
+Compose mặc định chạy PostgreSQL ở service `postgres`. Backend mở ở port `8000`, frontend ở port `3000`; `backend/data` được mount để giữ media local.
 
 ## Kiến trúc chính
 
@@ -156,9 +153,9 @@ Nghiệp vụ giữ slot, draft, xác nhận, OTP, tra cứu/chỉnh sửa booki
 - `search_knowledge` chưa có RAG/vector search thực tế.
 - Frontend đã kết nối LangGraph nhưng streaming và persistence lịch sử hội thoại production chưa hoàn thiện.
 - Chưa có worker/gateway production để gửi notification ra SMS/email thực tế.
-- Authentication/authorization cho admin, rate limiting và secret management production chưa hoàn thiện.
+- Public admin/import/dashboard API đã bị gỡ; thao tác seed/import được thực hiện bằng script có quyền truy cập database.
 - Một số catalogue detail như màu xe, chapter và gallery vẫn rỗng hoặc chưa đủ media.
-- PostgreSQL trong `.env.example` chỉ là định hướng cũ; persistence hiện tại chỉ hỗ trợ SQLite.
+- Chưa có framework migration có version; production hiện tạo/bổ sung schema qua database initialization và cần migration rõ ràng cho thay đổi schema lớn.
 
 ## Logging
 

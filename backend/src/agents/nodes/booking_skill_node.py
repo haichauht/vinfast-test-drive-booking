@@ -14,13 +14,16 @@ from src.agents.tools import (
     get_booking_draft,
     hold_test_drive_slot,
     request_booking_access,
+    request_user_location,
     search_test_drive_options,
     update_booking_draft,
     verify_booking_access,
 )
 from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.utils import get_system_prompt, window_messages
+from src.dependencies import usage_budget_service
 from src.services.llm import get_llm
+from src.services.usage_budget import BudgetExceededError, LLMCallLimitExceededError, invoke_with_budget
 
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "booking_skill" / "SKILL.md"
 tool_logger = logging.getLogger("agent.tools")
@@ -58,8 +61,16 @@ STRUCTURED_ACTION_RESPONSES = {
     "hold_slot": "Tôi đã giữ khung giờ này trong 2 phút.",
     "update_draft": "Tôi đã lưu thông tin người đặt và người lái.",
     "confirm_booking": "Đặt lịch lái thử đã được xác nhận.",
-    "request_access": "Tôi đã gửi mã xác thực qua Zalo.",
+    "request_access": "Tôi đã gửi mã xác thực qua email.",
     "verify_access": "Xác thực thành công.",
+}
+
+ACCESS_INTENT_PURPOSES = {
+    "booking_lookup": "lookup",
+    "booking_reschedule": "reschedule",
+    "booking_cancel": "cancel",
+    "booking_update_details": "update_details",
+    "booking_update_notifications": "update_notifications",
 }
 
 PUBLIC_TOOL_ERRORS = {
@@ -154,13 +165,91 @@ async def booking_skill_node(state: AgentState) -> dict:
     metadata = state.get("metadata") or {}
     trace_id = metadata.get("trace_id", "")
 
+    last_message = messages[-1] if messages else None
+    sub_intent = str(metadata.get("sub_intent") or "")
+    access_purpose = ACCESS_INTENT_PURPOSES.get(sub_intent)
+
+    if isinstance(last_message, ToolMessage) and last_message.name == request_booking_access.name:
+        failed = getattr(last_message, "status", "success") == "error"
+        decoded = _decode_tool_result(last_message)
+        error_code, public_error = _public_tool_error(decoded)
+        tool_input = _tool_call_input(messages, last_message)
+        needs_contact = isinstance(decoded, dict) and bool(decoded.get("requires_contact_value"))
+        response_text = (
+            public_error
+            if failed
+            else "Vui lòng nhập email đã đăng ký để tra cứu lịch."
+            if needs_contact
+            else "Tôi đã gửi mã OTP qua email. Bạn vui lòng nhập mã để tiếp tục."
+        )
+        response = AIMessage(content=response_text)
+        trace_event(
+            "tool.result",
+            trace_id=trace_id,
+            node="booking_skill",
+            tool_message=message_to_log(last_message),
+            input=tool_input,
+            result=decoded,
+            failed=failed,
+        )
+        tool_logger.info(
+            "tool_completed tool=%s status=%s input=%s",
+            last_message.name,
+            "error" if failed else "success",
+            _safe_tool_input(tool_input),
+        )
+        return {
+            "messages": [response],
+            "response": response_text,
+            "action_tool": last_message.name,
+            "action_input": tool_input,
+            "action_result": None if failed else decoded,
+            "action_error": error_code if failed else "",
+            "metadata": metadata,
+        }
+
+    if not state.get("requested_action") and access_purpose:
+        contact_value = str((state.get("intent_entities") or {}).get("contact_value") or "").strip()
+        action_payload = {
+            "purpose": access_purpose,
+            "preferred_channel": "email",
+        }
+        if contact_value:
+            action_payload["contact_value"] = contact_value
+        tool_call = AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": request_booking_access.name,
+                    "args": action_payload,
+                    "id": _structured_tool_call_id("intent_request_access", action_payload),
+                    "type": "tool_call",
+                }
+            ],
+        )
+        trace_event(
+            "tool.call",
+            trace_id=trace_id,
+            node="booking_skill",
+            source="classified_intent",
+            action=sub_intent,
+            tool=request_booking_access.name,
+            args=action_payload,
+            tool_call_id=tool_call.tool_calls[0].get("id"),
+        )
+        tool_logger.info(
+            "tool_dispatched tool=%s mode=classified_intent input=%s",
+            request_booking_access.name,
+            _safe_tool_input(action_payload),
+        )
+        return {"messages": [tool_call], "tool_call_count": 1, "metadata": metadata}
+
     if requested_action:
         tool = STRUCTURED_ACTION_TO_TOOL.get(requested_action)
         if tool is None:
             message = AIMessage(content="Thao tác đặt lịch này chưa được hỗ trợ.")
             return {"messages": [message], "response": message.content, "action_error": message.content}
 
-        last_message = messages[-1] if messages else None
         if isinstance(last_message, ToolMessage):
             failed = getattr(last_message, "status", "success") == "error"
             decoded = _decode_tool_result(last_message)
@@ -230,6 +319,7 @@ async def booking_skill_node(state: AgentState) -> dict:
         get_booking_draft,
         update_booking_draft,
         request_booking_access,
+        request_user_location,
         verify_booking_access,
         get_booking_details,
         confirm_test_drive_booking,
@@ -248,7 +338,29 @@ async def booking_skill_node(state: AgentState) -> dict:
             tools=[tool.name for tool in tools],
             messages=messages_to_log(llm_messages),
         )
-        response = await llm_with_tools.ainvoke(llm_messages)
+        response = await invoke_with_budget(
+            llm_with_tools,
+            llm_messages,
+            model=getattr(llm, "model_name", "") or "chat",
+            metadata=metadata,
+            budget=usage_budget_service,
+            call_purpose="booking_skill",
+        )
+    except (BudgetExceededError, LLMCallLimitExceededError) as e:
+        budget_exceeded = isinstance(e, BudgetExceededError)
+        error_code = "LLM_BUDGET_EXCEEDED" if budget_exceeded else "LLM_CALL_LIMIT_EXCEEDED"
+        error_message = (
+            "Hệ thống đã đạt giới hạn chi phí AI trong hôm nay. Vui lòng thử lại sau."
+            if budget_exceeded
+            else "Yêu cầu này cần quá nhiều lượt xử lý AI. Vui lòng gửi lại yêu cầu ngắn gọn hơn."
+        )
+        safe_response = AIMessage(content=error_message)
+        return {
+            "messages": [safe_response],
+            "response": safe_response.content,
+            "action_error": error_code,
+            "metadata": metadata,
+        }
     except Exception as e:
         trace_event("llm.error", trace_id=trace_id, node="booking_skill", error=str(e))
         logging.getLogger(__name__).exception("Error in booking_skill_node")
@@ -257,6 +369,7 @@ async def booking_skill_node(state: AgentState) -> dict:
             "messages": [safe_response],
             "response": safe_response.content,
             "error": str(e),
+            "metadata": metadata,
         }
 
     # Extract response text for the API
@@ -273,26 +386,27 @@ async def booking_skill_node(state: AgentState) -> dict:
         has_tool_calls=has_tool_calls,
     )
     if has_tool_calls:
-        for tool_call in cast(list[dict[str, Any]], response.tool_calls):
+        for tool_call_data in cast(list[dict[str, Any]], response.tool_calls):
             trace_event(
                 "tool.call",
                 trace_id=trace_id,
                 node="booking_skill",
                 source="llm",
-                tool=tool_call.get("name"),
-                args=tool_call.get("args"),
-                tool_call_id=tool_call.get("id"),
+                tool=tool_call_data.get("name"),
+                args=tool_call_data.get("args"),
+                tool_call_id=tool_call_data.get("id"),
             )
-            arguments = tool_call.get("args")
+            arguments = tool_call_data.get("args")
             tool_logger.info(
                 "tool_dispatched tool=%s mode=llm input=%s",
-                tool_call.get("name", "unknown"),
+                tool_call_data.get("name", "unknown"),
                 _safe_tool_input(arguments if isinstance(arguments, dict) else {}),
             )
 
     output: dict[str, Any] = {
         "messages": [response],
         "tool_call_count": current_count + 1 if has_tool_calls else current_count,
+        "metadata": metadata,
     }
     if response_content:
         output["response"] = response_content

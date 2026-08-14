@@ -11,8 +11,7 @@
  *   màn xem lại trước khi đặt (chưa có bookingCode) và màn thành công (prop compact + có mã lịch).
  *   Gồm ảnh xe, 8 dòng thông tin và dòng xác nhận đã có giấy phép lái xe.
  *
- * ⚠️ Còn dữ liệu giả: bảng tên/số điện thoại tư vấn viên hard-code ở dòng ~9 (staff).
- *   Chỉ dùng khi backend chưa trả showroom.staff — khi nối xong nên xoá hẳn bảng này.
+ * Tư vấn viên chỉ hiển thị sau khi backend xác nhận và trả về nhân viên được gán thật.
  *
  * Style tương ứng: .studio-schedule và .studio-ticket trong index.css.
  */
@@ -59,8 +58,9 @@ const timeAsMinutes = (value) => {
 export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
   const root = useRef(null)
   const direction = useRef(0)
-  const initialDate = slots[0]?.value ? parseDateValue(slots[0].value) : new Date()
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(initialDate))
+  const today = new Date()
+  today.setHours(12, 0, 0, 0)
+  const [weekStart, setWeekStart] = useState(today)
 
   const slotMap = useMemo(() => new Map(slots.map((day) => [day.value, day])), [slots])
   const timeRows = useMemo(() => {
@@ -86,14 +86,19 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
   const weekSlotCount = weekDays.reduce((total, day) => total + (day.source?.times.length || 0), 0)
   const weekEnd = weekDays[6]?.date || addDays(weekStart, 6)
   const rangeLabel = `${new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit' }).format(weekStart)} – ${new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(weekEnd)}`
-  const currentWeekStart = startOfWeek(new Date())
-  const isCurrentWeek = dateKey(weekStart) === dateKey(currentWeekStart)
+  const currentPageStart = new Date()
+  currentPageStart.setHours(12, 0, 0, 0)
+  const nextMonday = startOfWeek(addDays(currentPageStart, 7))
+  const lastVisibleDate = addDays(currentPageStart, 30)
+  const lastVisibleWeekStart = startOfWeek(lastVisibleDate)
+  const isCurrentWeek = dateKey(weekStart) === dateKey(currentPageStart)
+  const isLastVisibleWeek = dateKey(weekStart) >= dateKey(lastVisibleWeekStart)
   const weekStamp = weekStart.getTime()
 
   useEffect(() => {
-    const firstDate = slots[0]?.value
-    if (!firstDate) return
-    setWeekStart(startOfWeek(parseDateValue(firstDate)))
+    const current = new Date()
+    current.setHours(12, 0, 0, 0)
+    setWeekStart(current)
   }, [car.id, showroom.id])
 
   useEffect(() => {
@@ -115,12 +120,16 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
 
   const changeWeek = (amount) => {
     direction.current = Math.sign(amount)
-    setWeekStart((current) => addDays(current, amount * 7))
+    setWeekStart((current) => {
+      if (amount > 0 && dateKey(current) === dateKey(currentPageStart)) return nextMonday
+      if (amount < 0 && dateKey(current) === dateKey(nextMonday)) return currentPageStart
+      return addDays(current, amount * 7)
+    })
   }
 
   const returnToCurrentWeek = () => {
-    direction.current = dateKey(currentWeekStart) > dateKey(weekStart) ? 1 : -1
-    setWeekStart(currentWeekStart)
+    direction.current = dateKey(currentPageStart) > dateKey(weekStart) ? 1 : -1
+    setWeekStart(currentPageStart)
   }
 
   const selectSlot = (event, day, entry) => {
@@ -142,9 +151,9 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
       <div className="schedule-calendar">
         <header className="schedule-calendar__toolbar">
           <div className="schedule-calendar__navigation" aria-label="Điều hướng tuần">
-            <button type="button" onClick={() => changeWeek(-1)} aria-label="Xem tuần trước"><CaretLeft size={17} weight="bold" /></button>
+            <button type="button" onClick={() => changeWeek(-1)} disabled={isCurrentWeek} aria-label="Xem tuần trước"><CaretLeft size={17} weight="bold" /></button>
             <button type="button" onClick={returnToCurrentWeek} disabled={isCurrentWeek}>Tuần này</button>
-            <button type="button" onClick={() => changeWeek(1)} aria-label="Xem tuần sau"><CaretRight size={17} weight="bold" /></button>
+            <button type="button" onClick={() => changeWeek(1)} disabled={isLastVisibleWeek} aria-label="Xem tuần sau"><CaretRight size={17} weight="bold" /></button>
           </div>
           <div className="schedule-calendar__range">
             <strong>{rangeLabel}</strong>
@@ -214,8 +223,12 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
   )
 }
 
-export function BookingTicket({ car, showroom, slot, person, recipient, bookingCode, compact = false }) {
-  const staff = { sr_hanoi: ['Nguyễn Văn Hùng', '0911 111 111'], sr_hcm: ['Trần Thị Lan', '0922 222 222'], sr_danang: ['Lê Hoàng Nam', '0933 333 333'], sr_smart_city: ['Phạm Văn Minh', '0944 444 444'], sr_royal_city: ['Hoàng Thuỳ Linh', '0955 555 555'], sr_mydinh: ['Đỗ Anh Tuấn', '0966 666 666'], sr_ocean_park: ['Bùi Quốc Anh', '0977 777 777'], sr_tayho: ['Vũ Thị Hà', '0988 888 888'] }[showroom.id] || ['Nguyễn Văn Hùng', '0911 111 111']
-  const rows = [['Người đặt lịch', person.bookingName], ['Người lái thử', recipient === 'other' ? person.driverName : person.bookingName], ['Điện thoại', person.phone], ['Email', person.email || 'Không đăng ký nhận email'], ['Mẫu xe', car.name], ['Showroom', showroom.name], ['Thời gian', `${slot.time} · ${slot.dateLabel}`], ['Tư vấn viên', `${showroom.staff || staff[0]} · ${showroom.staffPhone || staff[1]}`]]
+export function BookingTicket({ car, showroom, slot, person, recipient, bookingCode, advisor = null, compact = false }) {
+  const advisorLabel = advisor?.full_name
+    ? `${advisor.full_name}${advisor.phone ? ` · ${advisor.phone}` : ''}`
+    : bookingCode
+      ? 'Chưa phân công'
+      : 'Sẽ được phân công khi xác nhận'
+  const rows = [['Người đặt lịch', person.bookingName], ['Người lái thử', recipient === 'other' ? person.driverName : person.bookingName], ['Điện thoại', person.phone], ['Email', person.email || 'Không đăng ký nhận email'], ['Mẫu xe', car.name], ['Showroom', showroom.name], ['Thời gian', `${slot.time} · ${slot.dateLabel}`], ['Tư vấn viên', advisorLabel]]
   return <section className={`studio-ticket ${compact ? 'studio-ticket--compact' : ''}`}><header><span>{bookingCode ? 'Lịch lái thử đã xác nhận' : 'Kiểm tra trước khi đặt lịch'}</span>{bookingCode && <strong>{bookingCode}</strong>}</header><div className="studio-ticket__vehicle"><VehicleShot car={car} mode="cutout" /><span><strong>{car.name}</strong><small>{car.body}</small></span></div><dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><p><CheckCircle size={16} weight="fill" /> Đã xác nhận có giấy phép lái xe phù hợp.</p></section>
 }

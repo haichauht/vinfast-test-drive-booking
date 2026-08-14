@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -93,7 +93,8 @@ class CatalogService(BookingBase):
         longitude: float | None = None,
         preferred_date: str | None = None,
         preferred_time: str | None = None,
-        limit: int = 24,
+        showroom_limit: int = 5,
+        slot_limit: int | None = None,
         **_: Any,
     ) -> dict:
         if (latitude is None) != (longitude is None):
@@ -170,7 +171,7 @@ class CatalogService(BookingBase):
                 return {
                     "resolved_vehicle": {**model, "variants": variants},
                     "license_requirement": model["required_license_class"],
-                    "showrooms": showrooms[:limit],
+                    "showrooms": showrooms[:min(max(showroom_limit, 1), 30)],
                     "slots": [],
                     "search_stage": "showroom_selection",
                     "missing_fields": [],
@@ -190,7 +191,13 @@ class CatalogService(BookingBase):
                 if c.dialect == "postgres"
                 else "datetime(s.start_at) > datetime(?)"
             )
-            values: list[Any] = [showroom_id, *variant_ids, now, now]
+            horizon_slot_sql = (
+                "s.start_at::timestamptz <= ?::timestamptz"
+                if c.dialect == "postgres"
+                else "datetime(s.start_at) <= datetime(?)"
+            )
+            horizon = iso(self.now() + timedelta(days=30))
+            values: list[Any] = [showroom_id, *variant_ids, now, now, horizon]
             date_sql, order_sql = "", "s.start_at"
             if preferred_date:
                 date_sql = " AND substr(s.start_at,1,10)=?"
@@ -209,11 +216,15 @@ class CatalogService(BookingBase):
                 )
                 order_sql = f"ABS({slot_minutes_sql} - ?), s.start_at"
                 values.append(target)
+            slot_limit_sql = " LIMIT ?" if slot_limit is not None else ""
+            slot_query_values = tuple(values)
+            if slot_limit is not None:
+                slot_query_values = (*slot_query_values, min(max(slot_limit, 1), 300))
             slots = [
                 dict(r)
                 for r in c.execute(
-                    f"SELECT s.*,d.asset_code,v.name variant_name FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id WHERE s.showroom_id=? AND d.variant_id IN ({marks}) AND (s.status IN ('available','booked') OR (s.status='held' AND s.held_until>?)) AND {future_slot_sql} AND d.is_active=1 AND d.operational_status='available' AND d.battery_soc IS NOT NULL AND d.battery_soc>=d.minimum_booking_soc {date_sql} ORDER BY {order_sql} LIMIT ?",
-                    (*values, min(max(limit, 1), 30)),
+                    f"SELECT s.*,d.asset_code,v.name variant_name FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id WHERE s.showroom_id=? AND d.variant_id IN ({marks}) AND (s.status IN ('available','booked') OR (s.status='held' AND s.held_until>?)) AND {future_slot_sql} AND {horizon_slot_sql} AND d.is_active=1 AND d.operational_status='available' AND d.battery_soc IS NOT NULL AND d.battery_soc>=d.minimum_booking_soc {date_sql} ORDER BY {order_sql}{slot_limit_sql}",
+                    slot_query_values,
                 )
             ]
             weekdays_vi = {
