@@ -281,9 +281,12 @@ async def demo_action(request: DemoActionRequest):
                 "action_error": "",
             }
         )
-        response_data: dict[str, Any] = (
-            protected.action_data if isinstance(protected.action_data, dict) else {}
-        )
+        # Action results may be mappings (most commands) or lists
+        # (`list_bookings`). Preserve either shape for the public API instead
+        # of silently replacing valid list results with an empty object.
+        response_data: Any = protected.action_data
+        if response_data is None:
+            response_data = {}
         settings = get_settings()
         expose_mock_otp = settings.app_env != "production" and getattr(
             settings, "booking_access_expose_mock_otp", True
@@ -291,6 +294,12 @@ async def demo_action(request: DemoActionRequest):
         if request.action == "request_access" and expose_mock_otp and data.get("is_mock") is True:
             response_data = dict(response_data)
             response_data["otp_code"] = data.get("otp_code")
+        elif request.action == "request_access":
+            # Output redaction may replace the code with "[redacted]". Do not
+            # expose that field at all in production because it advertises a
+            # mock credential in the public response.
+            response_data = dict(response_data)
+            response_data.pop("otp_code", None)
         kind = "Agent gọi tool" if request.action in AGENT_TOOLS else "Backend chạy UI command"
         return {"success": True, "message": f"{kind}: {name}", "tool": name, "data": response_data}
     except BookingError as exc:

@@ -4,6 +4,7 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
 from src.agents.constants import (
+    LOOKUP_KEYWORDS,
     OUT_OF_SCOPE_KEYWORDS,
     SOVEREIGNTY_KEYWORDS,
 )
@@ -62,7 +63,7 @@ async def classifier_node(state: AgentState) -> dict:
         trace_event("classifier.empty_query", trace_id=trace_id)
         return {
             "intent": "domain",
-            "active_skill": "advise",
+            "active_skill": "booking",
             "messages": [HumanMessage(content="")],
             "metadata": {**metadata, "sub_intent": "empty_query"},
             "tool_call_count": 0,
@@ -126,7 +127,10 @@ async def classifier_node(state: AgentState) -> dict:
             intent = "domain"
 
         sub_intent = route_result.sub_intent
-        active_skill = "booking" if sub_intent == "booking" or sub_intent.startswith("booking_") else "advise"
+        # This public MVP only exposes booking. Keep the detailed sub-intent
+        # for OTP/workflow handling, but do not route normal requests to the
+        # unfinished advisory skill.
+        active_skill = "booking"
         trace_event(
             "llm.response",
             trace_id=trace_id,
@@ -164,27 +168,9 @@ async def classifier_node(state: AgentState) -> dict:
         trace_event("llm.error", trace_id=trace_id, node="classifier", error=str(e))
         # Log the specific error for debugging before falling back to keyword classifier
         logger.warning("Classifier LLM call failed (%s: %s), falling back to keyword matching.", type(e).__name__, e)
-        active_skill = (
-            "booking"
-            if context.get("channel") == "booking"
-            or any(
-                kw in lower_query
-                for kw in ["đặt lịch", "lái thử", "booking", "lịch hẹn", "hủy lịch", "dời lịch", "định vị", "vị trí", "gần tôi"]
-            )
-            else "advise"
-        )
-        lookup_phrases = (
-            "tra cứu lịch",
-            "tra cuu lich",
-            "xem lịch đã đặt",
-            "xem lich da dat",
-            "tìm lịch đã đặt",
-            "tim lich da dat",
-            "booking của tôi",
-            "booking cua toi",
-        )
+        active_skill = "booking"
         fallback_sub_intent = (
-            "booking_lookup" if any(phrase in lower_query for phrase in lookup_phrases) else "fallback_domain"
+            "booking_lookup" if any(phrase in lower_query for phrase in LOOKUP_KEYWORDS) else "fallback_domain"
         )
         trace_event(
             "classifier.fallback_route",

@@ -11,6 +11,7 @@ from src.agents.utils import window_messages
 
 def _mock_bound_llm(response):
     llm = MagicMock()
+    llm.model_name = "test-chat-model"
     bound = MagicMock()
     bound.ainvoke = AsyncMock(return_value=response)
     llm.bind_tools.return_value = bound
@@ -35,6 +36,7 @@ async def test_booking_skill_binds_only_booking_tools_and_returns_text(monkeypat
         "get_booking_draft",
         "update_booking_draft",
         "request_booking_access",
+        "request_user_location",
         "verify_booking_access",
         "get_booking_details",
         "confirm_test_drive_booking",

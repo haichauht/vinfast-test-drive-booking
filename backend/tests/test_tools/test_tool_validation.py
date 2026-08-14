@@ -24,7 +24,7 @@ def test_search_tool_rejects_missing_required_vehicle_model(monkeypatch):
 @pytest.mark.parametrize(
     "invalid_patch",
     [
-        {"vehicle_model": "VF8", "limit": "many"},
+        {"vehicle_model": "VF8", "showroom_limit": "many"},
         {"vehicle_model": "VF8", "latitude": "north"},
         {"vehicle_model": "VF8", "longitude": "east"},
     ],

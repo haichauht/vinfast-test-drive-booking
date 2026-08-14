@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import os
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 # ruff: noqa: E402 -- the script adds backend/ to sys.path before src imports.
@@ -87,6 +87,72 @@ def _seed_showrooms_from_csv(path: Path, now_str: str, limit: int = 8) -> list[t
     return rows or None
 
 
+def _extend_mock_slots(database: Database) -> int:
+    """Extend the legacy fixture with available slots through an explicit date.
+
+    The checked-in legacy CSV ends on a fixed date.  For a public demo it is
+    useful to keep a short booking window open without editing that source
+    CSV, or moving its existing bookings.  Only *available* slots from the
+    last fixture day are copied, so no booking, hold, or staff assignment is
+    duplicated.
+    """
+    raw_target = os.getenv("MOCK_SLOT_END_DATE", "").strip()
+    if not raw_target:
+        return 0
+    try:
+        target_date = date.fromisoformat(raw_target)
+    except ValueError as exc:
+        raise ValueError("MOCK_SLOT_END_DATE must use YYYY-MM-DD format.") from exc
+
+    now_str = _iso(datetime.now(UTC))
+    with database.transaction(immediate=True) as connection:
+        latest_row = connection.execute("SELECT MAX(substr(start_at,1,10)) AS latest FROM test_drive_slots").fetchone()
+        latest_raw = latest_row["latest"] if latest_row else None
+        if not latest_raw:
+            return 0
+        latest_date = date.fromisoformat(latest_raw)
+        if target_date <= latest_date:
+            return 0
+
+        source_slots = connection.execute(
+            "SELECT id,showroom_id,demo_vehicle_id,start_at,end_at FROM test_drive_slots "
+            "WHERE substr(start_at,1,10)=? AND status='available' ORDER BY id",
+            (latest_raw,),
+        ).fetchall()
+        if not source_slots:
+            return 0
+
+        inserted = 0
+        day = latest_date + timedelta(days=1)
+        while day <= target_date:
+            day_prefix = day.isoformat()
+            rows = [
+                (
+                    f"mock_ext_{day:%Y%m%d}_{slot['id']}",
+                    slot["showroom_id"],
+                    slot["demo_vehicle_id"],
+                    f"{day_prefix}{slot['start_at'][10:]}",
+                    f"{day_prefix}{slot['end_at'][10:]}",
+                    "available",
+                    None,
+                    None,
+                    None,
+                    now_str,
+                    now_str,
+                )
+                for slot in source_slots
+            ]
+            connection.executemany(
+                "INSERT INTO test_drive_slots("
+                "id,showroom_id,demo_vehicle_id,start_at,end_at,status,held_until,current_booking_id,block_reason,created_at,updated_at"
+                ") VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                rows,
+            )
+            inserted += len(rows)
+            day += timedelta(days=1)
+    return inserted
+
+
 def seed_db() -> None:
     settings = get_settings()
     os.environ.setdefault("IMPORT_PROGRESS", "true")
@@ -112,6 +178,9 @@ def seed_db() -> None:
                 for table in RESET_ORDER:
                     connection.execute(f"DELETE FROM {table}")
         result = service.import_eval_dataset_from_dir(data_dir)
+        extended_slots = _extend_mock_slots(database)
+        if extended_slots:
+            print(f"[seed] Added {extended_slots:,} available mock slots through {os.environ['MOCK_SLOT_END_DATE']}.")
         print(f"Imported full eval dataset from {data_dir}: {result}")
         return
 
