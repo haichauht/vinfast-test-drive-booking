@@ -9,14 +9,14 @@ from src.agents.nodes.sensitive_policy_node import sensitive_policy_node
 
 # test case of Chau + kiểm tra classifier xử lý query rỗng mà không gọi LLM
 @pytest.mark.asyncio
-async def test_classifier_empty_query_uses_advise_route_without_llm(monkeypatch):
+async def test_classifier_empty_query_uses_booking_route_without_llm(monkeypatch):
     get_llm = MagicMock(side_effect=AssertionError("LLM must not be called"))
     monkeypatch.setattr(classifier_module, "get_classifier_llm", get_llm)
 
     result = await classifier_node({"query": "", "metadata": {"trace_id": "trace-1"}})
 
     assert result["intent"] == "domain"
-    assert result["active_skill"] == "advise"
+    assert result["active_skill"] == "booking"
     assert result["metadata"] == {"trace_id": "trace-1", "sub_intent": "empty_query"}
     assert isinstance(result["messages"][0], HumanMessage)
     assert result["messages"][0].content == ""
@@ -41,12 +41,13 @@ async def test_classifier_sensitive_keyword_bypasses_llm(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("sub_intent", "expected_skill"),
-    [("booking", "booking"), ("vehicle_info", "advise")],
+    [("booking", "booking"), ("vehicle_info", "booking")],
 )
 async def test_classifier_maps_domain_sub_intent_to_active_skill(monkeypatch, sub_intent, expected_skill):
     structured = MagicMock()
     structured.ainvoke = AsyncMock(return_value=RouteSchema(intent="domain", sub_intent=sub_intent))
     llm = MagicMock()
+    llm.model_name = "test-classifier"
     llm.with_structured_output.return_value = structured
     monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
 
@@ -54,8 +55,31 @@ async def test_classifier_maps_domain_sub_intent_to_active_skill(monkeypatch, su
 
     assert result["intent"] == "domain"
     assert result["active_skill"] == expected_skill
-    assert result["metadata"] == {"request_id": "r-1", "sub_intent": sub_intent}
+    assert result["metadata"]["request_id"] == "r-1"
+    assert result["metadata"]["sub_intent"] == sub_intent
+    assert result["metadata"]["llm_call_count"] == 1
     structured.ainvoke.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_classifier_keeps_vehicle_info_inside_booking_channel(monkeypatch):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(return_value=RouteSchema(intent="domain", sub_intent="vehicle_info"))
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+
+    result = await classifier_node(
+        {
+            "query": "Tôi muốn xem VF5",
+            "context": {"channel": "booking", "stage": "need_car"},
+        }
+    )
+
+    assert result["active_skill"] == "booking"
+    assert result["metadata"]["sub_intent"] == "vehicle_info"
+    assert result["metadata"]["llm_call_count"] == 1
 
 
 # test case of Chau + kiểm tra classifier fallback chọn booking hoặc advise khi LLM lỗi
@@ -63,9 +87,9 @@ async def test_classifier_maps_domain_sub_intent_to_active_skill(monkeypatch, su
 @pytest.mark.parametrize(
     ("query", "expected_intent", "expected_skill"),
     [
-        ("Xin chào bạn", "domain", "advise"),
+        ("Xin chào bạn", "domain", "booking"),
         ("Tôi muốn đặt lịch lái thử VF6", "domain", "booking"),
-        ("VF8 có gì nổi bật?", "domain", "advise"),
+        ("VF8 có gì nổi bật?", "domain", "booking"),
     ],
 )
 async def test_classifier_fallback_routes_without_network(monkeypatch, query, expected_intent, expected_skill):

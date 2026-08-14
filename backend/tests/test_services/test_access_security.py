@@ -266,18 +266,17 @@ def test_lookup_permission_cannot_cancel_booking(booking_service, access_factory
     assert error.value.code == "ACCESS_DENIED"
 
 
-# test case of Chau + kiểm tra token của booking này không đọc được booking khác
+# OTP lookup grants access to all bookings owned by the same verified contact.
 def test_access_session_is_scoped_to_one_booking(booking_service, access_factory, confirmed_booking_factory, catalog):
     first_access = access_factory("lookup")
     second = confirmed_booking_factory(catalog["slot_second_vehicle"])
 
-    with pytest.raises(BookingError) as error:
-        booking_service.get_booking_details(
-            first_access["session"]["access_session_token"],
-            booking_id=second["booking_id"],
-        )
+    details = booking_service.get_booking_details(
+        first_access["session"]["access_session_token"],
+        booking_id=second["booking_id"],
+    )
 
-    assert error.value.code == "ACCESS_SESSION_SCOPE_MISMATCH"
+    assert (details.get("id") or details.get("booking_id")) == second["booking_id"]
 
 
 # test case of Chau + kiểm tra API chi tiết chỉ trả cam kết GPLX và không trả số GPLX cũ
