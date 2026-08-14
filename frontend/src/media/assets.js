@@ -40,7 +40,14 @@ const vehicleVideoModules = import.meta.glob('./local/vehicle-media/**/*.{mp4,mo
   import: 'default',
 })
 
-const brochureModules = import.meta.glob('./local/brochures/*.pdf', {
+// Cloudflare Pages Direct Upload accepts files up to 25 MiB. The VF 8 new
+// generation brochure is larger, and the live detail page already receives
+// its canonical R2 URL from the backend catalogue, so do not bundle that
+// source PDF into the frontend deployment.
+const brochureModules = import.meta.glob([
+  './local/brochures/*.pdf',
+  '!./local/brochures/VF 8 The he moi All News_Brochure_final 20.05.pdf',
+], {
   eager: true,
   query: '?url',
   import: 'default',

@@ -6,10 +6,11 @@ from src.database import DatabaseIntegrityError
 from src.services.booking.common import iso, new_id
 
 from .auth import InternalPrincipal, InternalRole
+from .base import InternalPortalMixin
 from .errors import InternalPortalError
 
 
-class InternalResourceManagementMixin:
+class InternalResourceManagementMixin(InternalPortalMixin):
     """Explicit admin mutations for showroom and master catalogue resources."""
 
     def create_showroom(self, principal: InternalPrincipal, *, values: dict[str, Any]) -> dict:
