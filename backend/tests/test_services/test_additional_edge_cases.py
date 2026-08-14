@@ -105,7 +105,7 @@ def test_draft_accepts_boolean_license_commitment_without_legacy_fields(booking_
 
     draft = booking_service.update_booking_draft(
         held["booking_id"],
-        booker_patch={"full_name": "Huynh Thi Hai Chau", "phone": BOOKER_PHONE},
+        booker_patch={"full_name": "Huynh Thi Hai Chau", "phone": BOOKER_PHONE, "email": "chau@example.test"},
         driver_same_as_booker=True,
         license_patch={"has_driving_license": True},
         expected_version=1,
