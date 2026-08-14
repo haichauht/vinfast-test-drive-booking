@@ -9,8 +9,13 @@ from src.agents.constants import (
 )
 from src.agents.state import AgentState
 from src.agents.trace import trace_event
-from src.agents.utils import get_system_prompt
+from src.dependencies import usage_budget_service
 from src.services.llm import get_classifier_llm
+from src.services.usage_budget import (
+    BudgetExceededError,
+    LLMCallLimitExceededError,
+    invoke_with_budget,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +25,16 @@ class RouteSchema(BaseModel):
         description="The classified intent of the user. Must be one of: 'domain' or 'sensitive'"
     )
     sub_intent: str = Field(
-        description="Detailed classification. e.g., 'booking', 'vehicle_info', 'sovereignty', 'out_of_scope_code', 'out_of_scope_math', 'others'"
+        description=(
+            "Detailed classification. Must be one of: booking_new, booking_lookup, "
+            "booking_reschedule, booking_cancel, booking_update_details, "
+            "booking_update_notifications, vehicle_info, sovereignty, "
+            "out_of_scope_code, out_of_scope_math, others"
+        )
+    )
+    contact_value: str | None = Field(
+        default=None,
+        description="Email copied exactly from the user query, or null when no email was provided.",
     )
 
 
@@ -29,11 +43,11 @@ async def classifier_node(state: AgentState) -> dict:
     context = state.get("context") or {}
     metadata = state.get("metadata") or {}
     trace_id = metadata.get("trace_id", "")
-    if state.get("requested_action") or context.get("channel") == "booking":
+    if state.get("requested_action"):
         trace_event(
             "classifier.bypass",
             trace_id=trace_id,
-            reason="booking_context_or_action",
+            reason="structured_action",
             query=query,
             context=context,
         )
@@ -78,12 +92,16 @@ async def classifier_node(state: AgentState) -> dict:
 
     # Construct prompt for the LLM classifier dynamically based on system_prompt.md
     prompt = (
-        "You are an Intent Classifier Router for a VinFast Test Drive Assistant.\n"
-        "Your task is to classify the user's input query into one of two intents (domain or sensitive) "
-        "and determine the sub_intent based on the system instructions below.\n\n"
-        "--- SYSTEM INSTRUCTIONS ---\n"
-        f"{get_system_prompt()}\n\n"
-        f"User Query: {query}"
+        "You classify requests for a VinFast test-drive assistant.\n"
+        "Return intent=domain for vehicle and booking requests, or intent=sensitive for unsafe/out-of-scope requests.\n"
+        "Choose exactly one sub_intent: booking_new, booking_lookup, booking_reschedule, booking_cancel, "
+        "booking_update_details, booking_update_notifications, vehicle_info, sovereignty, "
+        "out_of_scope_code, out_of_scope_math, others.\n"
+        "Use booking_lookup when the user wants to view, find, check, or retrieve an existing booking.\n"
+        "If the query contains an email, copy it exactly to contact_value. Otherwise return null. "
+        "Never invent contact_value.\n"
+        f"UI context: channel={context.get('channel', '')}, stage={context.get('stage', '')}.\n"
+        f"User query: {query}"
     )
 
     try:
@@ -92,7 +110,14 @@ async def classifier_node(state: AgentState) -> dict:
             raise RuntimeError("LLM is not configured")
         structured_llm = llm.with_structured_output(RouteSchema)
         trace_event("llm.request", trace_id=trace_id, node="classifier", prompt=prompt)
-        result = await structured_llm.ainvoke(prompt)
+        result = await invoke_with_budget(
+            structured_llm,
+            prompt,
+            model=getattr(llm, "model_name", "") or "classifier",
+            metadata=metadata,
+            budget=usage_budget_service,
+            call_purpose="classifier",
+        )
         from typing import cast
 
         route_result = cast(RouteSchema, result)
@@ -101,7 +126,7 @@ async def classifier_node(state: AgentState) -> dict:
             intent = "domain"
 
         sub_intent = route_result.sub_intent
-        active_skill = "booking" if sub_intent == "booking" else "advise"
+        active_skill = "booking" if sub_intent == "booking" or sub_intent.startswith("booking_") else "advise"
         trace_event(
             "llm.response",
             trace_id=trace_id,
@@ -115,6 +140,24 @@ async def classifier_node(state: AgentState) -> dict:
             "active_skill": active_skill,
             "messages": [HumanMessage(content=query)],
             "metadata": {**metadata, "sub_intent": sub_intent},
+            "intent_entities": {"contact_value": route_result.contact_value},
+            "tool_call_count": 0,
+        }
+    except (BudgetExceededError, LLMCallLimitExceededError) as e:
+        error_code = "LLM_BUDGET_EXCEEDED" if isinstance(e, BudgetExceededError) else "LLM_CALL_LIMIT_EXCEEDED"
+        safe_response = (
+            "Hệ thống đã đạt giới hạn chi phí AI trong hôm nay. Vui lòng thử lại sau."
+            if isinstance(e, BudgetExceededError)
+            else "Yêu cầu này cần quá nhiều lượt xử lý AI. Vui lòng gửi lại yêu cầu ngắn gọn hơn."
+        )
+        trace_event("llm.limit", trace_id=trace_id, node="classifier", error_code=error_code)
+        return {
+            "intent": "sensitive",
+            "messages": [HumanMessage(content=query)],
+            "response": safe_response,
+            "policy_response": safe_response,
+            "action_error": error_code,
+            "metadata": {**metadata, "sub_intent": "llm_limit"},
             "tool_call_count": 0,
         }
     except Exception as e:
@@ -123,22 +166,37 @@ async def classifier_node(state: AgentState) -> dict:
         logger.warning("Classifier LLM call failed (%s: %s), falling back to keyword matching.", type(e).__name__, e)
         active_skill = (
             "booking"
-            if any(
-                kw in lower_query for kw in ["đặt lịch", "lái thử", "booking", "lịch hẹn", "hủy lịch", "dời lịch"]
+            if context.get("channel") == "booking"
+            or any(
+                kw in lower_query
+                for kw in ["đặt lịch", "lái thử", "booking", "lịch hẹn", "hủy lịch", "dời lịch", "định vị", "vị trí", "gần tôi"]
             )
             else "advise"
+        )
+        lookup_phrases = (
+            "tra cứu lịch",
+            "tra cuu lich",
+            "xem lịch đã đặt",
+            "xem lich da dat",
+            "tìm lịch đã đặt",
+            "tim lich da dat",
+            "booking của tôi",
+            "booking cua toi",
+        )
+        fallback_sub_intent = (
+            "booking_lookup" if any(phrase in lower_query for phrase in lookup_phrases) else "fallback_domain"
         )
         trace_event(
             "classifier.fallback_route",
             trace_id=trace_id,
             intent="domain",
             active_skill=active_skill,
-            sub_intent="fallback_domain",
+            sub_intent=fallback_sub_intent,
         )
         return {
             "intent": "domain",
             "active_skill": active_skill,
             "messages": [HumanMessage(content=query)],
-            "metadata": {**metadata, "sub_intent": "fallback_domain"},
+            "metadata": {**metadata, "sub_intent": fallback_sub_intent},
             "tool_call_count": 0,
         }

@@ -55,7 +55,8 @@ ACTION_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
             "preferred_time",
             "latitude",
             "longitude",
-            "limit",
+            "showroom_limit",
+            "slot_limit",
         }
     ),
     "hold_slot": frozenset({"slot_id", "ui_action_id"}),

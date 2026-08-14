@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import timedelta
 from zoneinfo import ZoneInfo
@@ -110,8 +111,11 @@ class LifecycleService(BookingBase):
         for role in ("booker", "driver"):
             if not booking[role]:
                 missing.append(role)
-            elif not booking[role]["phone"] and not booking[role]["email"]:
-                missing.append(f"{role}.contact")
+            else:
+                if not booking[role]["full_name"]:
+                    missing.append(f"{role}.full_name")
+                if not booking[role]["email"]:
+                    missing.append(f"{role}.email")
         lic = booking["license_declaration"] or {}
         if "has_driving_license" in lic and lic["has_driving_license"] is not None:
             lic["has_driving_license"] = bool(lic["has_driving_license"])
@@ -237,6 +241,8 @@ class LifecycleService(BookingBase):
                                 ((allowed["email"] or "").lower() or None, pid),
                             )
                     else:
+                        if not allowed.get("email"):
+                            raise BookingError("INVALID_INPUT", f"{role}.email la bat buoc.")
                         c.execute(
                             "INSERT INTO people(id,full_name,phone,email,preferred_channel,normalized_phone,normalized_email,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
                             (
@@ -244,7 +250,7 @@ class LifecycleService(BookingBase):
                                 allowed["full_name"],
                                 allowed.get("phone"),
                                 allowed.get("email"),
-                                allowed.get("preferred_channel", "sms"),
+                                allowed.get("preferred_channel", "email"),
                                 normalize_phone(allowed.get("phone")),
                                 (allowed.get("email") or "").lower() or None,
                                 now,
@@ -312,6 +318,7 @@ class LifecycleService(BookingBase):
                         "email_enabled",
                         "reminder_24h_enabled",
                         "reminder_2h_enabled",
+                        "custom_plan_json",
                     )
                 }
                 if allowed:
@@ -359,7 +366,8 @@ class LifecycleService(BookingBase):
             if slot["battery_soc"] is None or slot["battery_soc"] < slot["minimum_booking_soc"]:
                 raise BookingError("VEHICLE_NOT_READY", "Pin xe demo không còn đạt ngưỡng phục vụ.", retryable=True)
             assignment = c.execute(
-                "SELECT a.sales_staff_id FROM slot_sales_assignments a JOIN sales_staff s ON s.id=a.sales_staff_id "
+                "SELECT a.sales_staff_id,s.full_name,s.phone FROM slot_sales_assignments a "
+                "JOIN sales_staff s ON s.id=a.sales_staff_id AND s.status='active' AND s.is_active=1 "
                 "WHERE a.slot_id=? AND a.status='assigned' AND s.status='active' ORDER BY a.created_at LIMIT 1",
                 (draft["slot_id"],),
             ).fetchone()
@@ -389,20 +397,98 @@ class LifecycleService(BookingBase):
                         (now, booking_id),
                     )
             self._create_jobs(c, booking_id, slot["start_at"])
+            self._create_internal_booking_notifications(
+                c,
+                booking_id=booking_id,
+                booking_code=code,
+                showroom_id=slot["showroom_id"],
+                sales_staff_id=assignment["sales_staff_id"] if assignment else None,
+                start_at=slot["start_at"],
+            )
             self._event(c, booking_id, "booking_confirmed", "user")
-            result = {"booking_id": booking_id, "booking_code": code, "status": "confirmed", "confirmed_at": now}
+            result = {
+                "booking_id": booking_id,
+                "booking_code": code,
+                "status": "confirmed",
+                "confirmed_at": now,
+                "advisor": (
+                    {
+                        "id": assignment["sales_staff_id"],
+                        "full_name": assignment["full_name"],
+                        "phone": assignment["phone"],
+                    }
+                    if assignment
+                    else None
+                ),
+            }
             self._save_idempotency(c, ui_action_id, "confirm_booking", request_payload, result, now)
             return result
+
+    def _create_internal_booking_notifications(
+        self,
+        c,
+        *,
+        booking_id: str,
+        booking_code: str,
+        showroom_id: str,
+        sales_staff_id: str | None,
+        start_at: str,
+    ) -> None:
+        recipients = []
+        if sales_staff_id:
+            staff_user = c.execute(
+                "SELECT id FROM internal_users WHERE staff_id=? AND role='staff' AND is_active=1",
+                (sales_staff_id,),
+            ).fetchone()
+            if staff_user:
+                recipients.append(staff_user["id"])
+        manager_rows = c.execute(
+            "SELECT u.id FROM internal_users u JOIN internal_user_showrooms scope ON scope.user_id=u.id "
+            "WHERE scope.showroom_id=? AND u.role='showroom_manager' AND u.is_active=1",
+            (showroom_id,),
+        ).fetchall()
+        recipients.extend(row["id"] for row in manager_rows)
+        if not recipients:
+            return
+
+        showroom = c.execute("SELECT name FROM showrooms WHERE id=?", (showroom_id,)).fetchone()
+        start = parse_utc(start_at).astimezone(VIETNAM_TZ)
+        title = f"Booking mới {booking_code}"
+        body = (
+            f"{showroom['name']} có lịch lái thử lúc {start.strftime('%H:%M ngày %d/%m/%Y')}."
+            if showroom
+            else f"Có lịch lái thử lúc {start.strftime('%H:%M ngày %d/%m/%Y')}."
+        )
+        now = iso(self.now())
+        for recipient_user_id in dict.fromkeys(recipients):
+            c.execute(
+                "INSERT INTO internal_notifications("
+                "id,recipient_user_id,booking_id,showroom_id,notification_type,title,body,read_at,created_at"
+                ") VALUES(?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(recipient_user_id,booking_id,notification_type) DO NOTHING",
+                (
+                    _id("inotif"),
+                    recipient_user_id,
+                    booking_id,
+                    showroom_id,
+                    "booking_confirmed",
+                    title,
+                    body,
+                    None,
+                    now,
+                ),
+            )
 
     def _create_jobs(self, c, bid, start, *, confirmation_type: str = "booking_confirmation"):
         start_dt = parse_utc(start)
         now = iso(self.now())
         recipient_channels, plan = self._notification_recipient_channels(c, bid)
         schedule = [(confirmation_type, self.now())]
-        if plan["reminder_24h_enabled"] and start_dt - timedelta(hours=24) > parse_utc(self.now()):
-            schedule.append(("reminder_24h", start_dt - timedelta(hours=24)))
-        if plan["reminder_2h_enabled"] and start_dt - timedelta(hours=2) > parse_utc(self.now()):
-            schedule.append(("reminder_2h", start_dt - timedelta(hours=2)))
+        for offset in self._reminder_offsets_minutes(plan):
+            scheduled_at = start_dt - timedelta(minutes=offset)
+            if scheduled_at > parse_utc(self.now()):
+                typ = "reminder_24h" if offset == 1440 else "reminder_2h" if offset == 120 else "reminder"
+                schedule.append((typ, scheduled_at))
         for recipient, channels in recipient_channels:
             for typ, when in schedule:
                 for channel in channels:
@@ -441,6 +527,29 @@ class LifecycleService(BookingBase):
                 channels = ["email" if person["email"] else "sms"]
             result.append((recipient, channels))
         return result, plan
+
+    @staticmethod
+    def _reminder_offsets_minutes(plan) -> list[int]:
+        offsets: list[int] = []
+        try:
+            custom = json.loads(plan["custom_plan_json"] or "{}")
+        except (TypeError, ValueError):
+            custom = {}
+        custom_offsets = custom.get("reminder_offsets_minutes") if isinstance(custom, dict) else None
+        if isinstance(custom_offsets, list):
+            for value in custom_offsets:
+                try:
+                    minutes = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if 0 < minutes <= 30 * 24 * 60:
+                    offsets.append(minutes)
+        else:
+            if plan["reminder_24h_enabled"]:
+                offsets.append(1440)
+            if plan["reminder_2h_enabled"]:
+                offsets.append(120)
+        return sorted(set(offsets), reverse=True)[:5]
 
     def expire_held_bookings(self) -> int:
         count = 0
