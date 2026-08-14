@@ -1,4 +1,5 @@
 import pytest
+from src.database.sqlite import SQLiteConnection
 from src.services.booking import BookingError
 from src.services.booking.importer import ImportService
 
@@ -97,6 +98,29 @@ def test_import_eval_dataset_is_atomic(booking_service, booking_db):
     with booking_db.connect() as connection:
         count = connection.execute("SELECT count(*) FROM vehicle_models WHERE id='model_atomic'").fetchone()[0]
     assert count == 0
+
+
+def test_import_eval_dataset_uses_executemany_batches(booking_service, monkeypatch):
+    model_csv = (
+        "id,code,name,vehicle_type,required_license_class,license_requirement_note,is_active,created_at,updated_at\n"
+        "model_batch_1,VFB1,Batch One,SUV,B1,GPLX B1,1,2026-08-03T00:00:00+00:00,2026-08-03T00:00:00+00:00\n"
+        "model_batch_2,VFB2,Batch Two,SUV,B1,GPLX B1,1,2026-08-03T00:00:00+00:00,2026-08-03T00:00:00+00:00\n"
+    )
+    batch_sizes = []
+    original_executemany = SQLiteConnection.executemany
+
+    def track_executemany(connection, sql, params):
+        batch = list(params)
+        if sql.startswith("INSERT INTO vehicle_models"):
+            batch_sizes.append(len(batch))
+        return original_executemany(connection, sql, batch)
+
+    monkeypatch.setattr(SQLiteConnection, "executemany", track_executemany)
+
+    result = booking_service.import_eval_dataset({"01_vehicle_models.csv": model_csv})
+
+    assert result["imported"]["vehicle_models"] == 2
+    assert batch_sizes == [2]
 
 
 # test case of Chau + kiểm tra dashboard trả số lượng booking slot và không lộ contact GPLX

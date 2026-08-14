@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 from pathlib import Path
 
 from src.database import DatabaseIntegrityError
@@ -17,6 +18,14 @@ def _columns(value: str) -> list[str]:
 
 
 class ImportService(BookingBase):
+    DATASET_BATCH_SIZE = 5_000
+
+    @staticmethod
+    def _report_import_progress(message: str) -> None:
+        """Print opt-in bulk-import progress for long-running seed commands."""
+        if os.getenv("IMPORT_PROGRESS", "").lower() in {"1", "true", "yes"}:
+            print(f"[seed] {message}", flush=True)
+
     @staticmethod
     def _validate_coordinates(latitude: object, longitude: object, *, context: str) -> tuple[float, float]:
         try:
@@ -516,6 +525,7 @@ class ImportService(BookingBase):
                     if not rows:
                         counts[table] = 0
                         continue
+                    self._report_import_progress(f"Importing {filename} -> {table} ({len(rows):,} rows)")
                     slot_filename = "20_test_drive_slots.csv" if is_v5 else "06_test_drive_slots.csv"
                     showroom_filename = "04_showrooms.csv" if is_v5 else "03_showrooms.csv"
                     if filename == slot_filename:
@@ -560,8 +570,14 @@ class ImportService(BookingBase):
                         )
                         for row in rows
                     ]
-                    c.executemany(sql, values)
+                    for start in range(0, len(values), self.DATASET_BATCH_SIZE):
+                        batch = values[start : start + self.DATASET_BATCH_SIZE]
+                        c.executemany(sql, batch)
+                        imported = start + len(batch)
+                        if imported < len(values) or imported % self.DATASET_BATCH_SIZE == 0:
+                            self._report_import_progress(f"  {table}: {imported:,}/{len(rows):,} rows")
                     counts[table] = len(rows)
+                    self._report_import_progress(f"Finished {table} ({len(rows):,} rows)")
         except BookingError:
             raise
         except DatabaseIntegrityError as exc:
