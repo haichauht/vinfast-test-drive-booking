@@ -5,16 +5,20 @@ on:
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend-ci.yml'
-    branches: [testing, main, develop]
+    branches: [main]
   pull_request:
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend-ci.yml'
-    branches: [testing, main, develop]
+    branches: [testing, develop, main]
 
 concurrency:
   group: frontend-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
+  deployments: write
 
 jobs:
   build:
@@ -35,36 +39,37 @@ jobs:
 
       - name: Build check
         working-directory: frontend
+        env:
+          VITE_API_BASE_URL: https://vinfastbooking-api-latest.onrender.com/api/v1
+          VITE_MEDIA_BASE_URL: https://pub-216eea433b9e4529979ce534d5ce0ae1.r2.dev
         run: npm run build
 
+      - name: Store production build
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+          retention-days: 1
+
   deploy:
-    name: Deploy to Vercel
+    name: Deploy to Cloudflare Pages
     needs: build
     if: github.event_name == 'push' && github.ref_name == 'main'
     runs-on: self-hosted
-    defaults:
-      run:
-        working-directory: frontend
-    env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      # Jobs run in isolated runner workspaces; Vercel CLI needs Node/npx here.
-      - name: Set up Node.js for Vercel CLI
-        uses: actions/setup-node@v4
+      - name: Download production build
+        uses: actions/download-artifact@v4
         with:
-          node-version: '22'
+          name: frontend-dist
+          path: frontend/dist
 
-      - name: Pull Vercel production configuration
-        run: npx vercel@latest pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Build Vercel production artifacts
-        run: npx vercel@latest build --prod --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Deploy Vercel production artifacts
-        run: npx vercel@latest deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Deploy production to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy frontend/dist --project-name=vinfast-mvp --branch=main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

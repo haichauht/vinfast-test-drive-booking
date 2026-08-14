@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.agents.graph import close_persistent_agent, initialize_persistent_agent
@@ -15,7 +16,10 @@ from src.api.site_routes import router as site_router
 from src.bootstrap import initialize_database
 from src.config import get_settings
 from src.dependencies import booking_service, database, zalo_client
+from src.internal_portal.errors import InternalPortalError
+from src.internal_portal.routes import router as internal_router
 from src.logging_config import configure_logging
+from src.security.rate_limit import RateLimitMiddleware
 from src.services.zalo_bot import ZaloPollingService
 
 
@@ -41,15 +45,20 @@ async def lifespan(app: FastAPI):
             ).run()
         )
         logging.getLogger(__name__).info("Zalo Bot polling enabled")
+
     async def dispatch_notifications() -> None:
         while True:
             try:
-                await asyncio.to_thread(booking_service.dispatch_due_notifications)
+                await asyncio.to_thread(
+                    booking_service.dispatch_due_notifications,
+                    settings.notification_batch_size,
+                    settings.notification_processing_timeout_seconds,
+                )
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logging.getLogger(__name__).exception("Notification dispatch failed")
-            await asyncio.sleep(5)
+            await asyncio.sleep(settings.notification_poll_interval_seconds)
 
     notification_task = asyncio.create_task(dispatch_notifications())
     yield
@@ -86,6 +95,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware, database=database, settings=settings)
+
+
+@app.exception_handler(InternalPortalError)
+async def internal_portal_error_handler(_request, exc: InternalPortalError):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": {"code": exc.code, "message": str(exc)}},
+    )
 
 
 @app.middleware("http")
@@ -108,6 +126,7 @@ async def request_logging(request, call_next):
 
 app.include_router(router, prefix="/api/v1")
 app.include_router(site_router, prefix="/api/v1")
+app.include_router(internal_router, prefix="/api/v1")
 app.mount("/media", StaticFiles(directory=media_root), name="media")
 
 

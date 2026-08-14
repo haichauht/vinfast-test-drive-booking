@@ -55,7 +55,7 @@
  *  Riêng nút "Hiện bảng" (~1498) và nút đóng workspace viết inline style ngay trong file.
  *  Trang này KHÔNG dùng AppShell — header riêng, gọn hơn, ở ~dòng 1488.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -92,12 +92,24 @@ import {
   getVerifiedBooking,
   listVerifiedBookings,
   requestBookingAccess,
+  resetBookingConversation,
   saveBookingCustomer,
   sendBookingMessage,
   searchBookingOptions,
   updateVerifiedBooking,
   verifyBookingAccess,
 } from '../api/booking'
+import {
+  BookingMode,
+  InteractionEvent,
+  bookingInteractionReducer,
+  createInteractionState,
+  selectAllowedActions,
+  selectComposerMode,
+  selectWorkspace,
+  serializeInteractionState,
+  toLegacyStage,
+} from '../state/bookingInteraction'
 import { CHAT_MESSAGE_MAX_LENGTH } from '../api/contracts'
 import { actionId } from '../api/ids'
 import { useBackendStatus } from '../context/BackendStatusContext'
@@ -125,7 +137,6 @@ const readBookingUiState = () => {
 }
 
 const isSensitiveChatText = (value) => /(?:\b(?:0|\+84)\d[\d\s.-]{7,}\b|\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b|\b\d{6}\b)/.test(value)
-
 const formatDistance = (distance) => (
   Number.isFinite(distance) ? `${String(distance).replace('.', ',')} km` : ''
 )
@@ -374,7 +385,9 @@ function AgentMessage({ message }) {
   return (
     <div className={`vivi-message vivi-message--${message.role}`}>
       {message.role === 'assistant' && <ViViAvatar compact />}
-      <div><p>{formatText(message.text)}</p></div>
+      <div>
+        <p>{formatText(message.text)}</p>
+      </div>
     </div>
   )
 }
@@ -387,14 +400,14 @@ function ViViAvatar({ compact = false }) {
   )
 }
 
-function ContextualChoices({ stage, car, locationSuggestions, showrooms, slots, onResolveArea, onShowroom, onSlot }) {
+function ContextualChoices({ stage, allowedActions, car, locationSuggestions, showrooms, slots, onResolveArea, onShowroom, onSlot }) {
   if (!car) return null
 
   if (stage === 'need_address' || stage === 'need_ward') {
     return null
   }
 
-  if (stage === 'choose_showroom' && showrooms.length) {
+  if (stage === 'choose_showroom' && allowedActions.includes('select_showroom') && showrooms.length) {
     return (
       <div className="agent-context" aria-label="Chọn showroom trong cuộc trò chuyện">
         <div className="agent-context__heading"><span>Showroom phù hợp</span><small>Đã ưu tiên có xe trước, khoảng cách sau</small></div>
@@ -411,7 +424,7 @@ function ContextualChoices({ stage, car, locationSuggestions, showrooms, slots, 
     )
   }
 
-  if (stage === 'choose_slot' && slots.length) {
+  if (stage === 'choose_slot' && allowedActions.includes('select_slot') && slots.length) {
     // Quick choices must mirror the calendar's inventory state. Never surface a
     // held/booked cell in chat as if it could be selected.
     const quickSlots = slots.flatMap((day) => day.times.filter((entry) => entry.isAvailable).slice(0, 1).map((entry) => ({
@@ -749,6 +762,7 @@ export function BookingPage() {
   const shouldOfferResume = Boolean(
     !initialCar && (
       (restoredUi.stage && restoredUi.stage !== 'idle') ||
+      (restoredUi.interaction?.phase && restoredUi.interaction.phase !== 'idle') ||
       (Array.isArray(restoredUi.messages) && restoredUi.messages.length)
     ),
   )
@@ -757,8 +771,23 @@ export function BookingPage() {
     shouldOfferResume,
   ))
   const [selectedCarId, setSelectedCarId] = useState(initialCar?.id || '')
-  const [stage, setStage] = useState(shouldOfferResume ? restoredUi.stage || 'idle' : 'idle')
-  const [activeView, setActiveView] = useState(initialCar ? 'car' : 'agent')
+  const [interaction, dispatchInteraction] = useReducer(
+    bookingInteractionReducer,
+    {
+      stage: shouldOfferResume ? restoredUi.stage || 'idle' : initialCar ? 'need_address' : 'idle',
+      activeView: initialCar ? 'car' : restoredUi.activeView || 'agent',
+      interaction: shouldOfferResume ? restoredUi.interaction : null,
+    },
+    createInteractionState,
+  )
+  const stage = toLegacyStage(interaction)
+  const activeView = interaction.activeView
+  const setStage = useCallback((nextStage) => {
+    dispatchInteraction({ type: InteractionEvent.SET_PHASE, stage: nextStage })
+  }, [])
+  const setActiveView = useCallback((nextView) => {
+    dispatchInteraction({ type: InteractionEvent.SET_ACTIVE_VIEW, activeView: nextView })
+  }, [])
   const [messages, setMessages] = useState(shouldOfferResume && Array.isArray(restoredUi.messages) ? restoredUi.messages : [])
   const [draft, setDraft] = useState('')
   const [agentTyping, setAgentTyping] = useState(false)
@@ -776,10 +805,11 @@ export function BookingPage() {
   const [person, setPerson] = useState({ bookingName: '', driverName: '', phone: '', email: '', hasLicense: false, marketingConsent: true })
   const [formErrors, setFormErrors] = useState({})
   const [bookingCode, setBookingCode] = useState('')
+  const [bookingAdvisor, setBookingAdvisor] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [successCinematic, setSuccessCinematic] = useState(false)
   const [accessFlow, setAccessFlow] = useState(null)
-  const [accessValue, setAccessValue] = useState({ phone: '', otpCode: '' })
+  const [accessValue, setAccessValue] = useState({ bookingCode: '', email: '', otpCode: '' })
   const [accessError, setAccessError] = useState('')
   const [accessBusy, setAccessBusy] = useState(false)
   const [accessSecondsLeft, setAccessSecondsLeft] = useState(0)
@@ -810,6 +840,13 @@ export function BookingPage() {
   // Mỗi slot đã mang id thật của backend; cặp ngày/giờ trong UI chỉ để hiển thị.
   const selectedShowroom = nearbyShowrooms.find((showroom) => showroom.id === showroomId)
   const composerDisabled = isSending || agentTyping
+  const allowedActions = useMemo(() => selectAllowedActions(interaction, {
+    allowedBookingActions: accessProfile?.allowedActions || [],
+  }), [interaction, accessProfile?.allowedActions])
+  const workspaceModel = useMemo(() => selectWorkspace(interaction), [interaction])
+  const composerMode = useMemo(() => selectComposerMode(interaction), [interaction])
+  const hasWorkspaceContent = Boolean(selectedCar || accessProfile)
+  const workspaceVisible = workspaceModel.visible && hasWorkspaceContent && !workspaceHidden
 
   const completeBookingSuccess = useCallback(() => {
     setSuccessCinematic(false)
@@ -817,7 +854,7 @@ export function BookingPage() {
     setMessages((current) => [...current, {
       id: `${Date.now()}-${current.length}`,
       role: 'assistant',
-      text: 'Đặt lịch thành công. Tôi đã giữ lại toàn bộ thông tin bên cạnh. Sau này, bạn chỉ cần nhập họ tên và số điện thoại để tra cứu, bổ sung hoặc huỷ lịch.',
+      text: 'Đặt lịch thành công. Tôi đã giữ lại toàn bộ thông tin bên cạnh. Sau này, bạn chỉ cần nhập email đã đăng ký để tra cứu, bổ sung hoặc huỷ lịch.',
     }])
   }, [])
 
@@ -841,18 +878,18 @@ export function BookingPage() {
   useEffect(() => {
     const safeMessages = messages
       .filter((message) => !isSensitiveChatText(message.text || ''))
+      .map(({ id, role, text }) => ({ id, role, text }))
       .slice(-30)
     window.sessionStorage.setItem(BOOKING_UI_STATE_KEY, JSON.stringify({
       recipient,
       selectedCarId,
-      stage,
-      activeView,
       showroomId,
       nearbyShowrooms,
       slots,
       messages: safeMessages,
+      interaction: serializeInteractionState(interaction),
     }))
-  }, [recipient, selectedCarId, stage, activeView, showroomId, nearbyShowrooms, slots, messages])
+  }, [recipient, selectedCarId, showroomId, nearbyShowrooms, slots, messages, interaction])
 
   useEffect(() => {
     if (selectedCarId || !cars.length) return
@@ -884,6 +921,18 @@ export function BookingPage() {
     return groups
   }, {}))
 
+  const formatBookingSummary = (booking, index = 0) => {
+    const startsAt = booking.start_at ? new Date(booking.start_at) : null
+    const displayTime = startsAt && !Number.isNaN(startsAt.getTime())
+      ? new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(startsAt)
+      : 'Lịch lái thử'
+    return {
+      ...booking,
+      display_time: displayTime,
+      display_label: `${index + 1}. ${booking.booking_code || 'Lịch lái thử'} - ${displayTime}${booking.vehicle_name ? ` - ${booking.vehicle_name}` : ''}${booking.showroom_name ? ` tại ${booking.showroom_name}` : ''}`,
+    }
+  }
+
   const resolveAgentCar = (vehicle) => {
     if (!vehicle) return null
     const normalize = (value) => String(value || '')
@@ -902,14 +951,20 @@ export function BookingPage() {
     return cars.find((car) => candidates.includes(normalize(car.id)) || candidates.includes(normalize(car.name))) || null
   }
 
-  const requestUserLocation = () => {
+  const requestUserLocation = ({ addUserMessage = true } = {}) => {
     if (!navigator.geolocation) {
       setBackendError("Trình duyệt của bạn không hỗ trợ định vị GPS.")
       return
     }
+    if (!selectedCar) {
+      setStage('need_car')
+      setActiveView('car')
+      addMessage('assistant', 'Bạn chọn mẫu xe muốn lái thử trước nhé, rồi tôi sẽ xin quyền định vị để tìm showroom gần bạn.')
+      return
+    }
 
     setBackendError('')
-    addMessage('user', 'Định vị vị trí hiện tại của tôi.')
+    if (addUserMessage) addMessage('user', 'Định vị vị trí hiện tại của tôi.')
     setAgentTyping(true)
 
     navigator.geolocation.getCurrentPosition(
@@ -959,9 +1014,182 @@ export function BookingPage() {
     }
   }
 
-  const applyAgentToolResult = (result) => {
-    if (!result || !result.action_data) return
+  const completeOtpChallenge = () => {
+    setAccessSecondsLeft(0)
+    setResendSecondsLeft(0)
+    otpChallengeIdRef.current = ''
+    otpCodeRef.current = ''
+  }
+
+  const clearManagementContext = ({ resetConversation = true, event = InteractionEvent.EXIT_MANAGE_BOOKING } = {}) => {
+    setAccessFlow(null)
+    setAccessProfile(null)
+    setAccessibleBookings([])
+    setExpandedBookingId('')
+    setRescheduleState(null)
+    setRescheduleSecondsLeft(0)
+    setAccessError('')
+    setAccessSecondsLeft(0)
+    setResendSecondsLeft(0)
+    setAccessValue({ bookingCode: '', email: '', otpCode: '' })
+    otpChallengeIdRef.current = ''
+    otpCodeRef.current = ''
+    dispatchInteraction({ type: event })
+    if (resetConversation) resetBookingConversation()
+  }
+
+  const applyServerUiDirective = (ui) => {
+    const phaseEvents = {
+      access_request: InteractionEvent.ACCESS_REQUESTED,
+      access_verify: InteractionEvent.ACCESS_VERIFY,
+      booking_list: InteractionEvent.ACCESS_LIST,
+    }
+    if (phaseEvents[ui?.phase]) {
+      dispatchInteraction({ type: phaseEvents[ui.phase] })
+      return
+    }
+    const legacyStages = {
+      choose_showroom: 'choose_showroom',
+      choose_slot: 'choose_slot',
+      collect_info: 'collect_info',
+      review: 'review',
+      success: 'success',
+    }
+    if (legacyStages[ui?.phase]) setStage(legacyStages[ui.phase])
+  }
+
+  const applyAgentToolResult = async (result) => {
+    if (!result || !result.action_data) return false
+    applyServerUiDirective(result.ui)
     setWorkspaceHidden(false)
+
+    if (result.tool_name === 'request_user_location' || result.action_data.requires_client_geolocation) {
+      requestUserLocation({ addUserMessage: false })
+      return false
+    }
+
+    if (result.tool_name === 'request_booking_access') {
+      const data = result.action_data
+      const toolInput = result.tool_input || {}
+      const accessPurpose = data.purpose || toolInput.purpose || 'lookup'
+      if (data.requires_contact_value) {
+        otpChallengeIdRef.current = ''
+        otpCodeRef.current = ''
+        dispatchInteraction({ type: InteractionEvent.ACCESS_REQUESTED })
+        setAccessError('')
+        setAccessSecondsLeft(0)
+        setResendSecondsLeft(0)
+        setAccessValue((current) => ({
+          ...current,
+          bookingCode: '',
+          email: '',
+          otpCode: '',
+        }))
+        setAccessFlow({ phase: 'request', purpose: accessPurpose, challengeId: '', expiresAt: 0 })
+        return false
+      }
+      const expiresAt = data.expires_at ? new Date(data.expires_at).getTime() : 0
+      if (!data.challenge_id || !expiresAt || Number.isNaN(expiresAt)) return
+      otpChallengeIdRef.current = data.challenge_id
+      otpCodeRef.current = ''
+      dispatchInteraction({ type: InteractionEvent.ACCESS_VERIFY })
+      setAccessError('')
+      setAccessValue((current) => ({
+        ...current,
+        bookingCode: '',
+        email: String(toolInput.contact_value || current.email || ''),
+        otpCode: '',
+      }))
+      setAccessFlow({
+        phase: 'verify',
+        purpose: accessPurpose,
+        challengeId: data.challenge_id,
+        expiresAt,
+      })
+      setAccessSecondsLeft(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)))
+      setResendSecondsLeft(data.retry_after_seconds || 60)
+      return false
+    }
+
+    if (result.tool_name === 'verify_booking_access') {
+      const verified = result.action_data
+      completeOtpChallenge()
+      const accessPurpose = accessFlow?.purpose || result.tool_input?.purpose || 'lookup'
+      const bookings = await listVerifiedBookings({ accessToken: verified.access_session_token })
+      const formattedBookings = (bookings.data || bookings || []).map(formatBookingSummary)
+      setAccessibleBookings(formattedBookings)
+      setActiveView('bookings')
+      const isCancellation = accessPurpose === 'cancel'
+
+      if (formattedBookings.length > 1) {
+        setAccessProfile({
+          accessToken: verified.access_session_token,
+          accessPurpose,
+          bookingId: verified.booking_id,
+          bookingCode: '',
+          bookerName: '',
+          driverName: '',
+          phone: '',
+          email: accessValue.email,
+          permissions: verified.permissions || [],
+          allowedActions: [],
+          vehicleName: '',
+          vehicleModelId: '',
+          showroomName: '',
+          showroomId: '',
+          showroomAddress: '',
+          advisorName: '',
+          advisorPhone: '',
+          slotTime: '',
+          slotDate: '',
+        })
+        setExpandedBookingId('')
+        setAccessFlow(null)
+        dispatchInteraction({ type: InteractionEvent.ACCESS_LIST })
+        otpChallengeIdRef.current = ''
+        otpCodeRef.current = ''
+        addMessage('assistant', `Xác thực thành công. Tôi tìm thấy ${formattedBookings.length} lịch hợp lệ với email này, bạn chọn lịch muốn xem hoặc chỉnh sửa nhé.`)
+        return true
+      }
+
+      if (formattedBookings.length === 0) {
+        clearManagementContext({ resetConversation: false })
+        addMessage('assistant', 'Xác thực thành công nhưng tôi chưa tìm thấy lịch hợp lệ với email này.')
+        return true
+      }
+
+      const booking = await getVerifiedBooking({ accessToken: verified.access_session_token, bookingId: formattedBookings[0]?.id || verified.booking_id })
+      setAccessProfile({
+        accessToken: verified.access_session_token,
+        accessPurpose,
+        bookingId: booking.id,
+        bookingCode: booking.booking_code || '',
+        bookerName: booking.booker?.full_name || '',
+        driverName: booking.driver?.full_name || '',
+        phone: booking.driver?.phone || booking.booker?.phone || '',
+        email: booking.driver?.email || booking.booker?.email || '',
+        permissions: verified.permissions || [],
+        allowedActions: booking.allowed_actions || [],
+        vehicleName: booking.vehicle?.name || '',
+        vehicleModelId: booking.vehicle?.id || '',
+        showroomName: booking.showroom?.name || '',
+        showroomId: booking.showroom?.id || '',
+        showroomAddress: booking.showroom?.address || '',
+        advisorName: booking.advisor?.full_name || 'Chưa phân công',
+        advisorPhone: booking.advisor?.phone || '',
+        slotTime: booking.slot_time || '',
+        slotDate: booking.slot_date || '',
+      })
+      setExpandedBookingId(booking.id)
+      setAccessFlow({ phase: isCancellation ? 'confirm_cancel' : 'edit', purpose: accessPurpose, challengeId: '', expiresAt: 0 })
+      dispatchInteraction({
+        type: isCancellation ? InteractionEvent.ACCESS_CANCEL_CONFIRM : InteractionEvent.ACCESS_EDIT,
+      })
+      otpChallengeIdRef.current = ''
+      otpCodeRef.current = ''
+      addMessage('assistant', isCancellation ? 'Xác thực thành công. Vui lòng kiểm tra phiếu bên dưới và xác nhận nếu bạn muốn hủy lịch.' : 'Xác thực thành công. Bạn có thể cập nhật thông tin lịch đã đặt bên dưới.')
+      return true
+    }
 
     if (result.tool_name === 'search_test_drive_options') {
       const data = result.action_data
@@ -970,6 +1198,9 @@ export function BookingPage() {
       const vehicleId = agentCar?.id || selectedCarId
 
       if (agentCar) {
+        if (interaction.mode === BookingMode.MANAGE_BOOKING) {
+          clearManagementContext({ resetConversation: true, event: InteractionEvent.VIEW_VEHICLE })
+        }
         setSelectedCarId(agentCar.id)
       }
 
@@ -1096,7 +1327,7 @@ export function BookingPage() {
         return
       }
 
-      const isComplete = data.booker?.name && data.booker?.phone && data.license_declaration?.has_driving_license
+      const isComplete = data.booker?.name && data.booker?.email && data.license_declaration?.has_driving_license
       if (isComplete) {
         setStage('review')
         setActiveView('ticket')
@@ -1184,10 +1415,10 @@ export function BookingPage() {
     holdExpiredRef.current = false
   }, [holdExpiresAt])
 
-  const addMessage = (role, text) => {
+  const addMessage = (role, text, extra = {}) => {
     // TODO [BACKEND/AGENT]: Use server message ids and timestamps. Store structured
     // cards/actions separately from display text so UI choices stay deterministic.
-    setMessages((current) => [...current, { id: `${Date.now()}-${current.length}`, role, text }])
+    setMessages((current) => [...current, { id: `${Date.now()}-${current.length}`, role, text, ...extra }])
   }
 
   const reply = (text, delay = 420) => {
@@ -1224,6 +1455,9 @@ export function BookingPage() {
   }
 
   const chooseCar = (car, fromPrompt = false) => {
+    if (interaction.mode === BookingMode.MANAGE_BOOKING) {
+      clearManagementContext({ event: InteractionEvent.VIEW_VEHICLE })
+    }
     setSelectedCarId(car.id)
     setWorkspaceHidden(false)
     if (!fromPrompt) addMessage('user', `Tôi muốn lái thử ${car.name}.`)
@@ -1240,6 +1474,10 @@ export function BookingPage() {
   const switchCar = (car) => {
     setSwitcherOpen(false)
     if (!car || car.id === selectedCarId) return
+
+    if (interaction.mode === BookingMode.MANAGE_BOOKING) {
+      clearManagementContext({ event: InteractionEvent.VIEW_VEHICLE })
+    }
 
     setSelectedCarId(car.id)
     setPendingSlot(null)
@@ -1363,7 +1601,10 @@ export function BookingPage() {
     setAgentTyping(true)
     try {
       const result = await sendBookingMessage(value, {
+        mode: interaction.mode,
+        phase: interaction.phase,
         stage,
+        allowedActions,
         recipient,
         selectedVehicle: selectedCar ? { id: selectedCar.id, name: selectedCar.name } : null,
         selectedShowroom: selectedShowroom ? { id: selectedShowroom.id, name: selectedShowroom.name } : null,
@@ -1378,8 +1619,22 @@ export function BookingPage() {
         bookingId: bookingId || null,
         channel: 'booking',
       })
-      applyAgentToolResult(result)
-      addMessage('assistant', result.response)
+      if (mentionedCar && result.intent === 'vehicle_info') {
+        if (interaction.mode === BookingMode.MANAGE_BOOKING) {
+          clearManagementContext({ event: InteractionEvent.VIEW_VEHICLE })
+        }
+        setSelectedCarId(mentionedCar.id)
+        setPendingSlot(null)
+        setSelectedSlot(null)
+        setShowroomId('')
+        setNearbyShowrooms([])
+        setLocationSuggestions([])
+        setStage('need_address')
+        setActiveView('car')
+        primeLocationSuggestions(mentionedCar)
+      }
+      const handledMessage = await applyAgentToolResult(result)
+      if (!handledMessage) addMessage('assistant', result.response)
     } catch (error) {
       addMessage('assistant', `Không thể kết nối ViVi: ${error.message}`)
     } finally {
@@ -1390,19 +1645,21 @@ export function BookingPage() {
     }
   }
 
-  const startLookup = () => {
+  const startLookup = ({ addUserMessage = true, email = '' } = {}) => {
     // ĐÃ XONG: tra cứu chạy thật qua requestBookingAccess + verifyBookingAccess
-    // (OTP gửi bằng Zalo). Chỉ sau khi xác thực mới mở được sửa/huỷ/đổi lịch.
+    // (OTP gửi bằng email). Chỉ sau khi xác thực mới mở được sửa/huỷ/đổi lịch.
     // TODO [BACKEND/ENDPOINT — P0]: các action này vẫn đi qua /api/v1/demo/action;
     // cần endpoint mang tên thật cho nghiệp vụ production.
-    addMessage('user', 'Tôi muốn tra cứu lịch đã đặt.')
-    setStage('lookup')
+    if (addUserMessage) addMessage('user', 'Tôi muốn tra cứu lịch đã đặt.')
+    dispatchInteraction({ type: InteractionEvent.START_LOOKUP })
+    setWorkspaceHidden(false)
     setAccessError('')
     otpChallengeIdRef.current = ''
     // A lookup/edit session also needs reschedule permission for the calendar
     // icon. The backend grants update_details as part of this purpose.
+    setAccessValue((current) => ({ ...current, bookingCode: '', email: email || current.email, otpCode: '' }))
     setAccessFlow({ phase: 'request', purpose: 'reschedule', challengeId: '', expiresAt: 0 })
-    reply('Để bảo vệ lịch của bạn, hãy nhập mã lịch và số điện thoại. Tôi sẽ gửi OTP qua Zalo đã liên kết.')
+    reply('Để bảo vệ lịch của bạn, hãy nhập email đã đăng ký. Tôi sẽ gửi OTP qua email.')
   }
 
   const changeAccessValue = (field, value) => {
@@ -1414,7 +1671,7 @@ export function BookingPage() {
     event?.preventDefault()
     setAccessBusy(true); setAccessError('')
     try {
-      const result = await requestBookingAccess({ phone: accessValue.phone.trim(), purpose: accessFlow?.purpose || 'update_details' })
+      const result = await requestBookingAccess({ bookingCode: accessValue.bookingCode.trim(), email: accessValue.email.trim(), purpose: accessFlow?.purpose || 'update_details' })
       if (!result?.challenge_id || !result?.expires_at) {
         throw new Error('Không thể khởi tạo phiên xác thực OTP. Vui lòng gửi lại mã.')
       }
@@ -1424,11 +1681,18 @@ export function BookingPage() {
       }
       otpChallengeIdRef.current = result.challenge_id
       setAccessFlow((current) => ({ phase: 'verify', purpose: current?.purpose || 'update_details', challengeId: result.challenge_id, expiresAt }))
+      dispatchInteraction({ type: InteractionEvent.ACCESS_VERIFY })
       otpCodeRef.current = ''
       setAccessValue((current) => ({ ...current, otpCode: '' }))
       setAccessSecondsLeft(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)))
       setResendSecondsLeft(result.retry_after_seconds || 60)
-      addMessage('assistant', 'Tôi đã gửi mã OTP qua Zalo. Bạn vui lòng nhập mã để tiếp tục.')
+      const mockOtp = result.is_mock ? result.otp_code : ''
+      addMessage(
+        'assistant',
+        mockOtp
+          ? `Mã OTP mock của bạn là **${mockOtp}**. Nhập mã này để tiếp tục luồng kiểm thử.`
+          : 'Tôi đã gửi mã OTP qua email. Bạn vui lòng nhập mã để tiếp tục.',
+      )
     } catch (error) {
       if (error.code === 'OTP_RATE_LIMITED') {
         const seconds = Number(error.message.match(/\d+/)?.[0] || 0)
@@ -1450,19 +1714,64 @@ export function BookingPage() {
     try {
       const otpCode = typeof otpOverride === 'string' && otpOverride ? otpOverride : otpCodeRef.current
       const verified = await verifyBookingAccess({ challengeId, otpCode })
-      const booking = await getVerifiedBooking({ accessToken: verified.access_session_token, bookingId: verified.booking_id })
+      completeOtpChallenge()
       const bookings = await listVerifiedBookings({ accessToken: verified.access_session_token })
-      setAccessibleBookings(bookings.data || bookings)
-      setAccessSecondsLeft(0)
-      setResendSecondsLeft(0)
+      const formattedBookings = (bookings.data || bookings || []).map(formatBookingSummary)
+      setAccessibleBookings(formattedBookings)
+      setWorkspaceHidden(false)
+      setActiveView('bookings')
+      const accessPurpose = accessFlow?.purpose || 'lookup'
+      const isCancellation = accessPurpose === 'cancel'
+
+      if (formattedBookings.length > 1) {
+        setAccessProfile({
+          accessToken: verified.access_session_token,
+          accessPurpose,
+          bookingId: verified.booking_id,
+          bookingCode: '',
+          bookerName: '',
+          driverName: '',
+          phone: '',
+          email: accessValue.email,
+          permissions: verified.permissions || [],
+          allowedActions: [],
+          vehicleName: '',
+          vehicleModelId: '',
+          showroomName: '',
+          showroomId: '',
+          showroomAddress: '',
+          advisorName: '',
+          advisorPhone: '',
+          slotTime: '',
+          slotDate: '',
+        })
+        setExpandedBookingId('')
+        setAccessFlow(null)
+        dispatchInteraction({ type: InteractionEvent.ACCESS_LIST })
+        otpChallengeIdRef.current = ''
+        otpCodeRef.current = ''
+        addMessage('assistant', `Xác thực thành công. Tôi tìm thấy ${formattedBookings.length} lịch hợp lệ với email này, bạn chọn lịch muốn xem hoặc chỉnh sửa nhé.`)
+        return
+      }
+
+      if (formattedBookings.length === 0) {
+        clearManagementContext({ resetConversation: false })
+        addMessage('assistant', 'Xác thực thành công nhưng tôi chưa tìm thấy lịch hợp lệ với email này.')
+        return
+      }
+
+      const booking = await getVerifiedBooking({ accessToken: verified.access_session_token, bookingId: formattedBookings[0]?.id || verified.booking_id })
       setAccessProfile({
         accessToken: verified.access_session_token,
+        accessPurpose,
         bookingId: booking.id,
         bookingCode: booking.booking_code || '',
         bookerName: booking.booker?.full_name || '',
         driverName: booking.driver?.full_name || '',
         phone: booking.driver?.phone || booking.booker?.phone || '',
         email: booking.driver?.email || booking.booker?.email || '',
+        permissions: verified.permissions || [],
+        allowedActions: booking.allowed_actions || [],
         vehicleName: booking.vehicle?.name || '',
         vehicleModelId: booking.vehicle?.id || '',
         showroomName: booking.showroom?.name || '',
@@ -1474,10 +1783,10 @@ export function BookingPage() {
         slotDate: booking.slot_date || '',
       })
       setExpandedBookingId(booking.id)
-      setWorkspaceHidden(false)
-      setActiveView('bookings')
-      const isCancellation = accessFlow?.purpose === 'cancel'
-      setAccessFlow({ phase: isCancellation ? 'confirm_cancel' : 'edit', purpose: accessFlow?.purpose, challengeId: '', expiresAt: 0 })
+      setAccessFlow({ phase: isCancellation ? 'confirm_cancel' : 'edit', purpose: accessPurpose, challengeId: '', expiresAt: 0 })
+      dispatchInteraction({
+        type: isCancellation ? InteractionEvent.ACCESS_CANCEL_CONFIRM : InteractionEvent.ACCESS_EDIT,
+      })
       otpChallengeIdRef.current = ''
       otpCodeRef.current = ''
       addMessage('assistant', isCancellation ? 'Xác thực thành công. Vui lòng kiểm tra phiếu bên dưới và xác nhận nếu bạn muốn hủy lịch.' : 'Xác thực thành công. Bạn có thể cập nhật thông tin lịch đã đặt bên dưới.')
@@ -1485,10 +1794,12 @@ export function BookingPage() {
   }
 
   const cancelAccessOtp = () => {
-    setAccessFlow(null); setAccessError(''); setAccessSecondsLeft(0); setResendSecondsLeft(0)
-    otpChallengeIdRef.current = ''
-    otpCodeRef.current = ''
+    clearManagementContext({ event: InteractionEvent.CANCEL_ACCESS })
     addMessage('assistant', 'Tôi đã dừng bước xác thực. Khi cần xem hoặc chỉnh sửa lịch, bạn có thể yêu cầu lại bất cứ lúc nào.')
+  }
+  const closeBookingDetails = () => {
+    clearManagementContext({ event: InteractionEvent.CLOSE_BOOKING_DETAILS })
+    addMessage('assistant', 'Tôi đã đóng phần quản lý lịch. Bạn có thể tiếp tục xem xe hoặc bắt đầu một yêu cầu khác.')
   }
   const resumeConversation = () => {
     // Nháp tạo trước khi lưu recipient không đủ dữ liệu để hiện lại modal;
@@ -1500,6 +1811,7 @@ export function BookingPage() {
   }
   const restartConversation = () => {
     window.sessionStorage.removeItem(BOOKING_UI_STATE_KEY)
+    resetBookingConversation()
     window.location.reload()
   }
 
@@ -1508,8 +1820,11 @@ export function BookingPage() {
     setAccessBusy(true); setAccessError('')
     try {
       const booking = await getVerifiedBooking({ accessToken: accessProfile.accessToken, bookingId: summary.id })
-      const selectedProfile = { ...accessProfile, bookingId: booking.id, bookingCode: booking.booking_code || '', bookerName: booking.booker?.full_name || '', driverName: booking.driver?.full_name || '', phone: booking.driver?.phone || booking.booker?.phone || '', email: booking.driver?.email || booking.booker?.email || '', vehicleName: booking.vehicle?.name || '', vehicleModelId: booking.vehicle?.id || '', showroomName: booking.showroom?.name || '', showroomId: booking.showroom?.id || '', showroomAddress: booking.showroom?.address || '', advisorName: booking.advisor?.full_name || 'Chưa phân công', advisorPhone: booking.advisor?.phone || '', slotTime: booking.slot_time || '', slotDate: booking.slot_date || '' }
+      const selectedProfile = { ...accessProfile, bookingId: booking.id, bookingCode: booking.booking_code || '', bookerName: booking.booker?.full_name || '', driverName: booking.driver?.full_name || '', phone: booking.driver?.phone || booking.booker?.phone || '', email: booking.driver?.email || booking.booker?.email || '', allowedActions: booking.allowed_actions || [], vehicleName: booking.vehicle?.name || '', vehicleModelId: booking.vehicle?.id || '', showroomName: booking.showroom?.name || '', showroomId: booking.showroom?.id || '', showroomAddress: booking.showroom?.address || '', advisorName: booking.advisor?.full_name || 'Chưa phân công', advisorPhone: booking.advisor?.phone || '', slotTime: booking.slot_time || '', slotDate: booking.slot_date || '' }
       setAccessProfile(selectedProfile)
+      setExpandedBookingId(booking.id)
+      setAccessFlow({ phase: accessProfile.accessPurpose === 'cancel' ? 'confirm_cancel' : 'edit', purpose: accessProfile.accessPurpose || 'lookup', challengeId: '', expiresAt: 0 })
+      dispatchInteraction({ type: accessProfile.accessPurpose === 'cancel' ? InteractionEvent.ACCESS_CANCEL_CONFIRM : InteractionEvent.ACCESS_EDIT })
       return selectedProfile
     } catch (error) { setAccessError(error.message) } finally { setAccessBusy(false) }
   }
@@ -1520,6 +1835,7 @@ export function BookingPage() {
     if (!accessProfile) return
     if (rescheduleState?.step === 'pending') {
       setRescheduleState((current) => ({ ...current, step: 'confirm' }))
+      dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
       return
     }
     setAccessBusy(true); setAccessError('')
@@ -1532,7 +1848,7 @@ export function BookingPage() {
         driverPatch: null,
         driverSameAsBooker: false,
       })
-      setAccessFlow(null)
+      clearManagementContext({ event: InteractionEvent.CLOSE_BOOKING_DETAILS })
       addMessage('assistant', 'ViVi đã cập nhật thông tin đặt lịch của bạn.')
     } catch (error) { setAccessError(error.message) } finally { setAccessBusy(false) }
   }
@@ -1542,7 +1858,7 @@ export function BookingPage() {
     setAccessBusy(true); setAccessError('')
     try {
       await cancelVerifiedBooking({ bookingId: accessProfile.bookingId, accessToken: accessProfile.accessToken })
-      setAccessFlow(null); setAccessProfile(null)
+      clearManagementContext()
       addMessage('assistant', `ViVi đã hủy lịch ${accessProfile.bookingCode}. Khung giờ đã được mở lại.`)
     } catch (error) { setAccessError(error.message) } finally { setAccessBusy(false) }
   }
@@ -1552,10 +1868,14 @@ export function BookingPage() {
     try {
       const result = await searchBookingOptions({ vehicleModel: car.name, showroomId: showroom.id })
       const slots = result.slots || []
-      if (slots.some((slot) => slot.status === 'available')) setRescheduleState({ step: 'schedule', car, showroom, slots })
+      if (slots.some((slot) => slot.status === 'available')) {
+        setRescheduleState({ step: 'schedule', car, showroom, slots })
+        dispatchInteraction({ type: InteractionEvent.RESCHEDULE_SLOT })
+      }
       else {
         const alternatives = await searchBookingOptions({ vehicleModel: car.name })
         setRescheduleState({ step: 'showroom', car, showrooms: alternatives.showrooms || [] })
+        dispatchInteraction({ type: InteractionEvent.RESCHEDULE_SHOWROOM })
       }
     } catch (error) { setAccessError(error.message) } finally { setAccessBusy(false) }
   }
@@ -1564,9 +1884,8 @@ export function BookingPage() {
       || cars.find((item) => normalizeVehicleName(item.name) === normalizeVehicleName(targetProfile?.vehicleName))
     if (car && targetProfile?.showroomId) {
       setSelectedCarId(car.id)
-      setStage('lookup')
       setWorkspaceHidden(false)
-      setActiveView('schedule')
+      dispatchInteraction({ type: InteractionEvent.START_RESCHEDULE })
       loadRescheduleSlots(car, { id: targetProfile.showroomId, name: targetProfile.showroomName })
     } else setAccessError('Không xác định được mẫu xe hoặc showroom của lịch này.')
   }
@@ -1583,7 +1902,7 @@ export function BookingPage() {
       setRescheduleState((current) => ({ ...current, step: 'pending', slot, newBookingId: held.booking_id }))
       setRescheduleSecondsLeft(Math.max(0, Math.ceil((new Date(held.hold_expires_at).getTime() - Date.now()) / 1000)))
       setExpandedBookingId(accessProfile.bookingId)
-      setActiveView('bookings')
+      dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
       addMessage('assistant', 'ViVi đã giữ tạm khung giờ mới và cập nhật trên phiếu. Bạn bấm “Cập nhật thông tin” để kiểm tra, xác nhận toàn bộ lịch.')
     } catch (error) { setAccessError(error.message) } finally { setAccessBusy(false) }
   }
@@ -1600,8 +1919,8 @@ export function BookingPage() {
       await confirmVerifiedReschedule({ bookingId: accessProfile.bookingId, newBookingId: rescheduleState.newBookingId, accessToken: accessProfile.accessToken })
       const startsAt = new Date(rescheduleState.slot.start_at)
       setAccessProfile((current) => ({ ...current, bookingId: rescheduleState.newBookingId, slotTime: startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false }), slotDate: new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(startsAt) }))
-      setRescheduleState(null); setRescheduleSecondsLeft(0); setAccessFlow(null); setAccessProfile(null)
-      addMessage('assistant', `ViVi đã đổi lịch thành công. Mã lịch ${accessProfile.bookingCode} được giữ nguyên. Tôi đã gửi thông tin lịch mới qua Zalo.`)
+      clearManagementContext({ event: InteractionEvent.FINISH_RESCHEDULE })
+      addMessage('assistant', `ViVi đã đổi lịch thành công. Mã lịch ${accessProfile.bookingCode} được giữ nguyên. Tôi đã gửi thông tin lịch mới qua email.`)
     } catch (error) { setAccessError(error.message) } finally { setAccessBusy(false) }
   }
 
@@ -1618,6 +1937,7 @@ export function BookingPage() {
     if (!rescheduleState || rescheduleState.step !== 'pending') return undefined
     if (rescheduleSecondsLeft <= 0) {
       setRescheduleState(null)
+      dispatchInteraction({ type: InteractionEvent.ACCESS_EDIT })
       addMessage('assistant', 'Thời gian giữ tạm khung giờ mới đã hết. Lịch cũ của bạn vẫn được giữ nguyên.')
       return undefined
     }
@@ -1635,8 +1955,8 @@ export function BookingPage() {
     const errors = {}
     if (person.bookingName.trim().length < 2) errors.bookingName = 'Vui lòng nhập tên người đặt lịch.'
     if (recipient === 'other' && person.driverName.trim().length < 2) errors.driverName = 'Vui lòng nhập tên người lái thử.'
-    if (!/^(0|\+84)[0-9\s.-]{8,12}$/.test(person.phone.trim())) errors.phone = 'Số điện thoại Việt Nam chưa đúng.'
-    if (person.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(person.email)) errors.email = 'Email chưa đúng định dạng.'
+    if (person.phone.trim() && !/^(0|\+84)[0-9\s.-]{8,12}$/.test(person.phone.trim())) errors.phone = 'Số điện thoại Việt Nam chưa đúng.'
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(person.email.trim())) errors.email = 'Email bắt buộc và phải đúng định dạng.'
     if (!person.hasLicense) errors.hasLicense = 'Cần xác nhận giấy phép lái xe trước khi tiếp tục.'
     setFormErrors(errors)
     if (Object.keys(errors).length) return
@@ -1672,6 +1992,7 @@ export function BookingPage() {
       confirmActionIdsRef.current.delete(actionKey)
       setSubmitting(false)
       setBookingCode(confirmed.booking_code)
+      setBookingAdvisor(confirmed.advisor || null)
       // Phiếu chỉ xuất hiện sau cinematic. Backend vẫn là nguồn xác nhận cuối cùng;
       // animation không tự tạo booking và không chạy nếu request ở trên thất bại.
       setSuccessCinematic(true)
@@ -1681,18 +2002,17 @@ export function BookingPage() {
     }
   }
 
-  const viewOptions = [
+  const viewOptions = workspaceModel.kind === 'new_booking' ? [
     ...(selectedCar ? [
       { id: 'car', label: 'Đổi mẫu xe', icon: CarProfile },
       ...(nearbyShowrooms.length ? [{ id: 'map', label: 'Showroom', icon: MapPin }] : []),
       ...(selectedShowroom ? [{ id: 'schedule', label: 'Lịch trống', icon: CalendarBlank }] : []),
       ...(stage === 'review' || stage === 'success' ? [{ id: 'ticket', label: 'Phiếu lịch', icon: CheckCircle }] : []),
     ] : []),
-    ...(accessProfile ? [{ id: 'bookings', label: 'Lịch đã đặt', icon: CalendarBlank }] : []),
-  ]
+  ] : accessProfile ? [{ id: 'bookings', label: 'Lịch đã đặt', icon: CalendarBlank }] : []
 
   const renderWorkspace = () => {
-    if (activeView === 'bookings' && accessProfile) return <section className="booking-history"><div className="studio-schedule__heading"><span>Lịch đã đặt</span><h2>Mã lịch gần nhất</h2></div><div className="booking-history__list">{accessibleBookings.map((booking) => { const expanded = expandedBookingId === booking.id; const details = booking.id === accessProfile.bookingId ? accessProfile : null; return <div key={booking.id} className={expanded ? 'is-active is-expanded' : ''}><button type="button" onClick={() => { setExpandedBookingId(expanded ? '' : booking.id); if (!expanded) selectAccessibleBooking(booking) }}><strong>{booking.booking_code}</strong><small>{booking.start_at ? new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(booking.start_at)) : 'Lịch lái thử'}</small></button>{expanded && details && <div className="booking-history__details"><p><span>Mẫu xe</span>{details.vehicleName}</p><p><span>Showroom</span>{details.showroomName}<small>{details.showroomAddress}</small></p><p><span>Thời gian</span>{details.slotTime} · {details.slotDate}<button type="button" className="booking-history__reschedule" onClick={() => beginAccessibleReschedule(booking)} aria-label={`Đổi ngày giờ lịch ${booking.booking_code}`}><CalendarBlank size={18} weight="light" /></button></p>{rescheduleState?.step === 'pending' && <p className="booking-history__hold"><span>Khung giờ mới đang được giữ</span>Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}</p>}<p><span>Tư vấn viên</span>{details.advisorName}<small>{details.advisorPhone || 'Chưa có số điện thoại'}</small></p></div>}</div> })}</div></section>
+    if (activeView === 'bookings' && accessProfile) return <section className="booking-history"><div className="studio-schedule__heading"><span>Lịch đã đặt</span><h2>Chọn lịch cần thao tác</h2></div><div className="booking-history__list">{accessibleBookings.map((booking) => { const expanded = expandedBookingId === booking.id; const details = booking.id === accessProfile.bookingId ? accessProfile : null; const bookingCodeLabel = booking.booking_code || 'Lịch lái thử'; return <div key={booking.id} className={expanded ? 'is-active is-expanded' : ''}><button type="button" onClick={() => { setExpandedBookingId(expanded ? '' : booking.id); if (!expanded) selectAccessibleBooking(booking) }}><strong>{bookingCodeLabel}</strong><small>{booking.display_time || (booking.start_at ? new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(booking.start_at)) : 'Lịch lái thử')}</small></button>{expanded && details && <div className="booking-history__details"><p><span>Mẫu xe</span>{details.vehicleName}</p><p><span>Showroom</span>{details.showroomName}<small>{details.showroomAddress}</small></p><p><span>Thời gian</span>{details.slotTime} · {details.slotDate}{allowedActions.includes('reschedule') && <button type="button" className="booking-history__reschedule" onClick={() => beginAccessibleReschedule(booking)} aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}><CalendarBlank size={18} weight="light" /></button>}</p>{rescheduleState?.step === 'pending' && <p className="booking-history__hold"><span>Khung giờ mới đang được giữ</span>Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}</p>}<p><span>Tư vấn viên</span>{details.advisorName}<small>{details.advisorPhone || 'Chưa có số điện thoại'}</small></p></div>}</div> })}</div></section>
     if (rescheduleState?.step === 'showroom') return <section className="studio-schedule"><div className="studio-schedule__heading"><span>Showroom hiện tại không còn lịch</span><h2>Chọn showroom khác</h2></div><div className="reschedule-left-grid">{rescheduleState.showrooms.map((showroom) => <button type="button" key={showroom.id} onClick={() => loadRescheduleSlots(rescheduleState.car, showroom)}><strong>{showroom.name}</strong><small>{showroom.address}</small></button>)}</div></section>
     if (rescheduleState?.step === 'schedule') return <SchedulePanel car={rescheduleState.car} showroom={rescheduleState.showroom} slots={groupSlots(rescheduleState.slots)} pendingSlot={null} onPick={(picked) => holdReschedule(rescheduleState.slots.find((slot) => slot.id === picked.slotId))} />
     if (rescheduleState?.step === 'pending') return <SchedulePanel car={rescheduleState.car} showroom={rescheduleState.showroom} slots={groupSlots(rescheduleState.slots)} pendingSlot={{ slotId: rescheduleState.slot.id }} onPick={(picked) => holdReschedule(rescheduleState.slots.find((slot) => slot.id === picked.slotId))} />
@@ -1700,11 +2020,11 @@ export function BookingPage() {
     if (!selectedCar) return null
     if (activeView === 'map') return <BookingShowroomMap car={selectedCar} showrooms={nearbyShowrooms} selectedId={showroomId} onSelect={setShowroomId} onConfirm={chooseShowroom} userLocation={userLocation} />
     if (activeView === 'schedule' && selectedShowroom) return <SchedulePanel car={selectedCar} showroom={selectedShowroom} slots={slots} pendingSlot={pendingSlot} onPick={chooseSlot} />
-    if (activeView === 'ticket' && selectedShowroom && selectedSlot) return <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} />
+    if (activeView === 'ticket' && selectedShowroom && selectedSlot) return <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} advisor={bookingAdvisor} />
     return <VehiclePanel car={selectedCar} />
   }
 
-  const showVehicleChoices = stage === 'need_car'
+  const showVehicleChoices = allowedActions.includes('choose_vehicle')
 
   if (bookingStatus === 'unavailable') {
     return (
@@ -1722,7 +2042,7 @@ export function BookingPage() {
   }
 
   return (
-    <main id="main-content" className={`agent-booking-page ${selectedCar && !workspaceHidden ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''} ${successCinematic ? 'is-cinematic' : ''}`}>
+    <main id="main-content" className={`agent-booking-page ${workspaceVisible ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''} ${successCinematic ? 'is-cinematic' : ''}`}>
       <header className="booking-topbar booking-topbar--studio">
         <Link to="/"><ArrowLeft size={17} weight="light" /> Trang chủ</Link>
         <Brand />
@@ -1732,7 +2052,7 @@ export function BookingPage() {
         <div><span /> Tiến trình được giữ trên thiết bị</div>
       </header>
 
-      {(selectedCar || accessProfile) && workspaceHidden && (
+      {workspaceModel.visible && hasWorkspaceContent && workspaceHidden && (
         <button
           type="button"
           onClick={() => setWorkspaceHidden(false)}
@@ -1784,7 +2104,7 @@ export function BookingPage() {
         <div className="booking-success-layout">
           <div className="booking-success-documents">
             <VehiclePanel car={selectedCar} success3d />
-            <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} compact />
+            <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} advisor={bookingAdvisor} compact />
           </div>
           <section className="vivi-studio vivi-studio--success">
             <div className="vivi-studio__head">
@@ -1798,14 +2118,14 @@ export function BookingPage() {
               </div>
               <h1>Hẹn gặp bạn tại <span>{selectedShowroom.name}.</span></h1>
               <div className="vivi-success-copy__code"><small>Mã lịch</small><strong>{bookingCode}</strong></div>
-              <p className="vivi-success-copy__note">Để tra cứu, bổ sung hoặc huỷ lịch, bạn chỉ cần cung cấp lại họ tên và số điện thoại đã đăng ký.</p>
+              <p className="vivi-success-copy__note">Để tra cứu, bổ sung hoặc huỷ lịch, bạn chỉ cần cung cấp email đã đăng ký.</p>
               <div className="vivi-success-copy__actions"><button type="button" onClick={startLookup}>Tra cứu lịch này</button><Link to="/" onClick={() => window.sessionStorage.removeItem(BOOKING_UI_STATE_KEY)}>Về trang chủ</Link></div>
             </div>
           </section>
         </div>
       ) : (
-        <div className={`booking-studio ${(selectedCar || accessProfile) && !workspaceHidden ? 'booking-studio--split' : 'booking-studio--agent'}`}>
-          {(selectedCar || accessProfile) && !workspaceHidden && (
+        <div className={`booking-studio ${workspaceVisible ? 'booking-studio--split' : 'booking-studio--agent'}`}>
+          {workspaceVisible && (
             <section className="booking-workspace">
               <div className="workspace-switcher" role="tablist" aria-label="Nội dung hỗ trợ đặt lịch">
                 {viewOptions.map(({ id, label, icon: Icon }) => {
@@ -1864,7 +2184,7 @@ export function BookingPage() {
             <div className="vivi-studio__head">
               <ViViAvatar />
               <div><strong>ViVi</strong><small><span /> Trợ lý đặt lịch lái thử</small></div>
-              <button type="button" onClick={startLookup}>Tra cứu lịch</button>
+              {allowedActions.includes('start_lookup') && <button type="button" onClick={startLookup}>Tra cứu lịch</button>}
             </div>
 
             <div className="vivi-studio__messages" ref={messagesRef} aria-live="polite">
@@ -1876,11 +2196,11 @@ export function BookingPage() {
               {agentTyping && (
                 <div className="vivi-message vivi-message--assistant">
                   <ViViAvatar compact />
-                  <div className="vivi-typing" aria-label={checkingVehicleName ? `ViVi đang kiểm tra ${checkingVehicleName}` : 'ViVi đang trả lời'}>
+                  <div className="vivi-typing" aria-label="ViVi đang thực hiện tác vụ cho bạn">
                     <span />
                     <span />
                     <span />
-                    {checkingVehicleName && <small>ViVi đang kiểm tra {checkingVehicleName}…</small>}
+                    <small>ViVi đang thực hiện tác vụ cho bạn</small>
                   </div>
                 </div>
               )}
@@ -1890,7 +2210,7 @@ export function BookingPage() {
               {backendError && <p className="booking-api-error" role="alert">{backendError}</p>}
               {resumePending ? (
                 null
-              ) : accessFlow && accessFlow.phase !== 'confirm_cancel' ? (
+              ) : ['access_request', 'access_verify', 'booking_edit'].includes(composerMode) && accessFlow && accessFlow.phase !== 'confirm_cancel' ? (
                 <BookingAccessPanel
                   phase={accessFlow.phase}
                   value={accessValue}
@@ -1898,12 +2218,14 @@ export function BookingPage() {
                   onRequest={requestAccessOtp}
                   onVerify={verifyAccessOtp}
                   onResend={requestAccessOtp}
-                  onCancel={cancelAccessOtp}
+                  onCancelAccess={cancelAccessOtp}
+                  onCloseDetails={closeBookingDetails}
                   secondsLeft={accessSecondsLeft}
                   resendLeft={resendSecondsLeft}
                   error={accessError}
                   busy={accessBusy}
                   profile={accessProfile}
+                  canUpdate={allowedActions.includes('update_details')}
                   onProfileChange={changeAccessProfile}
                   onProfileSave={saveAccessProfile}
                   onBookingCancel={confirmCancellation}
@@ -1921,6 +2243,7 @@ export function BookingPage() {
 
               <ContextualChoices
                 stage={stage}
+                allowedActions={allowedActions}
                 car={selectedCar}
                 locationSuggestions={locationSuggestions}
                 showrooms={nearbyShowrooms}
@@ -1930,28 +2253,34 @@ export function BookingPage() {
                 onSlot={chooseSlot}
               />
 
-              {(stage === 'need_car' || stage === 'need_address') && (
+              {allowedActions.some((action) => ['choose_vehicle', 'use_geolocation', 'start_lookup', 'switch_vehicle', 'view_vehicle'].includes(action)) && (
                 <div className="vivi-capabilities">
-                  {stage === 'need_car' && (
+                  {allowedActions.includes('choose_vehicle') && (
                     <button type="button" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">
                       <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
                       Xem tất cả {cars.length} mẫu
                     </button>
                   )}
-                  {stage === 'need_address' && (
+                  {allowedActions.includes('use_geolocation') && (
                     <button type="button" onClick={requestUserLocation}>
                       <NavigationArrow size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
                       Định vị hiện tại
                     </button>
                   )}
-                  <button type="button" onClick={startLookup}>
+                  {allowedActions.includes('start_lookup') && <button type="button" onClick={startLookup}>
                     <CalendarBlank size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
                     Tra cứu lịch đã đặt
-                  </button>
-                  {selectedCar && (
+                  </button>}
+                  {selectedCar && allowedActions.includes('switch_vehicle') && (
                     <button type="button" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">
                       <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
                       Đổi mẫu xe khác
+                    </button>
+                  )}
+                  {allowedActions.includes('view_vehicle') && (
+                    <button type="button" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">
+                      <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                      Xem mẫu xe khác
                     </button>
                   )}
                 </div>
@@ -1986,7 +2315,7 @@ export function BookingPage() {
                 <form className="vivi-prompt" onSubmit={handlePrompt} aria-busy={composerDisabled}>
                   <label htmlFor="vivi-booking-prompt">Nhắn cho ViVi</label>
                   <div>
-                    <textarea id="vivi-booking-prompt" rows="2" value={draft} maxLength={CHAT_MESSAGE_MAX_LENGTH} disabled={composerDisabled} onChange={(event) => setDraft(event.target.value)} placeholder={composerDisabled ? 'ViVi đang trả lời...' : stage === 'need_address' || stage === 'need_ward' ? 'Ví dụ: Phường Bến Nghé, TP. Hồ Chí Minh' : 'Nhập mẫu xe, địa chỉ, showroom hoặc thời gian…'} onKeyDown={(event) => {
+                    <textarea id="vivi-booking-prompt" rows="2" value={draft} maxLength={CHAT_MESSAGE_MAX_LENGTH} disabled={composerDisabled} onChange={(event) => setDraft(event.target.value)} placeholder={composerDisabled ? 'ViVi đang thực hiện tác vụ cho bạn' : stage === 'need_address' || stage === 'need_ward' ? 'Ví dụ: Phường Bến Nghé, TP. Hồ Chí Minh' : 'Nhập mẫu xe, địa chỉ, showroom hoặc thời gian…'} onKeyDown={(event) => {
                       if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault()
                         if (!composerDisabled) event.currentTarget.form?.requestSubmit()
@@ -2037,7 +2366,7 @@ export function BookingPage() {
           profile={accessProfile}
           car={cars.find((car) => car.name === accessProfile.vehicleName) || null}
           onConfirm={confirmCancellation}
-          onClose={cancelAccessOtp}
+          onClose={closeBookingDetails}
           busy={accessBusy}
           error={accessError}
         />
