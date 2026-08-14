@@ -172,8 +172,8 @@ _COLORS_BY_VEHICLE: dict[str, list[dict[str, Any]]] = {
 
 
 _CHAPTERS_BY_VEHICLE: dict[str, list[dict[str, Any]]] = {
-    "vf3": [_chapter("exterior", "VF3/2..png", "light"), _chapter("cockpit", "VF3/3..jpg"), _chapter("rear", "VF3/4..png", "light")],
-    "vf5": [_chapter("exterior", "VF5/trắng.webp", "light"), _chapter("cockpit", "VF5/2.webp"), _chapter("cabin", "VF5/4..webp")],
+    "vf3": [_chapter("exterior", "VF3/exterior.png", "light"), _chapter("cockpit", "VF3/cockpit.jpg"), _chapter("rear", "VF3/rear.png", "light")],
+    "vf5": [_chapter("exterior", "VF5/trắng.webp", "light"), _chapter("cockpit", "VF5/2.webp"), _chapter("cabin", "VF5/4.webp")],
     "vf6": [_chapter("exterior", "VF6/vf6-front-model-cutout.png", "light"), _chapter("cockpit", "VF6/interior-vf6-2.jpg"), _chapter("technology", "VF6/technology-vf6-3.jpg", "light")],
     "vf7": [_chapter("drive", "VF7/vf7-uu-diem-3.webp"), _chapter("cockpit", "VF7/vf7-noi-that-compare-left.webp"), _chapter("cabin", "VF7/vf7-noi-that-overview.webp")],
     "vf-mpv-7": [_chapter("exterior", "VF7 FMP/vf-mpv-7-model-cutout.png", "light"), _chapter("cabin", "VF7 FMP/D_03.webp"), _chapter("cockpit", "VF7 FMP/D_05.webp")],
@@ -190,8 +190,8 @@ _CHAPTERS_BY_VEHICLE: dict[str, list[dict[str, Any]]] = {
 
 
 _GALLERY_BY_VEHICLE: dict[str, list[str]] = {
-    "vf3": ["VF3/2.png", "VF3/2..png", "VF3/3..jpg", "VF3/4..png", "VF3/xám.png", "VF3/hồng.png", "VF3/đỏ.png"],
-    "vf5": ["VF5/2.webp", "VF5/3..webp", "VF5/4..webp", "VF5/5..webp", "VF5/trắng.webp", "VF5/vàng đen.webp", "VF5/xám.webp", "VF5/đỏ.webp"],
+    "vf3": ["VF3/2.png", "VF3/exterior.png", "VF3/cockpit.jpg", "VF3/rear.png", "VF3/xám.png", "VF3/hồng.png", "VF3/đỏ.png"],
+    "vf5": ["VF5/2.webp", "VF5/3.webp", "VF5/4.webp", "VF5/5.webp", "VF5/trắng.webp", "VF5/vàng đen.webp", "VF5/xám.webp", "VF5/đỏ.webp"],
     "vf6": ["VF6/VF6-Lifestyle-10.webp", "VF6/interior-vf6-1.jpg", "VF6/interior-vf6-2.jpg", "VF6/technology-vf6-3.jpg", "VF6/technology-vf6-4.jpg"],
     "vf7": ["VF7/vf7-passion.webp", "VF7/vf7-noi-that-overview.webp", "VF7/vf7-uu-diem-1.webp", "VF7/vf7-uu-diem-3.webp", "VF7/vf7-noi-that-compare-left.webp", "VF7/vf7-noi-that-compare-right.webp", "VF7/product-CE18.webp"],
     "vf-mpv-7": ["VF7 FMP/D_01.webp", "VF7 FMP/D_02.webp", "VF7 FMP/D_03.webp", "VF7 FMP/D_04.webp", "VF7 FMP/D_05.webp"],
@@ -245,7 +245,7 @@ _DETAIL_SPECS_BY_VEHICLE: dict[str, list[tuple[str, str]]] = {
 
 _ACTION_MEDIA_BY_VEHICLE: dict[str, str] = {
     "vf3": "VF3/2.png",
-    "vf5": "VF5/1..webp",
+    "vf5": "VF5/1.webp",
     "vf6": "VF6/VF6-Lifestyle-12.webp",
     "vf7": "VF7/vf7-slide-in-croped.webp",
     "vf-mpv-7": "VF7 FMP/D_01.webp",

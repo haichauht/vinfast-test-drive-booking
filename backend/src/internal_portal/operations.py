@@ -7,6 +7,7 @@ from typing import Any
 from src.services.booking.common import iso, new_id, parse_utc
 
 from .auth import InternalPrincipal, InternalRole
+from .base import InternalPortalMixin
 from .errors import InternalPortalError
 
 ASSIGNMENT_ROLE = "test_drive_consultant"
@@ -33,7 +34,7 @@ def time_ranges_overlap(start_a: str, end_a: str, start_b: str, end_b: str) -> b
     return parse_utc(start_a) < parse_utc(end_b) and parse_utc(end_a) > parse_utc(start_b)
 
 
-class InternalOperationsMixin:
+class InternalOperationsMixin(InternalPortalMixin):
     """Scoped operational commands shared by manager and operations admin."""
 
     def _booking_for_operation(self, connection, principal: InternalPrincipal, booking_id: str):
