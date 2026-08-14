@@ -551,6 +551,32 @@ TABLES = {
         "zalo_processed_messages",
         frozenset({"message_id", "processed_at"}),
     ),
+    "rate_limit_counters": TableSchema(
+        "rate_limit_counters",
+        frozenset({"bucket_key", "window_start", "expires_at", "count", "created_at", "updated_at"}),
+    ),
+    "llm_budget_ledger": TableSchema(
+        "llm_budget_ledger",
+        frozenset(
+            {
+                "id",
+                "usage_date",
+                "session_id",
+                "client_ip",
+                "conversation_id",
+                "model",
+                "estimated_cost_usd",
+                "actual_cost_usd",
+                "estimated_input_tokens",
+                "estimated_output_tokens",
+                "actual_input_tokens",
+                "actual_output_tokens",
+                "status",
+                "created_at",
+                "finalized_at",
+            }
+        ),
+    ),
 }
 
 SCHEMA_SQL = """
@@ -696,6 +722,19 @@ CREATE TABLE IF NOT EXISTS zalo_identity_links (
 CREATE TABLE IF NOT EXISTS zalo_processed_messages (
  message_id TEXT PRIMARY KEY, processed_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS rate_limit_counters (
+ bucket_key TEXT NOT NULL, window_start TEXT NOT NULL, expires_at TEXT NOT NULL,
+ count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ PRIMARY KEY(bucket_key, window_start)
+);
+CREATE TABLE IF NOT EXISTS llm_budget_ledger (
+ id TEXT PRIMARY KEY, usage_date TEXT NOT NULL, session_id TEXT NOT NULL, client_ip TEXT NOT NULL,
+ conversation_id TEXT, model TEXT NOT NULL, estimated_cost_usd REAL NOT NULL,
+ actual_cost_usd REAL, estimated_input_tokens INTEGER NOT NULL DEFAULT 0,
+ estimated_output_tokens INTEGER NOT NULL DEFAULT 0, actual_input_tokens INTEGER,
+ actual_output_tokens INTEGER, status TEXT NOT NULL,
+ created_at TEXT NOT NULL, finalized_at TEXT
+);
 CREATE TABLE IF NOT EXISTS booking_events (
  id TEXT PRIMARY KEY, booking_id TEXT NOT NULL REFERENCES bookings(id), event_type TEXT NOT NULL,
  actor_type TEXT NOT NULL, actor_id TEXT, payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
@@ -797,4 +836,8 @@ CREATE INDEX IF NOT EXISTS idx_staff_unavailability_staff_time ON staff_unavaila
 CREATE INDEX IF NOT EXISTS idx_vehicle_unavailability_vehicle_time ON vehicle_unavailability(demo_vehicle_id,start_at,end_at);
 CREATE INDEX IF NOT EXISTS idx_vehicle_transfers_vehicle_time ON vehicle_transfers(demo_vehicle_id,effective_at);
 CREATE INDEX IF NOT EXISTS idx_internal_audit_time ON internal_audit_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_expiry ON rate_limit_counters(expires_at);
+CREATE INDEX IF NOT EXISTS idx_llm_budget_date_status ON llm_budget_ledger(usage_date,status);
+CREATE INDEX IF NOT EXISTS idx_llm_budget_session_date ON llm_budget_ledger(session_id,usage_date,status);
+CREATE INDEX IF NOT EXISTS idx_llm_budget_ip_date ON llm_budget_ledger(client_ip,usage_date,status);
 """
