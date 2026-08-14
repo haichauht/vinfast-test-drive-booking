@@ -1,4 +1,3 @@
-import asyncio
 import os
 import sys
 
@@ -8,6 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from fastapi.testclient import TestClient
 from src.main import app
 
+
 def test_chat():
     client = TestClient(app)
     payload = {
@@ -15,10 +15,10 @@ def test_chat():
         "conversation_id": "test-session-456",
         "context": {}
     }
-    
+
     print("Sending POST request to /api/v1/chat...")
     response = client.post("/api/v1/chat", json=payload)
-    
+
     print("\n--- Response ---")
     print(f"Status: {response.status_code}")
     print(f"Body: {response.json()}")

@@ -62,7 +62,7 @@ class BackgroundJobService(BookingBase):
                 result = None
                 error_message = str(error)
             with self.db.transaction(immediate=True) as c:
-                if result and result.provider_status == "sent":
+                if result and (result.provider_status in ("sent", "mocked") or result.is_mock):
                     c.execute(
                         "UPDATE notification_jobs SET status='sent',sent_at=?,provider_name=?,provider_status=?,provider_message_id=?,is_mock=?,provider_response_json=?,updated_at=? WHERE id=? AND status='processing'",
                         (
