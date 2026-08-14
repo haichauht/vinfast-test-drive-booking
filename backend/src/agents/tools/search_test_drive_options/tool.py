@@ -14,7 +14,8 @@ def search_test_drive_options(
     preferred_time: str | None = None,
     latitude: float | None = None,
     longitude: float | None = None,
-    limit: int = 5,
+    showroom_limit: int = 5,
+    slot_limit: int | None = None,
 ) -> dict:
     """Tìm showroom hoặc slot lái thử; không giữ slot."""
     return booking_service.search_options(
@@ -27,5 +28,6 @@ def search_test_drive_options(
         preferred_time=preferred_time,
         latitude=latitude,
         longitude=longitude,
-        limit=limit,
+        showroom_limit=showroom_limit,
+        slot_limit=slot_limit,
     )

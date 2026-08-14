@@ -367,7 +367,7 @@ function ResumeModal({ onContinue, onRestart }) {
   )
 }
 
-function AgentMessage({ message, onBookingSelect }) {
+function AgentMessage({ message }) {
   const formatText = (text) => {
     if (!text) return null
     return text.split('\n').map((line, i) => {
@@ -387,17 +387,6 @@ function AgentMessage({ message, onBookingSelect }) {
       {message.role === 'assistant' && <ViViAvatar compact />}
       <div>
         <p>{formatText(message.text)}</p>
-        {message.bookings?.length > 0 && (
-          <div className="agent-context__rail agent-context__rail--bookings" aria-label="Chọn lịch đã đặt">
-            {message.bookings.map((booking, index) => (
-              <button type="button" key={booking.id || booking.booking_code || index} onClick={() => onBookingSelect?.(booking)}>
-                <span><CalendarBlank size={16} weight="light" /></span>
-                <strong>{booking.booking_code || `Lịch ${index + 1}`}</strong>
-                <small>{booking.display_time || booking.vehicle_name || 'Lịch lái thử'}</small>
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   )
@@ -1025,6 +1014,13 @@ export function BookingPage() {
     }
   }
 
+  const completeOtpChallenge = () => {
+    setAccessSecondsLeft(0)
+    setResendSecondsLeft(0)
+    otpChallengeIdRef.current = ''
+    otpCodeRef.current = ''
+  }
+
   const clearManagementContext = ({ resetConversation = true, event = InteractionEvent.EXIT_MANAGE_BOOKING } = {}) => {
     setAccessFlow(null)
     setAccessProfile(null)
@@ -1117,12 +1113,11 @@ export function BookingPage() {
 
     if (result.tool_name === 'verify_booking_access') {
       const verified = result.action_data
+      completeOtpChallenge()
       const accessPurpose = accessFlow?.purpose || result.tool_input?.purpose || 'lookup'
       const bookings = await listVerifiedBookings({ accessToken: verified.access_session_token })
       const formattedBookings = (bookings.data || bookings || []).map(formatBookingSummary)
       setAccessibleBookings(formattedBookings)
-      setAccessSecondsLeft(0)
-      setResendSecondsLeft(0)
       setActiveView('bookings')
       const isCancellation = accessPurpose === 'cancel'
 
@@ -1153,7 +1148,7 @@ export function BookingPage() {
         dispatchInteraction({ type: InteractionEvent.ACCESS_LIST })
         otpChallengeIdRef.current = ''
         otpCodeRef.current = ''
-        addMessage('assistant', `Xác thực thành công. Tôi tìm thấy ${formattedBookings.length} lịch hợp lệ với email này, bạn chọn lịch muốn xem hoặc chỉnh sửa nhé.`, { bookings: formattedBookings })
+        addMessage('assistant', `Xác thực thành công. Tôi tìm thấy ${formattedBookings.length} lịch hợp lệ với email này, bạn chọn lịch muốn xem hoặc chỉnh sửa nhé.`)
         return true
       }
 
@@ -1719,11 +1714,10 @@ export function BookingPage() {
     try {
       const otpCode = typeof otpOverride === 'string' && otpOverride ? otpOverride : otpCodeRef.current
       const verified = await verifyBookingAccess({ challengeId, otpCode })
+      completeOtpChallenge()
       const bookings = await listVerifiedBookings({ accessToken: verified.access_session_token })
       const formattedBookings = (bookings.data || bookings || []).map(formatBookingSummary)
       setAccessibleBookings(formattedBookings)
-      setAccessSecondsLeft(0)
-      setResendSecondsLeft(0)
       setWorkspaceHidden(false)
       setActiveView('bookings')
       const accessPurpose = accessFlow?.purpose || 'lookup'
@@ -1756,7 +1750,7 @@ export function BookingPage() {
         dispatchInteraction({ type: InteractionEvent.ACCESS_LIST })
         otpChallengeIdRef.current = ''
         otpCodeRef.current = ''
-        addMessage('assistant', `Xác thực thành công. Tôi tìm thấy ${formattedBookings.length} lịch hợp lệ với email này, bạn chọn lịch muốn xem hoặc chỉnh sửa nhé.`, { bookings: formattedBookings })
+        addMessage('assistant', `Xác thực thành công. Tôi tìm thấy ${formattedBookings.length} lịch hợp lệ với email này, bạn chọn lịch muốn xem hoặc chỉnh sửa nhé.`)
         return
       }
 
@@ -2196,17 +2190,17 @@ export function BookingPage() {
             <div className="vivi-studio__messages" ref={messagesRef} aria-live="polite">
               {resumePending ? (
                 <div className="vivi-studio__empty"><ViViAvatar /><p>Bạn đang có một phiên đặt lịch đang dở.</p></div>
-              ) : messages.length ? messages.map((message) => <AgentMessage key={message.id} message={message} onBookingSelect={selectAccessibleBooking} />) : (
+              ) : messages.length ? messages.map((message) => <AgentMessage key={message.id} message={message} />) : (
                 <div className="vivi-studio__empty"><ViViAvatar /><p>Chọn người lái thử để ViVi bắt đầu.</p></div>
               )}
               {agentTyping && (
                 <div className="vivi-message vivi-message--assistant">
                   <ViViAvatar compact />
-                  <div className="vivi-typing" aria-label={checkingVehicleName ? `ViVi đang kiểm tra ${checkingVehicleName}` : 'ViVi đang trả lời'}>
+                  <div className="vivi-typing" aria-label="ViVi đang thực hiện tác vụ cho bạn">
                     <span />
                     <span />
                     <span />
-                    {checkingVehicleName && <small>ViVi đang kiểm tra {checkingVehicleName}…</small>}
+                    <small>ViVi đang thực hiện tác vụ cho bạn</small>
                   </div>
                 </div>
               )}
@@ -2321,7 +2315,7 @@ export function BookingPage() {
                 <form className="vivi-prompt" onSubmit={handlePrompt} aria-busy={composerDisabled}>
                   <label htmlFor="vivi-booking-prompt">Nhắn cho ViVi</label>
                   <div>
-                    <textarea id="vivi-booking-prompt" rows="2" value={draft} maxLength={CHAT_MESSAGE_MAX_LENGTH} disabled={composerDisabled} onChange={(event) => setDraft(event.target.value)} placeholder={composerDisabled ? 'ViVi đang trả lời...' : stage === 'need_address' || stage === 'need_ward' ? 'Ví dụ: Phường Bến Nghé, TP. Hồ Chí Minh' : 'Nhập mẫu xe, địa chỉ, showroom hoặc thời gian…'} onKeyDown={(event) => {
+                    <textarea id="vivi-booking-prompt" rows="2" value={draft} maxLength={CHAT_MESSAGE_MAX_LENGTH} disabled={composerDisabled} onChange={(event) => setDraft(event.target.value)} placeholder={composerDisabled ? 'ViVi đang thực hiện tác vụ cho bạn' : stage === 'need_address' || stage === 'need_ward' ? 'Ví dụ: Phường Bến Nghé, TP. Hồ Chí Minh' : 'Nhập mẫu xe, địa chỉ, showroom hoặc thời gian…'} onKeyDown={(event) => {
                       if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault()
                         if (!composerDisabled) event.currentTarget.form?.requestSubmit()
