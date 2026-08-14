@@ -349,12 +349,12 @@ async def booking_skill_node(state: AgentState) -> dict:
     except (BudgetExceededError, LLMCallLimitExceededError) as e:
         budget_exceeded = isinstance(e, BudgetExceededError)
         error_code = "LLM_BUDGET_EXCEEDED" if budget_exceeded else "LLM_CALL_LIMIT_EXCEEDED"
-        message = (
+        error_message = (
             "Hệ thống đã đạt giới hạn chi phí AI trong hôm nay. Vui lòng thử lại sau."
             if budget_exceeded
             else "Yêu cầu này cần quá nhiều lượt xử lý AI. Vui lòng gửi lại yêu cầu ngắn gọn hơn."
         )
-        safe_response = AIMessage(content=message)
+        safe_response = AIMessage(content=error_message)
         return {
             "messages": [safe_response],
             "response": safe_response.content,
@@ -386,20 +386,20 @@ async def booking_skill_node(state: AgentState) -> dict:
         has_tool_calls=has_tool_calls,
     )
     if has_tool_calls:
-        for tool_call in cast(list[dict[str, Any]], response.tool_calls):
+        for tool_call_data in cast(list[dict[str, Any]], response.tool_calls):
             trace_event(
                 "tool.call",
                 trace_id=trace_id,
                 node="booking_skill",
                 source="llm",
-                tool=tool_call.get("name"),
-                args=tool_call.get("args"),
-                tool_call_id=tool_call.get("id"),
+                tool=tool_call_data.get("name"),
+                args=tool_call_data.get("args"),
+                tool_call_id=tool_call_data.get("id"),
             )
-            arguments = tool_call.get("args")
+            arguments = tool_call_data.get("args")
             tool_logger.info(
                 "tool_dispatched tool=%s mode=llm input=%s",
-                tool_call.get("name", "unknown"),
+                tool_call_data.get("name", "unknown"),
                 _safe_tool_input(arguments if isinstance(arguments, dict) else {}),
             )
 

@@ -94,7 +94,16 @@ class ZaloOtpSender:
             sanitized_response={"ok": True},
         )
 
-    def send_message(self, *, channel: str, destination: str, body: str) -> ProviderResult:
+    def send_message(
+        self,
+        *,
+        channel: str,
+        destination: str,
+        body: str,
+        subject: str | None = None,
+        html_body: str | None = None,
+    ) -> ProviderResult:
+        del subject, html_body
         if channel != "zalo":
             raise ValueError("ZaloOtpSender only supports the zalo channel")
         phone = normalize_phone(destination)
