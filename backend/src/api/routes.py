@@ -49,7 +49,8 @@ SECURITY_STATE_DATASET_FILES = {
 
 def _chat_ui_directive(result: dict[str, Any]) -> UiDirective | None:
     tool = str(result.get("action_tool") or "")
-    data = result.get("action_result") if isinstance(result.get("action_result"), dict) else {}
+    raw_data = result.get("action_result")
+    data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else {}
     phase = ""
     event = ""
 
@@ -280,7 +281,9 @@ async def demo_action(request: DemoActionRequest):
                 "action_error": "",
             }
         )
-        response_data = protected.action_data
+        response_data: dict[str, Any] = (
+            protected.action_data if isinstance(protected.action_data, dict) else {}
+        )
         settings = get_settings()
         expose_mock_otp = settings.app_env != "production" and getattr(
             settings, "booking_access_expose_mock_otp", True
