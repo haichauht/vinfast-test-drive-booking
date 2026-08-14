@@ -25,33 +25,6 @@ def test_update_draft_with_same_booker_and_driver(ready_draft_factory):
     prepared = ready_draft_factory()
 
     assert prepared["draft"]["is_ready_to_confirm"] is True
-from datetime import timedelta
-
-import pytest
-from src.services.booking import BookingError
-
-from tests.conftest import BOOKER_PHONE, FIXED_NOW
-
-
-# test case of Chau + kiểm tra draft mới liệt kê đủ thông tin Booker Driver và GPLX còn thiếu
-def test_new_draft_reports_missing_required_fields(booking_service, catalog):
-    held = booking_service.hold_slot(catalog["slot_main"], "hold:missing-fields")
-
-    draft = booking_service.get_booking_draft(held["booking_id"])
-
-    assert draft["missing_required_fields"] == [
-        "booker",
-        "driver",
-        "license.has_driving_license",
-    ]
-    assert draft["is_ready_to_confirm"] is False
-
-
-# test case of Chau + kiểm tra Booker đồng thời là Driver làm draft sẵn sàng xác nhận
-def test_update_draft_with_same_booker_and_driver(ready_draft_factory):
-    prepared = ready_draft_factory()
-
-    assert prepared["draft"]["is_ready_to_confirm"] is True
     assert prepared["draft"]["booker_person_id"] == prepared["draft"]["driver_person_id"]
     assert prepared["draft"]["booker"]["phone"] == BOOKER_PHONE
 
