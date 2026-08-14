@@ -66,6 +66,7 @@ class ManagementService(BookingBase):
                 if old_driver_id != booking["booker_person_id"]:
                     self._delete_unreferenced_person(c, old_driver_id)
             c.execute("UPDATE bookings SET version=version+1,updated_at=? WHERE id=?", (iso(self.now()), booking_id))
+            self._create_transactional_notification_jobs(c, booking_id, "booking_update")
             self._event(c, booking_id, "booking_details_updated", "user")
             return self._draft(c, booking_id, require_held=False)
 

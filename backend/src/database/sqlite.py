@@ -159,6 +159,8 @@ class SQLiteDatabase:
                 "zalo_user_id": "TEXT",
                 "is_active": "INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1))",
             },
+            "rate_limit_counters": {},
+            "llm_budget_ledger": {},
         }
         for table, columns in additions.items():
             existing = self._columns(connection, table)
