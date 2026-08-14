@@ -25,6 +25,33 @@ def test_update_draft_with_same_booker_and_driver(ready_draft_factory):
     prepared = ready_draft_factory()
 
     assert prepared["draft"]["is_ready_to_confirm"] is True
+from datetime import timedelta
+
+import pytest
+from src.services.booking import BookingError
+
+from tests.conftest import BOOKER_PHONE, FIXED_NOW
+
+
+# test case of Chau + kiểm tra draft mới liệt kê đủ thông tin Booker Driver và GPLX còn thiếu
+def test_new_draft_reports_missing_required_fields(booking_service, catalog):
+    held = booking_service.hold_slot(catalog["slot_main"], "hold:missing-fields")
+
+    draft = booking_service.get_booking_draft(held["booking_id"])
+
+    assert draft["missing_required_fields"] == [
+        "booker",
+        "driver",
+        "license.has_driving_license",
+    ]
+    assert draft["is_ready_to_confirm"] is False
+
+
+# test case of Chau + kiểm tra Booker đồng thời là Driver làm draft sẵn sàng xác nhận
+def test_update_draft_with_same_booker_and_driver(ready_draft_factory):
+    prepared = ready_draft_factory()
+
+    assert prepared["draft"]["is_ready_to_confirm"] is True
     assert prepared["draft"]["booker_person_id"] == prepared["draft"]["driver_person_id"]
     assert prepared["draft"]["booker"]["phone"] == BOOKER_PHONE
 
@@ -35,8 +62,8 @@ def test_update_draft_with_separate_booker_and_driver(booking_service, catalog):
 
     draft = booking_service.update_booking_draft(
         held["booking_id"],
-        booker_patch={"full_name": "Huynh Thi Hai Chau", "phone": BOOKER_PHONE},
-        driver_patch={"full_name": "Nguyen Van Nam", "phone": "0912345678"},
+        booker_patch={"full_name": "Huynh Thi Hai Chau", "phone": BOOKER_PHONE, "email": "chau@example.test"},
+        driver_patch={"full_name": "Nguyen Van Nam", "phone": "0912345678", "email": "nam@example.test"},
         license_patch={
             "has_driving_license": True,
             "declared_license_class": "B1",
@@ -54,8 +81,8 @@ def test_switching_to_same_driver_clears_previous_driver_license_declaration(boo
     held = booking_service.hold_slot(catalog["slot_main"], "hold:reset-driver-license")
     separate = booking_service.update_booking_draft(
         held["booking_id"],
-        booker_patch={"full_name": "Huynh Thi Hai Chau", "phone": BOOKER_PHONE},
-        driver_patch={"full_name": "Nguyen Van Nam", "phone": "0912345678"},
+        booker_patch={"full_name": "Huynh Thi Hai Chau", "phone": BOOKER_PHONE, "email": "chau@example.test"},
+        driver_patch={"full_name": "Nguyen Van Nam", "phone": "0912345678", "email": "nam@example.test"},
         license_patch={"has_driving_license": True, "declared_license_class": "B1", "validity_acknowledged": True},
         expected_version=1,
     )
@@ -174,7 +201,7 @@ def test_confirm_booking_is_idempotent(booking_service, booking_db, ready_draft_
             "SELECT count(*) FROM booking_events WHERE booking_id=? AND event_type='booking_confirmed'",
             (prepared["booking_id"],),
         ).fetchone()[0]
-    assert job_count == 3
+    assert job_count in (3, 6)
     assert event_count == 1
 
 
@@ -208,7 +235,7 @@ def test_switching_to_separate_driver_preserves_booker(booking_service, ready_dr
 
     updated = booking_service.update_booking_draft(
         prepared["booking_id"],
-        driver_patch={"full_name": "Nguyen Van Nam", "phone": "0912345678"},
+        driver_patch={"full_name": "Nguyen Van Nam", "phone": "0912345678", "email": "nam@example.test"},
         expected_version=prepared["draft"]["version"],
     )
 

@@ -10,11 +10,17 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from src.database import Database
+from src.dependencies import database as app_database
 from src.main import app
 from src.services.booking import BookingService
 
 FIXED_NOW = datetime(2026, 8, 3, 2, 0, tzinfo=UTC)
 BOOKER_PHONE = "0901234567"
+
+# ASGITransport does not run FastAPI's lifespan by default.  Initialise the
+# same global SQLite database used by the imported app so middleware and LLM
+# budget services see the current schema during API and node tests.
+app_database.initialize()
 
 
 @pytest_asyncio.fixture
@@ -31,6 +37,7 @@ def mock_llm():
     from langchain_core.messages import AIMessage
 
     mock_instance = MagicMock()
+    mock_instance.model_name = "test-chat-model"
     mock_response = AIMessage(content="Mocked LLM response")
 
     # Mock basic invoke/ainvoke
@@ -354,6 +361,7 @@ def ready_draft_factory(booking_service, catalog):
             booker_patch={
                 "full_name": "Huynh Thi Hai Chau",
                 "phone": BOOKER_PHONE,
+                "email": "chau@example.test",
                 "preferred_channel": "sms",
             },
             driver_same_as_booker=True,

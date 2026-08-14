@@ -1,3 +1,5 @@
+from langchain_core.messages import AIMessage
+
 from src.agents.state import AgentState
 
 
@@ -9,7 +11,11 @@ async def sensitive_policy_node(state: AgentState) -> dict:
     """
     existing_policy_response = state.get("policy_response")
     if existing_policy_response:
-        return {"response": existing_policy_response, "policy_response": existing_policy_response}
+        return {
+            "response": existing_policy_response,
+            "policy_response": existing_policy_response,
+            "messages": [AIMessage(content=existing_policy_response)],
+        }
 
     sub_intent = (state.get("metadata") or {}).get("sub_intent", "")
 
@@ -28,4 +34,9 @@ async def sensitive_policy_node(state: AgentState) -> dict:
             "Tôi có thể hỗ trợ bạn tìm hiểu xe VinFast hoặc đặt lịch hẹn lái thử."
         )
 
-    return {"response": response, "policy_response": response}
+    return {
+        "response": response,
+        "policy_response": response,
+        "messages": [AIMessage(content=response)],
+    }
+
