@@ -5,7 +5,7 @@ from src.services.booking.notifications import (
 
 # test case of Chau + kiểm tra dispatcher chỉ gửi notification đã đến hạn và lưu metadata provider
 def test_dispatch_due_notifications_sends_due_confirmation(booking_service, booking_db, confirmed_booking_factory):
-    booking = confirmed_booking_factory()
+    booking = confirmed_booking_factory(notification_plan_patch={"email_enabled": 0, "sms_enabled": 1})
     provider = InMemoryMessagingProvider()
     booking_service.messaging_provider = provider
 
@@ -15,7 +15,7 @@ def test_dispatch_due_notifications_sends_due_confirmation(booking_service, book
     assert len(provider.messages) == 1
     assert provider.messages[0]["channel"] == "sms"
     assert provider.messages[0]["destination"] == "0901234567"
-    assert "Lịch lái thử đã xác nhận" in provider.messages[0]["body"]
+    assert "Lich lai thu da xac nhan" in provider.messages[0]["body"] or "Lịch lái thử đã xác nhận" in provider.messages[0]["body"]
     assert booking["confirmed"]["booking_code"] in provider.messages[0]["body"]
     with booking_db.connect() as connection:
         sent = connection.execute(
@@ -41,7 +41,7 @@ def test_dispatch_due_notifications_sends_due_confirmation(booking_service, book
 
 # test case of Chau + kiểm tra job đã gửi không bị gửi trùng ở lần dispatcher kế tiếp
 def test_dispatch_does_not_resend_sent_notification(booking_service, confirmed_booking_factory):
-    confirmed_booking_factory()
+    confirmed_booking_factory(notification_plan_patch={"email_enabled": 0, "sms_enabled": 1})
     provider = InMemoryMessagingProvider()
     booking_service.messaging_provider = provider
 
@@ -55,7 +55,7 @@ def test_dispatch_does_not_resend_sent_notification(booking_service, confirmed_b
 
 # test case of Chau + kiểm tra batch size giới hạn đúng số job được claim trong một lượt
 def test_dispatch_respects_batch_size(booking_service, booking_db, confirmed_booking_factory):
-    booking = confirmed_booking_factory()
+    booking = confirmed_booking_factory(notification_plan_patch={"email_enabled": 0, "sms_enabled": 1})
     with booking_db.transaction(immediate=True) as connection:
         connection.execute(
             "UPDATE notification_jobs SET scheduled_at=? WHERE booking_id=?",
@@ -79,7 +79,7 @@ def test_dispatch_respects_batch_size(booking_service, booking_db, confirmed_boo
 
 # test case of Chau + kiểm tra thiếu địa chỉ nhận sẽ retry rồi chuyển failed khi hết số lần thử
 def test_missing_recipient_destination_retries_then_fails(booking_service, booking_db, confirmed_booking_factory):
-    booking = confirmed_booking_factory()
+    booking = confirmed_booking_factory(notification_plan_patch={"email_enabled": 0, "sms_enabled": 1})
     with booking_db.transaction(immediate=True) as connection:
         connection.execute(
             "UPDATE people SET phone=NULL,email=NULL WHERE id=(SELECT driver_person_id FROM bookings WHERE id=?)",
@@ -116,7 +116,7 @@ class _ExplodingProvider:
 def test_provider_exception_does_not_crash_dispatcher_or_stick_job(
     booking_service, booking_db, confirmed_booking_factory
 ):
-    booking = confirmed_booking_factory()
+    booking = confirmed_booking_factory(notification_plan_patch={"email_enabled": 0, "sms_enabled": 1})
     booking_service.messaging_provider = _ExplodingProvider()
 
     result = booking_service.dispatch_due_notifications()

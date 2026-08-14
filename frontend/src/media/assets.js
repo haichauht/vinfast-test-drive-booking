@@ -27,6 +27,7 @@
  * Bảng "mẫu xe nào dùng ảnh nào" nằm ở ./vehicle-media-map.js.
  */
 import { vehicleMediaMap } from './vehicle-media-map'
+import { r2ObjectKey } from './r2-key-aliases'
 
 const vehicleImageModules = import.meta.glob('./local/vehicle-media/**/*.{png,jpg,jpeg,webp,svg}', {
   eager: true,
@@ -77,8 +78,11 @@ const showcaseModules = import.meta.glob('./local/showcase/*/*.{png,jpg,jpeg,web
 const mediaBaseUrl = (import.meta.env.VITE_MEDIA_BASE_URL || '').replace(/\/+$/, '')
 const normalizePath = (path) => path.normalize('NFC').replace(/^\/+/, '')
 const encodePath = (path) => normalizePath(path).split('/').map(encodeURIComponent).join('/')
-const cdnUrl = (scope, relativePath) =>
-  mediaBaseUrl ? `${mediaBaseUrl}/${scope}/${encodePath(relativePath)}` : ''
+const cdnUrl = (scope, relativePath) => {
+  if (!mediaBaseUrl) return ''
+  const objectKey = r2ObjectKey(`${scope}/${normalizePath(relativePath)}`)
+  return `${mediaBaseUrl}/${encodePath(objectKey)}`
+}
 
 const normalizeModules = (modules) =>
   Object.fromEntries(Object.entries(modules).map(([key, url]) => [key.normalize('NFC'), url]))

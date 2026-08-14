@@ -260,7 +260,7 @@ export function selectWorkspace(state) {
 export function selectComposerMode(state) {
   if (state.phase === BookingPhase.ACCESS_REQUEST) return 'access_request'
   if (state.phase === BookingPhase.ACCESS_VERIFY) return 'access_verify'
-  if ([BookingPhase.BOOKING_EDIT, BookingPhase.RESCHEDULE_CONFIRM].includes(state.phase)) return 'booking_edit'
+  if ([BookingPhase.BOOKING_EDIT, BookingPhase.RESCHEDULE_CONFIRM, BookingPhase.RESCHEDULE_SLOT, BookingPhase.RESCHEDULE_SHOWROOM].includes(state.phase)) return 'booking_edit'
   if (state.phase === BookingPhase.COLLECT_INFO) return 'customer_form'
   if (state.phase === BookingPhase.REVIEW) return 'review'
   return 'chat'

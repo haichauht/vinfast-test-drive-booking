@@ -50,7 +50,8 @@ def test_search_test_drive_options_forwards_all_filters(monkeypatch):
         preferred_time="09:30",
         latitude=10.729,
         longitude=106.721,
-        limit=3,
+        showroom_limit=5,
+        slot_limit=None,
     )
 
 
@@ -72,7 +73,8 @@ def test_search_test_drive_options_uses_documented_defaults(monkeypatch):
         preferred_time=None,
         latitude=None,
         longitude=None,
-        limit=5,
+        showroom_limit=5,
+        slot_limit=None,
     )
 
 
@@ -133,6 +135,7 @@ def test_update_booking_draft_tool_persists_license_commitment(
             "booker_patch": {
                 "full_name": "Huynh Thi Hai Chau",
                 "phone": "0901234567",
+                "email": "chau@example.com",
             },
             "driver_same_as_booker": True,
             "has_valid_license_commitment": True,
@@ -159,12 +162,17 @@ def test_request_booking_access_forwards_safe_arguments(monkeypatch):
             "booking_code": "VF260804ABC123",
             "contact_value": "0901234567",
             "purpose": "lookup",
-            "preferred_channel": "sms",
+            "preferred_channel": "email",
         }
     )
 
     assert "otp_code" not in result
-    service.request_access.assert_called_once_with("VF260804ABC123", "0901234567", "lookup", "sms")
+    service.request_access.assert_called_once_with(
+        booking_code="VF260804ABC123",
+        contact_value="0901234567",
+        purpose="lookup",
+        preferred_channel="email",
+    )
 
 
 # test case of Chau + kiểm tra verify access tool forward challenge và OTP xuống service

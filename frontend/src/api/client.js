@@ -45,8 +45,9 @@ export async function apiGet(path, { signal, cacheKey = path, fallbackToCache = 
       retryable: body.error?.retryable ?? response.status >= 500,
     })
   }
-  memoryCache.set(cacheKey, { data: body.data, etag: response.headers.get('etag') })
-  return body.data
+  const resultData = body.data ?? body
+  memoryCache.set(cacheKey, { data: resultData, etag: response.headers.get('etag') })
+  return resultData
 }
 
 export async function apiPost(path, payload, { signal } = {}) {

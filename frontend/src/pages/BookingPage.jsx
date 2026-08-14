@@ -1885,6 +1885,7 @@ export function BookingPage() {
     if (car && targetProfile?.showroomId) {
       setSelectedCarId(car.id)
       setWorkspaceHidden(false)
+      setAccessFlow((current) => current ? { ...current, phase: 'edit', purpose: 'reschedule' } : { phase: 'edit', purpose: 'reschedule', challengeId: '', expiresAt: 0 })
       dispatchInteraction({ type: InteractionEvent.START_RESCHEDULE })
       loadRescheduleSlots(car, { id: targetProfile.showroomId, name: targetProfile.showroomName })
     } else setAccessError('Không xác định được mẫu xe hoặc showroom của lịch này.')
@@ -2024,7 +2025,7 @@ export function BookingPage() {
     return <VehiclePanel car={selectedCar} />
   }
 
-  const showVehicleChoices = allowedActions.includes('choose_vehicle')
+  const showVehicleChoices = allowedActions.includes('choose_vehicle') && !accessProfile && interaction.mode !== BookingMode.MANAGE_BOOKING
 
   if (bookingStatus === 'unavailable') {
     return (
@@ -2210,9 +2211,9 @@ export function BookingPage() {
               {backendError && <p className="booking-api-error" role="alert">{backendError}</p>}
               {resumePending ? (
                 null
-              ) : ['access_request', 'access_verify', 'booking_edit'].includes(composerMode) && accessFlow && accessFlow.phase !== 'confirm_cancel' ? (
+              ) : (['access_request', 'access_verify', 'booking_edit'].includes(composerMode) || accessProfile) && accessFlow?.phase !== 'confirm_cancel' ? (
                 <BookingAccessPanel
-                  phase={accessFlow.phase}
+                  phase={accessFlow?.phase || 'edit'}
                   value={accessValue}
                   onChange={changeAccessValue}
                   onRequest={requestAccessOtp}

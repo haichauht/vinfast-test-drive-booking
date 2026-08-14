@@ -4385,6 +4385,7 @@ svg {
   border: 1px solid var(--line);
   border-radius: 14px;
   background: #fff;
+  cursor: pointer;
   transition: border-color .2s, background .2s;
 }
 
@@ -4395,6 +4396,7 @@ svg {
 
 .booking-history__list > div > button:first-child {
   display: grid;
+  width: 100%;
   gap: 4px;
   padding: 14px 16px;
   border: 0;
@@ -4790,17 +4792,42 @@ svg {
   margin-top: 4px;
 }
 
-.vivi-typing span {
+.vivi-typing small {
+  display: inline-flex;
+  margin-right: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.vivi-typing__char {
+  display: inline-block;
+  animation: typing-dot 1.8s ease-in-out infinite;
+}
+
+.vivi-typing__dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: var(--muted);
-  animation: typing-dot 1s ease-in-out infinite;
+  animation: typing-dot 1.8s ease-in-out infinite;
 }
 
-.vivi-typing span:nth-child(2) { animation-delay: 0.14s; }
-.vivi-typing span:nth-child(3) { animation-delay: 0.28s; }
-.vivi-typing small { margin-left: 4px; color: var(--muted); font-size: 0.75rem; font-weight: 600; }
+.vivi-typing-cursor {
+  display: inline-block;
+  width: 6px;
+  height: 15px;
+  background-color: #1677ff;
+  margin-left: 3px;
+  vertical-align: middle;
+  border-radius: 1px;
+  animation: viviCursorBlink 0.8s infinite;
+}
+
+@keyframes viviCursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
 
 .vivi-studio__composer {
   padding: 14px 17px 16px;
@@ -5522,6 +5549,10 @@ svg {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.vivi-customer-form__grid label:only-child {
+  grid-column: 1 / -1;
 }
 
 .vivi-customer-form__grid label {
