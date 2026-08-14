@@ -26,7 +26,7 @@ class RateLimitDecision:
     rule_key: str = ""
 
 
-class _RateLimitRejected(RuntimeError):
+class _RateLimitRejectedError(RuntimeError):
     def __init__(self, decision: RateLimitDecision) -> None:
         super().__init__(decision.rule_key)
         self.decision = decision
@@ -89,8 +89,8 @@ class PostgresRateLimitStore:
                         now=now,
                     )
                     if not decision.allowed:
-                        raise _RateLimitRejected(decision)
-        except _RateLimitRejected as exc:
+                        raise _RateLimitRejectedError(decision)
+        except _RateLimitRejectedError as exc:
             return exc.decision
         return RateLimitDecision(True)
 
