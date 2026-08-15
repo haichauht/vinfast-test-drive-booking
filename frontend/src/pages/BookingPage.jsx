@@ -430,11 +430,29 @@ function AgentMessage({ message, isLatest }) {
     <div className={`vivi-message vivi-message--${message.role}`}>
       {message.role === 'assistant' && <ViViAvatar compact />}
       <div>
-        <p>
-          {formatText(displayedText)}
-          {isTyping && <span className="vivi-typing-cursor" />}
-        </p>
+        <p>{formatText(displayedText)}</p>
       </div>
+    </div>
+  )
+}
+
+function ViviStatusTyping() {
+  const words = ['ViVi', 'đang', 'thực', 'hiện', 'tác', 'vụ', 'cho', 'bạn']
+
+  return (
+    <div className="vivi-typing" aria-label="ViVi đang thực hiện tác vụ cho bạn">
+      {words.map((word, index) => (
+        <span
+          key={`${word}-${index}`}
+          className="vivi-typing__word"
+          style={{ animationDelay: `${(index * 0.1).toFixed(1)}s` }}
+        >
+          {word}
+        </span>
+      ))}
+      <span className="vivi-typing__dot" style={{ animationDelay: '0.8s' }} />
+      <span className="vivi-typing__dot" style={{ animationDelay: '0.9s' }} />
+      <span className="vivi-typing__dot" style={{ animationDelay: '1.0s' }} />
     </div>
   )
 }
@@ -2244,12 +2262,7 @@ export function BookingPage() {
               {agentTyping && (
                 <div className="vivi-message vivi-message--assistant">
                   <ViViAvatar compact />
-                  <div className="vivi-typing" aria-label="ViVi đang thực hiện tác vụ cho bạn">
-                    <span className="vivi-typing__dot" style={{ animationDelay: '0s' }} />
-                    <span className="vivi-typing__dot" style={{ animationDelay: '0.2s' }} />
-                    <span className="vivi-typing__dot" style={{ animationDelay: '0.4s' }} />
-                    <small>ViVi đang thực hiện tác vụ cho bạn</small>
-                  </div>
+                  <ViviStatusTyping />
                 </div>
               )}
             </div>
