@@ -375,35 +375,36 @@ function AgentMessage({ message, isLatest }) {
   const hasAnimatedRef = useRef(false)
 
   useEffect(() => {
-    if (message.role === 'assistant' && isLatest && !hasAnimatedRef.current) {
-      const fullText = message.text || ''
-      if (!fullText) return
+    if (message.role !== 'assistant' || !isLatest || hasAnimatedRef.current) return
 
-      hasAnimatedRef.current = true
-      setDisplayedText('')
-      setIsTyping(true)
-      let index = 0
+    const fullText = message.text || ''
+    if (!fullText) return
 
-      const timer = setInterval(() => {
-        index += 1
-        setDisplayedText(fullText.slice(0, index))
-        if (index >= fullText.length) {
-          clearInterval(timer)
-          setIsTyping(false)
-        }
-      }, 16)
+    hasAnimatedRef.current = true
+    setDisplayedText('')
+    setIsTyping(true)
+    let index = 0
 
-      return () => {
+    const timer = setInterval(() => {
+      index += 1
+      setDisplayedText(fullText.slice(0, index))
+      if (index >= fullText.length) {
         clearInterval(timer)
         setIsTyping(false)
       }
-    }
+    }, 16)
 
-    if (hasAnimatedRef.current || !isLatest) {
-      setDisplayedText(message.text || '')
+    return () => {
+      clearInterval(timer)
       setIsTyping(false)
     }
-  }, [message.text, message.role, isLatest])
+  }, [message.role, isLatest])
+
+  useEffect(() => {
+    if (!isTyping) {
+      setDisplayedText(message.text || '')
+    }
+  }, [message.text, isTyping])
 
   const formatText = (text) => {
     if (!text) return null
