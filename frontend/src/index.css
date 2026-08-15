@@ -4805,12 +4805,14 @@ svg {
   animation: typing-dot 1.8s ease-in-out infinite;
 }
 
+.vivi-typing span,
 .vivi-typing__dot {
-  width: 5px;
-  height: 5px;
+  display: inline-block;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--muted);
-  animation: typing-dot 1.8s ease-in-out infinite;
+  background: #1677ff;
+  animation: typing-dot 1.4s ease-in-out infinite;
 }
 
 .vivi-typing-cursor {
