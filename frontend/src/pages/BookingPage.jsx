@@ -368,20 +368,22 @@ function ResumeModal({ onContinue, onRestart }) {
 }
 
 function AgentMessage({ message, isLatest }) {
-  const [displayedText, setDisplayedText] = useState(isLatest && message.role === 'assistant' ? '' : (message.text || ''))
+  const [displayedText, setDisplayedText] = useState(
+    isLatest && message.role === 'assistant' ? '' : (message.text || '')
+  )
   const [isTyping, setIsTyping] = useState(false)
   const hasAnimatedRef = useRef(false)
-  const prevTextRef = useRef(message.text)
 
   useEffect(() => {
     if (message.role === 'assistant' && isLatest && !hasAnimatedRef.current) {
       const fullText = message.text || ''
       if (!fullText) return
+
       hasAnimatedRef.current = true
-      prevTextRef.current = fullText
       setDisplayedText('')
       setIsTyping(true)
       let index = 0
+
       const timer = setInterval(() => {
         index += 1
         setDisplayedText(fullText.slice(0, index))
@@ -390,11 +392,14 @@ function AgentMessage({ message, isLatest }) {
           setIsTyping(false)
         }
       }, 16)
-      return () => clearInterval(timer)
+
+      return () => {
+        clearInterval(timer)
+        setIsTyping(false)
+      }
     }
 
-    if (prevTextRef.current !== message.text) {
-      prevTextRef.current = message.text
+    if (hasAnimatedRef.current || !isLatest) {
       setDisplayedText(message.text || '')
       setIsTyping(false)
     }
