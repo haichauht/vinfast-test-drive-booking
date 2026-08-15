@@ -373,12 +373,17 @@ function AgentMessage({ message, isLatest }) {
   )
   const [isTyping, setIsTyping] = useState(false)
   const hasAnimatedRef = useRef(false)
+  const textRef = useRef(message.text)
+
+  useEffect(() => {
+    textRef.current = message.text
+  }, [message.text])
 
   useEffect(() => {
     if (message.role !== 'assistant' || !isLatest || hasAnimatedRef.current) return
 
-    const fullText = message.text || ''
-    if (!fullText) return
+    const initialText = textRef.current || ''
+    if (!initialText) return
 
     hasAnimatedRef.current = true
     setDisplayedText('')
@@ -386,9 +391,10 @@ function AgentMessage({ message, isLatest }) {
     let index = 0
 
     const timer = setInterval(() => {
+      const currentFullText = textRef.current || ''
       index += 1
-      setDisplayedText(fullText.slice(0, index))
-      if (index >= fullText.length) {
+      setDisplayedText(currentFullText.slice(0, index))
+      if (index >= currentFullText.length) {
         clearInterval(timer)
         setIsTyping(false)
       }
