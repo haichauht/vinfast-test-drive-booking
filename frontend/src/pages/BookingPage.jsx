@@ -367,7 +367,31 @@ function ResumeModal({ onContinue, onRestart }) {
   )
 }
 
-function AgentMessage({ message }) {
+function AgentMessage({ message, isLatest }) {
+  const [displayedText, setDisplayedText] = useState(isLatest && message.role === 'assistant' ? '' : (message.text || ''))
+  const [isTyping, setIsTyping] = useState(false)
+
+  useEffect(() => {
+    if (message.role === 'assistant' && isLatest) {
+      const fullText = message.text || ''
+      if (!fullText) return
+      setDisplayedText('')
+      setIsTyping(true)
+      let index = 0
+      const timer = setInterval(() => {
+        index += 1
+        setDisplayedText(fullText.slice(0, index))
+        if (index >= fullText.length) {
+          clearInterval(timer)
+          setIsTyping(false)
+        }
+      }, 16)
+      return () => clearInterval(timer)
+    }
+    setDisplayedText(message.text || '')
+    setIsTyping(false)
+  }, [message.text, message.role, isLatest])
+
   const formatText = (text) => {
     if (!text) return null
     return text.split('\n').map((line, i) => {
@@ -386,7 +410,10 @@ function AgentMessage({ message }) {
     <div className={`vivi-message vivi-message--${message.role}`}>
       {message.role === 'assistant' && <ViViAvatar compact />}
       <div>
-        <p>{formatText(message.text)}</p>
+        <p>
+          {formatText(displayedText)}
+          {isTyping && <span className="vivi-typing-cursor" />}
+        </p>
       </div>
     </div>
   )
@@ -2191,16 +2218,16 @@ export function BookingPage() {
             <div className="vivi-studio__messages" ref={messagesRef} aria-live="polite">
               {resumePending ? (
                 <div className="vivi-studio__empty"><ViViAvatar /><p>Bạn đang có một phiên đặt lịch đang dở.</p></div>
-              ) : messages.length ? messages.map((message) => <AgentMessage key={message.id} message={message} />) : (
+              ) : messages.length ? messages.map((message, index) => <AgentMessage key={message.id} message={message} isLatest={index === messages.length - 1} />) : (
                 <div className="vivi-studio__empty"><ViViAvatar /><p>Chọn người lái thử để ViVi bắt đầu.</p></div>
               )}
               {agentTyping && (
                 <div className="vivi-message vivi-message--assistant">
                   <ViViAvatar compact />
                   <div className="vivi-typing" aria-label="ViVi đang thực hiện tác vụ cho bạn">
-                    <span />
-                    <span />
-                    <span />
+                    <span className="vivi-typing__dot" style={{ animationDelay: '0s' }} />
+                    <span className="vivi-typing__dot" style={{ animationDelay: '0.2s' }} />
+                    <span className="vivi-typing__dot" style={{ animationDelay: '0.4s' }} />
                     <small>ViVi đang thực hiện tác vụ cho bạn</small>
                   </div>
                 </div>
