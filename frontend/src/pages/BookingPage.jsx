@@ -392,7 +392,7 @@ function AgentMessage({ message, isLatest }) {
 
     const timer = setInterval(() => {
       const currentFullText = textRef.current || ''
-      index += 1
+      index = Math.min(index + 1, currentFullText.length)
       setDisplayedText(currentFullText.slice(0, index))
       if (index >= currentFullText.length) {
         clearInterval(timer)
