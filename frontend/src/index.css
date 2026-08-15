@@ -4800,30 +4800,29 @@ svg {
   font-weight: 600;
 }
 
-.vivi-typing__char {
+.vivi-typing__word {
   display: inline-block;
+  color: #71777d;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-right: 3.5px;
   animation: typing-dot 1.8s ease-in-out infinite;
 }
 
-.vivi-typing span,
+.vivi-typing span.vivi-typing__dot,
 .vivi-typing__dot {
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background: #1677ff;
-  animation: typing-dot 1.4s ease-in-out infinite;
+  background: #71777d;
+  margin-right: 3px;
+  vertical-align: middle;
+  animation: typing-dot 1.8s ease-in-out infinite;
 }
 
 .vivi-typing-cursor {
-  display: inline-block;
-  width: 6px;
-  height: 15px;
-  background-color: #1677ff;
-  margin-left: 3px;
-  vertical-align: middle;
-  border-radius: 1px;
-  animation: viviCursorBlink 0.8s infinite;
+  display: none;
 }
 
 @keyframes viviCursorBlink {
