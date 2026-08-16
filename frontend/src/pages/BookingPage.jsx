@@ -368,29 +368,49 @@ function ResumeModal({ onContinue, onRestart }) {
 }
 
 function AgentMessage({ message, isLatest }) {
-  const [displayedText, setDisplayedText] = useState(isLatest && message.role === 'assistant' ? '' : (message.text || ''))
+  const [displayedText, setDisplayedText] = useState(
+    isLatest && message.role === 'assistant' ? '' : (message.text || '')
+  )
   const [isTyping, setIsTyping] = useState(false)
+  const hasAnimatedRef = useRef(false)
+  const textRef = useRef(message.text)
 
   useEffect(() => {
-    if (message.role === 'assistant' && isLatest) {
-      const fullText = message.text || ''
-      if (!fullText) return
-      setDisplayedText('')
-      setIsTyping(true)
-      let index = 0
-      const timer = setInterval(() => {
-        index += 1
-        setDisplayedText(fullText.slice(0, index))
-        if (index >= fullText.length) {
-          clearInterval(timer)
-          setIsTyping(false)
-        }
-      }, 16)
-      return () => clearInterval(timer)
+    textRef.current = message.text
+  }, [message.text])
+
+  useEffect(() => {
+    if (message.role !== 'assistant' || !isLatest || hasAnimatedRef.current) return
+
+    const initialText = textRef.current || ''
+    if (!initialText) return
+
+    hasAnimatedRef.current = true
+    setDisplayedText('')
+    setIsTyping(true)
+    let index = 0
+
+    const timer = setInterval(() => {
+      const currentFullText = textRef.current || ''
+      index = Math.min(index + 1, currentFullText.length)
+      setDisplayedText(currentFullText.slice(0, index))
+      if (index >= currentFullText.length) {
+        clearInterval(timer)
+        setIsTyping(false)
+      }
+    }, 16)
+
+    return () => {
+      clearInterval(timer)
+      setIsTyping(false)
     }
-    setDisplayedText(message.text || '')
-    setIsTyping(false)
-  }, [message.text, message.role, isLatest])
+  }, [message.role, isLatest])
+
+  useEffect(() => {
+    if (!isTyping) {
+      setDisplayedText(message.text || '')
+    }
+  }, [message.text, isTyping])
 
   const formatText = (text) => {
     if (!text) return null
@@ -410,11 +430,29 @@ function AgentMessage({ message, isLatest }) {
     <div className={`vivi-message vivi-message--${message.role}`}>
       {message.role === 'assistant' && <ViViAvatar compact />}
       <div>
-        <p>
-          {formatText(displayedText)}
-          {isTyping && <span className="vivi-typing-cursor" />}
-        </p>
+        <p>{formatText(displayedText)}</p>
       </div>
+    </div>
+  )
+}
+
+function ViviStatusTyping() {
+  const words = ['ViVi', 'đang', 'thực', 'hiện', 'tác', 'vụ', 'cho', 'bạn']
+
+  return (
+    <div className="vivi-typing" aria-label="ViVi đang thực hiện tác vụ cho bạn">
+      {words.map((word, index) => (
+        <span
+          key={`${word}-${index}`}
+          className="vivi-typing__word"
+          style={{ animationDelay: `${(index * 0.1).toFixed(1)}s` }}
+        >
+          {word}
+        </span>
+      ))}
+      <span className="vivi-typing__dot" style={{ animationDelay: '0.8s' }} />
+      <span className="vivi-typing__dot" style={{ animationDelay: '0.9s' }} />
+      <span className="vivi-typing__dot" style={{ animationDelay: '1.0s' }} />
     </div>
   )
 }
@@ -2224,12 +2262,7 @@ export function BookingPage() {
               {agentTyping && (
                 <div className="vivi-message vivi-message--assistant">
                   <ViViAvatar compact />
-                  <div className="vivi-typing" aria-label="ViVi đang thực hiện tác vụ cho bạn">
-                    <span className="vivi-typing__dot" style={{ animationDelay: '0s' }} />
-                    <span className="vivi-typing__dot" style={{ animationDelay: '0.2s' }} />
-                    <span className="vivi-typing__dot" style={{ animationDelay: '0.4s' }} />
-                    <small>ViVi đang thực hiện tác vụ cho bạn</small>
-                  </div>
+                  <ViviStatusTyping />
                 </div>
               )}
             </div>

@@ -20,8 +20,8 @@
  *
  * Thứ tự ưu tiên khi lấy ảnh (mới nhất thắng):
  *   1. local/by-model/<mã xe>/<slot>.*  — lớp ghi đè, xem local/by-model/README.md
- *   2. CDN, nếu có đặt VITE_MEDIA_BASE_URL
- *   3. File trong local/vehicle-media/ hoặc local/common/
+ *   2. File trong local/vehicle-media/ hoặc local/common/ hoặc local/showcase/
+ *   3. CDN, nếu có đặt VITE_MEDIA_BASE_URL
  *
  * Tên file tiếng Việt được chuẩn hoá Unicode NFC — đừng bỏ bước này, macOS lưu khác Windows.
  * Bảng "mẫu xe nào dùng ảnh nào" nằm ở ./vehicle-media-map.js.
@@ -41,10 +41,6 @@ const vehicleVideoModules = import.meta.glob('./local/vehicle-media/**/*.{mp4,mo
   import: 'default',
 })
 
-// Cloudflare Pages Direct Upload accepts files up to 25 MiB. The VF 8 new
-// generation brochure is larger, and the live detail page already receives
-// its canonical R2 URL from the backend catalogue, so do not bundle that
-// source PDF into the frontend deployment.
 const brochureModules = import.meta.glob([
   './local/brochures/*.pdf',
   '!./local/brochures/VF 8 The he moi All News_Brochure_final 20.05.pdf',
@@ -60,15 +56,12 @@ const commonImageModules = import.meta.glob('./local/common/*.{png,jpg,jpeg,webp
   import: 'default',
 })
 
-// Lớp ghi đè theo mã xe: bỏ file vào local/by-model/<mã xe>/studio.png là ảnh đó thắng ảnh
-// trong kho cũ, không cần sửa dòng code nào. Xem local/by-model/README.md.
 const overrideModules = import.meta.glob('./local/by-model/*/*.{png,jpg,jpeg,webp,svg,mp4,mov}', {
   eager: true,
   query: '?url',
   import: 'default',
 })
 
-// Xe trưng bày (Lạc Hồng) — ảnh đã tách nền, không thuộc catalogue backend.
 const showcaseModules = import.meta.glob('./local/showcase/*/*.{png,jpg,jpeg,webp}', {
   eager: true,
   query: '?url',
@@ -91,14 +84,13 @@ const vehicleImages = normalizeModules(vehicleImageModules)
 const vehicleVideos = normalizeModules(vehicleVideoModules)
 const brochures = normalizeModules(brochureModules)
 const commonImages = normalizeModules(commonImageModules)
+const showcaseImages = normalizeModules(showcaseModules)
 
 const localAsset = (modules, root, relativePath) =>
   modules[`${root}/${normalizePath(relativePath)}`.normalize('NFC')] || ''
 
 const overrides = normalizeModules(overrideModules)
 
-// Bảng tra ngược: đường dẫn ảnh cũ -> mã xe + tên slot. Nhờ bảng này mà mọi chỗ đang gọi
-// vehicleImage('VF8/product-CE18.webp') tự nhận ảnh ghi đè, không phải sửa lại chỗ gọi.
 const slotByLegacyPath = Object.entries(vehicleMediaMap).reduce((index, [id, entry]) => {
   if (entry.thumbnail) {
     index[entry.thumbnail.normalize('NFC')] = { id, slots: ['thumbnail', 'studio'] }
@@ -113,7 +105,6 @@ const overrideUrl = (vehicleId, slot) => {
   return match ? overrides[match] : ''
 }
 
-// `scope` phân biệt 2 gốc đường dẫn trong sổ tra cứu: '' cho vehicle-media, 'common/' cho common.
 const overrideForLegacyPath = (relativePath, scope = '') => {
   const entry = slotByLegacyPath[`${scope}${normalizePath(relativePath)}`.normalize('NFC')]
   if (!entry) return ''
@@ -126,20 +117,19 @@ const overrideForLegacyPath = (relativePath, scope = '') => {
 
 export const vehicleImage = (relativePath) =>
   overrideForLegacyPath(relativePath) ||
-  cdnUrl('vehicle-media', relativePath) ||
-  localAsset(vehicleImages, './local/vehicle-media', relativePath)
+  localAsset(vehicleImages, './local/vehicle-media', relativePath) ||
+  cdnUrl('vehicle-media', relativePath)
 
 export const vehicleVideo = (relativePath) =>
   overrideForLegacyPath(relativePath) ||
-  cdnUrl('vehicle-media', relativePath) ||
-  localAsset(vehicleVideos, './local/vehicle-media', relativePath)
+  localAsset(vehicleVideos, './local/vehicle-media', relativePath) ||
+  cdnUrl('vehicle-media', relativePath)
 
 export const commonImage = (fileName) =>
   overrideForLegacyPath(fileName, 'common/') ||
-  cdnUrl('common', fileName) ||
-  localAsset(commonImages, './local/common', fileName)
+  localAsset(commonImages, './local/common', fileName) ||
+  cdnUrl('common', fileName)
 
-/** Resolve a catalogue vehicle id to the image already bundled with the frontend. */
 export const modelImage = (vehicleId) => {
   const relativePath = vehicleMediaMap[vehicleId]?.thumbnail || ''
 
@@ -151,22 +141,15 @@ export const modelImage = (vehicleId) => {
   return vehicleImage(relativePath)
 }
 
-/** Lấy thẳng ảnh ghi đè theo mã xe, không qua đường dẫn cũ. Trả '' nếu chưa có file ghi đè. */
 export const modelOverride = (vehicleId, slot) => overrideUrl(vehicleId, slot)
 
-const showcaseImages = normalizeModules(showcaseModules)
-
-/**
- * Ảnh xe trưng bày đã tách nền, ví dụ showcaseImage('lac-hong-900lx/hero.png').
- * Vẫn cho phép ghi đè qua by-model/<id>/ để đổi ảnh mà không phải sửa code.
- */
 export const showcaseImage = (relativePath) => {
   const [modelId, fileName] = normalizePath(relativePath).split('/')
   const slot = fileName?.replace(/\.[^.]+$/, '')
   return (
     (modelId && slot ? overrideUrl(modelId, slot) : '') ||
-    cdnUrl('showcase', relativePath) ||
-    localAsset(showcaseImages, './local/showcase', relativePath)
+    localAsset(showcaseImages, './local/showcase', relativePath) ||
+    cdnUrl('showcase', relativePath)
   )
 }
 
@@ -176,7 +159,7 @@ export const brochureByKeyword = (keyword) => {
   )
   if (!entry) return ''
   const [path, local] = entry
-  return cdnUrl('brochures', path.split('/').pop()) || local
+  return local || cdnUrl('brochures', path.split('/').pop())
 }
 
 export const vehicleAssetByName = (folder, fileName) => {
@@ -184,7 +167,7 @@ export const vehicleAssetByName = (folder, fileName) => {
   const local = Object.entries(vehicleImages).find(([path]) =>
     path.startsWith(prefix.normalize('NFC')) && path.endsWith(fileName),
   )?.[1] || ''
-  return cdnUrl('vehicle-media', `${normalizePath(folder)}/${fileName}`) || local
+  return local || cdnUrl('vehicle-media', `${normalizePath(folder)}/${fileName}`)
 }
 
 export const vehicleAssetsIn = (...folders) => Object.entries(vehicleImages)
@@ -192,7 +175,7 @@ export const vehicleAssetsIn = (...folders) => Object.entries(vehicleImages)
   .map(([key, src]) => {
     const path = key.replace('./local/vehicle-media/', '').normalize('NFC')
     return {
-      src: cdnUrl('vehicle-media', path) || src,
+      src: src || cdnUrl('vehicle-media', path),
       path,
     }
   })
@@ -210,6 +193,5 @@ export const commonMedia = {
   vinfastLogo: commonImage('vinfast-logo.png'),
   vinfastRoadBanner: commonImage('vinfast-road-banner.webp'),
   viviAvatar: commonImage('vivi-avatar.png'),
-  // Bản chân dung lớn có alpha thật: dùng trực tiếp trên nền trang, không bọc thẻ trắng.
   viviPortrait: commonImage('vivi-portrait-cutout.png'),
 }
