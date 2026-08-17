@@ -223,12 +223,98 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
   )
 }
 
+/**
+ * BookingNextSteps — hướng dẫn sau khi đặt lịch thành công.
+ *
+ * Rút về ĐÚNG BA việc người vừa đặt lịch cần làm (anh Minh chốt 17/08/2026):
+ * mang giấy phép lái xe · xưng danh ở quầy lễ tân · có mặt sớm 15 phút.
+ * Bản trước có bốn mục kèm địa chỉ, chỉ đường, tư vấn viên, hotline, lịch nhắc — những thứ đó
+ * đã nằm nguyên trên phiếu lịch ở màn hình bên trái, lặp lại ở đây chỉ làm loãng.
+ *
+ * QUY TẮC NỘI DUNG giữ nguyên: mỗi dòng phải có nguồn dữ liệu thật, không bịa quy trình.
+ * Tên người lái lấy từ form; giờ hẹn lấy từ `slot`. KHÔNG in mã lịch ở đây nữa — lễ tân tra
+ * bằng tên, số điện thoại và email đã đăng ký, người dùng không phải nhớ mã.
+ *
+ * TODO [BACKEND/BOOKING]: chưa có API nào trả hạng GPLX yêu cầu cho mẫu xe
+ * (`vehicle_models.required_license_class` có trong DB nhưng không xuất hiện ở
+ * GET /vehicles/{id}), nên mục "Mang theo" chỉ nói "đúng hạng" chứ không nêu hạng cụ thể.
+ */
+/** Người dùng nên tới sớm chừng này để làm thủ tục và được nhân viên đón tiếp. */
+const ARRIVE_EARLY_MINUTES = 15
+
+export function BookingNextSteps({ slot, person, recipient }) {
+  const driverName = recipient === 'other' ? person.driverName : person.bookingName
+  const contactName = person.bookingName
+  const contactPhone = person.phone
+  const contactEmail = person.email
+
+  return (
+    <section className="booking-next-steps" aria-labelledby="booking-next-steps-title">
+      <h2 id="booking-next-steps-title">Ba việc bạn cần lưu ý trước buổi lái thử</h2>
+
+      <ol className="booking-next-steps__list">
+        <li>
+          <span className="booking-next-steps__label">Giấy tờ mang theo</span>
+          <p>
+            Bạn nhớ mang theo <strong>giấy phép lái xe</strong> còn hiệu lực và đúng hạng với mẫu xe
+            đã đăng ký. Giấy phép cần mang tên <strong>{driverName || 'người lái thử'}</strong>,
+            trùng với thông tin bạn vừa điền.
+          </p>
+        </li>
+
+        <li>
+          <span className="booking-next-steps__label">Khi tới quầy lễ tân</span>
+          <p>
+            Bạn chỉ cần đọc tên, số điện thoại và email đã đăng ký cho lễ tân là được. Bạn không cần
+            nhớ mã lịch, vì showroom tra được bằng ba thông tin này.
+          </p>
+          <p className="booking-next-steps__muted">
+            {[contactName, contactPhone, contactEmail].filter(Boolean).join(' · ')}
+          </p>
+        </li>
+
+        <li>
+          <span className="booking-next-steps__label">Thời gian có mặt</span>
+          <p>
+            Bạn nên có mặt trước giờ hẹn ít nhất <strong>{ARRIVE_EARLY_MINUTES} phút</strong> để
+            làm thủ tục, và để nhân viên showroom có thời gian đón tiếp bạn chu đáo.
+          </p>
+          {slot?.time && slot?.dateLabel && (
+            <p className="booking-next-steps__muted">
+              Giờ hẹn của bạn là {slot.time}, {slot.dateLabel}.
+            </p>
+          )}
+        </li>
+      </ol>
+    </section>
+  )
+}
+
 export function BookingTicket({ car, showroom, slot, person, recipient, bookingCode, advisor = null, compact = false }) {
   const advisorLabel = advisor?.full_name
     ? `${advisor.full_name}${advisor.phone ? ` · ${advisor.phone}` : ''}`
     : bookingCode
       ? 'Chưa phân công'
       : 'Sẽ được phân công khi xác nhận'
-  const rows = [['Người đặt lịch', person.bookingName], ['Người lái thử', recipient === 'other' ? person.driverName : person.bookingName], ['Điện thoại', person.phone], ['Email', person.email || 'Không đăng ký nhận email'], ['Mẫu xe', car.name], ['Showroom', showroom.name], ['Thời gian', `${slot.time} · ${slot.dateLabel}`], ['Tư vấn viên', advisorLabel]]
+  // Đặt hộ và người lái có liên hệ riêng: phiếu phải nói rõ AI nhận thông báo nào,
+  // nếu không showroom sẽ gọi nhầm người đặt trong khi người cầm lái không hay biết.
+  const bookingForOther = recipient === 'other'
+  const driverHasOwnContact = bookingForOther && person.driverSameContact === false
+  const contactLine = (phone, email) => [phone, email].filter(Boolean).join(' · ') || 'Chưa có thông tin liên hệ'
+
+  const rows = [
+    ['Người đặt lịch', person.bookingName],
+    ['Liên hệ người đặt', contactLine(person.phone, person.email)],
+    ['Người lái thử', bookingForOther ? person.driverName : person.bookingName],
+    ...(bookingForOther
+      ? [['Liên hệ người lái', driverHasOwnContact
+          ? contactLine(person.driverPhone, person.driverEmail)
+          : 'Dùng chung liên hệ với người đặt']]
+      : []),
+    ['Mẫu xe', car.name],
+    ['Showroom', showroom.name],
+    ['Thời gian', `${slot.time} · ${slot.dateLabel}`],
+    ['Tư vấn viên', advisorLabel],
+  ]
   return <section className={`studio-ticket ${compact ? 'studio-ticket--compact' : ''}`}><header><span>{bookingCode ? 'Lịch lái thử đã xác nhận' : 'Kiểm tra trước khi đặt lịch'}</span>{bookingCode && <strong>{bookingCode}</strong>}</header><div className="studio-ticket__vehicle"><VehicleShot car={car} mode="cutout" /><span><strong>{car.name}</strong><small>{car.body}</small></span></div><dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><p><CheckCircle size={16} weight="fill" /> Đã xác nhận có giấy phép lái xe phù hợp.</p></section>
 }

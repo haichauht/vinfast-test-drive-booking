@@ -60,6 +60,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowsClockwise,
   CalendarBlank,
   CarProfile,
   CaretDown,
@@ -72,6 +73,7 @@ import {
   Minus,
   NavigationArrow,
   PaperPlaneTilt,
+  PencilSimple,
   Plus,
   User,
   UserPlus,
@@ -115,7 +117,7 @@ import { actionId } from '../api/ids'
 import { useBackendStatus } from '../context/BackendStatusContext'
 import { BookingCustomerForm as CustomerForm } from '../components/booking/BookingCustomerForm'
 import { ShowroomMap as BookingShowroomMap } from '../components/booking/ShowroomMap'
-import { BookingTicket, SchedulePanel } from '../components/booking/BookingSummary'
+import { BookingNextSteps, BookingTicket, SchedulePanel } from '../components/booking/BookingSummary'
 import { BookingAccessPanel } from '../components/booking/BookingAccessPanel'
 import { CancellationConfirmModal, RescheduleConfirmModal } from '../components/booking/BookingManagementModals'
 import { BookingSuccessVehicleModel, preloadVehicle3dRuntime } from '../components/Vehicle3DExperience'
@@ -125,6 +127,94 @@ import { getVehicle3dModel } from '../data/vehicle3d'
 const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
 const BOOKING_UI_STATE_KEY = 'vinfast:booking-ui-state'
+
+// Dùng chung cho cả người đặt lẫn người lái — hai đầu mối phải được kiểm cùng một chuẩn.
+const PHONE_PATTERN = /^(0|\+84)[0-9\s.-]{8,12}$/
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/**
+ * Đổi lỗi của bước xin OTP thành câu người dùng hiểu và làm được gì đó.
+ *
+ * Vì sao cần: khi kênh gửi OTP chưa được cấu hình đúng, backend ném 500 và `apiPost`
+ * chỉ còn câu mặc định "Yêu cầu không thành công." — người dùng không biết chuyện gì
+ * xảy ra, cũng không biết nên làm gì tiếp.
+ *
+ * TODO [BACKEND/OTP]: 500 nên đổi thành lỗi có mã (vd OTP_CHANNEL_UNAVAILABLE) để
+ * frontend phân biệt được "cấu hình sai" với "mạng lỗi".
+ */
+/**
+ * Tạo file .ics cho buổi lái thử và tải xuống.
+ *
+ * Vì sao có: no-show là vấn đề lõi của dự án (nghiên cứu người dùng: một người tham gia
+ * đã bỏ hẹn thật). Cho người dùng đưa buổi hẹn thẳng vào lịch điện thoại là cách chống
+ * quên rẻ nhất, và làm được HOÀN TOÀN ở frontend — không phụ thuộc email/OTP đang hỏng.
+ *
+ * Chỉ ghi dữ liệu có thật: giờ bắt đầu/kết thúc từ slot, tên + địa chỉ showroom, mã lịch.
+ * Không có giờ kết thúc thì mặc định 60 phút và ghi rõ trong mô tả là ước tính.
+ */
+const escapeIcs = (value = '') => String(value)
+  .replace(/\\/g, '\\\\')
+  .replace(/;/g, '\\;')
+  .replace(/,/g, '\\,')
+  .replace(/\r?\n/g, '\\n')
+
+const downloadCalendarInvite = ({ car, showroom, slot, bookingCode }) => {
+  if (!slot?.startAt) return false
+  const start = new Date(slot.startAt)
+  const end = slot.endAt ? new Date(slot.endAt) : new Date(start.getTime() + 60 * 60000)
+  const stamp = (date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+
+  const description = [
+    `Mã lịch: ${bookingCode}`,
+    'Mang theo giấy phép lái xe còn hiệu lực.',
+    showroom?.phone ? `Showroom: ${showroom.phone}` : '',
+    !slot.endAt ? '(Thời lượng là ước tính, showroom sẽ xác nhận lại.)' : '',
+  ].filter(Boolean).join('\n')
+
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//VinFast//Test Drive//VI',
+    'BEGIN:VEVENT',
+    `UID:${bookingCode}@vinfast`,
+    `DTSTAMP:${stamp(new Date())}`,
+    `DTSTART:${stamp(start)}`,
+    `DTEND:${stamp(end)}`,
+    `SUMMARY:${escapeIcs(`Lái thử ${car?.name || 'VinFast'} · ${bookingCode}`)}`,
+    `LOCATION:${escapeIcs([showroom?.name, showroom?.address].filter(Boolean).join(', '))}`,
+    `DESCRIPTION:${escapeIcs(description)}`,
+    'BEGIN:VALARM',
+    'TRIGGER:-PT2H',
+    'ACTION:DISPLAY',
+    'DESCRIPTION:Buổi lái thử VinFast sắp bắt đầu',
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n')
+
+  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `lai-thu-${bookingCode}.ics`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+  return true
+}
+
+const accessErrorMessage = (error) => {
+  if (error?.code === 'ZALO_NOT_LINKED') {
+    return 'Số điện thoại này chưa liên kết với Zalo Bot của VinFast nên bạn chưa nhận được mã.'
+  }
+  if (error?.code === 'BOOKING_NOT_FOUND' || error?.status === 404) {
+    return 'Tôi không tìm thấy lịch nào ứng với thông tin này. Bạn kiểm tra lại email đã dùng khi đặt lịch giúp tôi nhé.'
+  }
+  if (error?.status >= 500 || !error?.code) {
+    return 'Tôi chưa gửi được mã xác thực cho bạn lúc này. Bạn thử lại sau ít phút, hoặc gọi hotline 1900 23 23 89 để được hỗ trợ trực tiếp.'
+  }
+  return error.message
+}
 const normalizeVehicleName = (value = '') => value.toLowerCase().replace(/^vinfast\s+/, '').replace(/[^a-z0-9]/g, '')
 
 const readBookingUiState = () => {
@@ -326,22 +416,29 @@ const showroomDirectory = [
   },
 ]
 
-function RecipientModal({ onSelect }) {
+// Ba lối vào, không phải hai: nút header nay tên là "Tra cứu VÀ đặt lịch lái thử", nên
+// người đã có lịch cũng bấm vào đây — bắt họ chọn "đặt cho ai" trước là hỏi sai câu.
+function RecipientModal({ onSelect, onLookup }) {
   return (
     <div className="recipient-modal" role="dialog" aria-modal="true" aria-labelledby="recipient-title">
       <div className="recipient-modal__panel">
         <span className="recipient-modal__mark"><User size={24} weight="light" /></span>
         <p>Trước khi bắt đầu</p>
-        <h1 id="recipient-title">Bạn đặt lịch lái thử <span className="no-orphan">cho ai?</span></h1>
+        <h1 id="recipient-title">Bạn muốn làm gì <span className="no-orphan">hôm nay?</span></h1>
         <div className="recipient-modal__choices">
           <button type="button" onClick={() => onSelect('self')}>
             <User size={24} weight="light" />
-            <span><strong>Cho chính tôi</strong><small>Người đặt lịch cũng là người lái thử</small></span>
+            <span><strong>Đặt lịch cho chính tôi</strong><small>Người đặt lịch cũng là người lái thử</small></span>
             <ArrowRight size={18} weight="light" />
           </button>
           <button type="button" onClick={() => onSelect('other')}>
             <UserPlus size={24} weight="light" />
             <span><strong>Đặt hộ người khác</strong><small>Lưu riêng thông tin người đặt và người lái</small></span>
+            <ArrowRight size={18} weight="light" />
+          </button>
+          <button type="button" onClick={onLookup}>
+            <CalendarBlank size={24} weight="light" />
+            <span><strong>Tra cứu lịch đã đặt</strong><small>Xem lại, đổi giờ hoặc huỷ lịch của bạn</small></span>
             <ArrowRight size={18} weight="light" />
           </button>
         </div>
@@ -427,7 +524,7 @@ function AgentMessage({ message, isLatest }) {
   }
 
   return (
-    <div className={`vivi-message vivi-message--${message.role}`}>
+    <div className={`vivi-message vivi-message--${message.role} ${message.emphasis ? 'vivi-message--emphasis' : ''}`.trim()}>
       {message.role === 'assistant' && <ViViAvatar compact />}
       <div>
         <p>{formatText(displayedText)}</p>
@@ -598,6 +695,11 @@ function VehicleSwitcher({ cars, currentId, onSelect, onClose }) {
 
 function VehiclePanel({ car, success3d = false }) {
   const hasApproved3dModel = success3d && Boolean(getVehicle3dModel(car.id))
+  // Sổ tại chỗ, KHÔNG điều hướng. Trước đây đây là <Link to="/models/:id"> nên đang đặt lịch
+  // dở mà bấm xem thông tin xe là bị ném khỏi luồng, quay lại phải lần từ đầu.
+  const [infoOpen, setInfoOpen] = useState(false)
+  const extraSpecs = car.specs.slice(3)
+
   return (
     <section className={`studio-vehicle ${hasApproved3dModel ? 'has-booking-model' : ''}`} aria-label={`Mẫu xe ${car.name}`}>
       <div className="studio-vehicle__ambient" aria-hidden="true" />
@@ -616,7 +718,31 @@ function VehiclePanel({ car, success3d = false }) {
           <div key={spec.label}><strong>{spec.value}</strong><span>{spec.label}</span></div>
         ))}
       </div>
-      <Link to={`/models/${car.id}`}>Xem lại thông tin xe <ArrowRight size={15} weight="light" /></Link>
+      <button
+        type="button"
+        className="studio-vehicle__more"
+        aria-expanded={infoOpen}
+        onClick={() => setInfoOpen((open) => !open)}
+      >
+        {infoOpen ? 'Thu gọn thông tin xe' : 'Xem lại thông tin xe'}
+        <CaretDown size={15} weight="light" style={{ transform: infoOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.35s var(--ease-heavy)' }} />
+      </button>
+
+      {infoOpen && (
+        <div className="studio-vehicle__details">
+          {car.tagline && <p className="studio-vehicle__tagline">{car.tagline}</p>}
+          <dl>
+            <div><dt>Giá niêm yết</dt><dd>{car.price || 'Đang cập nhật'}</dd></div>
+            <div><dt>Kiểu xe</dt><dd>{car.body || 'Đang cập nhật'}</dd></div>
+            {extraSpecs.map((spec) => (
+              <div key={spec.label}><dt>{spec.label}</dt><dd>{spec.value}</dd></div>
+            ))}
+          </dl>
+          {!extraSpecs.length && (
+            <small>Thông số chi tiết hơn của mẫu xe này đang được cập nhật.</small>
+          )}
+        </div>
+      )}
     </section>
   )
 }
@@ -867,7 +993,19 @@ export function BookingPage() {
   const [confirmSlotOpen, setConfirmSlotOpen] = useState(false)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [workspaceHidden, setWorkspaceHidden] = useState(false)
-  const [person, setPerson] = useState({ bookingName: '', driverName: '', phone: '', email: '', hasLicense: false, marketingConsent: true })
+  // driverSameContact: người lái dùng chung email/SĐT với người đặt. Mặc định true để
+  // luồng đặt hộ phổ biến nhất (đặt cho người nhà, dùng chung số) không phải điền thêm.
+  const [person, setPerson] = useState({
+    bookingName: '',
+    driverName: '',
+    phone: '',
+    email: '',
+    driverSameContact: true,
+    driverPhone: '',
+    driverEmail: '',
+    hasLicense: false,
+    marketingConsent: true,
+  })
   const [formErrors, setFormErrors] = useState({})
   const [bookingCode, setBookingCode] = useState('')
   const [bookingAdvisor, setBookingAdvisor] = useState(null)
@@ -894,6 +1032,9 @@ export function BookingPage() {
   const messagesRef = useRef(null)
   const timersRef = useRef([])
   const holdActionIdsRef = useRef(new Map())
+  // Đếm lượt tìm khung giờ. Bấm showroom A rồi bấm nhanh sang B sẽ có 2 request cùng bay;
+  // ai về sau thắng, nên nếu không đánh số thì slot của A có thể đắp lên tên showroom B.
+  const showroomRequestRef = useRef(0)
   const confirmActionIdsRef = useRef(new Map())
   const holdExpiredRef = useRef(false)
   const otpChallengeIdRef = useRef('')
@@ -913,15 +1054,44 @@ export function BookingPage() {
   const hasWorkspaceContent = Boolean(selectedCar || accessProfile)
   const workspaceVisible = workspaceModel.visible && hasWorkspaceContent && !workspaceHidden
 
-  const completeBookingSuccess = useCallback(() => {
+  /**
+   * Kết thúc cinematic → quay về khung chat, KHÔNG chuyển sang trang tĩnh.
+   *
+   * ViVi chủ động mở lời thay vì để người dùng nhìn một bảng thông tin câm:
+   * gọi tên người đặt, nói còn bao nhiêu ngày nữa, và nói rõ mình vẫn ở đây.
+   * Số ngày tính từ `slot.startAt` (mốc ISO thật), không đoán từ chuỗi hiển thị.
+   */
+  // BookingSuccessCinematic đưa `onComplete` vào dependencies của timeline GSAP, nên hàm này
+  // PHẢI giữ nguyên identity — đổi một cái là cinematic chạy lại từ đầu. Giữ logic trong ref
+  // để vẫn đọc được giá trị mới nhất mà vỏ ngoài không bao giờ đổi.
+  const completeSuccessRef = useRef(() => {})
+  completeSuccessRef.current = () => {
     setSuccessCinematic(false)
     setStage('success')
-    setMessages((current) => [...current, {
-      id: `${Date.now()}-${current.length}`,
-      role: 'assistant',
-      text: 'Đặt lịch thành công. Tôi đã giữ lại toàn bộ thông tin bên cạnh. Sau này, bạn chỉ cần nhập email đã đăng ký để tra cứu, bổ sung hoặc huỷ lịch.',
-    }])
-  }, [])
+    setActiveView('ticket')
+
+    const firstName = (person.bookingName || '').trim().split(/\s+/).pop()
+    const greeting = firstName ? `${firstName} ơi, ` : ''
+
+    // Câu mở đầu là câu DUY NHẤT được nhấn mạnh: xác nhận cả ViVi lẫn showroom đều đã
+    // nhận lịch. Ba việc cần làm nằm ở thẻ BookingNextSteps ngay dưới, không lặp lại ở đây.
+    const lines = [
+      `${greeting}ViVi và showroom đều đã nhận được lịch đặt lái thử của bạn.`,
+      'Ba việc cần lưu ý trước buổi hẹn nằm ngay dưới đây. Bạn cứ hỏi tôi thêm bất cứ lúc nào.',
+    ]
+
+    setMessages((current) => [
+      ...current,
+      ...lines.map((text, index) => ({
+        id: `${Date.now()}-${current.length}-${index}`,
+        role: 'assistant',
+        text,
+        // Tin đầu được tô sáng để mắt bắt ngay lời xác nhận giữa cả đoạn hội thoại dài.
+        ...(index === 0 ? { emphasis: true } : {}),
+      })),
+    ])
+  }
+  const completeBookingSuccess = useCallback(() => completeSuccessRef.current(), [])
 
   useEffect(() => {
     const config = getVehicle3dModel(selectedCarId)
@@ -982,7 +1152,21 @@ export function BookingPage() {
       dateLabel: new Intl.DateTimeFormat('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(start),
       times: [],
     }
-    groups[value].times.push({ time, slotId: item.id, isAvailable: item.status === 'available', unavailableLabel: item.status === 'held' ? 'Đang được giữ' : 'Đã có lịch' })
+    // Giữ luôn giờ kết thúc: màn hướng dẫn sau đặt lịch cần nói thời lượng buổi lái thử,
+    // mà backend chỉ trả start_at/end_at ở đây — bỏ end_at đi là mất căn cứ, phải đoán.
+    const end = item.end_at ? new Date(item.end_at) : null
+    groups[value].times.push({
+      time,
+      endTime: end ? end.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '',
+      durationMinutes: end ? Math.max(0, Math.round((end - start) / 60000)) : 0,
+      // Mốc ISO gốc: cần cho việc đếm số ngày còn lại và tạo file lịch (.ics).
+      // Chuỗi hiển thị "17:30 · Th 4, 19/08" không parse ngược lại được cho chắc.
+      startAt: item.start_at,
+      endAt: item.end_at || '',
+      slotId: item.id,
+      isAvailable: item.status === 'available',
+      unavailableLabel: item.status === 'held' ? 'Đang được giữ' : 'Đã có lịch',
+    })
     return groups
   }, {}))
 
@@ -1123,6 +1307,73 @@ export function BookingPage() {
     if (legacyStages[ui?.phase]) setStage(legacyStages[ui.phase])
   }
 
+  const findSlotById = (groups, slotId) => {
+    if (!slotId) return null
+    for (const group of groups) {
+      const match = group.times.find((item) => item.slotId === slotId)
+      if (match) return match
+    }
+    return null
+  }
+
+  /**
+   * Tra ra khung giờ THẬT của một slot vừa được giữ.
+   *
+   * Vì sao cần: backend trả về khi giữ chỗ chỉ gồm booking_id, status, version,
+   * hold_expires_at, remaining_seconds và showroom — KHÔNG có ngày/giờ của slot
+   * (backend/src/services/booking/lifecycle.py, hàm hold_slot).
+   *
+   * Bản trước xử lý thiếu dữ liệu bằng cách ghi cứng `time: '21:00 - 22:00'` rồi mang
+   * đúng chuỗi đó ra modal xác nhận, phiếu review và màn thành công — tức là hiển thị
+   * một giờ hẹn KHÔNG có thật cho người dùng xác nhận. Nay không bịa nữa: tra trong danh
+   * sách đang có, không thấy thì hỏi lại backend đúng showroom đó.
+   */
+  const resolveHeldSlot = async (slotId, slotShowroomId) => {
+    const local = findSlotById(slots, slotId)
+    if (local) return local
+    if (!selectedCar || !slotShowroomId) return null
+    try {
+      const refreshed = await searchBookingOptions({
+        vehicleModel: selectedCar.name,
+        showroomId: slotShowroomId,
+      })
+      const grouped = groupSlots(refreshed.slots || [])
+      setSlots(grouped)
+      return findSlotById(grouped, slotId)
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Xoá SẠCH mọi thứ phụ thuộc vào mẫu xe đang chọn.
+   *
+   * Trước đây ba nhánh đổi xe (chooseCar, switchCar và nhánh `vehicle_info` trong
+   * handlePrompt) mỗi nhánh dọn một tập trạng thái khác nhau, và KHÔNG nhánh nào dọn
+   * `slots`, `bookingId`, `bookingVersion`, `holdExpiresAt`. Hậu quả đã kiểm chứng:
+   * `slots` được ghi vào sessionStorage nên đổi xe rồi tải lại trang là thấy khung giờ
+   * của mẫu xe CŨ nằm dưới tên mẫu xe MỚI.
+   *
+   * TODO [BACKEND/BOOKING]: chưa có API nhả chỗ đang giữ. Đổi xe giữa chừng thì chỗ giữ
+   * của mẫu cũ nằm lại tới khi hết hạn (~2 phút), làm khung giờ đó bị khoá oan.
+   */
+  const resetSelectionForVehicleChange = () => {
+    showroomRequestRef.current += 1 // vô hiệu hoá mọi lượt tìm khung giờ đang bay
+    setPendingSlot(null)
+    setSelectedSlot(null)
+    setConfirmSlotOpen(false)
+    setNearbyShowrooms([])
+    setLocationSuggestions([])
+    setShowroomId('')
+    setSlots([])
+    setAddress({ province: '', detail: '' })
+    setBookingId('')
+    setBookingVersion(0)
+    setHoldExpiresAt(null)
+    setTimeLeft('')
+    setBackendError('')
+  }
+
   const applyAgentToolResult = async (result) => {
     if (!result || !result.action_data) return false
     applyServerUiDirective(result.ui)
@@ -1219,7 +1470,7 @@ export function BookingPage() {
 
       if (formattedBookings.length === 0) {
         clearManagementContext({ resetConversation: false })
-        addMessage('assistant', 'Xác thực thành công nhưng tôi chưa tìm thấy lịch hợp lệ với email này.')
+        addMessage('assistant', 'Bạn đã xác thực thành công, nhưng tôi chưa tìm thấy lịch nào còn hiệu lực với email này.')
         return true
       }
 
@@ -1252,7 +1503,7 @@ export function BookingPage() {
       })
       otpChallengeIdRef.current = ''
       otpCodeRef.current = ''
-      addMessage('assistant', isCancellation ? 'Xác thực thành công. Vui lòng kiểm tra phiếu bên dưới và xác nhận nếu bạn muốn hủy lịch.' : 'Xác thực thành công. Bạn có thể cập nhật thông tin lịch đã đặt bên dưới.')
+      addMessage('assistant', isCancellation ? 'Xác thực thành công. Vui lòng kiểm tra phiếu bên dưới và xác nhận nếu bạn muốn hủy lịch.' : 'Bạn đã xác thực thành công. Bạn có thể cập nhật thông tin lịch đã đặt ngay bên dưới.')
       return true
     }
 
@@ -1313,25 +1564,26 @@ export function BookingPage() {
       setBookingVersion(data.version ?? 1)
       setHoldExpiresAt(data.hold_expires_at ? new Date(data.hold_expires_at).getTime() : Date.now() + 120000)
 
+      let slotShowroomId = showroomId
       if (data.showroom) {
         const [mappedShowroom] = mapShowrooms([data.showroom], selectedCarId)
         setNearbyShowrooms((current) => current.some((item) => item.id === mappedShowroom.id) ? current : [...current, mappedShowroom])
         setShowroomId(mappedShowroom.id)
+        slotShowroomId = mappedShowroom.id
       }
 
-      let foundSlot = null
-      for (const group of slots) {
-        const match = group.times.find(item => item.slotId === toolInput.slot_id)
-        if (match) {
-          foundSlot = match
-          break
-        }
-      }
+      const targetSlot = await resolveHeldSlot(toolInput.slot_id, slotShowroomId)
 
-      const targetSlot = foundSlot || {
-        slotId: toolInput.slot_id,
-        time: '21:00 - 22:00',
-        dateLabel: 'Ngày đã chọn',
+      // Không tra được ngày giờ thật thì KHÔNG mở hộp xác nhận. Bắt người dùng bấm
+      // "Xác nhận khung giờ" dưới một cái giờ mình tự bịa là điều tệ nhất có thể làm ở đây.
+      if (!targetSlot) {
+        setPendingSlot(null)
+        setSelectedSlot(null)
+        setConfirmSlotOpen(false)
+        setStage('choose_slot')
+        setActiveView('schedule')
+        addMessage('assistant', 'ViVi đã giữ tạm khung giờ này, nhưng chưa đọc lại được chính xác ngày và giờ của nó. Bạn chọn giúp tôi khung giờ trong danh sách bên cạnh để tôi xác nhận đúng thời gian nhé.')
+        return true
       }
 
       setPendingSlot(targetSlot)
@@ -1352,13 +1604,29 @@ export function BookingPage() {
       const newRecipient = data.recipient_type || 'self'
       setRecipient(newRecipient)
 
-      setPerson({
-        bookingName: data.booker?.name || '',
-        driverName: data.driver?.name || '',
+      // Backend trả `full_name`, KHÔNG phải `name` (kiểm chứng 16/08/2026 trên update_draft:
+      // booker/driver đều là {id, full_name, phone, email, ...}). Bản cũ đọc `.name` nên nạp
+      // lại draft là mất sạch tên người đặt/người lái, và `isComplete` bên dưới luôn sai.
+      const draftBookerName = data.booker?.full_name || data.booker?.name || ''
+      const draftDriverName = data.driver?.full_name || data.driver?.name || ''
+      // Người lái có đầu mối riêng hay không do so sánh dữ liệu backend, không đoán.
+      const draftDriverSharesContact = !data.driver
+        || (!!data.driver.email && data.driver.email === data.booker?.email
+            && (data.driver.phone || '') === (data.booker?.phone || ''))
+
+      // Giữ lại các trường draft KHÔNG mang theo (marketingConsent) bằng cách merge,
+      // thay vì thay nguyên object như trước.
+      setPerson((current) => ({
+        ...current,
+        bookingName: draftBookerName,
+        driverName: draftDriverName,
         phone: data.booker?.phone || '',
         email: data.booker?.email || '',
+        driverSameContact: draftDriverSharesContact,
+        driverPhone: draftDriverSharesContact ? '' : (data.driver?.phone || ''),
+        driverEmail: draftDriverSharesContact ? '' : (data.driver?.email || ''),
         hasLicense: !!data.license_declaration?.has_driving_license,
-      })
+      }))
 
       if (stage === 'choose_slot' || stage === 'choose_showroom' || stage === 'need_address') {
         if (data.showroom) {
@@ -1367,21 +1635,23 @@ export function BookingPage() {
           setShowroomId(mappedShowroom.id)
         }
 
-        let foundSlot = null
-        if (data.slot_id) {
-          for (const group of slots) {
-            const match = group.times.find(item => item.slotId === data.slot_id)
-            if (match) {
-              foundSlot = match
-              break
-            }
-          }
-        }
+        // Draft CÓ trả slot_date/slot_time thật (lifecycle.py::_draft đọc từ bảng
+        // test_drive_slots), nên ưu tiên dữ liệu backend, sau đó mới tới slot đang hiển thị.
+        // Không còn chuỗi '21:00 - 22:00' ghi cứng: thiếu giờ thì coi như chưa xác định
+        // được slot và quay lại bước chọn giờ.
+        const foundSlot = findSlotById(slots, data.slot_id)
+        const targetSlot = (data.slot_id && data.slot_time && data.slot_date)
+          ? { slotId: data.slot_id, time: data.slot_time, dateLabel: data.slot_date }
+          : foundSlot
 
-        const targetSlot = foundSlot || {
-          slotId: data.slot_id || 'temp-id',
-          time: data.slot_time || '21:00 - 22:00',
-          dateLabel: data.slot_date || 'Ngày đã chọn',
+        if (!targetSlot) {
+          setPendingSlot(null)
+          setSelectedSlot(null)
+          setConfirmSlotOpen(false)
+          setActiveView('schedule')
+          setStage('choose_slot')
+          addMessage('assistant', 'Tôi chưa đọc lại được chính xác ngày giờ của khung giờ đang giữ. Bạn chọn giúp tôi một khung giờ trong danh sách bên cạnh nhé.')
+          return true
         }
 
         setPendingSlot(targetSlot)
@@ -1392,7 +1662,7 @@ export function BookingPage() {
         return
       }
 
-      const isComplete = data.booker?.name && data.booker?.email && data.license_declaration?.has_driving_license
+      const isComplete = draftBookerName && data.booker?.email && data.license_declaration?.has_driving_license
       if (isComplete) {
         setStage('review')
         setActiveView('ticket')
@@ -1462,7 +1732,7 @@ export function BookingPage() {
           setSubmitting(false)
           setStage('choose_slot')
           setActiveView('schedule')
-          addMessage('assistant', 'Khung giờ giữ tạm đã hết hạn. Bạn vui lòng chọn lại một thời gian khác để tiếp tục đặt lịch.')
+          addMessage('assistant', 'Khung giờ tôi giữ tạm cho bạn đã hết hạn. Bạn chọn lại một khung giờ khác để tôi tiếp tục đặt lịch nhé.')
         }
         return
       }
@@ -1526,9 +1796,7 @@ export function BookingPage() {
     setSelectedCarId(car.id)
     setWorkspaceHidden(false)
     if (!fromPrompt) addMessage('user', `Tôi muốn lái thử ${car.name}.`)
-    setNearbyShowrooms([])
-    setLocationSuggestions([])
-    setShowroomId('')
+    resetSelectionForVehicleChange()
     setStage('need_address')
     setActiveView('car')
     primeLocationSuggestions(car)
@@ -1545,15 +1813,8 @@ export function BookingPage() {
     }
 
     setSelectedCarId(car.id)
-    setPendingSlot(null)
-    setSelectedSlot(null)
-    setConfirmSlotOpen(false)
     addMessage('user', `Tôi muốn đổi sang ${car.name}.`)
-
-    setAddress({ province: '', detail: '' })
-    setLocationSuggestions([])
-    setNearbyShowrooms([])
-    setShowroomId('')
+    resetSelectionForVehicleChange()
     setStage('need_address')
     setActiveView('car')
     primeLocationSuggestions(car)
@@ -1577,12 +1838,22 @@ export function BookingPage() {
     // TODO [BACKEND/DRAFT — P0]: chưa lưu showroomId lên draft phía server nên đổi máy
     // là mất tiến trình. Chi tiết ở mục 1.3 trong BACKEND_HANDOFF.md.
     if (!fromPrompt) addMessage('user', `Tôi chọn ${showroom.name}.`)
+    const requestId = showroomRequestRef.current + 1
+    showroomRequestRef.current = requestId
+
     setWorkspaceHidden(false)
     setShowroomId(showroom.id)
+    // Dọn khung giờ của showroom TRƯỚC khi hỏi showroom mới. Nếu để nguyên, trong lúc chờ
+    // mạng người dùng vẫn thấy danh sách giờ của showroom cũ trong khi tên showroom đã đổi
+    // — bấm vào là giữ chỗ ở showroom này nhưng phiếu ghi showroom kia.
+    setSlots([])
+    setPendingSlot(null)
+    setSelectedSlot(null)
     setBackendError('')
     setAgentTyping(true)
     try {
       const result = await searchBookingOptions({ vehicleModel: selectedCar.name, showroomId: showroom.id })
+      if (showroomRequestRef.current !== requestId) return // đã có lượt chọn mới hơn
       const grouped = groupSlots(result.slots || [])
       setSlots(grouped)
       setStage('choose_slot')
@@ -1590,8 +1861,15 @@ export function BookingPage() {
       setAgentTyping(false)
       reply(`${showroom.name} đã được chọn. ViVi đã tìm thấy ${result.slots?.length || 0} khung giờ trống cho bạn.`)
     } catch (error) {
+      if (showroomRequestRef.current !== requestId) return
       setAgentTyping(false)
-      reply(`Không tải được lịch trống: ${error.message}`)
+      // Lỗi thì trả về đúng bước chọn showroom với trạng thái sạch: không showroom nào
+      // đang được chọn, không khung giờ nào đang hiển thị.
+      setShowroomId('')
+      setSlots([])
+      setStage('choose_showroom')
+      setActiveView('map')
+      reply(`Không tải được lịch trống của ${showroom.name}: ${error.message}. Bạn chọn lại showroom giúp tôi nhé.`)
     }
   }
 
@@ -1689,11 +1967,7 @@ export function BookingPage() {
           clearManagementContext({ event: InteractionEvent.VIEW_VEHICLE })
         }
         setSelectedCarId(mentionedCar.id)
-        setPendingSlot(null)
-        setSelectedSlot(null)
-        setShowroomId('')
-        setNearbyShowrooms([])
-        setLocationSuggestions([])
+        resetSelectionForVehicleChange()
         setStage('need_address')
         setActiveView('car')
         primeLocationSuggestions(mentionedCar)
@@ -1727,6 +2001,53 @@ export function BookingPage() {
     reply('Để bảo vệ lịch của bạn, hãy nhập email đã đăng ký. Tôi sẽ gửi OTP qua email.')
   }
 
+  /**
+   * Deep-link `/booking?lookup=1` — mở thẳng luồng tra cứu lịch đã đặt.
+   *
+   * Trang chủ cần một lối vào cho khách QUAY LẠI (xem/đổi/huỷ lịch), nhưng trước đây
+   * `/booking` chỉ nhận `?car=` nên không có cách nào trỏ thẳng vào bước tra cứu —
+   * người dùng buộc phải vào luồng đặt mới rồi tự tìm đường sang.
+   *
+   * Bỏ qua luôn hộp "Bạn đặt lịch cho ai": câu đó chỉ có nghĩa với người đang đặt MỚI.
+   */
+  const lookupRequested = searchParams.get('lookup')
+  useEffect(() => {
+    if (!lookupRequested) return
+    if (interaction.mode === BookingMode.MANAGE_BOOKING) return
+    setRecipient((current) => current || 'self')
+    setResumePending(false)
+    startLookup({ addUserMessage: false })
+    // Chỉ chạy khi URL đổi; startLookup được dựng lại mỗi lần render nên không đưa vào deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lookupRequested])
+
+  const addBookingToCalendar = () => {
+    addMessage('user', 'Thêm buổi lái thử vào lịch của tôi.')
+    const created = downloadCalendarInvite({
+      car: selectedCar,
+      showroom: selectedShowroom,
+      slot: selectedSlot,
+      bookingCode,
+    })
+    reply(created
+      ? 'Tôi đã tạo file lịch cho buổi lái thử này, kèm nhắc trước 2 giờ. Bạn mở file vừa tải để thêm vào ứng dụng lịch nhé.'
+      : 'Tôi chưa đọc được chính xác mốc thời gian của buổi hẹn nên chưa tạo được file lịch. Bạn xem giờ hẹn trên phiếu bên cạnh giúp tôi nhé.')
+  }
+
+  // Đặt lịch cho mẫu khác = một luồng MỚI hoàn toàn. Xoá sạch lựa chọn cũ để lịch vừa đặt
+  // không lẫn sang lần đặt tiếp theo (cùng lý do với resetSelectionForVehicleChange ở Batch 5a).
+  const bookAnotherVehicle = () => {
+    addMessage('user', 'Tôi muốn đặt thêm lịch cho một mẫu xe khác.')
+    setBookingCode('')
+    setBookingAdvisor(null)
+    setSelectedCarId('')
+    resetSelectionForVehicleChange()
+    setStage('need_car')
+    setActiveView('agent')
+    setSwitcherOpen(true)
+    reply('Được ngay. Lịch vừa đặt vẫn được giữ nguyên, bạn tra cứu lại bất cứ lúc nào bằng email đã đăng ký. Bây giờ bạn muốn lái thử mẫu nào?')
+  }
+
   const changeAccessValue = (field, value) => {
     if (field === 'otpCode') otpCodeRef.current = value
     setAccessValue((current) => ({ ...current, [field]: value }))
@@ -1738,11 +2059,11 @@ export function BookingPage() {
     try {
       const result = await requestBookingAccess({ bookingCode: accessValue.bookingCode.trim(), email: accessValue.email.trim(), purpose: accessFlow?.purpose || 'update_details' })
       if (!result?.challenge_id || !result?.expires_at) {
-        throw new Error('Không thể khởi tạo phiên xác thực OTP. Vui lòng gửi lại mã.')
+        throw new Error('Tôi chưa mở được phiên xác thực OTP cho bạn. Bạn bấm gửi lại mã giúp tôi nhé.')
       }
       const expiresAt = new Date(result.expires_at).getTime()
       if (Number.isNaN(expiresAt)) {
-        throw new Error('Thời hạn OTP không hợp lệ. Vui lòng gửi lại mã.')
+        throw new Error('Tôi đọc không được thời hạn của mã OTP này. Bạn bấm gửi lại mã giúp tôi nhé.')
       }
       otpChallengeIdRef.current = result.challenge_id
       setAccessFlow((current) => ({ phase: 'verify', purpose: current?.purpose || 'update_details', challengeId: result.challenge_id, expiresAt }))
@@ -1759,12 +2080,19 @@ export function BookingPage() {
           : 'Tôi đã gửi mã OTP qua email. Bạn vui lòng nhập mã để tiếp tục.',
       )
     } catch (error) {
-      if (error.code === 'OTP_RATE_LIMITED') {
+      // Hai mã giới hạn KHÁC nhau và trước đây chỉ bắt một: OTP_RATE_LIMITED là cooldown
+      // ngắn giữa 2 lần gửi, RATE_LIMIT_EXCEEDED là khoá dài theo giờ. Không khoá nút ở
+      // trường hợp thứ hai thì người dùng bấm tiếp và mỗi lần bấm lại gia hạn thêm khoá.
+      if (error.code === 'OTP_RATE_LIMITED' || error.code === 'RATE_LIMIT_EXCEEDED') {
         const seconds = Number(error.message.match(/\d+/)?.[0] || 0)
-        setResendSecondsLeft(seconds)
+        if (seconds > 0) setResendSecondsLeft(seconds)
       }
-      setAccessError('')
-      addMessage('assistant', error.message)
+
+      const message = accessErrorMessage(error)
+      // Hiện NGAY CẠNH form (role="alert") chứ không chỉ thả vào khung chat: form báo lỗi
+      // ở đâu thì người dùng tìm ở đó. Bản cũ còn setAccessError('') làm form sạch trơn.
+      setAccessError(message)
+      addMessage('assistant', message)
     } finally { setAccessBusy(false) }
   }
 
@@ -1772,7 +2100,7 @@ export function BookingPage() {
     const challengeId = otpChallengeIdRef.current || accessFlow?.challengeId
     if (!challengeId) {
       setAccessError('')
-      addMessage('assistant', 'Phiên OTP chưa sẵn sàng hoặc đã hết hạn. Vui lòng gửi lại mã.')
+      addMessage('assistant', 'Phiên xác thực của bạn chưa sẵn sàng hoặc đã hết hạn. Bạn bấm gửi lại mã để tôi cấp mã mới nhé.')
       return
     }
     setAccessBusy(true); setAccessError('')
@@ -1821,7 +2149,7 @@ export function BookingPage() {
 
       if (formattedBookings.length === 0) {
         clearManagementContext({ resetConversation: false })
-        addMessage('assistant', 'Xác thực thành công nhưng tôi chưa tìm thấy lịch hợp lệ với email này.')
+        addMessage('assistant', 'Bạn đã xác thực thành công, nhưng tôi chưa tìm thấy lịch nào còn hiệu lực với email này.')
         return
       }
 
@@ -1854,13 +2182,13 @@ export function BookingPage() {
       })
       otpChallengeIdRef.current = ''
       otpCodeRef.current = ''
-      addMessage('assistant', isCancellation ? 'Xác thực thành công. Vui lòng kiểm tra phiếu bên dưới và xác nhận nếu bạn muốn hủy lịch.' : 'Xác thực thành công. Bạn có thể cập nhật thông tin lịch đã đặt bên dưới.')
+      addMessage('assistant', isCancellation ? 'Xác thực thành công. Vui lòng kiểm tra phiếu bên dưới và xác nhận nếu bạn muốn hủy lịch.' : 'Bạn đã xác thực thành công. Bạn có thể cập nhật thông tin lịch đã đặt ngay bên dưới.')
     } catch (error) { setAccessError(''); addMessage('assistant', error.message) } finally { setAccessBusy(false) }
   }
 
   const cancelAccessOtp = () => {
     clearManagementContext({ event: InteractionEvent.CANCEL_ACCESS })
-    addMessage('assistant', 'Tôi đã dừng bước xác thực. Khi cần xem hoặc chỉnh sửa lịch, bạn có thể yêu cầu lại bất cứ lúc nào.')
+    addMessage('assistant', 'Tôi đã dừng bước xác thực rồi. Khi nào bạn cần xem hoặc chỉnh sửa lịch, bạn cứ nhắn cho tôi nhé.')
   }
   const closeBookingDetails = () => {
     clearManagementContext({ event: InteractionEvent.CLOSE_BOOKING_DETAILS })
@@ -1922,7 +2250,13 @@ export function BookingPage() {
     if (!accessProfile) return
     setAccessBusy(true); setAccessError('')
     try {
-      await cancelVerifiedBooking({ bookingId: accessProfile.bookingId, accessToken: accessProfile.accessToken })
+      const cancelled = await cancelVerifiedBooking({ bookingId: accessProfile.bookingId, accessToken: accessProfile.accessToken })
+      // Chỉ báo đã huỷ khi BACKEND nói là đã huỷ. Trước đây bỏ qua hoàn toàn response nên
+      // bất kỳ phản hồi thành công một phần nào cũng bị hiển thị thành "đã huỷ xong".
+      if (cancelled?.booking_status && cancelled.booking_status !== 'cancelled') {
+        setAccessError(`Lịch chưa được huỷ (trạng thái hiện tại: ${cancelled.booking_status}). Bạn thử lại hoặc gọi hotline giúp tôi nhé.`)
+        return
+      }
       clearManagementContext()
       addMessage('assistant', `ViVi đã hủy lịch ${accessProfile.bookingCode}. Khung giờ đã được mở lại.`)
     } catch (error) { setAccessError(error.message) } finally { setAccessBusy(false) }
@@ -1953,7 +2287,7 @@ export function BookingPage() {
       setAccessFlow((current) => current ? { ...current, phase: 'edit', purpose: 'reschedule' } : { phase: 'edit', purpose: 'reschedule', challengeId: '', expiresAt: 0 })
       dispatchInteraction({ type: InteractionEvent.START_RESCHEDULE })
       loadRescheduleSlots(car, { id: targetProfile.showroomId, name: targetProfile.showroomName })
-    } else setAccessError('Không xác định được mẫu xe hoặc showroom của lịch này.')
+    } else setAccessError('Tôi chưa xác định được mẫu xe hoặc showroom của lịch này, nên tạm thời chưa đổi lịch được cho bạn.')
   }
   const beginAccessibleReschedule = async (summary) => {
     const targetProfile = summary.id === accessProfile?.bookingId ? accessProfile : await selectAccessibleBooking(summary)
@@ -1963,8 +2297,11 @@ export function BookingPage() {
     setAccessBusy(true); setAccessError('')
     try {
       const held = await holdVerifiedReschedule({ bookingId: accessProfile.bookingId, slotId: slot.id, accessToken: accessProfile.accessToken })
-      const startsAt = new Date(slot.start_at)
-      setAccessProfile((current) => ({ ...current, slotTime: startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false }), slotDate: new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(startsAt) }))
+      // KHÔNG ghi đè slotTime/slotDate của accessProfile ở bước này. Lịch cũ vẫn đang là lịch
+      // THẬT cho tới khi bấm xác nhận — giữ chỗ mới có thể hết hạn hoặc người dùng đổi ý.
+      // Bản cũ ghi đè ngay tại đây nên phiếu hiện giờ mới trong khi backend vẫn giữ giờ cũ,
+      // và nếu thoát giữa chừng thì người dùng không còn thấy giờ hẹn thật của mình nữa.
+      // Giờ mới đã được RescheduleConfirmModal hiển thị từ chính `state.slot`.
       setRescheduleState((current) => ({ ...current, step: 'pending', slot, newBookingId: held.booking_id }))
       setRescheduleSecondsLeft(Math.max(0, Math.ceil((new Date(held.hold_expires_at).getTime() - Date.now()) / 1000)))
       setExpandedBookingId(accessProfile.bookingId)
@@ -1975,13 +2312,12 @@ export function BookingPage() {
   const confirmReschedule = async () => {
     setAccessBusy(true); setAccessError('')
     try {
-      await updateVerifiedBooking({
-        bookingId: accessProfile.bookingId,
-        accessToken: accessProfile.accessToken,
-        bookerPatch: { full_name: accessProfile.bookerName, phone: accessProfile.phone, email: accessProfile.email },
-        driverPatch: accessProfile.driverName.trim() === accessProfile.bookerName.trim() ? null : { full_name: accessProfile.driverName, phone: accessProfile.phone, email: accessProfile.email },
-        driverSameAsBooker: accessProfile.driverName.trim() === accessProfile.bookerName.trim(),
-      })
+      // Đổi lịch CHỈ dời khung giờ. Bản cũ gọi thêm updateVerifiedBooking() ngay trước đó và
+      // gây hỏng dữ liệu thật sự: nó gán `phone`/`email` của NGƯỜI ĐẶT cho người lái, nên ai
+      // đặt hộ với liên hệ riêng (xem Batch 6) mà đổi lịch là mất sạch liên hệ của người lái.
+      // Nó còn đoán "hai người là một" bằng cách SO SÁNH TÊN — hai người trùng tên là sai ngay.
+      // Backend không đòi cập nhật hồ sơ trước khi dời lịch: confirm_reschedule chỉ kiểm tra
+      // trạng thái hai booking và hạn giữ chỗ (services/booking/management.py).
       await confirmVerifiedReschedule({ bookingId: accessProfile.bookingId, newBookingId: rescheduleState.newBookingId, accessToken: accessProfile.accessToken })
       const startsAt = new Date(rescheduleState.slot.start_at)
       setAccessProfile((current) => ({ ...current, bookingId: rescheduleState.newBookingId, slotTime: startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false }), slotDate: new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(startsAt) }))
@@ -2004,7 +2340,7 @@ export function BookingPage() {
     if (rescheduleSecondsLeft <= 0) {
       setRescheduleState(null)
       dispatchInteraction({ type: InteractionEvent.ACCESS_EDIT })
-      addMessage('assistant', 'Thời gian giữ tạm khung giờ mới đã hết. Lịch cũ của bạn vẫn được giữ nguyên.')
+      addMessage('assistant', 'Thời gian tôi giữ tạm khung giờ mới đã hết. Lịch cũ của bạn vẫn được giữ nguyên, bạn yên tâm nhé.')
       return undefined
     }
     const timer = window.setInterval(() => setRescheduleSecondsLeft((value) => Math.max(0, value - 1)), 1000)
@@ -2019,11 +2355,24 @@ export function BookingPage() {
   const submitPerson = async (event) => {
     event.preventDefault()
     const errors = {}
-    if (person.bookingName.trim().length < 2) errors.bookingName = 'Vui lòng nhập tên người đặt lịch.'
-    if (recipient === 'other' && person.driverName.trim().length < 2) errors.driverName = 'Vui lòng nhập tên người lái thử.'
-    if (person.phone.trim() && !/^(0|\+84)[0-9\s.-]{8,12}$/.test(person.phone.trim())) errors.phone = 'Số điện thoại Việt Nam chưa đúng.'
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(person.email.trim())) errors.email = 'Email bắt buộc và phải đúng định dạng.'
-    if (!person.hasLicense) errors.hasLicense = 'Cần xác nhận giấy phép lái xe trước khi tiếp tục.'
+    if (person.bookingName.trim().length < 2) errors.bookingName = 'Bạn vui lòng cho tôi biết tên người đứng ra đặt lịch.'
+    if (recipient === 'other' && person.driverName.trim().length < 2) errors.driverName = 'Bạn vui lòng cho tôi biết tên người sẽ trực tiếp lái thử.'
+    if (person.phone.trim() && !PHONE_PATTERN.test(person.phone.trim())) errors.phone = 'Số điện thoại này chưa đúng định dạng Việt Nam, bạn kiểm tra lại giúp tôi nhé.'
+    if (!EMAIL_PATTERN.test(person.email.trim())) errors.email = 'Bạn vui lòng nhập email, và nhập đúng định dạng để tôi gửi xác nhận lịch.'
+
+    // Đặt hộ mà người lái có đầu mối riêng: kiểm tra đúng như của người đặt.
+    // Email người lái là BẮT BUỘC ở nhánh này — đã chọn tách liên hệ thì phải có
+    // đường liên lạc thật, không thì tách cũng vô nghĩa.
+    if (recipient === 'other' && person.driverSameContact === false) {
+      if (!EMAIL_PATTERN.test(person.driverEmail.trim())) {
+        errors.driverEmail = 'Bạn vui lòng nhập email của người lái thử, và nhập đúng định dạng.'
+      }
+      if (person.driverPhone.trim() && !PHONE_PATTERN.test(person.driverPhone.trim())) {
+        errors.driverPhone = 'Số điện thoại của người lái thử chưa đúng định dạng, bạn kiểm tra lại nhé.'
+      }
+    }
+
+    if (!person.hasLicense) errors.hasLicense = 'Bạn vui lòng xác nhận người lái thử có giấy phép lái xe phù hợp trước khi tiếp tục.'
     setFormErrors(errors)
     if (Object.keys(errors).length) return
 
@@ -2039,7 +2388,7 @@ export function BookingPage() {
       addMessage('user', 'Tôi đã hoàn tất thông tin người lái.')
       reply('ViVi đã lưu phiếu tạm cho bạn. Bạn hãy kiểm tra lại thông tin và bấm “Xác nhận đặt lịch” nhé.')
     } catch (error) {
-      reply(`Chưa thể lưu thông tin: ${error.message}`)
+      reply(`Tôi chưa lưu được thông tin của bạn: ${error.message}`)
     }
   }
 
@@ -2078,12 +2427,22 @@ export function BookingPage() {
   ] : accessProfile ? [{ id: 'bookings', label: 'Lịch đã đặt', icon: CalendarBlank }] : []
 
   const renderWorkspace = () => {
-    if (activeView === 'bookings' && accessProfile) return <section className="booking-history"><div className="studio-schedule__heading"><span>Lịch đã đặt</span><h2>Chọn lịch cần thao tác</h2></div><div className="booking-history__list">{accessibleBookings.map((booking) => { const expanded = expandedBookingId === booking.id; const details = booking.id === accessProfile.bookingId ? accessProfile : null; const bookingCodeLabel = booking.booking_code || 'Lịch lái thử'; return <div key={booking.id} className={expanded ? 'is-active is-expanded' : ''}><button type="button" onClick={() => { setExpandedBookingId(expanded ? '' : booking.id); if (!expanded) selectAccessibleBooking(booking) }}><strong>{bookingCodeLabel}</strong><small>{booking.display_time || (booking.start_at ? new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(booking.start_at)) : 'Lịch lái thử')}</small></button>{expanded && details && <div className="booking-history__details"><p><span>Mẫu xe</span>{details.vehicleName}</p><p><span>Showroom</span>{details.showroomName}<small>{details.showroomAddress}</small></p><p><span>Thời gian</span>{details.slotTime} · {details.slotDate}{allowedActions.includes('reschedule') && <button type="button" className="booking-history__reschedule" onClick={() => beginAccessibleReschedule(booking)} aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}><CalendarBlank size={18} weight="light" /></button>}</p>{rescheduleState?.step === 'pending' && <p className="booking-history__hold"><span>Khung giờ mới đang được giữ</span>Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}</p>}<p><span>Tư vấn viên</span>{details.advisorName}<small>{details.advisorPhone || 'Chưa có số điện thoại'}</small></p></div>}</div> })}</div></section>
+    if (activeView === 'bookings' && accessProfile) return <section className="booking-history"><div className="studio-schedule__heading"><span>Lịch đã đặt</span><h2>Chọn lịch cần thao tác</h2></div><div className="booking-history__list">{accessibleBookings.map((booking) => { const expanded = expandedBookingId === booking.id; const details = booking.id === accessProfile.bookingId ? accessProfile : null; const bookingCodeLabel = booking.booking_code || 'Lịch lái thử'; return <div key={booking.id} className={expanded ? 'is-active is-expanded' : ''}><button type="button" onClick={() => { setExpandedBookingId(expanded ? '' : booking.id); if (!expanded) selectAccessibleBooking(booking) }}><strong>{bookingCodeLabel}</strong><small>{booking.display_time || (booking.start_at ? new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(booking.start_at)) : 'Lịch lái thử')}</small></button>{expanded && details && <div className="booking-history__details"><p><span>Mẫu xe</span>{details.vehicleName}</p><p><span>Showroom</span>{details.showroomName}<small>{details.showroomAddress}</small></p><p><span>Thời gian</span>{details.slotTime} · {details.slotDate}{allowedActions.includes('reschedule') && <button type="button" className="booking-history__reschedule" onClick={() => beginAccessibleReschedule(booking)} aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}><PencilSimple size={15} weight="bold" /> Đổi giờ</button>}</p>{rescheduleState?.step === 'pending' && <p className="booking-history__hold"><span>Khung giờ mới đang được giữ</span>Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}</p>}<p><span>Tư vấn viên</span>{details.advisorName}<small>{details.advisorPhone || 'Chưa có số điện thoại'}</small></p></div>}</div> })}</div></section>
     if (rescheduleState?.step === 'showroom') return <section className="studio-schedule"><div className="studio-schedule__heading"><span>Showroom hiện tại không còn lịch</span><h2>Chọn showroom khác</h2></div><div className="reschedule-left-grid">{rescheduleState.showrooms.map((showroom) => <button type="button" key={showroom.id} onClick={() => loadRescheduleSlots(rescheduleState.car, showroom)}><strong>{showroom.name}</strong><small>{showroom.address}</small></button>)}</div></section>
     if (rescheduleState?.step === 'schedule') return <SchedulePanel car={rescheduleState.car} showroom={rescheduleState.showroom} slots={groupSlots(rescheduleState.slots)} pendingSlot={null} onPick={(picked) => holdReschedule(rescheduleState.slots.find((slot) => slot.id === picked.slotId))} />
     if (rescheduleState?.step === 'pending') return <SchedulePanel car={rescheduleState.car} showroom={rescheduleState.showroom} slots={groupSlots(rescheduleState.slots)} pendingSlot={{ slotId: rescheduleState.slot.id }} onPick={(picked) => holdReschedule(rescheduleState.slots.find((slot) => slot.id === picked.slotId))} />
     if (rescheduleState?.step === 'confirm') return <section className="studio-schedule"><div className="studio-schedule__heading"><span>Đang chờ xác nhận</span><h2>Xác nhận lịch ở cửa sổ bên phải</h2></div></section>
     if (!selectedCar) return null
+    // Đặt lịch xong: panel trái giữ NGUYÊN như trước — model xe (3D nếu mẫu đó có) nằm trên,
+    // phiếu lịch nằm dưới. Chỉ panel phải đổi từ trang tĩnh về khung chat với ViVi.
+    if (stage === 'success' && selectedShowroom && selectedSlot) {
+      return (
+        <div className="booking-success-documents">
+          <VehiclePanel car={selectedCar} success3d />
+          <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} advisor={bookingAdvisor} compact />
+        </div>
+      )
+    }
     if (activeView === 'map') return <BookingShowroomMap car={selectedCar} showrooms={nearbyShowrooms} selectedId={showroomId} onSelect={setShowroomId} onConfirm={chooseShowroom} userLocation={userLocation} />
     if (activeView === 'schedule' && selectedShowroom) return <SchedulePanel car={selectedCar} showroom={selectedShowroom} slots={slots} pendingSlot={pendingSlot} onPick={chooseSlot} />
     if (activeView === 'ticket' && selectedShowroom && selectedSlot) return <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} advisor={bookingAdvisor} />
@@ -2160,36 +2519,30 @@ export function BookingPage() {
         </button>
       )}
 
-      {!recipient && !resumePending && <RecipientModal onSelect={beginConversation} />}
+      {!recipient && !resumePending && (
+        <RecipientModal
+          onSelect={beginConversation}
+          onLookup={() => {
+            // Chọn 'self' chỉ để đóng modal (modal hiện khi chưa có recipient); người dùng
+            // đi nhánh tra cứu nên câu "đặt cho ai" chưa cần trả lời lúc này.
+            setRecipient('self')
+            startLookup({ addUserMessage: false })
+          }}
+        />
+      )}
       {resumePending && <ResumeModal onContinue={resumeConversation} onRestart={restartConversation} />}
       {successCinematic && selectedCar && (
         <BookingSuccessCinematic car={selectedCar} onComplete={completeBookingSuccess} />
       )}
 
-      {stage === 'success' && selectedCar && selectedShowroom && selectedSlot ? (
-        <div className="booking-success-layout">
-          <div className="booking-success-documents">
-            <VehiclePanel car={selectedCar} success3d />
-            <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} advisor={bookingAdvisor} compact />
-          </div>
-          <section className="vivi-studio vivi-studio--success">
-            <div className="vivi-studio__head">
-              <ViViAvatar />
-              <div><strong>ViVi</strong><small><span /> Lịch đã được xác nhận</small></div>
-            </div>
-            <div className="vivi-success-copy">
-              <div className="vivi-success-copy__status">
-                <span><CheckCircle size={22} weight="regular" /></span>
-                <p>Lịch lái thử đã được xác nhận</p>
-              </div>
-              <h1>Hẹn gặp bạn tại <span>{selectedShowroom.name}.</span></h1>
-              <div className="vivi-success-copy__code"><small>Mã lịch</small><strong>{bookingCode}</strong></div>
-              <p className="vivi-success-copy__note">Để tra cứu, bổ sung hoặc huỷ lịch, bạn chỉ cần cung cấp email đã đăng ký.</p>
-              <div className="vivi-success-copy__actions"><button type="button" onClick={startLookup}>Tra cứu lịch này</button><Link to="/" onClick={() => window.sessionStorage.removeItem(BOOKING_UI_STATE_KEY)}>Về trang chủ</Link></div>
-            </div>
-          </section>
-        </div>
-      ) : (
+      {/* Đặt lịch xong KHÔNG đổi sang một bố cục khác nữa.
+          Trước đây stage 'success' render `booking-success-layout` riêng: panel trái là phiếu,
+          panel phải là một trang tĩnh — đoạn hội thoại với ViVi biến mất, người dùng đang nói
+          chuyện dở thì đột nhiên mất người đối thoại.
+          Nay dùng đúng bố cục 2 màn quen thuộc: TRÁI giữ phiếu lịch (tab "Phiếu lịch" đã có
+          sẵn trong viewOptions cho stage success), PHẢI vẫn là khung chat để ViVi tiếp tục
+          hướng dẫn và trả lời. Xem completeBookingSuccess() và successActions bên dưới. */}
+      {(
         <div className={`booking-studio ${workspaceVisible ? 'booking-studio--split' : 'booking-studio--agent'}`}>
           {workspaceVisible && (
             <section className="booking-workspace">
@@ -2265,6 +2618,16 @@ export function BookingPage() {
                   <ViviStatusTyping />
                 </div>
               )}
+
+              {/* Hướng dẫn sau đặt lịch nằm TRONG mạch hội thoại, như một tấm thẻ ViVi đưa ra,
+                  chứ không phải một trang riêng. Nội dung giàu định dạng (link chỉ đường, số
+                  điện thoại) nên để dạng thẻ thay vì nhét vào tin nhắn văn bản thuần. */}
+              {stage === 'success' && selectedShowroom && selectedSlot && (
+                <div className="vivi-message vivi-message--assistant vivi-message--card">
+                  <ViViAvatar compact />
+                  <BookingNextSteps slot={selectedSlot} person={person} recipient={recipient} />
+                </div>
+              )}
             </div>
 
             <div className="vivi-studio__composer">
@@ -2314,7 +2677,44 @@ export function BookingPage() {
                 onSlot={chooseSlot}
               />
 
-              {allowedActions.some((action) => ['choose_vehicle', 'use_geolocation', 'start_lookup', 'switch_vehicle', 'view_vehicle'].includes(action)) && (
+              {/*
+                Hành động sau khi đặt lịch xong.
+                Chọn theo đúng thứ một người vừa đặt lịch thật sự cần, KHÔNG phải thứ nghe hay:
+                - "Thêm vào lịch" đứng đầu vì bỏ quên buổi hẹn là vấn đề lõi của dự án
+                  (nghiên cứu người dùng có một ca no-show thật). Tạo .ics ngay ở frontend nên
+                  không phụ thuộc email/OTP.
+                - "Đổi hoặc huỷ lịch" vì lo lắng lớn thứ hai là "lỡ bận thì sao".
+                - "Đặt thêm mẫu xe khác" cho người đang so sánh nhiều xe.
+                KHÔNG thêm nút kiểu "Tôi tới trễ thì sao?" hay "Có mất phí không?" — không có
+                API nào trả lời được, mà bịa chính sách cho khách là điều tuyệt đối không làm.
+                Những câu đó người dùng vẫn gõ tự do cho ViVi được, và thẻ hướng dẫn phía trên
+                đã đưa sẵn hotline + số showroom.
+              */}
+              {stage === 'success' && (
+                <div className="vivi-capabilities vivi-capabilities--success">
+                  <button type="button" onClick={addBookingToCalendar}>
+                    <CalendarBlank size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                    Thêm vào lịch của tôi
+                  </button>
+                  <button type="button" onClick={() => startLookup({ addUserMessage: false })}>
+                    <ArrowsClockwise size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                    Đổi hoặc huỷ lịch
+                  </button>
+                  <button type="button" onClick={bookAnotherVehicle}>
+                    <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                    Đặt thêm mẫu xe khác
+                  </button>
+                </div>
+              )}
+
+              {/* Hàng nút nhanh ngay trên ô nhập.
+                  ĐÃ GỠ 2 nút vì trùng nguyên si với thứ đã có sẵn trên màn hình:
+                  - "Tra cứu lịch đã đặt"  → trùng nút "Tra cứu lịch" ở header ViVi (cùng
+                    handler startLookup, cùng điều kiện allowedActions.includes('start_lookup')).
+                  - "Đổi mẫu xe khác"      → trùng tab "Đổi mẫu xe" ở panel trái, bấm vào cũng
+                    mở đúng bảng chọn xe đó.
+                  Đừng thêm lại: hai nút này từng làm màn agent có 2 bản của cùng một hành động. */}
+              {allowedActions.some((action) => ['choose_vehicle', 'use_geolocation', 'view_vehicle'].includes(action)) && (
                 <div className="vivi-capabilities">
                   {allowedActions.includes('choose_vehicle') && (
                     <button type="button" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">
@@ -2326,16 +2726,6 @@ export function BookingPage() {
                     <button type="button" onClick={requestUserLocation}>
                       <NavigationArrow size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
                       Định vị hiện tại
-                    </button>
-                  )}
-                  {allowedActions.includes('start_lookup') && <button type="button" onClick={startLookup}>
-                    <CalendarBlank size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                    Tra cứu lịch đã đặt
-                  </button>}
-                  {selectedCar && allowedActions.includes('switch_vehicle') && (
-                    <button type="button" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">
-                      <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                      Đổi mẫu xe khác
                     </button>
                   )}
                   {allowedActions.includes('view_vehicle') && (
