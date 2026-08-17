@@ -8,7 +8,9 @@
  * - Mảng `links` (dòng ~8) và `productGroups` (dòng ~16): TOÀN BỘ menu nằm ở 2 mảng này.
  *   Muốn thêm/xoá/đổi tên mục menu thì sửa ngay đây, không cần đụng chỗ khác.
  * - Header sticky + logo + mega-menu "Ô tô" (2 nhóm: Động cơ điện / Dòng xe dịch vụ).
- * - Nút "Đặt lịch lái thử": tự nhớ mẫu xe vừa xem và gắn kèm ?car=… vào link.
+ * - Nút "Đặt lịch lái thử": đang ở /models/:id hoặc /cars/:id thì tự gắn ?car=<id> vào link,
+ *   các trang khác dẫn thẳng /booking. Đây là CTA đặt lịch duy nhất trong header — đừng
+ *   thêm mục menu nào cũng trỏ /booking nữa.
  * - Menu overlay cho mobile (nút hamburger), đóng bằng phím Esc.
  * - Dải băng vàng "Không thể kết nối backend" + nút thử lại.
  * - Link "Đi đến nội dung chính" cho người dùng bàn phím/screen reader.
@@ -22,12 +24,14 @@ import { Brand } from './Brand'
 import { IslandButton } from './IslandButton'
 import { useBackendStatus } from '../context/BackendStatusContext'
 
+// KHÔNG thêm mục nào dẫn về /booking vào mảng này: nút "Đặt lịch lái thử" bên phải
+// header luôn hiển thị (site-nav là position:fixed) nên một mục menu cùng đích chỉ làm
+// người dùng phải chọn giữa hai thứ giống hệt nhau. Mục "ViVi đặt lịch" cũ đã bỏ vì lý do đó.
 const links = [
   { label: 'Công nghệ', to: '/#technology' },
   { label: 'Hệ sinh thái', to: '/#ecosystem' },
   { label: 'Hậu mãi', to: '/after-sales' },
   { label: 'Pin & trạm sạc', to: '/charging' },
-  { label: 'ViVi đặt lịch', to: '/booking' },
 ]
 
 const productGroups = [
@@ -38,8 +42,12 @@ const productGroups = [
 export function AppShell({ children, navTheme = 'light' }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [productsOpen, setProductsOpen] = useState(false)
-  const bookingHref = '/booking'
   const location = useLocation()
+  // Đang đứng ở trang chi tiết xe thì nút đặt lịch phải mang theo đúng mẫu xe đó.
+  // Trước đây href cố định là '/booking' nên nút nổi bật nhất trang lại là nút DUY NHẤT
+  // làm rơi mẫu xe, trong khi hero, dock và CTA cuối trang đều gắn ?car=…
+  const detailMatch = location.pathname.match(/^\/(?:models|cars)\/([^/]+)/)
+  const bookingHref = detailMatch ? `/booking?car=${detailMatch[1]}` : '/booking'
   const { bookingStatus, retry } = useBackendStatus()
 
   useEffect(() => {
@@ -120,7 +128,7 @@ export function AppShell({ children, navTheme = 'light' }) {
 
           <div className="site-nav__actions">
             <IslandButton to={bookingHref} variant="blue" className="site-nav__booking">
-              Đặt lịch lái thử
+              Tra cứu và đặt lịch lái thử
             </IslandButton>
             <button
               className={`menu-toggle ${menuOpen ? 'is-open' : ''}`}

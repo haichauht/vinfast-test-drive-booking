@@ -338,6 +338,35 @@ svg {
   background: rgba(255, 255, 255, 0.1);
 }
 
+/*
+ * Vòng focus bàn phím cho các CTA/điều hướng DÙNG CHUNG.
+ * Trước đây .island-button, link header/footer và dock đặt lịch không có style :focus-visible
+ * nào, chỉ còn viền mặc định của trình duyệt — gần như không thấy khi nút nằm trên ảnh tối.
+ * Chỉ thêm outline bằng token có sẵn; màu nền, bo góc và hiệu ứng hover của nút giữ nguyên.
+ * Ba variant --light / --ghost-light hiện chỉ dùng trên nền tối nên đổi sang outline trắng.
+ */
+/* Mặc định: nền sáng (paper/surface/#e9ebea) → outline xanh thương hiệu. */
+.island-button:focus-visible,
+.site-nav__links a:focus-visible,
+.site-nav__products > button:focus-visible,
+.menu-toggle:focus-visible,
+.detail-back:focus-visible,
+.detail-booking-dock > a:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
+/* Ngoại lệ theo NGỮ CẢNH, không theo variant: cùng .island-button--light xuất hiện cả trên
+   hero chi tiết xe (nền sáng #e9ebea) lẫn hai section CTA nền #101318, nên phải chọn màu
+   outline theo section bao ngoài. Xanh #1464f4 trên #101318 chỉ đạt ~2,7:1, dưới ngưỡng 3:1. */
+.home-action :focus-visible,
+.detail-action :focus-visible,
+.menu-overlay nav a:focus-visible,
+.site-footer nav a:focus-visible {
+  outline: 2px solid var(--surface);
+  outline-offset: 3px;
+}
+
 .double-bezel {
   padding: 7px;
   border-radius: var(--radius-xl);
@@ -904,6 +933,12 @@ svg {
   background: rgba(23, 26, 32, 0.035);
 }
 
+.model-tabs button:focus-visible {
+  z-index: 1;
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
 .model-tabs button span {
   font-size: 0.94rem;
   font-weight: 700;
@@ -916,11 +951,12 @@ svg {
 
 .vehicle-rail {
   display: grid;
-  grid-auto-columns: minmax(330px, 39vw);
+  grid-auto-columns: minmax(430px, 40vw);
   grid-auto-flow: column;
-  gap: 24px;
+  gap: 28px;
+  align-items: stretch;
   overflow-x: auto;
-  padding: 8px 2px 25px;
+  padding: 8px 2px 28px;
   scroll-behavior: smooth;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
@@ -933,29 +969,24 @@ svg {
 .vehicle-tile {
   position: relative;
   display: grid;
+  min-width: 0;
   gap: 13px;
+  padding: 26px 26px 17px;
+  border-block: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(236, 238, 237, 0.52), rgba(255, 255, 255, 0) 48%);
   scroll-snap-align: start;
 }
 
-.vehicle-tile__shell {
-  display: block;
-  padding: 0;
-  background: transparent;
-  transition: transform 0.75s var(--ease-heavy);
-}
-
-.vehicle-tile:hover .vehicle-tile__shell {
-  transform: translateY(-7px);
-}
-
+/* Từ 17/08/2026 phần tử này LÀ thẻ <a> bọc cả thẻ xe, nên phải khử trang trí mặc định của
+   link — nếu không mọi chữ trong thẻ sẽ bị gạch chân và đổi sang màu link. */
 .vehicle-tile__core {
   position: relative;
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  min-height: 490px;
+  color: inherit;
+  text-decoration: none;
+  grid-template-rows: auto minmax(270px, 1fr) auto auto auto auto;
+  min-height: 650px;
   overflow: visible;
-  padding: 26px;
-  background: transparent;
 }
 
 /* Model xe là vật thể nổi trên cùng nền section, không phải ảnh đặt trong một card.
@@ -964,24 +995,28 @@ svg {
   content: '';
   position: absolute;
   z-index: 0;
-  top: 21%;
-  right: 4%;
-  bottom: 15%;
-  left: 4%;
+  top: 8%;
+  right: 2%;
+  bottom: 42%;
+  left: 2%;
   background: radial-gradient(ellipse at 50% 56%, rgba(255, 255, 255, 0.84), rgba(226, 230, 231, 0.3) 48%, transparent 74%);
   pointer-events: none;
 }
 
 .vehicle-tile__meta,
-.vehicle-tile__copy {
+.vehicle-tile__copy,
+.vehicle-tile__facts,
+.vehicle-tile__palette,
+.vehicle-tile__actions {
   position: relative;
   z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .vehicle-tile__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
   color: var(--muted);
   font-size: 0.69rem;
   font-weight: 650;
@@ -990,10 +1025,12 @@ svg {
 }
 
 .vehicle-tile__image {
+  position: relative;
+  z-index: 1;
   align-self: center;
-  width: 115%;
-  height: 300px;
-  margin-left: -7.5%;
+  width: 112%;
+  height: 286px;
+  margin-left: -6%;
   overflow: visible;
 }
 
@@ -1044,45 +1081,235 @@ svg {
   transform: scale(1);
 }
 
-.vehicle-tile__copy > span:first-child {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.vehicle-tile__copy {
+  display: grid;
+  gap: 5px;
+  align-content: start;
 }
 
-.vehicle-tile__copy strong {
-  font-size: clamp(1.65rem, 2.4vw, 2.5rem);
+.vehicle-tile__copy h3 {
+  margin: 0;
+  font-size: clamp(1.85rem, 2.5vw, 2.65rem);
   font-weight: 600;
   letter-spacing: -0.045em;
+  line-height: 1;
 }
 
-.vehicle-tile__copy small {
+.vehicle-tile__copy p {
+  margin: 3px 0 0;
   color: var(--muted);
-  font-size: 0.77rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
-.vehicle-tile__arrow {
+.vehicle-tile__copy > span {
+  margin-top: 5px;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.vehicle-tile__facts {
   display: grid;
-  width: 42px;
-  height: 42px;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--surface);
-  background: var(--ink);
-  transition: transform 0.65s var(--ease-heavy), background 0.65s var(--ease-heavy);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 22px 0 0;
+  border-block: 1px solid var(--line);
 }
 
-.vehicle-tile:hover .vehicle-tile__arrow {
-  background: var(--blue);
-  transform: translateX(4px);
+.vehicle-tile__facts > div {
+  min-width: 0;
+  padding: 15px 14px 16px 0;
+}
+
+.vehicle-tile__facts > div + div {
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
+.vehicle-tile__facts dt,
+.vehicle-tile__facts dd {
+  margin: 0;
+}
+
+.vehicle-tile__facts dt,
+.vehicle-tile__palette > span {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+}
+
+.vehicle-tile__facts dd {
+  margin-top: 7px;
+  font-size: 0.85rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.vehicle-tile__facts .is-missing dd,
+.vehicle-tile__palette > small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.vehicle-tile__palette {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 56px;
+  border-bottom: 1px solid var(--line);
+}
+
+.vehicle-tile__palette > small,
+.vehicle-tile__swatches small {
+  font-size: 0.7rem;
+}
+
+.vehicle-tile__swatches {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+/* Chấm màu cố ý NHỎ: đây là tín hiệu "mẫu này có mấy màu", không phải bộ chọn màu.
+   Bộ chọn màu đầy đủ (ảnh xe đổi theo màu) nằm ở trang chi tiết.
+   KHÔNG viền, KHÔNG vòng sáng: đã thử viền trắng + vòng ngoài, anh Minh thấy xấu (16/08/2026).
+   Chỉ là chấm màu phẳng. */
+.vehicle-tile__swatch {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  overflow: hidden;
+  border-radius: 50%;
+}
+
+/* Chip ảnh chính hãng (mẫu backend chưa publish hex): cắt tròn đúng như chấm màu phẳng. */
+.vehicle-tile__swatch img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.vehicle-tile__swatches small {
+  margin-left: 4px;
+  color: var(--muted);
+}
+
+/* Một cột: cột thứ hai trước đây là nút "Đăng ký lái thử" đã gỡ. */
+.vehicle-tile__actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  padding-top: 20px;
+}
+
+.vehicle-tile__detail-link {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 8px;
+  min-height: 48px;
+  padding-inline: 4px;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 650;
+  white-space: nowrap;
+  transition: color 0.45s var(--ease-heavy);
+}
+
+/* Vùng bấm trải rộng toàn thẻ: bấm vào ảnh xe / tên xe / bất kỳ đâu trong thẻ đều mở trang
+   chi tiết, trong khi vẫn chỉ có MỘT thẻ <a> thật. Nếu sau này thêm nút hay link thứ hai vào
+   thẻ, nhớ cho nó `position: relative; z-index: 2` để không bị lớp phủ này nuốt mất. */
+
+/* Cho biết cả thẻ bấm được, không riêng dòng chữ. */
+.vehicle-tile {
+  cursor: pointer;
+}
+
+.vehicle-tile__core:hover .vehicle-tile__detail-link,
+.vehicle-tile__core:focus-visible .vehicle-tile__detail-link {
+  color: var(--blue);
+}
+
+/*
+ * Chỉ dấu "tên xe bấm được".
+ * Anh Minh yêu cầu GIỮ NGUYÊN màu và font của dòng tên xe, chỉ thêm phần cảm nhận. Nên ở trạng
+ * thái nghỉ chữ không đổi một chút nào; gạch chân chỉ hiện khi rê chuột hoặc khi focus bằng bàn
+ * phím. Đặt sẵn `text-decoration-color: transparent` để nét gạch mờ dần vào chứ không bật cụp.
+ */
+.vehicle-tile__copy h3 {
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 7px;
+  transition: text-decoration-color 0.32s var(--ease-soft);
+}
+
+.vehicle-tile__core:hover .vehicle-tile__copy h3,
+.vehicle-tile__core:focus-visible .vehicle-tile__copy h3 {
+  text-decoration-color: currentColor;
+}
+
+.vehicle-tile__core:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 6px;
+  border-radius: var(--radius-md);
+}
+
+/* .vehicle-tile__booking và .vehicle-tile__unavailable đã xoá cùng nút "Đăng ký lái thử". */
+.vehicle-tile__detail-link:focus-visible,
+.rail-controls button:focus-visible,
+.vehicle-empty--error button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
 }
 
 .vehicle-tile__index {
-  padding-left: 8px;
   color: rgba(23, 26, 32, 0.35);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.16em;
+}
+
+.vehicle-rail--loading {
+  position: relative;
+}
+
+.vehicle-tile--skeleton {
+  grid-template-rows: 16px 290px 42px 82px 52px;
+  min-height: 650px;
+}
+
+.vehicle-skeleton {
+  display: block;
+  overflow: hidden;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--paper-soft), #f7f8f7, var(--paper-soft));
+  background-size: 220% 100%;
+  animation: vehicle-skeleton-shift 1.4s ease-in-out infinite;
+}
+
+.vehicle-skeleton--meta { width: 54%; }
+.vehicle-skeleton--image { width: 100%; border-radius: 24px; }
+.vehicle-skeleton--title { width: 64%; }
+.vehicle-skeleton--facts,
+.vehicle-skeleton--actions { width: 100%; border-radius: 12px; }
+
+.vehicle-loading-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@keyframes vehicle-skeleton-shift {
+  to { background-position: -220% 0; }
 }
 
 .rail-controls {
@@ -1127,6 +1354,27 @@ svg {
   color: var(--ink);
   font-size: 1.1rem;
   font-weight: 650;
+}
+
+.vehicle-empty span {
+  max-width: 48ch;
+  line-height: 1.55;
+}
+
+.vehicle-empty--error {
+  gap: 4px;
+}
+
+.vehicle-empty--error button {
+  min-height: 48px;
+  margin-top: 16px;
+  padding: 0 20px;
+  border-radius: 999px;
+  color: var(--surface);
+  background: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
 }
 
 /* Ownership bento */
@@ -1516,6 +1764,19 @@ svg {
   line-height: 1.6;
 }
 
+/* Lối vào tra cứu lịch dưới CTA cuối trang chủ — chữ thường, cố ý nhẹ hơn nút chính. */
+.home-action__manage {
+  margin: 18px 0 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.82rem;
+}
+
+.home-action__manage a {
+  color: var(--surface);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .home-action__buttons,
 .detail-action__buttons {
   display: flex;
@@ -1694,6 +1955,142 @@ svg {
   display: inline;
 }
 
+/* Vehicle detail IA: overview and non-sticky section index. */
+#overview,
+#colors,
+#exterior,
+#interior,
+#technology,
+#specifications {
+  scroll-margin-top: 112px;
+}
+
+.detail-overview {
+  background: var(--surface);
+}
+
+.detail-overview__intro {
+  padding-top: clamp(112px, 10vw, 152px);
+}
+
+.detail-overview__heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.55fr);
+  gap: clamp(42px, 8vw, 124px);
+  align-items: end;
+}
+
+.detail-overview__heading .eyebrow {
+  grid-column: 1 / -1;
+  margin-bottom: -18px;
+}
+
+.detail-overview__heading h2 {
+  max-width: 980px;
+  margin: 0;
+  font-size: clamp(2.8rem, 5.2vw, 5.6rem);
+  font-weight: 520;
+  letter-spacing: -0.065em;
+  line-height: 0.98;
+}
+
+.detail-overview__heading > p:last-child {
+  max-width: 48ch;
+  margin: 0 0 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: clamp(0.95rem, 0.9rem + 0.22vw, 1.08rem);
+  line-height: 1.65;
+}
+
+.detail-overview__facts {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.35fr) repeat(3, minmax(0, 1fr));
+  margin: clamp(72px, 7vw, 104px) 0 0;
+  border-block: 1px solid var(--line);
+}
+
+.detail-overview__facts > div {
+  display: grid;
+  align-content: space-between;
+  gap: 28px;
+  min-width: 0;
+  min-height: 148px;
+  padding: 23px 24px 24px 0;
+}
+
+.detail-overview__facts > div + div {
+  padding-left: 24px;
+  border-left: 1px solid var(--line);
+}
+
+.detail-overview__facts dt,
+.detail-overview__facts dd {
+  margin: 0;
+}
+
+.detail-overview__facts dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.035em;
+  line-height: 1.4;
+}
+
+.detail-overview__facts dd {
+  overflow-wrap: anywhere;
+  font-family: var(--font-display);
+  font-size: clamp(1.12rem, 1.65vw, 1.72rem);
+  font-weight: 590;
+  letter-spacing: -0.035em;
+  line-height: 1.16;
+}
+
+.detail-overview__facts .is-missing dd {
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.detail-overview__anchors {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+.detail-overview__anchors a {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  padding: 0 24px;
+  border-left: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  font-weight: 650;
+  transition: color 0.4s var(--ease-heavy), background 0.4s var(--ease-heavy);
+}
+
+.detail-overview__anchors a:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.detail-overview__anchors a:hover {
+  color: var(--blue);
+}
+
+.detail-overview__anchors a:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.detail-overview .car-manifesto {
+  padding: clamp(96px, 9vw, 138px) 0 clamp(126px, 12vw, 178px);
+}
+
 .detail-specs {
   padding: 168px 0 150px;
   background: var(--paper);
@@ -1791,6 +2188,145 @@ svg {
   display: grid;
   gap: 140px;
   padding-bottom: 80px;
+}
+
+.detail-story--structured {
+  padding: 0;
+}
+
+.detail-story-group {
+  padding: clamp(120px, 13vw, 176px) 0;
+}
+
+.detail-story-group + .detail-story-group {
+  border-top: 1px solid rgba(255, 255, 255, 0.11);
+}
+
+/*
+ * Mục CHỈ có phần dẫn chuyện, không có chapter ảnh nào — ví dụ "Ngoại thất" của VF 9: backend
+ * không trả chapter ngoại thất, mục vẫn hiện vì bên dưới còn bộ xem 3D.
+ * Giữ nguyên lưới 2 cột trong trường hợp này sẽ chừa lại một mảng tối rỗng to bằng nửa màn
+ * hình bên phải, nhìn hệt như ảnh bị lỗi không tải được. Đổ về một cột.
+ */
+.detail-story-group.is-empty {
+  padding-block: clamp(84px, 8vw, 112px);
+}
+
+.detail-story-group.is-empty .detail-story__grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.detail-story-group.is-empty .detail-story__aside {
+  position: static;
+  max-width: 760px;
+}
+
+.detail-story-group--interior {
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.detail-story--structured .detail-story__chapters {
+  padding-bottom: 0;
+}
+
+.detail-story-group__feature {
+  margin-top: clamp(88px, 10vw, 144px);
+}
+
+.detail-story-group__feature:empty {
+  display: none;
+}
+
+/* .detail-story__empty đã xoá cùng ô "Chưa có chương hình ảnh…" trong CarDetailPage.jsx:
+   mục rỗng nay ẩn hẳn hoặc đổ về một cột, không in dòng báo thiếu ảnh nữa. */
+
+/*
+ * Dải ảnh sản phẩm bổ sung trong từng mục của trang chi tiết xe.
+ * Component: DetailGalleryStrip (CarDetailPage.jsx) · dữ liệu: data/vehicle-gallery.js
+ *
+ * Nằm trên nền TỐI #101318 của .detail-story, nên cách đóng khung phải theo từng loại ảnh:
+ *   .is-cutout → đế SÁNG + contain. Ảnh tách nền đặt thẳng lên nền tối thì xe đen biến mất.
+ *   .is-dark   → viền tối, ảnh tràn khung. Viền sáng sẽ cắt ngang ảnh nội thất tối.
+ *   .is-photo  → viền trung tính, ảnh tràn khung.
+ *
+ * auto-fill + dense: ô không bao giờ hở giữa lưới, kể cả khi mục chỉ có 1–2 ảnh.
+ * Cố ý KHÔNG dùng lưới 3 thẻ bằng nhau — cứ 3 ô lại có 1 ô rộng gấp đôi để có nhịp.
+ */
+/*
+ * ══ CÁCH VINFAST TRÌNH BÀY ẢNH — đã đọc CSS bản crawl để làm theo ══
+ * Toàn bộ quy tắc của họ gói gọn trong một dòng:
+ *     .car-preview .vf-swiper-collection img { width: 100% }
+ * Không aspect-ratio, không object-fit, không khung, không đế màu, không cắt.
+ * Ảnh nhận bề rộng của cột, chiều cao tự do theo tỉ lệ gốc — thấy TRỌN ảnh, chỉ nhỏ lại.
+ *
+ * Bản trước em làm ngược: ép aspect-ratio + object-fit + đế sáng cho ảnh tách nền. Kết quả
+ * là ảnh bị cắt/phóng và mỗi tấm nằm trong một hộp trắng — anh Minh phản ánh đúng.
+ *
+ * Chiều cao khác nhau thì dùng CSS columns (masonry) để xếp khít, thay vì ép mọi ảnh
+ * về chung một chiều cao.
+ */
+/*
+ * Lưới ảnh bổ sung — quy tắc do anh Minh chốt:
+ *   1 ảnh  → chiếm trọn bề ngang cho cân, không nằm lệch một bên.
+ *   2 ảnh  → một trái một phải.
+ *   3+ ảnh → hai cột; ảnh cuối bị lẻ hàng thì kéo dài hết bề ngang.
+ *
+ * Dùng GRID chứ KHÔNG dùng CSS `columns`: `columns` để trình duyệt tự cân theo chiều cao,
+ * nên hai ảnh chênh lệch chiều cao có thể bị dồn hết vào một cột và bỏ trống cột kia —
+ * đúng lỗi đã gặp ở mục Ngoại thất VF 7.
+ */
+.detail-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 22px;
+  margin-top: 26px;
+}
+
+.detail-gallery[data-count="1"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Ảnh cuối đứng lẻ một mình ở hàng cuối → trải hết bề ngang thay vì bỏ trống nửa bên. */
+.detail-gallery__item:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 780px) {
+  .detail-gallery { grid-template-columns: minmax(0, 1fr); }
+}
+
+.detail-gallery__item {
+  margin: 0;
+  min-width: 0;
+}
+
+/*
+ * Đúng công thức của VinFast: ảnh rộng bằng cột, cao tự do. Không object-fit nên KHÔNG
+ * có gì bị cắt; không nền nên ảnh tách nền hoà thẳng vào nền section thay vì nằm trong hộp.
+ */
+/* Bo góc bằng lưới ảnh của trang (26px) để hai khối ảnh trên cùng trang cùng một ngôn ngữ. */
+.detail-gallery__item img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 26px;
+}
+
+.detail-gallery__item .smart-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  background: none;
+}
+
+.detail-gallery__item figcaption {
+  margin-top: 10px;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .detail-chapter__media .double-bezel__core {
@@ -1979,11 +2515,14 @@ svg {
   to { opacity: 1; transform: translateX(0); }
 }
 
+/* Một cột: cột thứ hai trước đây dành cho .color-explorer__action (nút đặt lịch đã gỡ).
+   Để nguyên "minmax(0,1fr) auto" thì track rỗng vẫn ăn column-gap tới 60px, làm dải swatch
+   hụt bề ngang và thừa khoảng trắng bên phải. Khôi phục nút thì trả lại 2 track ở đây. */
 .color-explorer__palette {
   display: grid;
   grid-area: palette;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 24px clamp(22px, 4vw, 60px);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
   align-items: end;
   padding-top: 4px;
 }
@@ -2041,6 +2580,26 @@ svg {
   gap: 11px;
 }
 
+.color-explorer__single-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--muted);
+}
+
+.color-explorer__single-color > span {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border: 4px solid var(--surface);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+
+.color-explorer__single-color small {
+  font-size: 0.72rem;
+}
+
 .color-explorer__swatches button {
   position: relative;
   display: grid;
@@ -2063,6 +2622,20 @@ svg {
   box-shadow: inset 0 0 0 1px rgba(23, 26, 32, 0.15), inset 0 2px 3px rgba(255, 255, 255, 0.25);
 }
 
+/* Ô màu vẽ bằng ảnh chip chính hãng. Dùng chung kích thước và bo tròn với ô tô bằng hex,
+   chỉ khác là ảnh nên cần overflow: hidden để cắt tròn. */
+.color-explorer__swatch-image {
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.color-explorer__swatch-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .color-explorer__swatches button:hover {
   transform: translateY(-2px) scale(1.035);
 }
@@ -2083,6 +2656,94 @@ svg {
 
 .color-explorer__action .island-button {
   min-width: 208px;
+}
+
+.color-explorer__empty {
+  display: grid;
+  gap: 20px;
+  padding: clamp(52px, 7vw, 96px) 0;
+  border-block: 1px solid var(--line);
+}
+
+.color-explorer.color-explorer--empty {
+  padding-block: clamp(80px, 8vw, 112px);
+}
+
+.color-explorer__empty h2 {
+  max-width: 1000px;
+  margin: 0;
+}
+
+.color-explorer__empty > p:not(.eyebrow) {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.color-explorer__empty > span {
+  width: fit-content;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.detail-specs__groups {
+  display: grid;
+  gap: 76px;
+  margin-top: 82px;
+}
+
+.detail-specs__group > h3 {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.detail-specs__group .spec-strip {
+  margin-top: 18px;
+}
+
+.spec-strip__item dt,
+.spec-strip__item dd {
+  margin: 0;
+}
+
+.spec-strip__item dd {
+  order: -1;
+  font-size: clamp(1.8rem, 3.3vw, 3.55rem);
+  font-weight: 540;
+  letter-spacing: -0.05em;
+  line-height: 1.1;
+}
+
+.spec-strip__item dt {
+  color: var(--muted);
+  font-size: 0.79rem;
+}
+
+.spec-strip__item:nth-child(4n + 1) {
+  border-left: 0;
+}
+
+.spec-strip__item:nth-child(n + 5) {
+  border-top: 1px solid var(--line);
+}
+
+.detail-specs__empty {
+  margin-top: 82px;
+  padding: 42px 0;
+  border-block: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.detail-specs__empty p {
+  margin: 0;
 }
 
 .brochure-note {
@@ -2187,6 +2848,63 @@ svg {
   min-height: 100dvh;
   place-items: center;
   padding: 140px 32px 80px;
+}
+
+.detail-state {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 140px 32px 80px;
+  background: var(--paper);
+}
+
+.detail-state__inner {
+  width: min(100%, 820px);
+  padding-block: 42px;
+  border-block: 1px solid var(--line);
+}
+
+.detail-state h1 {
+  max-width: 780px;
+  margin: 0;
+  font-size: clamp(2.7rem, 6vw, 5.8rem);
+  font-weight: 520;
+  letter-spacing: -0.065em;
+  line-height: 0.98;
+}
+
+.detail-state__inner > p:not(.eyebrow) {
+  max-width: 58ch;
+  margin: 24px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.detail-state button {
+  min-height: 48px;
+  margin-top: 28px;
+  padding: 0 22px;
+  border-radius: 999px;
+  color: var(--surface);
+  background: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: transform 0.35s var(--ease-heavy), background 0.35s var(--ease-heavy);
+}
+
+.detail-state button:hover {
+  background: var(--blue);
+  transform: translateY(-2px);
+}
+
+.detail-state button:active {
+  transform: scale(0.98);
+}
+
+.detail-state button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
 }
 
 .not-found__inner {
@@ -3748,13 +4466,52 @@ svg {
     gap: 13px;
   }
 
+  .vehicle-tile {
+    padding: 21px 20px 16px;
+  }
+
   .vehicle-tile__core {
-    min-height: 420px;
-    padding: 21px;
+    grid-template-rows: auto minmax(230px, 1fr) auto auto auto auto;
+    min-height: 700px;
   }
 
   .vehicle-tile__image {
     height: 245px;
+  }
+
+  .vehicle-tile__image.vehicle-shot--photo,
+  .vehicle-tile__image.vehicle-shot--plate {
+    height: 230px;
+  }
+
+  .vehicle-tile__facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vehicle-tile__facts > div:nth-child(3) {
+    grid-column: 1 / -1;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .vehicle-tile__palette {
+    flex-wrap: wrap;
+    padding-block: 12px;
+  }
+
+  .vehicle-tile__actions {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .vehicle-tile__detail-link {
+    justify-content: space-between;
+    justify-self: stretch;
+  }
+
+  .vehicle-tile--skeleton {
+    min-height: 700px;
   }
 
   .rail-controls {
@@ -4232,9 +4989,14 @@ svg {
   line-height: 0.98;
 }
 
+/*
+ * MỘT cột, không phải hai.
+ * Trước đây là lưới 2 cột, hợp khi chỉ có 2 lựa chọn. Từ khi thêm "Tra cứu lịch đã đặt"
+ * thành 3 lựa chọn thì hàng dưới chỉ có 1 ô, chừa hẳn một khoảng trống bên phải — lệch hẳn.
+ * Xếp dọc thì ba lựa chọn cùng bề ngang, cùng trọng số, và cũng đúng thứ tự đọc.
+ */
 .recipient-modal__choices {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -4368,6 +5130,15 @@ svg {
   animation: workspace-enter 0.58s var(--ease-heavy) both;
 }
 
+/*
+ * ══ BẢNG "LỊCH ĐÃ ĐẶT" (nhánh tra cứu) ══
+ *
+ * Viết lại 17/08/2026: bản trước tự chế một ngôn ngữ riêng — bo góc 14px/8px (web dùng
+ * 17/24/32), màu vá tay `#f7fafc` `#edf5ff` `#f1f3f5` `#4d6074` (web có token sẵn), và MÃ LỊCH
+ * để font body trong khi mọi mã khác trên web (mã phiếu ở màn thành công) đều dùng font display
+ * + tabular-nums. Nhìn cạnh phần còn lại là thấy lệch ngay.
+ * Nay chỉ dùng token và đúng thang chữ đang có, không thêm biến mới.
+ */
 .booking-history {
   height: 100%;
   padding: 92px clamp(20px, 4vw, 48px) 32px;
@@ -4376,29 +5147,36 @@ svg {
 
 .booking-history__list {
   display: grid;
-  gap: 10px;
-  margin-top: 20px;
+  gap: 12px;
+  margin-top: 22px;
 }
 
 .booking-history__list > div {
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: #fff;
+  border-radius: var(--radius-md);
+  background: var(--surface);
   cursor: pointer;
-  transition: border-color .2s, background .2s;
+  transition: border-color 0.24s var(--ease-soft), background 0.24s var(--ease-soft),
+    box-shadow 0.24s var(--ease-soft);
+}
+
+.booking-history__list > div:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-diffuse);
 }
 
 .booking-history__list > div.is-active {
   border-color: var(--blue);
-  background: #edf5ff;
+  background: var(--surface);
+  box-shadow: var(--shadow-diffuse);
 }
 
 .booking-history__list > div > button:first-child {
   display: grid;
   width: 100%;
-  gap: 4px;
-  padding: 14px 16px;
+  gap: 5px;
+  padding: 16px 18px;
   border: 0;
   color: var(--ink);
   background: transparent;
@@ -4406,22 +5184,95 @@ svg {
   cursor: pointer;
 }
 
-.booking-history__list > div > button:first-child:hover { background: #f7fafc; }
-.booking-history__list > div.is-active > button:first-child { background: #edf5ff; }
+.booking-history__list > div > button:first-child:hover { background: rgba(23, 26, 32, 0.022); }
+.booking-history__list > div.is-active > button:first-child { background: transparent; }
 
 .booking-history__list strong,
 .booking-history__list span,
 .booking-history__list small,
 .booking-history__list em { display: block; }
-.booking-history__list span { color: var(--ink); font-size: .86rem; }
-.booking-history__list small { color: var(--muted); font-size: .78rem; }
-.booking-history__list em { color: var(--blue); font-size: .72rem; font-style: normal; font-weight: 650; }
-.booking-history__details { display: grid; gap: 10px; padding: 0 16px 16px; border-top: 1px solid var(--line); }
-.booking-history__details p { position: relative; display: grid; gap: 2px; margin: 0; color: var(--ink); font-size: .88rem; }
-.booking-history__details p > span { color: var(--muted); font-size: .7rem; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
-.booking-history__details p small { color: var(--muted); font-size: .76rem; }
-.booking-history__reschedule { position: absolute; right: 0; top: 50%; display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: #4d6074; background: #f1f3f5; cursor: pointer; transform: translateY(-20%); }
-.booking-history__reschedule:hover { color: var(--blue); background: #e6f1ff; }
+
+/* Mã lịch: cùng cách trình bày với mã phiếu ở màn đặt xong (.studio-ticket > header strong). */
+.booking-history__list > div > button:first-child strong {
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.booking-history__list span { color: var(--ink); font-size: 0.86rem; }
+.booking-history__list small { color: var(--muted); font-size: 0.78rem; }
+.booking-history__list em { color: var(--blue); font-size: 0.72rem; font-style: normal; font-weight: 650; }
+
+.booking-history__details {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.booking-history__details p {
+  position: relative;
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-right: 108px;
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
+/* Nhãn dùng đúng nhịp chữ của .eyebrow trên toàn web (0.12em), không phải 0.05em tự đặt. */
+.booking-history__details p > span {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.booking-history__details p small { color: var(--muted); font-size: 0.76rem; }
+
+/* Dòng thông báo giữ chỗ không có nút nên không cần chừa lề phải cho nút. */
+.booking-history__details p.booking-history__hold { padding-right: 13px; }
+
+/*
+ * Nút đổi giờ: trước là một ô vuông xám 36px chỉ có icon lịch — anh Minh phản ánh khó thấy và
+ * không đoán được bấm vào đâu để sửa. Nay là viên thuốc XANH có chữ, đặt ngay cạnh dòng thời
+ * gian nên đọc được ngay là "sửa cái này".
+ */
+.booking-history__reschedule {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 13px;
+  border: 1px solid rgba(20, 100, 244, 0.28);
+  border-radius: 999px;
+  color: var(--blue);
+  background: rgba(20, 100, 244, 0.08);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  transform: translateY(-38%);
+  transition: color 0.2s var(--ease-soft), background 0.2s var(--ease-soft),
+    border-color 0.2s var(--ease-soft);
+}
+
+.booking-history__reschedule:hover {
+  border-color: var(--blue);
+  color: var(--surface);
+  background: var(--blue);
+}
+
+.booking-history__reschedule:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
 
 .booking-resume-prompt {
   display: grid;
@@ -4442,7 +5293,15 @@ svg {
 .booking-resume-prompt > div { display: flex; gap: 8px; }
 .booking-resume-prompt button { min-height: 38px; padding: 0 14px; border: 1px solid var(--ink); border-radius: 8px; color: #fff; background: var(--ink); cursor: pointer; font-weight: 650; }
 .booking-resume-prompt button:last-child { color: var(--ink); background: #fff; }
-.booking-history__hold { padding: 8px 10px; border-radius: 8px; color: #a34d00 !important; background: #fff3e8; font-weight: 650; }
+/* Dòng "đang giữ khung giờ mới": cùng ngôn ngữ bo góc với các thẻ trong bảng. */
+.booking-history__hold {
+  padding: 10px 13px;
+  border: 1px solid rgba(163, 77, 0, 0.18);
+  border-radius: var(--radius-md);
+  color: #a34d00 !important;
+  background: #fff3e8;
+  font-weight: 650;
+}
 
 .studio-vehicle {
   position: relative;
@@ -5552,7 +6411,59 @@ svg {
   gap: 12px;
 }
 
+/* Khối liên hệ riêng của người lái, chỉ hiện ở luồng đặt hộ.
+   Đóng khung nhẹ để tách khỏi thông tin người đặt phía trên — hai đầu mối khác nhau
+   thì phải nhìn ra là hai khối khác nhau. */
+/*
+ * KHÔNG đóng khung fieldset này. Bên trong nó đã có sẵn một `.license-check` — cũng là một
+ * hộp có viền và padding riêng — nên hộp lồng hộp khiến ô "dùng chung liên hệ" to hơn hẳn và
+ * thụt vào so với hai ô "giấy phép lái xe" / "nhận ưu đãi" ngay dưới. Bỏ viền và nền đi thì
+ * cả ba ô tick cùng một kích thước và cùng một mép trái.
+ */
+.vivi-driver-contact {
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.vivi-driver-contact > legend {
+  padding-inline: 2px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Ô tick trong fieldset dùng đúng nhịp lề với hai ô đứng ngoài. */
+.vivi-driver-contact > .license-check {
+  margin-top: 9px;
+  margin-bottom: 0;
+}
+
+.vivi-driver-contact .vivi-customer-form__grid {
+  margin-top: 12px;
+}
+
+.vivi-driver-contact__note {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
 .vivi-customer-form__grid label:only-child {
+  grid-column: 1 / -1;
+}
+
+/*
+ * Ô cuối cùng bị lẻ hàng thì cho trải hết chiều ngang.
+ * Form "đặt cho chính tôi" có 3 ô (Họ tên · Email · Số điện thoại) trong lưới 2 cột, nên
+ * "Số điện thoại" đứng một mình nửa hàng dưới, chừa một khoảng trống bên phải trông rất lệch.
+ * :nth-last-child(1):nth-child(odd) = phần tử cuối VÀ ở vị trí lẻ = đúng trường hợp bị mồ côi.
+ */
+.vivi-customer-form__grid > label:nth-last-child(1):nth-child(odd) {
   grid-column: 1 / -1;
 }
 
@@ -5595,7 +6506,7 @@ svg {
   grid-template-columns: auto 1fr;
   align-items: start;
   gap: 10px;
-  margin: 13px 0 5px;
+  margin: 12px 0 0;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 13px;
@@ -5682,6 +6593,44 @@ svg {
   color: var(--success);
   font-size: 0.68rem;
   font-weight: 650;
+}
+
+/*
+ * Panel TRÁI sau khi đặt lịch xong: model xe ở trên, phiếu lịch ở dưới, cuộn chung.
+ * Trước đây khối này nằm trong `.booking-success-layout` — một bố cục 3 cột riêng cho màn
+ * thành công. Bố cục đó đã bỏ (màn thành công nay dùng đúng 2 panel như mọi bước khác, để
+ * khung chat với ViVi không biến mất), nên khối phải tự đứng được trong .booking-workspace.
+ */
+.booking-success-documents {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/*
+ * Nén khối xe lại để PHIẾU LỊCH được nhìn thấy ngay, không phải cuộn mới thấy.
+ * Ba quy tắc dưới đây vốn có trong bố cục `.booking-success-layout` cũ; khi bỏ bố cục đó
+ * em quên mang sang, thế là model xe chiếm gần hết cột trái và phiếu bị đẩy xuống dưới —
+ * nhìn như thông tin đã bị xoá bớt, dù thực ra vẫn còn đủ trong DOM.
+ */
+.booking-success-documents .studio-vehicle {
+  padding-block: 20px 14px;
+}
+
+.booking-success-documents .studio-vehicle__image {
+  width: 100%;
+  max-height: min(26vh, 240px);
+}
+
+/* Thông số đã nằm trong khối "Xem lại thông tin xe" ngay bên dưới, không cần lặp ở đây. */
+.booking-success-documents .studio-vehicle__specs {
+  display: none;
+}
+
+.booking-success-documents .studio-vehicle__heading strong {
+  font-size: clamp(2rem, 3vw, 2.9rem);
 }
 
 .booking-success-layout {
@@ -6581,6 +7530,7 @@ svg {
   background:
     radial-gradient(70% 64% at 0% 100%, rgba(8, 11, 15, 0.82), transparent 74%),
     linear-gradient(180deg, rgba(10, 13, 17, 0.08), rgba(10, 13, 17, 0.22));
+  pointer-events: none;
 }
 .detail-film__copy {
   position: absolute;
@@ -6715,51 +7665,47 @@ svg {
   line-height: 1.6;
 }
 
+/*
+ * "Góc nhìn bổ sung" — ảnh của backend.
+ * Trước đây: hàng cao cố định 290px + ô đầu mỗi nhóm 3 chiếm 8/12 cột và 2 hàng, ảnh thì
+ * `object-fit: contain` trong khung trắng có padding → ảnh vuông nằm giữa hộp trắng, và
+ * xuất hiện những mảng trắng lớn khi số ảnh không chia hết.
+ * Nay theo đúng cách VinFast: ảnh rộng bằng cột, CAO TỰ DO, bo góc trên chính tấm ảnh,
+ * không khung, không nền.
+ */
 .detail-media-grid {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-auto-flow: dense;
-  grid-auto-rows: 290px;
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 22px;
 }
 
 .detail-media-grid__item {
   position: relative;
-  grid-column: span 4;
   min-width: 0;
   margin: 0;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  border-radius: 26px;
-  background: #f4f5f4;
-  box-shadow: inset 0 1px 0 #fff;
 }
 
-.detail-media-grid__item:nth-child(3n + 1) {
-  grid-column: span 8;
-  grid-row: span 2;
+/* Ảnh cuối đứng lẻ hàng → trải hết bề ngang. */
+.detail-media-grid__item:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 
-.detail-media-grid__item:nth-child(3n + 1):has(+ .detail-media-grid__item:last-child) {
-  grid-row: span 1;
-}
-
-.detail-media-grid__item:last-child:nth-child(3n + 1) {
-  grid-column: span 12;
-  grid-row: span 1;
-}
-
-.detail-media-grid__item .smart-image,
-.detail-media-grid__item img {
+.detail-media-grid__item .smart-image {
+  display: block;
   width: 100%;
-  height: 100%;
+  height: auto;
+  overflow: visible;
+  background: none;
 }
 
 .detail-media-grid__item img {
-  padding: 2%;
-  object-fit: contain;
-  transition: transform 0.75s var(--ease-heavy);
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 26px;
 }
+
 
 .detail-media-grid__item:hover img { transform: scale(1.035); }
 .detail-media-grid__item figcaption { position: absolute; right: 14px; bottom: 14px; left: 14px; width: max-content; max-width: calc(100% - 28px); padding: 7px 10px; overflow: hidden; border-radius: 10px; color: var(--ink-soft); background: rgba(255, 255, 255, 0.84); font-size: 0.65rem; text-overflow: ellipsis; white-space: nowrap; backdrop-filter: blur(10px); }
@@ -6904,9 +7850,21 @@ svg {
   .factory-origin__media { grid-column: auto; }
   .vivi-intro__grid { grid-template-columns: 1fr; }
   .vivi-intro__portrait { width: min(100%, 600px); }
+  .detail-overview__heading { grid-template-columns: 1fr; gap: 40px; }
+  .detail-overview__heading .eyebrow { margin-bottom: -12px; }
+  .detail-overview__heading > p:last-child { max-width: 62ch; }
+  .detail-overview__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .detail-overview__facts > div:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .detail-overview__facts > div:nth-child(even) { padding-left: 24px; border-left: 1px solid var(--line); }
+  .detail-overview__facts > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .detail-story.detail-story--structured { padding-block: 0; }
+  .detail-story-group { padding-block: 120px; }
+  .detail-story-group__feature { margin-top: 96px; }
   .detail-media__heading { grid-template-columns: 1fr; }
-  .detail-media-grid { grid-auto-rows: 240px; }
   .detail-story__aside { position: relative; top: auto; }
+  .spec-strip__item:nth-child(odd) { border-left: 0; }
+  .spec-strip__item:nth-child(even) { border-left: 1px solid var(--line); }
+  .spec-strip__item:nth-child(n + 3) { border-top: 1px solid var(--line); }
   .model-film { min-height: auto; padding-inline: 18px; }
   .model-film__stage { height: auto; min-height: 78dvh; }
   .model-film__copy { grid-template-columns: 1fr; }
@@ -6933,10 +7891,60 @@ svg {
   .vivi-intro__copy h2 { font-size: clamp(2.8rem, 13vw, 4.6rem); }
   .vivi-intro__steps { display: grid; }
   .vivi-intro__steps span { border-right: 0; border-bottom: 1px solid var(--line); }
-  .detail-media-grid { grid-template-columns: 1fr; grid-auto-rows: auto; }
-  .detail-media-grid__item,
-  .detail-media-grid__item:nth-child(3n + 1),
-  .detail-media-grid__item:last-child:nth-child(3n + 1) { grid-column: auto; grid-row: auto; aspect-ratio: 4 / 3; }
+  #overview,
+  #colors,
+  #exterior,
+  #interior,
+  #technology,
+  #specifications { scroll-margin-top: 86px; }
+  .detail-overview__intro { padding-top: 82px; }
+  .detail-overview__heading { gap: 32px; }
+  .detail-overview__heading .eyebrow { margin-bottom: -8px; }
+  .detail-overview__heading h2 { font-size: clamp(2.45rem, 12vw, 4rem); }
+  .detail-overview__facts { grid-template-columns: 1fr; margin-top: 58px; }
+  .detail-overview__facts > div,
+  .detail-overview__facts > div:nth-child(odd),
+  .detail-overview__facts > div:nth-child(even) {
+    min-height: 112px;
+    padding: 20px 0;
+    border-left: 0;
+  }
+  .detail-overview__facts > div + div { border-top: 1px solid var(--line); }
+  .detail-overview__anchors {
+    display: grid;
+    grid-auto-columns: max-content;
+    grid-auto-flow: column;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+  .detail-overview__anchors::-webkit-scrollbar { display: none; }
+  .detail-overview__anchors a,
+  .detail-overview__anchors a:first-child { padding-inline: 18px; border-left: 1px solid var(--line); }
+  .detail-overview__anchors a:first-child { padding-left: 0; border-left: 0; }
+  .detail-overview .car-manifesto { padding: 72px 0 92px; }
+  .page--detail .detail-hero__actions { bottom: 104px; }
+  .page--detail .detail-hero.is-long-name h1 {
+    max-width: 11ch;
+    font-size: clamp(3.2rem, 14vw, 4.8rem);
+    line-height: 0.88;
+  }
+  .page--detail .detail-hero.is-long-name .detail-hero__car { top: 44%; }
+  .test-drive-nudge { bottom: 96px; }
+  .page--detail .site-footer { padding-bottom: 110px; }
+  .detail-story.detail-story--structured { padding-block: 0; }
+  .detail-story-group { padding-block: 92px; }
+  .detail-story-group.is-empty { padding-block: 72px; }
+  .detail-story-group__feature { margin-top: 72px; }
+  .detail-specs__groups,
+  .detail-specs__empty { margin-top: 55px; }
+  .spec-strip__item,
+  .spec-strip__item:nth-child(odd),
+  .spec-strip__item:nth-child(even) { border-left: 0; }
+  .spec-strip__item + .spec-strip__item { border-top: 1px solid var(--line); }
+  .color-explorer__empty { padding-block: 42px; }
+  .detail-state { padding: 112px 18px 64px; }
+  .detail-media-grid { grid-template-columns: minmax(0, 1fr); }
   .detail-film__copy { left: 22px; bottom: 28px; width: min(390px, calc(100% - 44px)); }
   .detail-film__copy h2 { font-size: clamp(1.4rem, 7vw, 2rem); }
   .model-film { padding-block: 72px; }
@@ -9725,8 +10733,6 @@ small,
   color: var(--muted);
 }
 
-
-
 /* ─── Lạc Hồng: xe trưng bày trên trang chủ ──────────────────────────────────
    Khối này thay chỗ ".flagship-passage" (VF 8 / VF 9) cũ. CSS của flagship vẫn
    được giữ nguyên phía trên, hiện không còn thẻ nào dùng tới.
@@ -10296,8 +11302,9 @@ small,
 /* Cảnh Đường nét Việt: tách hẳn typography và hình ảnh thành hai vùng. */
 .drive-out {
   display: block;
-  min-height: min(940px, 100dvh);
-  padding: clamp(118px, 13vw, 190px) 0 clamp(104px, 12vw, 176px);
+  /* KHÔNG đặt min-height cố định: ảnh xe chỉ cao ~530px nên phần dư của khung 940px
+     rơi hết xuống đáy thành một mảng trắng lớn trước khối "Sạc, bảo hành và showroom". */
+  padding: clamp(104px, 11vw, 168px) 0 clamp(76px, 8vw, 118px);
 }
 
 .drive-out__layout {
@@ -10358,7 +11365,6 @@ small,
 .drive-out__visual {
   position: relative;
   min-width: 0;
-  min-height: clamp(580px, 50vw, 760px);
 }
 
 .drive-out__visual .drive-out__aura {
@@ -10370,12 +11376,13 @@ small,
   bottom: 28%;
 }
 
+/* Xe nằm TRONG dòng chảy (không absolute) để cột hình cao đúng bằng ảnh — đây là chỗ
+   trước kia sinh ra khoảng trắng thừa. Quầng sáng và vệt đường vẫn absolute như cũ. */
 .drive-out__car {
-  position: absolute;
-  top: 2%;
-  right: -2%;
+  position: relative;
   z-index: 2;
   width: min(690px, 100%);
+  margin-inline: auto -2%;
 }
 
 .drive-out__marquee {
@@ -11396,7 +12403,13 @@ small,
 }
 
 .booking-success-documents {
-  grid-template-rows: minmax(250px, 0.38fr) minmax(0, 0.62fr);
+  /* `height: 100%` là mấu chốt: thiếu nó thì lưới tự co theo nội dung, hai hàng `fr`
+     phân bổ sai, phiếu lịch bị cắt cụt phải cuộn trong khung còn phần dưới trống trơn.
+     Tỉ lệ 0.42/0.58: hàng trên phải đủ cao để vừa CHỪA CHỖ cho thanh công cụ nổi ở góc
+     trên (position: absolute, cao ~62px) vừa còn chỗ cho model xe — trước đây thanh này
+     đè lên đầu xe. Phần dôi ra lấy từ khoảng trắng thừa dưới phiếu lịch. */
+  height: 100%;
+  grid-template-rows: minmax(250px, 0.42fr) minmax(0, 0.58fr);
   background: #edf0ee;
 }
 
@@ -11404,7 +12417,8 @@ small,
   grid-template-columns: minmax(190px, 0.42fr) minmax(260px, 0.58fr);
   grid-template-rows: minmax(0, 1fr);
   gap: 24px;
-  padding: 34px clamp(28px, 4vw, 52px);
+  /* 78px trên: thanh công cụ nổi bắt đầu ở top 18px và cao ~62px, cộng thêm 12px thở. */
+  padding: 78px clamp(28px, 4vw, 52px) 26px;
   background: #edf0ee;
 }
 
@@ -11430,14 +12444,14 @@ small,
 
 .booking-success-documents .studio-vehicle__image {
   width: 100%;
-  max-height: min(30vh, 270px);
+  max-height: min(26vh, 240px);
 }
 
 .booking-success-model {
   position: relative;
   width: 100%;
-  height: min(30vh, 270px);
-  min-height: 190px;
+  height: min(26vh, 240px);
+  min-height: 172px;
   cursor: grab;
   filter: drop-shadow(0 24px 22px rgba(21, 27, 35, 0.15));
 }
@@ -11467,8 +12481,12 @@ small,
 .booking-success-model__fallback img { width: 100%; height: 100%; object-fit: contain; }
 
 .booking-success-documents .studio-ticket {
-  align-content: start;
+  /* space-between thay cho start: ba phần (mã lịch · bảng thông tin · dòng xác nhận GPLX)
+     tự giãn ra kín chiều cao, thay vì dồn hết lên trên rồi bỏ trắng một mảng dưới đáy. */
+  align-content: space-between;
   min-height: 0;
+  /* Chỉ cuộn khi màn hình thật sự thấp; ở cỡ thường 8 dòng phiếu vừa trọn khung. */
+  overflow-y: auto;
   padding: 26px clamp(28px, 4vw, 52px) 30px;
   border-top: 1px solid var(--line-strong);
   background: #f8f9f8;
@@ -11486,9 +12504,9 @@ small,
 .booking-success-documents .studio-ticket dl div {
   grid-template-columns: 94px minmax(0, 1fr);
   align-items: start;
-  min-height: 46px;
+  min-height: 54px;
   gap: 13px;
-  padding: 11px 0;
+  padding: 15px 0;
 }
 
 .booking-success-documents .studio-ticket dd {
@@ -11584,6 +12602,184 @@ small,
   font-size: 0.82rem;
   line-height: 1.62;
   text-wrap: pretty;
+}
+
+/* Tin nhắn xác nhận sau khi đặt lịch: nhấn bằng NỀN và VIỀN xanh nhạt + chữ đậm hơn,
+   không dùng cỡ chữ lớn — cả khung chat vẫn giữ một thang chữ duy nhất. */
+.vivi-message--emphasis > div {
+  padding: 14px 16px;
+  border: 1px solid rgba(20, 100, 244, 0.2);
+  border-bottom-color: rgba(20, 100, 244, 0.2);
+  border-radius: var(--radius-md);
+  background: rgba(20, 100, 244, 0.055);
+}
+
+.vivi-message--emphasis p {
+  color: var(--ink);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+
+/* Thẻ hướng dẫn nằm trong dòng hội thoại: bỏ nền bong bóng, để BookingNextSteps tự trình bày. */
+.vivi-message--card {
+  align-items: flex-start;
+}
+
+.vivi-message--card .booking-next-steps {
+  margin-top: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+/* Hàng hành động sau khi đặt lịch xong: cho xuống dòng thoải mái, đây là 3 lựa chọn
+   ngang hàng chứ không phải một nút chính kèm phụ. */
+.vivi-capabilities--success {
+  flex-wrap: wrap;
+}
+
+/* Khối "Xem lại thông tin xe" sổ tại chỗ trong panel trái. */
+.studio-vehicle__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: start;
+  padding: 0;
+  background: none;
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.studio-vehicle__details {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  animation: studio-panel-in 0.4s var(--ease-heavy) both;
+}
+
+.studio-vehicle__tagline {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.studio-vehicle__details dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.studio-vehicle__details dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.studio-vehicle__details dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.studio-vehicle__details dd {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-align: right;
+}
+
+.studio-vehicle__details > small {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+/* Hướng dẫn sau đặt lịch (BookingNextSteps): mang gì · đến đâu · khi nào · gọi ai.
+   Đặt giữa mã lịch và hai nút hành động, canh trái để đọc như một danh sách việc cần làm
+   thay vì canh giữa như phần chúc mừng phía trên. */
+.booking-next-steps {
+  width: 100%;
+  max-width: 55ch;
+  margin: 26px 0 0;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+  text-align: left;
+}
+
+.booking-next-steps > h2 {
+  margin: 0 0 16px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.booking-next-steps__list {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.booking-next-steps__list > li {
+  display: grid;
+  gap: 3px;
+  padding-left: 14px;
+  border-left: 2px solid var(--line);
+}
+
+.booking-next-steps__label {
+  color: var(--blue);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.booking-next-steps__list p {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.booking-next-steps p.booking-next-steps__muted,
+.booking-next-steps__muted {
+  color: var(--muted);
+  font-size: 0.79rem;
+}
+
+/* Gỡ style nút của `.vivi-success-copy a` (dòng ~6442): rule đó biến MỌI link trong khối
+   thành viên thuốc xám cao 45px, nên link trong hướng dẫn bị phình thành ô xám full-width.
+   Ở đây link phải là link chữ nằm trong câu. */
+.booking-next-steps a {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--blue);
+  font-size: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.booking-next-steps__foot {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.79rem;
+  line-height: 1.6;
 }
 
 .vivi-success-copy > .vivi-success-copy__actions {
