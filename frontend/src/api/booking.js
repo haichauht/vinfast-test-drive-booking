@@ -126,28 +126,44 @@ export const holdBookingSlot = (slotId, uiActionId = actionId('hold')) => agentA
   },
 )
 
-export const saveBookingCustomer = ({ bookingId, version, recipient, person }) => agentAction(
-  'update_draft',
-  'Tôi đã hoàn tất thông tin người đặt và người lái.',
-  {
-    booking_id: bookingId,
-    expected_version: version,
-    booker_patch: {
-      full_name: person.bookingName,
-      phone: person.phone,
-      email: person.email,
+/**
+ * Lưu thông tin người đặt và người lái vào draft.
+ *
+ * Người lái có thể có ĐẦU MỐI LIÊN HỆ RIÊNG. Trước đây `driver_patch` bị gán lại đúng
+ * `person.phone` / `person.email` của người đặt, nên đặt hộ thì showroom chỉ có số của
+ * người đặt — gọi nhầm người, và người thật sự cầm lái không nhận được thông báo nào.
+ * Đã kiểm chứng 16/08/2026: backend nhận email/SĐT khác nhau và tạo HAI bản ghi person.
+ *
+ * `person.driverSameContact` = true nghĩa là người lái dùng chung liên hệ với người đặt —
+ * khi đó vẫn gửi liên hệ của người đặt, nhưng là do người dùng CHỌN thế, không phải do
+ * frontend tự áp đặt.
+ */
+export const saveBookingCustomer = ({ bookingId, version, recipient, person }) => {
+  const shareContact = recipient === 'self' || person.driverSameContact !== false
+
+  return agentAction(
+    'update_draft',
+    'Tôi đã hoàn tất thông tin người đặt và người lái.',
+    {
+      booking_id: bookingId,
+      expected_version: version,
+      booker_patch: {
+        full_name: person.bookingName,
+        phone: person.phone,
+        email: person.email,
+      },
+      driver_same_as_booker: recipient === 'self',
+      driver_patch: recipient === 'other'
+        ? {
+            full_name: person.driverName,
+            phone: shareContact ? person.phone : person.driverPhone,
+            email: shareContact ? person.email : person.driverEmail,
+          }
+        : null,
+      has_valid_license_commitment: person.hasLicense,
     },
-    driver_same_as_booker: recipient === 'self',
-    driver_patch: recipient === 'other'
-      ? {
-          full_name: person.driverName,
-          phone: person.phone,
-          email: person.email,
-        }
-      : null,
-    has_valid_license_commitment: person.hasLicense,
-  },
-)
+  )
+}
 
 export const confirmHeldBooking = ({ bookingId, version, uiActionId = actionId('confirm') }) => agentAction(
   'confirm_booking',
