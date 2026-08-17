@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from html import escape
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from src.services.booking.common import parse_utc
@@ -33,8 +34,6 @@ def render_otp_email(*, code: str, expires_in_seconds: int) -> RenderedEmail:
     )
     return RenderedEmail(subject=subject, plain_text=plain, html=html)
 
-
-from urllib.parse import quote
 
 def render_booking_email(notification_type: str, row) -> RenderedEmail:
     if not row:
@@ -121,7 +120,7 @@ def _html_document(*, title: str, intro: str, rows, footer: str | None = None, m
     <tr>
       <td align="center">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);">
-          
+
           <!-- Header Banner VinFast -->
           <tr>
             <td style="background-color: #0C64E6; padding: 28px 32px; text-align: center;">
