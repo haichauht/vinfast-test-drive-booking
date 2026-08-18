@@ -393,8 +393,6 @@ export function BookingTicket({ car, showroom, slot, person, recipient, bookingC
     ['Tư vấn viên', advisorLabel],
   ]
 
-  const calendarUrl = useMemo(() => buildGoogleCalendarUrl({ car, showroom, slot, bookingCode, advisor }), [car, showroom, slot, bookingCode, advisor])
-
   return (
     <section className={`studio-ticket ${compact ? 'studio-ticket--compact' : ''}`}>
       <header>
