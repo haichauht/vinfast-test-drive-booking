@@ -38,6 +38,41 @@ def _to_vietnam_time(iso_str: str) -> datetime:
     return dt.astimezone(VIETNAM_TZ)
 
 
+def _normalize_preferred_date(date_str: str, now_dt: datetime) -> str:
+    """Normalize shorthand date inputs ('20', 'ngày 20', '20/8', '20-8') to 'YYYY-MM-DD'."""
+    if not date_str or not isinstance(date_str, str):
+        return date_str
+
+    cleaned = date_str.strip().lower()
+    cleaned = re.sub(r"^(?:ngày|ngay)\s+", "", cleaned)
+
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", cleaned):
+        return cleaned
+
+    match_dm = re.fullmatch(r"(\d{1,2})[/-](\d{1,2})", cleaned)
+    if match_dm:
+        day, month = int(match_dm.group(1)), int(match_dm.group(2))
+        year = now_dt.year
+        if month < now_dt.month or (month == now_dt.month and day < now_dt.day):
+            year += 1
+        return f"{year:04d}-{month:02d}-{day:02d}"
+
+    match_d = re.fullmatch(r"(\d{1,2})", cleaned)
+    if match_d:
+        day = int(match_d.group(1))
+        if 1 <= day <= 31:
+            month = now_dt.month
+            year = now_dt.year
+            if day < now_dt.day:
+                month += 1
+                if month > 12:
+                    month = 1
+                    year += 1
+            return f"{year:04d}-{month:02d}-{day:02d}"
+
+    return date_str
+
+
 class CatalogService(BookingBase):
     def list_active_vehicle_models(self) -> list[dict]:
         with self.db.connect() as c:
@@ -200,8 +235,9 @@ class CatalogService(BookingBase):
             values: list[Any] = [showroom_id, *variant_ids, now, now, horizon]
             date_sql, order_sql = "", "s.start_at"
             if preferred_date:
+                norm_date = _normalize_preferred_date(preferred_date, self.now().astimezone(VIETNAM_TZ))
                 date_sql = " AND substr(s.start_at,1,10)=?"
-                values.append(preferred_date)
+                values.append(norm_date)
             if preferred_time:
                 if not isinstance(preferred_time, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", preferred_time):
                     raise BookingError("INVALID_INPUT", "Preferred time must be a valid HH:MM value.")

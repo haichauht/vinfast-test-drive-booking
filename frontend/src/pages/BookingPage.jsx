@@ -613,7 +613,7 @@ export function BookingPage() {
     if (!slotId) return null
     for (const group of groups) {
       const match = group.times.find((item) => item.slotId === slotId)
-      if (match) return match
+      if (match) return { date: group.value, dateLabel: group.dateLabel, ...match }
     }
     return null
   }

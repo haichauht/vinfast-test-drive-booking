@@ -2,8 +2,10 @@ import hashlib
 import json
 import logging
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
+from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
@@ -307,9 +309,11 @@ async def booking_skill_node(state: AgentState) -> dict:
         )
         return {"messages": [tool_call_message], "tool_call_count": 1}
 
+    now_vietnam = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%Y-%m-%d")
     context = json.dumps(state.get("context") or {}, ensure_ascii=False)
     prompt = (
         f"{get_system_prompt()}\n\n--- ACTIVE SKILL GUIDELINES (BOOKING) ---\n{get_booking_prompt()}"
+        f"\n\n--- REAL-TIME CONTEXT ---\nCurrent Date (Vietnam): {now_vietnam}"
         f"\n\n--- CURRENT UI CONTEXT ---\n{context}"
     )
 
