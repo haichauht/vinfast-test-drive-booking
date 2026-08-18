@@ -180,9 +180,9 @@ const bookingManagementAction = async (action, payload) => {
   return result
 }
 
-export const requestBookingAccess = ({ bookingCode = '', email, purpose = 'lookup' }) => bookingManagementAction('request_access', {
-  ...(bookingCode.trim() ? { booking_code: bookingCode.trim() } : {}),
-  contact_value: email,
+export const requestBookingAccess = ({ bookingCode = '', email = '', contactValue = '', purpose = 'lookup' }) => bookingManagementAction('request_access', {
+  ...((bookingCode || '').trim() ? { booking_code: (bookingCode || '').trim() } : {}),
+  contact_value: email || contactValue || '',
   purpose,
   preferred_channel: 'email',
 })

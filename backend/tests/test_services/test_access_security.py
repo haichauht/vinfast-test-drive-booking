@@ -253,6 +253,26 @@ def test_expired_access_session_is_rejected(booking_service, booking_db, access_
     assert error.value.code == "ACCESS_SESSION_EXPIRED"
 
 
+def test_confirm_booking_otp_flow(booking_service, ready_draft_factory):
+    ready = ready_draft_factory()
+    booking_id = ready["booking_id"]
+
+    # Đăng ký OTP với purpose confirm_booking bằng booking_id và email
+    challenge = booking_service.request_access(
+        booking_code=booking_id,
+        contact_value="chau@example.test",
+        purpose="confirm_booking",
+        preferred_channel="email",
+        expose_otp=True,
+    )
+    assert challenge["challenge_id"]
+
+    # Xác thực OTP thành công
+    verified = booking_service.verify_access(challenge["challenge_id"], challenge["otp_code"])
+    assert verified["booking_id"] == booking_id
+    assert "confirm_booking" in verified["permissions"]
+
+
 # test case of Chau + kiểm tra token lookup không được dùng để hủy booking
 def test_lookup_permission_cannot_cancel_booking(booking_service, access_factory):
     access = access_factory("lookup")
