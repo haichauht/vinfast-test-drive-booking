@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from html import escape
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from src.services.booking.common import parse_utc
@@ -46,6 +47,9 @@ def render_booking_email(notification_type: str, row) -> RenderedEmail:
     staff = row["staff_name"] or "VinFast se lien he"
     if row["staff_phone"]:
         staff = f"{staff} - {row['staff_phone']}"
+    showroom_name = row["showroom_name"] or "Showroom VinFast"
+    maps_url = f"https://www.google.com/maps/search/?api=1&query={quote(showroom_name)}"
+
     rows = (
         ("Ma lich", row["booking_code"] or "-"),
         ("Nguoi dat lich", row["booker_name"] or "-"),
@@ -53,12 +57,12 @@ def render_booking_email(notification_type: str, row) -> RenderedEmail:
         ("Dien thoai", row["driver_phone"] or "-"),
         ("Email", row["driver_email"] or "-"),
         ("Mau xe", f"{row['model_name']} {row['variant_name']}"),
-        ("Showroom", row["showroom_name"]),
+        ("Showroom", showroom_name),
         ("Thoi gian", f"{start.strftime('%H:%M')} - {WEEKDAYS_VI[start.weekday()]}, {start.strftime('%d/%m/%Y')}"),
         ("Tu van vien", staff),
     )
-    plain = "\n".join((heading, *(f"{label}: {value}" for label, value in rows)))
-    html = _html_document(title=heading, intro=_intro(notification_type), rows=rows)
+    plain = "\n".join((heading, *(f"{label}: {value}" for label, value in rows), f"Chi duong Google Maps: {maps_url}"))
+    html = _html_document(title=heading, intro=_intro(notification_type), rows=rows, maps_url=maps_url, showroom_name=showroom_name)
     return RenderedEmail(subject=subject, plain_text=plain, html=html)
 
 
@@ -86,17 +90,79 @@ def _intro(notification_type: str) -> str:
     }.get(notification_type, "Lich lai thu VinFast cua ban co cap nhat moi.")
 
 
-def _html_document(*, title: str, intro: str, rows, footer: str | None = None) -> str:
-    body_rows = "\n".join(
-        f"<tr><th>{escape(str(label))}</th><td>{escape(str(value))}</td></tr>" for label, value in rows
+def _html_document(*, title: str, intro: str, rows, footer: str | None = None, maps_url: str | None = None, showroom_name: str | None = None) -> str:
+    # 1. Render từng hàng dữ liệu (Bảng thông tin 2 cột đẹp mắt)
+    body_rows = "".join(
+        f"""
+        <tr>
+          <td style="padding: 12px 16px; border-bottom: 1px solid #f3f4f6; color: #6b7280; font-size: 13px; font-weight: 500; width: 35%;">{escape(str(label))}</td>
+          <td style="padding: 12px 16px; border-bottom: 1px solid #f3f4f6; color: #111827; font-size: 14px; font-weight: 600;">{escape(str(value))}</td>
+        </tr>
+        """ for label, value in rows
     )
-    footer_html = f"  <p>{escape(footer)}</p>" if footer else ""
+
+    footer_html = f'<p style="margin-top: 20px; font-size: 12px; color: #6b7280; text-align: center;">{escape(footer)}</p>' if footer else ""
+
+    button_url = maps_url or "https://vinfast-mvp.pages.dev"
+    button_label = f"🗺️ Chỉ đường đến {escape(showroom_name or 'Showroom')} (Google Maps) →" if maps_url else "Quản lý Lịch hẹn của bạn →"
+
+    # 2. Khung HTML Email chuẩn thương hiệu VinFast
     return f"""<!doctype html>
-<html>
-<body style="font-family:Arial,sans-serif;color:#111827;line-height:1.5">
-  <h2>{escape(title)}</h2>
-  <p>{escape(intro)}</p>
-  <table cellpadding="6" cellspacing="0" style="border-collapse:collapse">{body_rows}</table>
-{footer_html}
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 20px 0; background-color: #f3f4f6; font-family: 'Segoe UI', Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+
+  <!-- Container chính 600px -->
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f3f4f6;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);">
+
+          <!-- Header Banner VinFast -->
+          <tr>
+            <td style="background-color: #0C64E6; padding: 28px 32px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: 2px;">VINFAST</h1>
+              <p style="margin: 4px 0 0; color: #dbeafe; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">Mãnh liệt tinh thần Việt Nam</p>
+            </td>
+          </tr>
+
+          <!-- Nội dung chính -->
+          <tr>
+            <td style="padding: 32px;">
+              <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 700;">{escape(title)}</h2>
+              <p style="margin: 0 0 24px; color: #4b5563; font-size: 14px; line-height: 1.6;">{escape(intro)}</p>
+
+              <!-- Bảng Thông tin Booking -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb; overflow: hidden;">
+                {body_rows}
+              </table>
+
+              <!-- Nút Action chỉ đường Google Maps -->
+              <div style="margin-top: 28px; text-align: center;">
+                <a href="{escape(button_url)}" target="_blank" style="display: inline-block; background-color: #0C64E6; color: #ffffff; font-size: 14px; font-weight: 600; text-decoration: none; padding: 13px 28px; border-radius: 8px;">
+                  {button_label}
+                </a>
+              </div>
+
+              {footer_html}
+            </td>
+          </tr>
+
+          <!-- Footer Email -->
+          <tr>
+            <td style="background-color: #f9fafb; padding: 20px 32px; border-top: 1px solid #e5e7eb; text-align: center; color: #9ca3af; font-size: 12px;">
+              <p style="margin: 0 0 4px;">© 2026 VinFast. Tất cả các quyền được bảo lưu.</p>
+              <p style="margin: 0;">Hotline hỗ trợ: 1900 23 23 89 | Email: cskh@vinfast.vn</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
 </body>
 </html>"""

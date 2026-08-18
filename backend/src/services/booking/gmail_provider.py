@@ -4,7 +4,7 @@ import base64
 from email.message import EmailMessage
 from email.utils import formataddr
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from src.services.booking.email_templates import render_otp_email
 from src.services.booking.notifications import ProviderResult

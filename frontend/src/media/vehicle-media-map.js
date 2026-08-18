@@ -179,10 +179,15 @@ export const showcaseMediaMap = {
     // Khi media API có GLB/GLTF thật, ưu tiên model3dUrl theo contract BACKEND_HANDOFF.md.
     spin: [
       'lac-hong-900lx/spin-1-v2.png',
-      'lac-hong-900lx/spin-3-v2.png',
       'lac-hong-900lx/spin-5-v2.png',
+      'lac-hong-900lx/spin-3-v2.png',
       'lac-hong-900lx/spin-4-v2.png',
       'lac-hong-900lx/spin-2-v2.png',
+      //'lac-hong-900lx/spin-1-v2.png',
+      // 'lac-hong-900lx/spin-3-v2.png',
+      // 'lac-hong-900lx/spin-5-v2.png',
+      // 'lac-hong-900lx/spin-4-v2.png',
+      // 'lac-hong-900lx/spin-2-v2.png',
     ],
   },
   'lac-hong-900s': {
