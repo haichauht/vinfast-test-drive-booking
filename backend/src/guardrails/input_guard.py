@@ -11,7 +11,7 @@ _SAFE_CONVERSATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$")
 
 _BLOCKED_MESSAGE = (
     "Yêu cầu này có dấu hiệu cố gắng thay đổi chỉ dẫn hoặc truy cập thông tin nội bộ, "
-    "nên tôi không thể xử lý. Tôi vẫn có thể hỗ trợ thông tin xe VinFast và đặt lịch lái thử."
+    "nên ViVi không thể xử lý. ViVi vẫn có thể hỗ trợ thông tin xe VinFast và đặt lịch lái thử."
 )
 _INVALID_PAYLOAD_MESSAGE = "Dữ liệu gửi lên không hợp lệ hoặc quá phức tạp. Vui lòng tải lại trang và thử lại."
 
