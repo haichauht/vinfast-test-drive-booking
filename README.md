@@ -1,5 +1,8 @@
 # VinFast Test Drive Booking
 
+[![Backend CI](https://github.com/AI20K-Build-Phase-Cohort-3/P-053/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/AI20K-Build-Phase-Cohort-3/P-053/actions/workflows/backend-ci.yml)
+[![Frontend CI](https://github.com/AI20K-Build-Phase-Cohort-3/P-053/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/AI20K-Build-Phase-Cohort-3/P-053/actions/workflows/frontend-ci.yml)
+
 MVP công khai cho phép người dùng xem catalogue VinFast, trò chuyện với ViVi, tìm showroom, tạo lịch lái thử và tra cứu/sửa/hủy lịch bằng luồng OTP demo.
 
 ## Thành phần ứng dụng
