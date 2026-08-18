@@ -72,6 +72,12 @@ class LifecycleService(BookingBase):
             self._event(c, booking_id, "slot_held", "user", {"slot_id": slot_id})
             showroom_row = c.execute("SELECT * FROM showrooms WHERE id=?", (slot["showroom_id"],)).fetchone()
             showroom = dict(showroom_row) if showroom_row else None
+            dt = parse_utc(slot["start_at"]).astimezone(VIETNAM_TZ)
+            weekdays_vi = {
+                0: "Thứ 2", 1: "Thứ 3", 2: "Thứ 4", 3: "Thứ 5", 4: "Thứ 6", 5: "Thứ 7", 6: "Chủ nhật"
+            }
+            slot_date = f"{weekdays_vi[dt.weekday()]}, {dt.strftime('%d/%m')}"
+            slot_time = dt.strftime("%H:%M")
             result = {
                 "booking_id": booking_id,
                 "status": "held",
@@ -79,9 +85,27 @@ class LifecycleService(BookingBase):
                 "hold_expires_at": iso(expires),
                 "remaining_seconds": ttl_seconds,
                 "showroom": showroom,
+                "slot_id": slot_id,
+                "slot_date": slot_date,
+                "slot_time": slot_time,
+                "start_at": slot["start_at"],
+                "end_at": slot["end_at"],
             }
             self._save_idempotency(c, ui_action_id, _operation, request_payload, result, iso(now))
             return result
+
+    def release_hold(self, booking_id: str) -> dict:
+        with self.db.transaction(immediate=True) as c:
+            b = c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone()
+            if b and b["status"] == "held":
+                now = iso(self.now())
+                c.execute("UPDATE bookings SET status='cancelled', updated_at=? WHERE id=?", (now, booking_id))
+                c.execute(
+                    "UPDATE test_drive_slots SET status='available', current_booking_id=NULL, held_until=NULL, updated_at=? WHERE current_booking_id=?",
+                    (now, booking_id),
+                )
+                self._event(c, booking_id, "hold_released", "user", {})
+            return {"booking_id": booking_id, "status": "released"}
 
     def _draft(self, c, booking_id: str, *, require_held: bool = True) -> dict:
         booking = self._row(c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone())

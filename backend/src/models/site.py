@@ -39,6 +39,9 @@ class VehicleSummary(SiteModel):
     test_drive_eligible: bool = Field(alias="testDriveEligible")
     sort_order: int = Field(alias="sortOrder")
     revision: str
+    range: dict[str, Any] | None = None
+    charging: dict[str, Any] | None = None
+    color_options: list[dict[str, Any]] | None = Field(default=None, alias="colorOptions")
 
 
 class VehicleDetail(VehicleSummary):
