@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 VEHICLES = {
-    "vf3": "src/media/local/vehicle-media/VF3/xám.png",
+    "vf3": "src/media/local/vehicle-media/VF3/xám.webp",
     "vf5": "src/media/local/vehicle-media/VF5/trắng.webp",
     "vf6": "src/media/local/by-model/vf6/studio.png",
     "vf7": "src/media/local/vehicle-media/VF7/product-CE18.webp",
@@ -18,7 +18,7 @@ VEHICLES = {
     "vf8": "src/media/local/vehicle-media/VF8/product-CE18.webp",
     "vf8-the-he-moi": "src/media/local/vehicle-media/VF8 All the new/VF8PH-23.webp",
     "vf9": "src/media/local/common/vf9-studio.png",
-    "herio-green": "src/media/local/vehicle-media/Dịch vụ_Herio Green/trắng.png",
+    "herio-green": "src/media/local/vehicle-media/Dịch vụ_Herio Green/trắng.webp",
     "minio-green": "src/media/local/vehicle-media/Dịch vụ_MINIO Green/Minio.webp",
     "nerio-green": "src/media/local/common/nerio-green-studio.png",
     "limo-green": "src/media/local/by-model/limo-green/studio.webp",
@@ -48,9 +48,9 @@ COMMON_TO_VEHICLE_MEDIA = {
 # original frontend files untouched, but publish stable CDN-safe aliases.
 SAFE_VEHICLE_MEDIA_ALIASES = {
     "VF3/1..webp": "VF3/1.webp",
-    "VF3/2..png": "VF3/exterior.png",
-    "VF3/3..jpg": "VF3/cockpit.jpg",
-    "VF3/4..png": "VF3/rear.png",
+    "VF3/2..webp": "VF3/exterior.webp",
+    "VF3/3..webp": "VF3/cockpit.webp",
+    "VF3/4..webp": "VF3/rear.webp",
     "VF5/1..webp": "VF5/1.webp",
     "VF5/3..webp": "VF5/3.webp",
     "VF5/4..webp": "VF5/4.webp",
@@ -92,11 +92,25 @@ LEGACY_KEYS = [
 ]
 
 
-def _copy(source: Path, destination: Path) -> None:
-    if not source.is_file():
-        raise FileNotFoundError(f"Missing source media: {source}")
+def _resolve_source(source: Path) -> Path:
+    if source.is_file():
+        return source
+    for ext in [".webp", ".png", ".jpg", ".jpeg", ".svg"]:
+        candidate = source.with_suffix(ext)
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(f"Missing source media: {source}")
+
+
+def _copy(source: Path, destination: Path, optional: bool = False) -> None:
+    try:
+        actual_source = _resolve_source(source)
+    except FileNotFoundError:
+        if optional:
+            return
+        raise
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, destination)
+    shutil.copy2(actual_source, destination)
 
 
 def _assert_separate_media_trees(source: Path, destination: Path) -> None:
@@ -129,18 +143,18 @@ def main() -> int:
         _copy(source, media_root / "vehicles" / vehicle_id / f"thumbnail{extension}")
         _copy(source, media_root / "vehicles" / vehicle_id / f"studio{extension}")
     for destination, relative_source in CONTENT.items():
-        _copy(frontend_root / relative_source, media_root / destination)
+        _copy(frontend_root / relative_source, media_root / destination, optional=True)
     if vehicle_media_source.is_dir():
         shutil.copytree(vehicle_media_source, vehicle_media_destination, dirs_exist_ok=True)
     for source_key, destination_key in SAFE_VEHICLE_MEDIA_ALIASES.items():
-        _copy(vehicle_media_source / source_key, vehicle_media_destination / destination_key)
+        _copy(vehicle_media_source / source_key, vehicle_media_destination / destination_key, optional=True)
         (vehicle_media_destination / source_key).unlink(missing_ok=True)
     for destination, relative_source in COMMON_TO_VEHICLE_MEDIA.items():
-        _copy(frontend_root / relative_source, vehicle_media_destination / destination)
+        _copy(frontend_root / relative_source, vehicle_media_destination / destination, optional=True)
     for vehicle_id, relative_source in VIDEOS.items():
-        _copy(frontend_root / relative_source, media_root / "vehicles" / vehicle_id / "presentation.mp4")
+        _copy(frontend_root / relative_source, media_root / "vehicles" / vehicle_id / "presentation.mp4", optional=True)
     for vehicle_id, relative_source in BROCHURES.items():
-        _copy(frontend_root / relative_source, media_root / "brochures" / f"{vehicle_id}.pdf")
+        _copy(frontend_root / relative_source, media_root / "brochures" / f"{vehicle_id}.pdf", optional=True)
     total = sum(1 for path in media_root.rglob("*") if path.is_file())
     print(f"Published {total} files into {media_root}")
     return 0

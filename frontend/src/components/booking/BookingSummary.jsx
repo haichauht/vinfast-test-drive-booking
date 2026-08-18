@@ -302,6 +302,24 @@ export function BookingTicket({ car, showroom, slot, person, recipient, bookingC
   const driverHasOwnContact = bookingForOther && person.driverSameContact === false
   const contactLine = (phone, email) => [phone, email].filter(Boolean).join(' · ') || 'Chưa có thông tin liên hệ'
 
+  const mapsUrl = (showroom.latitude && showroom.longitude)
+    ? `https://www.google.com/maps/search/?api=1&query=${showroom.latitude},${showroom.longitude}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(showroom.name + ' ' + (showroom.address || ''))}`
+
+  const showroomElement = (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+      <span>{showroom.name}</span>
+      <a
+        href={mapsUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: '#0C64E6', textDecoration: 'underline', fontSize: '0.68rem', fontWeight: 500 }}
+      >
+        (Chỉ đường Maps ↗)
+      </a>
+    </span>
+  )
+
   const rows = [
     ['Người đặt lịch', person.bookingName],
     ['Liên hệ người đặt', contactLine(person.phone, person.email)],
@@ -312,7 +330,7 @@ export function BookingTicket({ car, showroom, slot, person, recipient, bookingC
           : 'Dùng chung liên hệ với người đặt']]
       : []),
     ['Mẫu xe', car.name],
-    ['Showroom', showroom.name],
+    ['Showroom', showroomElement],
     ['Thời gian', `${slot.time} · ${slot.dateLabel}`],
     ['Tư vấn viên', advisorLabel],
   ]
