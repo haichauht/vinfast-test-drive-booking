@@ -15,6 +15,7 @@ langgraph-checkpoint-postgres>=2.0.0
 
 # Database
 psycopg[binary]>=3.2.0
+redis>=5.0.0
 
 # Admin tools
 # streamlit ĐÃ GỠ 17/08/2026: nó kéo theo pandas + pyarrow + pydeck + altair ~250 MB vào .venv,

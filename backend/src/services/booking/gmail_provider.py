@@ -6,7 +6,7 @@ from email.message import EmailMessage
 from email.utils import formataddr
 from typing import cast
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from src.services.booking.email_templates import InlineImage, render_otp_email
 from src.services.booking.notifications import ProviderResult

@@ -60,6 +60,16 @@ _VEHICLE_STUDIO_MODES: dict[str, str] = {}
 for order, vehicle in enumerate(_VEHICLES, start=1):
     slug = vehicle["id"]
     media_extension = _VEHICLE_MEDIA_EXTENSIONS.get(slug, "webp")
+    short_specs = [{"label": label, "value": value} for label, value in vehicle.pop("specs")]
+    first_spec_label = short_specs[0]["label"] if short_specs else "Quãng đường tham chiếu"
+    first_spec_val = short_specs[0]["value"] if short_specs else "Đang cập nhật"
+    range_fact = {"label": first_spec_label, "value": first_spec_val}
+    charging_fact = {"label": "Sạc nhanh 10–70%", "value": "30 phút"}
+    color_options = [
+        {"name": "Trắng Infinity Blanc", "hex": "#ECECE8", "secondaryHex": None},
+        {"name": "Đen Jet Black", "hex": "#121314", "secondaryHex": None},
+        {"name": "Xanh VinFast Blue", "hex": "#0C64E6", "secondaryHex": None},
+    ]
     vehicle.update(
         navName=vehicle["name"],
         thumbnail=_media(f"/media/vehicles/{slug}/thumbnail.{media_extension}", vehicle["name"], focalPoint="50% 50%"),
@@ -67,7 +77,10 @@ for order, vehicle in enumerate(_VEHICLES, start=1):
             "url": f"/media/vehicles/{slug}/studio.{media_extension}",
             "mode": _VEHICLE_STUDIO_MODES.get(slug, "cutout"),
         },
-        shortSpecs=[{"label": label, "value": value} for label, value in vehicle.pop("specs")],
+        shortSpecs=short_specs,
+        range=range_fact,
+        charging=charging_fact,
+        colorOptions=color_options,
         featured=vehicle["category"] == "personal",
         testDriveEligible=slug not in {"ec-van", "ebus"},
         sortOrder=order * 10,
@@ -80,11 +93,18 @@ _DETAILS: dict[str, dict[str, Any]] = {
         "description": vehicle["tagline"],
         "brochure": {"title": f"Thông tin sản phẩm {vehicle['name']}", "url": f"/media/brochures/{vehicle['id']}.pdf", "revision": REVISION},
         "specifications": [{"group": "Thông số chính", "items": deepcopy(vehicle["shortSpecs"])}],
-        "colors": [],
-        "chapters": [],
-        "gallery": [],
+        "colors": vehicle["colorOptions"],
+        "chapters": [
+            {"id": "exterior", "title": "Ngoại thất", "sectionKey": "exterior"},
+            {"id": "interior", "title": "Nội thất", "sectionKey": "interior"},
+            {"id": "technology", "title": "Công nghệ", "sectionKey": "technology"},
+        ],
+        "gallery": [
+            {"id": f"{vehicle['id']}-ext-1", "sectionKey": "exterior", "title": "Góc đầu xe", "url": vehicle["studioImage"]["url"], "focalPoint": "50% 50%", "aspectRatio": "16 / 10", "fit": "cover", "sortOrder": 10},
+            {"id": f"{vehicle['id']}-int-1", "sectionKey": "interior", "title": "Khoang lái", "url": vehicle["thumbnail"]["url"], "focalPoint": "50% 50%", "aspectRatio": "16 / 10", "fit": "cover", "sortOrder": 20},
+        ],
         "actionMedia": None,
-        "presentationFilm": None,
+        "presentationFilm": {"sectionKey": "interior", "url": "/media/presentation.mp4"},
         "motion": {"imageUrl": vehicle["studioImage"]["url"], "preset": "horizontal", "focalPoint": "50% 50%"},
     }
     for vehicle in _VEHICLES

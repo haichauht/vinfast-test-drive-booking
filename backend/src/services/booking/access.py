@@ -75,7 +75,7 @@ class AccessService(BookingBase):
         if booking_code in permissions and purpose not in permissions:
             contact_value, purpose, booking_code = purpose, booking_code, contact_value
         if purpose not in permissions:
-            raise BookingError("INVALID_INPUT", "Purpose khong hop le.")
+            raise BookingError("INVALID_INPUT", "Mục đích không hợp lệ.")
         eligible_statuses = (
             ("confirmed", "checked_in", "completed", "no_show")
             if purpose == "lookup"
@@ -88,7 +88,7 @@ class AccessService(BookingBase):
         contact = contact_value.strip()
         normalized = contact.lower() if preferred_channel == "email" else normalize_phone(contact)
         if not normalized or (preferred_channel == "email") != ("@" in normalized):
-            raise BookingError("INVALID_INPUT", "Thong tin lien he khong phu hop voi kenh OTP.")
+            raise BookingError("INVALID_INPUT", "Thông tin liên hệ không phù hợp với kênh OTP.")
         destination_hash = self._hash(normalized, "destination")
         self._check_rate_counter(
             bucket_key=f"otp_request:contact:{destination_hash}",
@@ -118,13 +118,13 @@ class AccessService(BookingBase):
                     (normalized, normalized, *eligible_statuses),
                 ).fetchone()
             if not booking:
-                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Khong tim thay lich hen thuoc email nay.")
+                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Không tìm thấy lịch hẹn thuộc email này.")
             contact_matches = c.execute(
                 "SELECT 1 FROM people WHERE id IN (?,?) AND (lower(email)=? OR normalized_phone=? OR phone=?) LIMIT 1",
                 (booking["booker_person_id"], booking["driver_person_id"], normalized, normalized, contact),
             ).fetchone()
             if not contact_matches:
-                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Email khong thuoc lich hen nay.")
+                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Email không thuộc lịch hẹn này.")
             if preferred_channel == "zalo" and not hasattr(self.otp_sender, "is_linked"):
                 raise BookingError("ZALO_NOT_CONFIGURED", "Kênh Zalo chưa được cấu hình.")
             if preferred_channel == "zalo" and not self.otp_sender.is_linked(contact_value):
@@ -168,12 +168,15 @@ class AccessService(BookingBase):
                 ),
             )
             self._event(c, booking["id"], "otp_requested", "user", {"purpose": purpose})
-        delivery = self.otp_sender.send(
-            channel=preferred_channel,
-            destination=contact_value,
-            code=code,
-            expires_in_seconds=self.otp_ttl_seconds,
-        )
+        try:
+            delivery = self.otp_sender.send(
+                channel=preferred_channel,
+                destination=contact_value,
+                code=code,
+                expires_in_seconds=self.otp_ttl_seconds,
+            )
+        except ValueError as err:
+            raise BookingError("OTP_CHANNEL_UNAVAILABLE", "Kênh OTP được chọn tạm thời chưa được cấu hình.") from err
         result = {
             "challenge_id": challenge_id,
             "destination_masked": masked,

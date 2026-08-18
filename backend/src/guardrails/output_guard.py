@@ -24,8 +24,8 @@ _SYSTEM_PROMPT_MARKERS = (
     "system instructions & behavioral protocol",
 )
 _SAFE_LEAK_FALLBACK = (
-    "Tôi không thể hiển thị chỉ dẫn nội bộ hoặc thông tin xác thực. "
-    "Tôi có thể hỗ trợ thông tin xe VinFast và đặt lịch lái thử."
+    "ViVi không thể hiển thị chỉ dẫn nội bộ hoặc thông tin xác thực. "
+    "ViVi có thể hỗ trợ thông tin xe VinFast và đặt lịch lái thử."
 )
 
 

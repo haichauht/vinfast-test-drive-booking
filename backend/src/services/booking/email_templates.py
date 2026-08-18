@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from html import escape
 from pathlib import Path
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from src.services.booking.common import parse_utc
@@ -132,6 +133,9 @@ def render_booking_email(notification_type: str, row) -> RenderedEmail:
         if driver != booker
         else ((("Người đặt & lái thử"), booker),)
     )
+    # Nút chỉ đường Google Maps — tính năng đến từ nhánh testing (PR #55), giữ nguyên khi gộp.
+    showroom_name = row["showroom_name"] or "Showroom VinFast"
+    maps_url = f"https://www.google.com/maps/search/?api=1&query={quote(showroom_name)}"
     rows = (
         ("Mã lịch", row["booking_code"] or "-"),
         (
@@ -139,7 +143,7 @@ def render_booking_email(notification_type: str, row) -> RenderedEmail:
             f"{start.strftime('%H:%M')} - {WEEKDAYS_VI[start.weekday()]}, {start.strftime('%d/%m/%Y')}",
         ),
         ("Mẫu xe", f"{row['model_name']} {row['variant_name']}"),
-        ("Showroom", row["showroom_name"]),
+        ("Showroom", showroom_name),
         *people,
         ("Liên hệ", contact),
         ("Tư vấn viên", staff),
@@ -152,6 +156,8 @@ def render_booking_email(notification_type: str, row) -> RenderedEmail:
         footer=(
             "Cần đổi giờ hoặc huỷ lịch, bạn tra cứu bằng email đã đăng ký trên website VinFast."
         ),
+        maps_url=maps_url,
+        showroom_name=showroom_name,
     )
     return RenderedEmail(subject=subject, plain_text=plain, html=html, inline_images=_inline_logo())
 
@@ -207,6 +213,8 @@ def _html_document(
     rows,
     footer: str | None = None,
     highlight: str | None = None,
+    maps_url: str | None = None,
+    showroom_name: str | None = None,
 ) -> str:
     row_list = list(rows)
     body_rows = "\n".join(
@@ -228,6 +236,17 @@ def _html_document(
         f'<div style="font-size:32px;line-height:38px;font-weight:700;color:{_INK};'
         f'letter-spacing:6px;">{escape(str(highlight))}</div></div>'
         if highlight
+        else ""
+    )
+
+    # Nút chỉ đường: chỉ hiện ở email về lịch hẹn (có showroom), không hiện ở email OTP.
+    maps_html = (
+        f'<div style="margin:18px 0 0;text-align:center;">'
+        f'<a href="{escape(maps_url)}" target="_blank" rel="noreferrer" '
+        f'style="display:inline-block;padding:12px 24px;border-radius:10px;'
+        f'background:{_BLUE};color:#ffffff;font-size:14px;font-weight:600;'
+        f'text-decoration:none;">Chỉ đường đến {escape(showroom_name or "showroom")}</a></div>'
+        if maps_url
         else ""
     )
 
@@ -269,7 +288,7 @@ def _html_document(
         </tr>
         <tr>
           <td style="padding:0 30px 24px;font-family:{_FONT};">
-            {highlight_html}{table_html}{footer_html}
+            {highlight_html}{table_html}{maps_html}{footer_html}
           </td>
         </tr>
       </table>
