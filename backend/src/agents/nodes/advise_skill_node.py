@@ -84,7 +84,7 @@ async def advise_skill_node(state: AgentState) -> dict:
         logging.getLogger(__name__).exception("Error in advise_skill_node")
         from langchain_core.messages import AIMessage
 
-        safe_response = AIMessage(content="Đã xảy ra lỗi khi kết nối với mô hình AI. Vui lòng thử lại sau.")
+        safe_response = AIMessage(content="ViVi chưa xử lý được yêu cầu này lúc này. Bạn vui lòng thử lại hoặc chọn trực tiếp từ bảng hỗ trợ bên trái giúp ViVi nhé.")
         return {
             "messages": [safe_response],
             "response": safe_response.content,

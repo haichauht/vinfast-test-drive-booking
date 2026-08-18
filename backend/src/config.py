@@ -109,7 +109,7 @@ class Settings(BaseSettings):
     llm_daily_budget_enabled: bool = True
     llm_daily_max_cost_usd: float = Field(default=20.0, ge=0.0)
     llm_session_max_cost_usd_per_day: float = Field(default=1.0, ge=0.0)
-    llm_max_calls_per_turn: int = Field(default=8, ge=1, le=32)
+    llm_max_calls_per_turn: int = Field(default=16, ge=1, le=32)
     llm_estimated_input_token_price_per_1m: float = Field(default=0.15, ge=0.0)
     llm_estimated_output_token_price_per_1m: float = Field(default=0.60, ge=0.0)
     llm_estimated_output_tokens_per_call: int = Field(default=700, ge=1, le=100_000)
