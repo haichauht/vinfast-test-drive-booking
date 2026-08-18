@@ -321,18 +321,21 @@ export function buildGoogleCalendarUrl({ car, showroom, slot, bookingCode, advis
   let startTimeStr = ''
   let endTimeStr = ''
 
-  if (slot.date && slot.time) {
-    const cleanDate = slot.date.replace(/-/g, '')
-    const [hours, minutes] = slot.time.split(':').map(Number)
-    const startH = String(hours).padStart(2, '0')
-    const startM = String(minutes || 0).padStart(2, '0')
-
-    const endMinutesTotal = hours * 60 + (minutes || 0) + 45
-    const endH = String(Math.floor(endMinutesTotal / 60)).padStart(2, '0')
-    const endM = String(endMinutesTotal % 60).padStart(2, '0')
-
-    startTimeStr = `${cleanDate}T${startH}${startM}00`
-    endTimeStr = `${cleanDate}T${endH}${endM}00`
+  if (slot.startAt) {
+    const startDate = new Date(slot.startAt)
+    const endDate = slot.endAt ? new Date(slot.endAt) : new Date(startDate.getTime() + 45 * 60000)
+    if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+      startTimeStr = startDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+      endTimeStr = endDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+    }
+  } else if (slot.date && slot.time) {
+    const timeClean = slot.time.length === 5 ? slot.time : slot.time.padStart(5, '0')
+    const startDate = new Date(`${slot.date}T${timeClean}:00+07:00`)
+    if (!isNaN(startDate.getTime())) {
+      const endDate = new Date(startDate.getTime() + 45 * 60000)
+      startTimeStr = startDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+      endTimeStr = endDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+    }
   }
 
   const params = new URLSearchParams({
@@ -340,6 +343,7 @@ export function buildGoogleCalendarUrl({ car, showroom, slot, bookingCode, advis
     text: title,
     details,
     location,
+    ctz: 'Asia/Ho_Chi_Minh',
     ...(startTimeStr && endTimeStr ? { dates: `${startTimeStr}/${endTimeStr}` } : {}),
   })
 
