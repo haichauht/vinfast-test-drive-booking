@@ -1451,6 +1451,21 @@ export function BookingPage() {
       const accessPurpose = accessFlow?.purpose || 'lookup'
       const isCancellation = accessPurpose === 'cancel'
 
+      if (accessPurpose === 'confirm_booking') {
+        const actionKey = `${bookingId}:${bookingVersion}`
+        const uiActionId = confirmActionIdsRef.current.get(actionKey) || actionId('confirm')
+        confirmActionIdsRef.current.set(actionKey, uiActionId)
+        const confirmed = await confirmHeldBooking({ bookingId, version: bookingVersion, uiActionId })
+        confirmActionIdsRef.current.delete(actionKey)
+        setSubmitting(false)
+        setBookingCode(confirmed.booking_code)
+        setBookingAdvisor(confirmed.advisor || null)
+        setAccessFlow(null)
+        setSuccessCinematic(true)
+        addMessage('assistant', 'Xác thực OTP thành công! Lịch đặt lái thử của bạn đã được xác nhận chính thức.')
+        return
+      }
+
       if (formattedBookings.length > 1) {
         setAccessProfile({
           accessToken: verified.access_session_token,
@@ -1768,26 +1783,38 @@ export function BookingPage() {
 
   const submitBooking = async () => {
     setSubmitting(true)
-    // ĐÃ XONG: đặt lịch chạy thật qua confirmHeldBooking (POST /api/v1/chat,
-    // action confirm_booking). Chống bấm trùng bằng ui_action_id sinh từ api/ids.js.
-    // Contract tham chiếu giữ lại: response cần bookingCode, status,
-    // assignedSalesRepresentative; 409/410 phải
-    // return the user to live slot selection without losing customer form values.
+    setAccessError('')
     try {
-      const actionKey = `${bookingId}:${bookingVersion}`
-      const uiActionId = confirmActionIdsRef.current.get(actionKey) || actionId('confirm')
-      confirmActionIdsRef.current.set(actionKey, uiActionId)
-      const confirmed = await confirmHeldBooking({ bookingId, version: bookingVersion, uiActionId })
-      confirmActionIdsRef.current.delete(actionKey)
-      setSubmitting(false)
-      setBookingCode(confirmed.booking_code)
-      setBookingAdvisor(confirmed.advisor || null)
-      // Phiếu chỉ xuất hiện sau cinematic. Backend vẫn là nguồn xác nhận cuối cùng;
-      // animation không tự tạo booking và không chạy nếu request ở trên thất bại.
-      setSuccessCinematic(true)
+      const result = await requestBookingAccess({
+        bookingCode: bookingId,
+        email: person.email,
+        purpose: 'confirm_booking',
+        preferredChannel: 'email',
+      })
+      otpChallengeIdRef.current = result.challenge_id
+      const expiresAt = result.expires_at ? new Date(result.expires_at).getTime() : Date.now() + 600000
+      setAccessFlow({
+        phase: 'verify',
+        purpose: 'confirm_booking',
+        challengeId: result.challenge_id,
+        expiresAt,
+      })
+      dispatchInteraction({ type: InteractionEvent.ACCESS_VERIFY })
+      setAccessValue((current) => ({ ...current, email: person.email, otpCode: '' }))
+      setAccessSecondsLeft(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)))
+      setResendSecondsLeft(result.retry_after_seconds || 60)
+
+      const mockOtp = result.is_mock ? result.otp_code : ''
+      addMessage(
+        'assistant',
+        mockOtp
+          ? `Mã OTP xác nhận đặt lịch của bạn là **${mockOtp}**. Nhập mã này để chốt lịch chính thức.`
+          : `ViVi đã gửi mã OTP xác nhận đặt lịch đến email **${person.email}**. Bạn vui lòng nhập mã để chốt lịch nhé.`,
+      )
     } catch (error) {
+      reply(`Chưa thể gửi mã OTP xác nhận: ${error.message}`)
+    } finally {
       setSubmitting(false)
-      reply(`Chưa thể xác nhận lịch: ${error.message}`)
     }
   }
 

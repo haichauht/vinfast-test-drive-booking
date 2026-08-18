@@ -36,6 +36,12 @@ ACCESS_PERMISSIONS: dict[str, list[str]] = {
         "update_details",
         "cancel_booking",
     ],
+    # Xác thực OTP khi tạo mới / chốt lịch đặt lái thử
+    "confirm_booking": [
+        "read_booking",
+        "confirm_booking",
+        "update_details",
+    ],
 }
 
 
@@ -79,6 +85,7 @@ class AccessService(BookingBase):
         eligible_statuses = (
             ("confirmed", "checked_in", "completed", "no_show")
             if purpose == "lookup"
+            else ("held",) if purpose == "confirm_booking"
             else ("confirmed",)
         )
         status_placeholders = ",".join("?" for _ in eligible_statuses)
@@ -98,8 +105,8 @@ class AccessService(BookingBase):
         with self.db.transaction(immediate=True) as c:
             if normalized_code:
                 booking = c.execute(
-                    f"SELECT * FROM bookings WHERE booking_code=? AND status IN ({status_placeholders})",
-                    (normalized_code, *eligible_statuses),
+                    f"SELECT * FROM bookings WHERE (booking_code=? OR lower(id)=lower(?)) AND status IN ({status_placeholders})",
+                    (normalized_code, normalized_code, *eligible_statuses),
                 ).fetchone()
             elif preferred_channel == "email":
                 booking = c.execute(
@@ -119,12 +126,13 @@ class AccessService(BookingBase):
                 ).fetchone()
             if not booking:
                 raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Không tìm thấy lịch hẹn thuộc email này.")
-            contact_matches = c.execute(
-                "SELECT 1 FROM people WHERE id IN (?,?) AND (lower(email)=? OR normalized_phone=? OR phone=?) LIMIT 1",
-                (booking["booker_person_id"], booking["driver_person_id"], normalized, normalized, contact),
-            ).fetchone()
-            if not contact_matches:
-                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Email không thuộc lịch hẹn này.")
+            if purpose != "confirm_booking" or (booking["booker_person_id"] or booking["driver_person_id"]):
+                contact_matches = c.execute(
+                    "SELECT 1 FROM people WHERE id IN (?,?) AND (lower(email)=? OR normalized_phone=? OR phone=?) LIMIT 1",
+                    (booking["booker_person_id"], booking["driver_person_id"], normalized, normalized, contact),
+                ).fetchone()
+                if not contact_matches and purpose != "confirm_booking":
+                    raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Email không thuộc lịch hẹn này.")
             if preferred_channel == "zalo" and not hasattr(self.otp_sender, "is_linked"):
                 raise BookingError("ZALO_NOT_CONFIGURED", "Kênh Zalo chưa được cấu hình.")
             if preferred_channel == "zalo" and not self.otp_sender.is_linked(contact_value):

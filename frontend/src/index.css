@@ -5421,7 +5421,7 @@ svg {
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   height: 100%;
   min-height: 0;
-  padding: 92px 6% 28px;
+  padding: 60px 6% 24px;
   overflow: hidden;
   background: #eceeed;
 }
@@ -5462,6 +5462,8 @@ svg {
 }
 
 .studio-vehicle__heading span {
+  display: inline-block;
+  margin-top: 14px;
   color: var(--blue);
   font-size: 0.72rem;
   font-weight: 700;
@@ -5504,17 +5506,18 @@ svg {
   transform: scale(0.98);
 }
 
-/* Tên xe thu lại 18/08/2026: ở 6,2rem nó lấn hết chỗ của model 3D ngay bên cạnh. */
 .studio-vehicle__heading strong {
-  margin-top: 8px;
-  font-size: clamp(2.5rem, 4.4vw, 4.4rem);
+  margin-top: 10px;
+  font-size: clamp(1.9rem, 3.2vw, 3.2rem);
   font-weight: 550;
   letter-spacing: -0.07em;
   line-height: 0.92;
 }
 
 .studio-vehicle__heading small {
-  margin-top: 12px;
+  margin-top: 4px;
+  margin-bottom: 0;
+  font-size: 0.82rem;
   color: var(--muted);
 }
 
@@ -5526,7 +5529,8 @@ svg {
   display: grid;
   place-items: center;
   min-height: 0;
-  padding: 16px 0 8px;
+  padding: 0;
+  margin-top: -16px;
   animation: vehicle-arrive 1.15s var(--ease-heavy) both;
 }
 
@@ -5534,7 +5538,8 @@ svg {
   width: min(96%, 880px);
   max-width: 100%;
   height: 100%;
-  max-height: min(44vh, 420px);
+  max-height: min(48vh, 440px);
+  transform: scale(1.05);
 }
 
 .studio-vehicle__image.vehicle-shot--plate,
@@ -8093,7 +8098,7 @@ svg {
   grid-template-rows: 68px minmax(0, 1fr);
   gap: 12px;
   height: 100dvh;
-  padding: 14px;
+  padding: 4px 14px 14px;
   overflow: hidden;
   background: #dfe2e0;
 }
