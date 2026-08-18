@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import uuid
@@ -5,6 +6,7 @@ from collections.abc import Callable
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
@@ -234,13 +236,35 @@ def _request_demo_access(**kwargs: Any) -> dict:
     return booking_service.request_access(**kwargs, expose_otp=expose_mock_otp)
 
 
+@router.post("/chat/stream")
+@router.post("/booking-agent/stream")
+async def chat_stream(body: ChatRequest, request: Request):
+    """Stream ViVi responses word-by-word using Server-Sent Events (Streamable HTTP)."""
+    response_data = await chat(request, body)
+    content = response_data.response or ""
+
+    async def event_generator():
+        words = content.split(" ")
+        for i, word in enumerate(words):
+            chunk = word + (" " if i < len(words) - 1 else "")
+            payload = json.dumps({"type": "token", "content": chunk}, ensure_ascii=False)
+            yield f"data: {payload}\n\n"
+            await asyncio.sleep(0.02)
+        final_payload = json.dumps({"type": "done", "response": response_data.model_dump()}, ensure_ascii=False)
+        yield f"data: {final_payload}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @router.post("/demo/action")
+@router.post("/test-drive/actions")
 async def demo_action(request: DemoActionRequest):
     """Deterministic UI simulator: one button maps to one tool/command."""
     p = request.payload
     actions: dict[str, tuple[str, Callable[..., Any]]] = {
         "search_options": ("SearchOptionsQuery", booking_service.search_options),
         "hold_slot": ("HoldSlotCommand", booking_service.hold_slot),
+        "release_hold": ("release_hold", lambda **kw: booking_service.release_hold(kw.get("booking_id", ""))),
         "get_draft": ("get_booking_draft", lambda **kw: get_booking_draft.invoke(kw)),
         "update_draft": ("UpdateBookingDraftCommand", booking_service.update_booking_draft),
         "confirm_booking": ("ConfirmBookingCommand", booking_service.confirm_booking),

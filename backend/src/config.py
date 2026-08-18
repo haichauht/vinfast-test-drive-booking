@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://vinfast:vinfast@localhost:5432/vinfast_booking"
     auto_load_eval_data: bool = True
     eval_data_dir: str = "eval/data"
+    redis_enabled: bool = False
+    redis_url: str = "redis://red-d9sklsf10e5c73a2lv80:6358"
 
     # Media: local development serves MEDIA_ROOT at /media. Production can set
     # MEDIA_BASE_URL to an absolute CDN origin without changing API DTOs.

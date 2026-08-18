@@ -150,12 +150,15 @@ class AccessService(BookingBase):
                 ),
             )
             self._event(c, booking["id"], "otp_requested", "user", {"purpose": purpose})
-        delivery = self.otp_sender.send(
-            channel=preferred_channel,
-            destination=contact_value,
-            code=code,
-            expires_in_seconds=self.otp_ttl_seconds,
-        )
+        try:
+            delivery = self.otp_sender.send(
+                channel=preferred_channel,
+                destination=contact_value,
+                code=code,
+                expires_in_seconds=self.otp_ttl_seconds,
+            )
+        except ValueError as err:
+            raise BookingError("OTP_CHANNEL_UNAVAILABLE", "Kênh OTP được chọn tạm thời chưa được cấu hình.") from err
         result = {
             "challenge_id": challenge_id,
             "destination_masked": masked,
