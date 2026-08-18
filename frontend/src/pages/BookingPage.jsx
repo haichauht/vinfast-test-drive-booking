@@ -121,7 +121,7 @@ import { actionId } from '../api/ids'
 import { useBackendStatus } from '../context/BackendStatusContext'
 import { BookingCustomerForm as CustomerForm } from '../components/booking/BookingCustomerForm'
 import { ShowroomMap as BookingShowroomMap } from '../components/booking/ShowroomMap'
-import { BookingNextSteps, BookingTicket, SchedulePanel } from '../components/booking/BookingSummary'
+import { BookingNextSteps, BookingTicket, SchedulePanel, buildGoogleCalendarUrl } from '../components/booking/BookingSummary'
 import { BookingAccessPanel } from '../components/booking/BookingAccessPanel'
 import { CancellationConfirmModal, RescheduleConfirmModal } from '../components/booking/BookingManagementModals'
 import { BookingSuccessVehicleModel, preloadVehicle3dRuntime } from '../components/Vehicle3DExperience'
@@ -167,16 +167,27 @@ const escapeIcs = (value = '') => String(value)
   .replace(/\r?\n/g, '\\n')
 
 const downloadCalendarInvite = ({ car, showroom, slot, bookingCode }) => {
-  if (!slot?.startAt) return false
-  const start = new Date(slot.startAt)
-  const end = slot.endAt ? new Date(slot.endAt) : new Date(start.getTime() + 60 * 60000)
+  let start = null
+  let end = null
+
+  if (slot?.startAt) {
+    start = new Date(slot.startAt)
+    end = slot.endAt ? new Date(slot.endAt) : new Date(start.getTime() + 45 * 60000)
+  } else if (slot?.date && slot?.time) {
+    const timeClean = slot.time.length === 5 ? slot.time : slot.time.padStart(5, '0')
+    const dateStr = `${slot.date}T${timeClean}:00+07:00`
+    start = new Date(dateStr)
+    end = new Date(start.getTime() + 45 * 60000)
+  }
+
+  if (!start || isNaN(start.getTime())) return false
   const stamp = (date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
 
   const description = [
-    `Mã lịch: ${bookingCode}`,
+    `Mã lịch: ${bookingCode || 'Tạm giữ'}`,
     'Mang theo giấy phép lái xe còn hiệu lực.',
     showroom?.phone ? `Showroom: ${showroom.phone}` : '',
-    !slot.endAt ? '(Thời lượng là ước tính, showroom sẽ xác nhận lại.)' : '',
+    !slot?.endAt ? '(Thời lượng ước tính: 45 phút, showroom sẽ đón tiếp trực tiếp.)' : '',
   ].filter(Boolean).join('\n')
 
   const ics = [
@@ -184,11 +195,11 @@ const downloadCalendarInvite = ({ car, showroom, slot, bookingCode }) => {
     'VERSION:2.0',
     'PRODID:-//VinFast//Test Drive//VI',
     'BEGIN:VEVENT',
-    `UID:${bookingCode}@vinfast`,
+    `UID:${bookingCode || 'booking'}-${Date.now()}@vinfast`,
     `DTSTAMP:${stamp(new Date())}`,
     `DTSTART:${stamp(start)}`,
     `DTEND:${stamp(end)}`,
-    `SUMMARY:${escapeIcs(`Lái thử ${car?.name || 'VinFast'} · ${bookingCode}`)}`,
+    `SUMMARY:${escapeIcs(`Lái thử ${car?.name || 'VinFast'} · ${bookingCode || 'Lịch hẹn'}`)}`,
     `LOCATION:${escapeIcs([showroom?.name, showroom?.address].filter(Boolean).join(', '))}`,
     `DESCRIPTION:${escapeIcs(description)}`,
     'BEGIN:VALARM',
@@ -203,7 +214,7 @@ const downloadCalendarInvite = ({ car, showroom, slot, bookingCode }) => {
   const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }))
   const link = document.createElement('a')
   link.href = url
-  link.download = `lai-thu-${bookingCode}.ics`
+  link.download = `lai-thu-${bookingCode || 'vinfast'}.ics`
   document.body.appendChild(link)
   link.click()
   link.remove()
@@ -1358,15 +1369,20 @@ export function BookingPage() {
 
   const addBookingToCalendar = () => {
     addMessage('user', 'Thêm buổi lái thử vào lịch của tôi.')
-    const created = downloadCalendarInvite({
+    const gcalUrl = buildGoogleCalendarUrl({
       car: selectedCar,
       showroom: selectedShowroom,
       slot: selectedSlot,
       bookingCode,
+      advisor: bookingAdvisor,
     })
-    reply(created
-      ? 'ViVi đã tạo file lịch cho buổi lái thử này, kèm nhắc trước 2 giờ. Bạn mở file vừa tải để thêm vào ứng dụng lịch nhé.'
-      : 'ViVi chưa đọc được chính xác mốc thời gian của buổi hẹn nên chưa tạo được file lịch. Bạn xem giờ hẹn trên phiếu bên cạnh giúp ViVi nhé.')
+
+    if (gcalUrl) {
+      window.open(gcalUrl, '_blank', 'noopener,noreferrer')
+      reply('ViVi đã mở sẵn trang Google Calendar với đầy đủ thông tin buổi lái thử cho bạn. Bạn chỉ cần bấm "Lưu" để hoàn tất nhé!')
+    } else {
+      reply('ViVi chưa đọc được chính xác mốc thời gian của buổi hẹn nên chưa mở được Google Calendar. Bạn xem giờ hẹn trên phiếu bên cạnh giúp ViVi nhé.')
+    }
   }
 
   // Đặt lịch cho mẫu khác = một luồng MỚI hoàn toàn. Xoá sạch lựa chọn cũ để lịch vừa đặt

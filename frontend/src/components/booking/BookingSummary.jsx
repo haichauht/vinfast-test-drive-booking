@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
-import { CalendarBlank, CaretLeft, CaretRight, CheckCircle, Clock } from '@phosphor-icons/react'
+import { CalendarBlank, CalendarPlus, CaretLeft, CaretRight, CheckCircle, Clock } from '@phosphor-icons/react'
 import { VehicleShot } from './VehicleWorkspace'
 
 const WEEKDAY_LABELS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
@@ -311,6 +311,45 @@ export function BookingNextSteps({ slot, person, recipient }) {
   )
 }
 
+export function buildGoogleCalendarUrl({ car, showroom, slot, bookingCode, advisor }) {
+  if (!car || !showroom || !slot) return ''
+
+  const title = `Lái thử xe VinFast ${car.name}`
+  const location = `${showroom.name} - ${showroom.address}`
+  const details = `Mã đặt lịch: ${bookingCode || 'Tạm giữ'}\nMẫu xe: ${car.name}\nShowroom: ${showroom.name}\nTư vấn viên: ${advisor?.full_name || 'VinFast Advisor'}`
+
+  let startTimeStr = ''
+  let endTimeStr = ''
+
+  if (slot.startAt) {
+    const startDate = new Date(slot.startAt)
+    const endDate = slot.endAt ? new Date(slot.endAt) : new Date(startDate.getTime() + 45 * 60000)
+    if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+      startTimeStr = startDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+      endTimeStr = endDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+    }
+  } else if (slot.date && slot.time) {
+    const timeClean = slot.time.length === 5 ? slot.time : slot.time.padStart(5, '0')
+    const startDate = new Date(`${slot.date}T${timeClean}:00+07:00`)
+    if (!isNaN(startDate.getTime())) {
+      const endDate = new Date(startDate.getTime() + 45 * 60000)
+      startTimeStr = startDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+      endTimeStr = endDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+    }
+  }
+
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    details,
+    location,
+    ctz: 'Asia/Ho_Chi_Minh',
+    ...(startTimeStr && endTimeStr ? { dates: `${startTimeStr}/${endTimeStr}` } : {}),
+  })
+
+  return `https://calendar.google.com/calendar/render?${params.toString()}`
+}
+
 export function BookingTicket({ car, showroom, slot, person, recipient, bookingCode, advisor = null, compact = false }) {
   const advisorLabel = advisor?.full_name
     ? `${advisor.full_name}${advisor.phone ? ` · ${advisor.phone}` : ''}`
@@ -353,5 +392,23 @@ export function BookingTicket({ car, showroom, slot, person, recipient, bookingC
     ['Thời gian', `${slot.time} · ${slot.dateLabel}`],
     ['Tư vấn viên', advisorLabel],
   ]
-  return <section className={`studio-ticket ${compact ? 'studio-ticket--compact' : ''}`}><header><span>{bookingCode ? 'Lịch lái thử đã xác nhận' : 'Kiểm tra trước khi đặt lịch'}</span>{bookingCode && <strong>{bookingCode}</strong>}</header><div className="studio-ticket__vehicle"><VehicleShot car={car} mode="cutout" /><span><strong>{car.name}</strong><small>{car.body}</small></span></div><dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><p><CheckCircle size={16} weight="fill" /> Đã xác nhận có giấy phép lái xe phù hợp.</p></section>
+
+  return (
+    <section className={`studio-ticket ${compact ? 'studio-ticket--compact' : ''}`}>
+      <header>
+        <span>{bookingCode ? 'Lịch lái thử đã xác nhận' : 'Kiểm tra trước khi đặt lịch'}</span>
+        {bookingCode && <strong>{bookingCode}</strong>}
+      </header>
+      <div className="studio-ticket__vehicle">
+        <VehicleShot car={car} mode="cutout" />
+        <span><strong>{car.name}</strong><small>{car.body}</small></span>
+      </div>
+      <dl>
+        {rows.map(([label, value]) => (
+          <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+        ))}
+      </dl>
+      <p><CheckCircle size={16} weight="fill" /> Đã xác nhận có giấy phép lái xe phù hợp.</p>
+    </section>
+  )
 }
