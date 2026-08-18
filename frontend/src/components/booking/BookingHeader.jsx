@@ -7,7 +7,7 @@
  * - Session progress indicator
  */
 import { Link } from 'react-router-dom'
-import { ArrowLeft } from '@phosphor-icons/react'
+import { ArrowLeft, ShieldCheck } from '@phosphor-icons/react'
 import { Brand } from '../Brand'
 
 export function BookingHeader() {
@@ -15,7 +15,10 @@ export function BookingHeader() {
     <header className="booking-topbar booking-topbar--studio">
       <Link to="/"><ArrowLeft size={17} weight="light" /> Trang chủ</Link>
       <Brand />
-      <div><span /> Tiến trình được giữ trên thiết bị</div>
+      <div className="booking-topbar__persist">
+        <ShieldCheck size={15} weight="light" aria-hidden="true" />
+        Tiến trình được giữ trên thiết bị
+      </div>
     </header>
   )
 }

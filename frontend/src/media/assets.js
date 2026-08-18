@@ -78,6 +78,18 @@ const galleryModules = import.meta.glob('./local/gallery/*/*.{png,jpg,jpeg,webp}
   import: 'default',
 })
 
+// Ảnh xe cho khối mời chọn xe ở khung chat: ./local/upsell/<mã xe>.webp
+// Đây là bản ĐÃ CHUẨN HOÁ từ ảnh studio gốc — xe cùng bề ngang và cùng đường bánh xe trên một
+// khung 320×180. Ảnh studio gốc mỗi mẫu một tỉ lệ (1,78 · 2,40 · 2,62…) nên khi cùng
+// `object-fit: contain` trong ô nhỏ, ba chiếc xe nằm ở ba độ cao khác nhau (đo được lệch tới
+// 4,6px trong ô cao 48px) — nhìn như trôi lửng, không thành một hàng.
+// Chiều cao giữa các xe VẪN chênh nhau theo đúng tỉ lệ thật; chỉ đường bánh xe là chung.
+const upsellModules = import.meta.glob('./local/upsell/*.webp', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+})
+
 // Swatch màu + ảnh xe theo từng màu: ./local/colors/<mã xe>/{swatch|car}-<khoá>.<ext>
 // Chỉ dùng cho các mẫu backend CHƯA publish `colors` (xem data/vehicle-colors.js).
 const colorModules = import.meta.glob('./local/colors/*/*.{png,jpg,jpeg,webp,svg}', {
@@ -137,6 +149,11 @@ const extensionlessIndex = new WeakMap()
 const overrides = normalizeModules(overrideModules)
 const galleryImages = normalizeModules(galleryModules)
 const colorImages = normalizeModules(colorModules)
+const upsellImages = normalizeModules(upsellModules)
+
+/** Ảnh xe đã chuẩn hoá cho khối mời chọn xe. Trả '' nếu mẫu đó chưa có bản chuẩn hoá. */
+export const upsellThumb = (vehicleId) =>
+  upsellImages[`./local/upsell/${normalizePath(vehicleId)}.webp`.normalize('NFC')] || ''
 
 /** URL của một file trong kho màu, vd colorAsset('minio-green', 'swatch-red.webp'). */
 export const colorAsset = (vehicleId, file) =>

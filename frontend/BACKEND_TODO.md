@@ -278,3 +278,61 @@ Frontend KHÔNG sửa được: `resolveVehicleMedia` chỉ viết lại `/media
 
 Sửa một trong hai: đổi đuôi trong dữ liệu content thành `.webp`, hoặc cho tầng phục vụ media
 thử đuôi khác khi tra thẳng trượt.
+
+## Upsell 2 mẫu xe ở khung chat đặt lịch (Batch 9 — 18/08/2026)
+
+### P1 — Chưa có API lưu và trả 2 mẫu xe mà sale admin muốn đẩy
+
+- Nhu cầu của frontend: khách mở thẳng ViVi mà chưa xem xe nào thì khối đầu tiên
+  họ nhìn thấy là 2 mẫu showroom đang muốn bán. Người quyết định 2 mẫu đó là sale
+  admin, nên danh sách phải nằm ở backend, không nằm trong code frontend.
+- Màn hình phụ thuộc: `/booking`, `BookingPage`, `components/booking/BookingUpsell.jsx`,
+  `hooks/useSiteData.useBookingUpsell`, `api/upsell.js`.
+- Endpoint đề xuất cho phía khách (công khai, có ETag để dùng chung cache với
+  `/vehicles` và `/content/{page}`):
+
+```
+GET /api/v1/settings/booking-upsell
+```
+
+```json
+{
+  "data": {
+    "vehicleIds": ["vf3", "vf9"],
+    "headline": "Showroom đang ưu tiên",
+    "note": "Còn xe demo trong tuần này",
+    "updatedAt": "2026-08-18T09:00:00Z"
+  }
+}
+```
+
+- Endpoint đề xuất cho trang admin (cần xác thực nhân viên):
+
+```
+PUT /api/v1/admin/settings/booking-upsell
+```
+
+```json
+{
+  "vehicleIds": ["vf3", "vf9"],
+  "headline": "Showroom đang ưu tiên",
+  "note": "Còn xe demo trong tuần này"
+}
+```
+
+- Ràng buộc phía backend:
+  - `vehicleIds` nhận đúng 2 phần tử, không trùng nhau, và mỗi id phải là xe đang
+    publish với `testDriveEligible = true`. Sai thì trả `422 INVALID_INPUT` kèm id
+    có vấn đề, đừng lặng lẽ bỏ bớt.
+  - Thứ tự trong mảng là thứ tự hiển thị trái sang phải. Giữ nguyên thứ tự admin xếp.
+  - `headline` và `note` để trống được. Trống thì frontend dùng chữ mặc định
+    "Showroom đang ưu tiên" và ẩn dòng phụ.
+  - `PUT` xong phải làm mới ETag của `GET` để khách nhận cấu hình mới ngay lần tải kế.
+- Hành vi frontend hiện tại khi chưa có endpoint: `useBookingUpsell` bắt lỗi, không
+  chặn luồng đặt lịch, và chạy cặp mặc định `['vf3', 'vf9']` trong
+  `api/upsell.js:DEFAULT_UPSELL_VEHICLE_IDS`. Đây là giá trị mặc định của một tuỳ chọn
+  cấu hình, không phải dữ liệu xe bịa ra: thông tin từng chiếc xe vẫn lấy từ
+  `GET /vehicles`. Hook trả thêm `source: 'admin' | 'default'` để bên admin kiểm tra
+  được là cấu hình đã về tới trang khách hay chưa.
+- Muốn đổi số ô upsell khác 2: sửa `UPSELL_SLOT_COUNT` trong `api/upsell.js` VÀ lưới
+  `.booking-upsell__grid` trong `index.css`. Hai chỗ này phải đi cùng nhau.

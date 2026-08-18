@@ -4917,16 +4917,33 @@ svg {
   font-weight: 650;
 }
 
+/* Dòng "Tiến trình được giữ trên thiết bị" ở góc phải header màn đặt lịch.
+   Trước đây dòng này không khai báo font và cân chữ riêng nên nó nhận font kế thừa,
+   đứng cạnh link "Trang chủ" bên trái là lệch hẳn về nét và độ đậm. Nay khoá đúng
+   bộ chữ thân bài và dùng chung thang chữ với link bên trái để header đọc như một khối. */
 .booking-topbar--studio > div:last-child {
   display: inline-flex;
   justify-self: end;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-family: var(--font-body);
+  font-size: 0.74rem;
+  font-weight: 500;
+  letter-spacing: -0.004em;
+  line-height: 1;
 }
 
-.booking-topbar--studio > div:last-child > span,
+/* Icon trạng thái. Bỏ chấm tròn xanh có quầng sáng: kiểu chấm "online" nhấp nháy đó là
+   ngôn ngữ của bảng điều khiển máy chủ, không phải của một trang bán ô tô, và nó còn hứa
+   sai — câu chữ nói về việc dữ liệu được lưu, chứ không nói có ai đang trực tuyến.
+   Thay bằng icon khiên phác nét, cùng họ Phosphor light với mũi tên "Trang chủ" ở đầu
+   header, và lấy màu mực nhạt của trang thay vì màu xanh báo trạng thái. */
+.booking-topbar--studio > div:last-child > svg {
+  flex-shrink: 0;
+  color: #9aa0a6;
+}
+
 .vivi-studio__head small span {
   width: 7px;
   height: 7px;
@@ -5079,11 +5096,11 @@ svg {
 }
 
 .workspace-switcher {
-  position: absolute;
-  top: 18px;
-  left: 18px;
+  position: relative;
+  flex: 0 0 auto;
   z-index: 8;
   display: flex;
+  align-items: center;
   gap: 5px;
   padding: 5px;
   border: 1px solid rgba(255, 255, 255, 0.74);
@@ -5092,6 +5109,59 @@ svg {
   box-shadow: inset 0 1px 0 #fff, 0 14px 35px -24px rgba(18, 24, 32, 0.46);
   backdrop-filter: blur(16px);
 }
+
+/* Hàng công cụ: viên pill nút bên trái, tiêu đề đứng ngay cạnh, cùng một trục ngang. */
+.workspace-toolbar {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  left: 18px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/*
+ * Tiêu đề bảng, đứng CÙNG HÀNG với viên pill.
+ * Cỡ chữ cố tình nhỏ hơn tiêu đề cũ trong thân bảng (trước là clamp lên tới 4rem): ở đây nó
+ * chỉ cần nói "đang xem cái gì", không phải là tiêu đề của cả màn.
+ */
+.workspace-toolbar__title {
+  min-width: 0;
+  margin: 0 0 0 14px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: clamp(0.95rem, 1.35vw, 1.28rem);
+  font-weight: 620;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Lối lùi của luồng đổi giờ: nút phụ, đứng đầu hàng, tách khỏi nhóm tab bằng một đường mảnh. */
+.workspace-switcher__back {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 5px;
+  height: 34px;
+  margin-right: 4px;
+  padding: 0 12px 0 9px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 12px 0 0 12px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 650;
+  transition: color 0.2s var(--ease-soft);
+}
+
+.workspace-switcher__back:hover { color: var(--ink); }
+.workspace-switcher__back:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 .workspace-switcher button {
   display: inline-flex;
@@ -5217,7 +5287,6 @@ svg {
   display: grid;
   gap: 3px;
   margin: 0;
-  padding-right: 108px;
   color: var(--ink);
   font-size: 0.88rem;
 }
@@ -5233,43 +5302,86 @@ svg {
 
 .booking-history__details p small { color: var(--muted); font-size: 0.76rem; }
 
-/* Dòng thông báo giữ chỗ không có nút nên không cần chừa lề phải cho nút. */
-.booking-history__details p.booking-history__hold { padding-right: 13px; }
-
 /*
- * Nút đổi giờ: trước là một ô vuông xám 36px chỉ có icon lịch — anh Minh phản ánh khó thấy và
- * không đoán được bấm vào đâu để sửa. Nay là viên thuốc XANH có chữ, đặt ngay cạnh dòng thời
- * gian nên đọc được ngay là "sửa cái này".
+ * Hàng thao tác của một lịch: "Chọn lịch khác" bên trái, "Đổi giờ" và "Huỷ lịch" bên phải.
+ *
+ * Trước đây chỉ có một nút đổi giờ, đặt `position: absolute` đè lên dòng "Thời gian" nên hàng
+ * đó phải chừa 108px lề phải. Nay có ba nút nên tách hẳn thành một hàng riêng ở cuối khối —
+ * vừa đủ chỗ, vừa rõ đây là vùng thao tác chứ không phải một chi tiết của dòng thời gian.
  */
-.booking-history__reschedule {
-  position: absolute;
-  top: 50%;
-  right: 0;
+.booking-history__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.booking-history__actions-main {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.booking-history__back,
+.booking-history__action {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 34px;
+  height: 32px;
   padding: 0 13px;
-  border: 1px solid rgba(20, 100, 244, 0.28);
   border-radius: 999px;
-  color: var(--blue);
-  background: rgba(20, 100, 244, 0.08);
   cursor: pointer;
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 650;
   letter-spacing: -0.005em;
-  transform: translateY(-38%);
   transition: color 0.2s var(--ease-soft), background 0.2s var(--ease-soft),
     border-color 0.2s var(--ease-soft);
 }
 
-.booking-history__reschedule:hover {
+/* Quay lại danh sách: nút phụ, không tranh sự chú ý với hai thao tác chính. */
+.booking-history__back {
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: transparent;
+}
+
+.booking-history__back:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: rgba(23, 26, 32, 0.035);
+}
+
+.booking-history__action {
+  border: 1px solid rgba(20, 100, 244, 0.28);
+  color: var(--blue);
+  background: rgba(20, 100, 244, 0.08);
+}
+
+.booking-history__action:hover {
   border-color: var(--blue);
   color: var(--surface);
   background: var(--blue);
 }
 
-.booking-history__reschedule:focus-visible {
+/* Huỷ lịch là thao tác không quay lại được, nên mang màu cảnh báo riêng. */
+.booking-history__action--danger {
+  border-color: rgba(199, 54, 46, 0.3);
+  color: #c7362e;
+  background: rgba(199, 54, 46, 0.07);
+}
+
+.booking-history__action--danger:hover {
+  border-color: #c7362e;
+  color: var(--surface);
+  background: #c7362e;
+}
+
+.booking-history__back:focus-visible,
+.booking-history__action:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 3px;
 }
@@ -5392,12 +5504,13 @@ svg {
   transform: scale(0.98);
 }
 
+/* Tên xe thu lại 18/08/2026: ở 6,2rem nó lấn hết chỗ của model 3D ngay bên cạnh. */
 .studio-vehicle__heading strong {
   margin-top: 8px;
-  font-size: clamp(3.2rem, 6.2vw, 6.2rem);
+  font-size: clamp(2.5rem, 4.4vw, 4.4rem);
   font-weight: 550;
-  letter-spacing: -0.075em;
-  line-height: 0.9;
+  letter-spacing: -0.07em;
+  line-height: 0.92;
 }
 
 .studio-vehicle__heading small {
@@ -5701,36 +5814,177 @@ svg {
   background: rgba(255, 255, 255, 0.78);
 }
 
-.agent-vehicle-choices {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 7px;
-  margin-bottom: 10px;
-}
-
-.agent-vehicle-choices button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 6px 4px;
+/* ─── Khối upsell 2 mẫu xe ở đầu khung chat ViVi ─────────────────────────────
+   Thay hàng 4 nút chữ VF 3 / VF 5 / VF 6 / VF 7 trước đây.
+   Hai ràng buộc chi phối toàn bộ số đo dưới đây:
+   1. Khối này nằm ngay trên ô nhập tin nhắn, nên chiều cao phải ở mức của một hàng
+      gợi ý, không phải của một khu bán hàng. Ảnh xe vì thế nằm ngang cạnh phần chữ và
+      cao 52px, thay vì dựng thẻ đứng như lưới xe ở trang chủ.
+   2. Panel chat hẹp nhất là 430px ở bố cục 2 màn, tức mỗi thẻ chỉ còn khoảng 195px.
+      Phần chữ vì thế min-width: 0 và cắt bằng ellipsis, không cho tên hay giá đẩy
+      thẻ rộng ra làm vỡ lưới 2 cột. */
+/*
+ * Khối mời chọn xe. KHÔNG đặt max-width ở đây.
+ *
+ * Khối này và ô nhập tin nhắn là hai con của cùng `.vivi-studio__composer`, nên khi để tự do
+ * chúng ăn chung đúng một lề trái/phải và xếp thẳng cột với nhau. Ngày 18/08/2026 em từng
+ * chặn 560px rồi 720px để bớt khoảng trống trong thẻ lúc chỉ có 2 mẫu — hệ quả là khối hẹp
+ * hơn hẳn ô nhập chat ngay dưới, nhìn thụt vào. Nay đã lên 3 mẫu nên bề ngang tự đầy,
+ * không cần chặn nữa.
+ */
+.booking-upsell {
+  margin-bottom: 11px;
+  padding: 11px 12px 10px;
   border: 1px solid var(--line);
-  border-radius: 99px;
-  color: var(--ink);
+  border-radius: 18px;
   background: #f7f8f7;
-  cursor: pointer;
-  transition: all 0.2s var(--ease-soft);
 }
 
-.agent-vehicle-choices button:hover {
+.booking-upsell__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 9px;
+  margin-bottom: 9px;
+}
+
+/* Câu mời chứ không còn là nhãn: bỏ viết hoa toàn bộ và nới cỡ chữ, vì
+   "HÃY CHỌN MẪU XE ƯA THÍCH CỦA BẠN" ở 0,62rem in hoa đọc như một cái tem hệ thống. */
+.booking-upsell__head strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+}
+
+.booking-upsell__head small {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+/* Ba cột từ 18/08/2026 (trước là hai). Khối rộng thêm cho ba thẻ vẫn thở được. */
+.booking-upsell__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .booking-upsell__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.booking-upsell__card {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 9px 8px 7px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  color: var(--ink);
+  /* KHÔNG nền trắng: ảnh xe đã tách nền sẵn nên để nó đứng thẳng trên nền của khối bao
+     ngoài, xe nổi lên tự nhiên thay vì nằm trong một hộp trắng. Nền trắng chỉ hiện khi
+     rê chuột, làm tín hiệu "thẻ này bấm được". */
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s var(--ease-soft), box-shadow 0.2s var(--ease-soft), transform 0.2s var(--ease-soft);
+}
+
+.booking-upsell__card:hover {
   border-color: var(--blue);
-  background: #fff;
+  background: var(--surface);
+  box-shadow: 0 10px 22px -18px rgba(20, 28, 37, 0.55);
   transform: translateY(-1px);
 }
 
-.agent-vehicle-choices button > span {
-  font-size: 0.72rem;
+.booking-upsell__card:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.booking-upsell__shot {
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 44px;
+}
+
+/* Ảnh trong ô đã chuẩn hoá sẵn (xem media/assets.js → upsellThumb), nên chỉ cần contain là
+   ba chiếc xe tự đứng chung một đường bánh. Không đặt nền, không bo góc, không đổ bóng. */
+.booking-upsell__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: transparent;
+  object-fit: contain;
+  box-shadow: none;
+}
+
+.booking-upsell__meta {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.booking-upsell__meta strong,
+.booking-upsell__meta small,
+.booking-upsell__meta em {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.booking-upsell__meta strong {
+  font-size: 0.79rem;
+  font-weight: 640;
+  letter-spacing: -0.012em;
+}
+
+.booking-upsell__meta small {
+  color: var(--muted);
+  font-size: 0.63rem;
+}
+
+.booking-upsell__meta em {
+  color: var(--ink-soft);
+  font-size: 0.66rem;
+  font-style: normal;
   font-weight: 600;
+}
+
+.booking-upsell__go {
+  flex-shrink: 0;
+  color: #b0b5ba;
+}
+
+.booking-upsell__card:hover .booking-upsell__go {
+  color: var(--blue);
+}
+
+/* Đường thoát cho người không thích cả 2 mẫu. Cố tình để dạng chữ nhạt, không viền,
+   để nó không cạnh tranh với 2 thẻ xe phía trên — đây là lối phụ, không phải lời mời. */
+.booking-upsell__browse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 8px 2px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s var(--ease-soft);
+}
+
+.booking-upsell__browse:hover {
+  color: var(--blue);
 }
 
 .vivi-capabilities {
@@ -6017,6 +6271,41 @@ svg {
   margin-bottom: 26px;
 }
 
+/* Lối lùi ở các màn của luồng đổi giờ. Đặt TRÊN dòng nhãn để đọc theo đúng thứ tự
+   "quay lại → đang ở đâu → làm gì". */
+.studio-schedule__back {
+  display: inline-flex;
+  align-items: center;
+  /* Khối cha là lưới nên nút sẽ bị kéo dài hết hàng nếu không tự co lại. */
+  justify-self: start;
+  align-self: start;
+  width: fit-content;
+  gap: 6px;
+  height: 30px;
+  margin-bottom: 12px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.73rem;
+  font-weight: 650;
+  transition: color 0.2s var(--ease-soft), border-color 0.2s var(--ease-soft),
+    background 0.2s var(--ease-soft);
+}
+
+.studio-schedule__back:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: rgba(23, 26, 32, 0.035);
+}
+
+.studio-schedule__back:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
 .studio-schedule__heading > span {
   color: var(--blue);
   font-size: 0.68rem;
@@ -6136,7 +6425,57 @@ svg {
 .slot-confirm-modal dt { color: var(--muted); font-size: 0.7rem; }
 .slot-confirm-modal dd { margin: 0; font-size: 0.76rem; font-weight: 650; }
 
-.cancellation-confirm-modal > div { width: min(100%, 680px); max-height: min(86vh, 760px); overflow: auto; }
+/*
+ * ══ HỘP XÁC NHẬN HUỶ LỊCH — phải vừa trọn một màn, không cuộn ══
+ *
+ * Đo 18/08/2026: nội dung cao 733px trong khi khung tối đa 699px, nên LUÔN phải cuộn; cửa sổ
+ * cao 700px còn thừa tới 208px. Người dùng đang ở bước quyết định huỷ mà phải cuộn mới thấy
+ * hai nút — dễ bấm nhầm hoặc tưởng hộp thoại bị lỗi.
+ *
+ * Cắt chiều cao ở bốn chỗ, không bỏ bớt thông tin nào:
+ *   bảng thông tin xếp 2 cột (7 dòng -> 4 hàng)  ≈ -130px
+ *   tiêu đề bớt cỡ, hộp thoại không cần chữ 3,3rem ≈ -50px
+ *   khối ảnh xe thấp lại                          ≈ -28px
+ *   lề trong và khoảng cách giữa các khối          ≈ -24px
+ * Tất cả đều khoanh trong .cancellation-confirm-modal để KHÔNG đụng tới hộp đổi lịch và hộp
+ * xác nhận khung giờ — hai hộp kia chỉ có 3 dòng nên vốn đã vừa.
+ */
+.cancellation-confirm-modal > div {
+  width: min(100%, 680px);
+  padding: 30px;
+  /* Vẫn giữ trần + overflow làm lưới an toàn cho màn hình rất thấp, nhưng ở cỡ thường
+     nội dung chỉ còn ~500px nên không bao giờ chạm tới. */
+  max-height: min(88vh, 720px);
+  overflow: auto;
+}
+
+.cancellation-confirm-modal h2 {
+  margin: 0 0 16px;
+  font-size: clamp(1.5rem, 2.4vw, 2rem);
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+}
+
+/* Hai cột — đúng cách phiếu lịch ở màn đặt xong đang trình bày, không phải kiểu mới. */
+.cancellation-confirm-modal dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 26px;
+  margin: 0 0 18px;
+}
+
+.cancellation-confirm-modal dl div {
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.cancellation-confirm-modal dd { overflow-wrap: anywhere; }
+
+@media (max-width: 620px) {
+  .cancellation-confirm-modal > div { padding: 24px; }
+  .cancellation-confirm-modal dl { grid-template-columns: minmax(0, 1fr); }
+}
 .reschedule-modal > div { width: min(100%, 680px); max-height: min(86vh, 760px); overflow: auto; }
 .reschedule-modal__vehicles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
 .reschedule-modal__vehicles button,.reschedule-modal__showrooms button,.reschedule-modal__slots button { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; text-align: left; cursor: pointer; }
@@ -6148,12 +6487,18 @@ svg {
 .reschedule-left-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
 .reschedule-left-grid button { min-height: 76px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: #fff; text-align: left; cursor: pointer; }
 .reschedule-left-grid button:hover { border-color: var(--blue); color: var(--blue); }.reschedule-left-grid small { display: block; margin-top: 5px; color: var(--muted); }
-.cancellation-confirm-modal__vehicle { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 18px; margin: 0 0 16px; padding: 14px; border-radius: 16px; background: #edf2fa; }
-.cancellation-confirm-modal__image { width: 100%; height: 96px; object-fit: contain; }
-.cancellation-confirm-modal__vehicle strong { display: block; font-size: 1.35rem; }
+.cancellation-confirm-modal__vehicle { display: grid; grid-template-columns: 124px 1fr; align-items: center; gap: 16px; margin: 0 0 14px; padding: 11px 14px; border-radius: var(--radius-md); background: #edf2fa; }
+.cancellation-confirm-modal__image { width: 100%; height: 68px; object-fit: contain; }
+.cancellation-confirm-modal__vehicle strong { display: block; font-size: 1.12rem; }
 .cancellation-confirm-modal__vehicle small { display: block; margin-top: 3px; color: var(--muted); }
-.cancellation-confirm-modal > div > .slot-confirm-actions .cancellation-confirm-modal__submit { color: #fff; background: #c7362e; }
-.cancellation-confirm-modal > div > .slot-confirm-actions .cancellation-confirm-modal__submit:hover { background: #a92722; }
+/*
+ * Nút huỷ PHẢI đỏ. Luật cũ thua độ ưu tiên nên nút hiện màu xanh y hệt nút xác nhận thường —
+ * ở bước huỷ lịch mà hai nút cùng màu thì rất dễ bấm nhầm. Luật chung thắng là
+ * `.slot-confirm-modal > div > div:last-child button:first-child` (0,3,3) trong khi luật này chỉ
+ * (0,3,2) và lại đứng TRƯỚC trong file. Thêm `:last-child` cho đủ (0,4,3) để thắng bất kể thứ tự.
+ */
+.cancellation-confirm-modal > div > .slot-confirm-actions:last-child button.cancellation-confirm-modal__submit { color: #fff; background: #c7362e; }
+.cancellation-confirm-modal > div > .slot-confirm-actions:last-child button.cancellation-confirm-modal__submit:hover { background: #a92722; }
 
 .slot-confirm-modal > div > div:last-child,
 .vivi-review-actions {
@@ -6377,14 +6722,14 @@ svg {
    của phiếu; nền trắng ở đây từng làm ảnh alpha trông như chưa được tách nền. */
 .vehicle-switcher__shot,
 .studio-ticket__vehicle .vehicle-shot,
-.agent-vehicle-choices .vehicle-shot {
+.booking-upsell .vehicle-shot {
   border-radius: 13px;
   box-shadow: none;
 }
 
 .vehicle-switcher__shot.vehicle-shot--cutout,
 .studio-ticket__vehicle .vehicle-shot--cutout,
-.agent-vehicle-choices .vehicle-shot--cutout {
+.booking-upsell .vehicle-shot--cutout {
   border-radius: 0;
   background: transparent;
   filter: drop-shadow(0 14px 12px rgba(22, 27, 35, 0.12));
@@ -6394,14 +6739,14 @@ svg {
 .vehicle-switcher__shot.vehicle-shot--photo,
 .studio-ticket__vehicle .vehicle-shot--plate,
 .studio-ticket__vehicle .vehicle-shot--photo,
-.agent-vehicle-choices .vehicle-shot--plate,
-.agent-vehicle-choices .vehicle-shot--photo {
+.booking-upsell .vehicle-shot--plate,
+.booking-upsell .vehicle-shot--photo {
   background: #fff;
 }
 
 .vehicle-switcher__shot.vehicle-shot--photo img,
 .studio-ticket__vehicle .vehicle-shot--photo img,
-.agent-vehicle-choices .vehicle-shot--photo img {
+.booking-upsell .vehicle-shot--photo img {
   object-fit: cover;
 }
 
@@ -6565,17 +6910,19 @@ svg {
   border-bottom: 1px solid var(--line-strong);
 }
 
+/* Nới cỡ chữ toàn phiếu 18/08/2026: bản cũ chạy ở 0,67–0,72rem, đọc rất mỏi ở đúng bước
+   người dùng cần soi kỹ nhất trước khi bấm đặt. */
 .studio-ticket > header span {
   color: var(--blue);
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .studio-ticket > header strong {
-  font-size: 1.15rem;
-  letter-spacing: 0.06em;
+  font-size: 1.34rem;
+  letter-spacing: 0.05em;
 }
 
 .studio-ticket__vehicle {
@@ -6590,25 +6937,25 @@ svg {
 .studio-ticket__vehicle .smart-image { width: 160px; height: 90px; }
 .studio-ticket__vehicle img { width: 100%; height: 100%; object-fit: contain; }
 .studio-ticket__vehicle > span { display: grid; gap: 4px; }
-.studio-ticket__vehicle strong { font-size: 1.5rem; letter-spacing: -0.04em; }
-.studio-ticket__vehicle small { color: var(--muted); font-size: 0.7rem; }
+.studio-ticket__vehicle strong { font-size: 1.62rem; letter-spacing: -0.04em; }
+.studio-ticket__vehicle small { color: var(--muted); font-size: 0.8rem; }
 .studio-ticket dl { margin: 0; }
 .studio-ticket dl div {
   display: grid;
-  grid-template-columns: 125px 1fr;
+  grid-template-columns: 142px 1fr;
   gap: 18px;
-  padding: 9px 0;
+  padding: 12px 0;
   border-bottom: 1px solid var(--line);
 }
-.studio-ticket dt { color: var(--muted); font-size: 0.67rem; }
-.studio-ticket dd { margin: 0; text-align: right; font-size: 0.72rem; font-weight: 650; }
+.studio-ticket dt { color: var(--muted); font-size: 0.78rem; }
+.studio-ticket dd { margin: 0; text-align: right; font-size: 0.87rem; font-weight: 650; }
 .studio-ticket > p {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 17px 0 0;
+  margin: 19px 0 0;
   color: var(--success);
-  font-size: 0.68rem;
+  font-size: 0.79rem;
   font-weight: 650;
 }
 
@@ -7163,9 +7510,14 @@ svg {
     padding: 11px;
   }
 
-  .agent-vehicle-choices {
-    grid-template-columns: repeat(4, 90px);
-    overflow-x: auto;
+  .booking-upsell {
+    padding: 10px 10px 9px;
+  }
+
+  /* Điện thoại: xếp 2 thẻ thành 2 hàng. Ép 2 cột ở đây thì phần chữ chỉ còn khoảng
+     80px, tên xe và giá đều bị cắt cụt nên thẻ mất luôn tác dụng chào hàng. */
+  .booking-upsell__grid {
+    grid-template-columns: 1fr;
   }
 
   .vivi-customer-form__grid {
@@ -12468,6 +12820,21 @@ small,
   filter: drop-shadow(0 24px 22px rgba(21, 27, 35, 0.15));
 }
 
+/*
+ * Model 3D còn được dùng ở MÀN HÌNH TRÁI trong lúc đang đặt lịch (VF 3 và VF 9), không chỉ ở
+ * màn đặt xong. Khung ở hai nơi khác nhau nên phải tách: mặc định lấy đúng khung của ảnh studio
+ * mà nó thay thế; riêng trong .booking-success-documents thì giữ cỡ nhỏ đã căn cho phiếu lịch.
+ */
+.studio-vehicle__stage > .booking-success-model {
+  height: min(56vh, 530px);
+  min-height: 280px;
+}
+
+.booking-success-documents .studio-vehicle__stage > .booking-success-model {
+  height: min(26vh, 240px);
+  min-height: 172px;
+}
+
 .booking-success-model:active { cursor: grabbing; }
 .booking-success-model .vehicle-model-surface,
 .booking-success-model model-viewer { width: 100%; height: 100%; }
@@ -12652,7 +13019,29 @@ small,
 }
 
 /* Khối "Xem lại thông tin xe" sổ tại chỗ trong panel trái. */
+/*
+ * Mở "Xem thông tin xe" thì bảng PHẢI cuộn được.
+ *
+ * `.studio-vehicle` là lưới 4 hàng cố định, `height: 100%` và `overflow: hidden`. Khi khối chi
+ * tiết bung ra, nó thành hàng thứ 5 nhưng lưới không nở được — nút "Thu gọn thông tin xe" bị
+ * đẩy khỏi vùng nhìn thấy, người dùng chỉ còn thấy model 3D và không có cách nào đóng lại.
+ * Mở cuộn + thu nhỏ model trong lúc đang xem chi tiết là đủ, không phải dựng lại bố cục.
+ */
+.studio-vehicle.has-details {
+  overflow-y: auto;
+}
+
+.studio-vehicle.has-details .studio-vehicle__stage > .booking-success-model,
+.studio-vehicle.has-details .studio-vehicle__image {
+  height: min(30vh, 280px);
+  max-height: min(30vh, 280px);
+  min-height: 180px;
+}
+
+/* Nút bung/thu luôn nằm trên model, không bao giờ bị lớp 3D che mất cú bấm. */
 .studio-vehicle__more {
+  position: relative;
+  z-index: 4;
   display: inline-flex;
   align-items: center;
   gap: 7px;

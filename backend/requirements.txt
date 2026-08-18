@@ -18,7 +18,9 @@ psycopg[binary]>=3.2.0
 redis>=5.0.0
 
 # Admin tools
-streamlit>=1.37.0
+# streamlit ĐÃ GỠ 17/08/2026: nó kéo theo pandas + pyarrow + pydeck + altair ~250 MB vào .venv,
+# trong khi người dùng duy nhất là backend/admin_app.py — file này không được docker-compose
+# hay script nào gọi tới. Cần chạy lại bảng quản trị thì: pip install streamlit
 
 # Dev tools
 ruff>=0.8.0

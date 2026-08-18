@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import uuid4
 
 from src.services.booking.email_templates import render_otp_email
@@ -27,6 +28,9 @@ class MessagingProvider(Protocol):
         body: str,
         subject: str | None = None,
         html_body: str | None = None,
+        # Ảnh nhúng trong thân HTML (logo đầu thư). Adapter nào không hỗ trợ thì bỏ qua —
+        # thư vẫn đọc được, chỉ mất logo.
+        inline_images: Sequence[Any] = (),
     ) -> ProviderResult: ...
 
 
@@ -56,6 +60,7 @@ class InMemoryMessagingProvider:
         body: str,
         subject: str | None = None,
         html_body: str | None = None,
+        inline_images: Sequence[Any] = (),
     ) -> ProviderResult:
         message_id = f"mock_{uuid4().hex}"
         self.messages.append(
@@ -115,6 +120,7 @@ class RoutingMessagingProvider:
         body: str,
         subject: str | None = None,
         html_body: str | None = None,
+        inline_images: Sequence[Any] = (),
     ) -> ProviderResult:
         if channel == "zalo" and self.zalo_provider:
             return self.zalo_provider.send_message(
@@ -128,6 +134,7 @@ class RoutingMessagingProvider:
             body=body,
             subject=subject,
             html_body=html_body,
+            inline_images=inline_images,
         )
 
 

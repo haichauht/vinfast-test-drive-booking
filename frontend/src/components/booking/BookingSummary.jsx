@@ -55,7 +55,17 @@ const timeAsMinutes = (value) => {
   return (hour * 60) + minute
 }
 
-export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
+/**
+ * Bảng chọn khung giờ. Dùng ở hai nơi:
+ *   - luồng đặt mới  → đầy đủ như cũ
+ *   - luồng ĐỔI GIỜ  → truyền `onBack` và `compact`
+ *
+ * `compact` lược bớt cho đỡ rối (anh Minh phản ánh 18/08/2026): bỏ câu hướng dẫn, bỏ chú thích
+ * màu, và bỏ tên xe lặp trong TỪNG ô. Tên xe đã nằm ở tiêu đề ngay trên, in lại ở 50 ô nữa chỉ
+ * làm mắt phải lọc. `onBack` là lối quay về danh sách lịch — trước đây vào màn này là kẹt,
+ * không có đường lùi.
+ */
+export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick, onBack, backLabel = 'Chọn lịch khác', compact = false }) {
   const root = useRef(null)
   const direction = useRef(0)
   const today = new Date()
@@ -142,11 +152,20 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
 
   return (
     <section className="studio-schedule studio-schedule--calendar" aria-label="Lịch lái thử" ref={root}>
-      <div className="studio-schedule__heading">
-        <span>Lịch có đúng mẫu xe</span>
-        <h2>{car.name} tại {showroom.name}</h2>
-        <p>Chọn trực tiếp một ô còn xe. Bạn có thể chuyển tuần để xem những ngày xa hơn.</p>
-      </div>
+      {/* Ở chế độ compact (luồng đổi giờ) chỉ còn ĐÚNG một dòng tiêu đề, canh ngang với thanh
+          công cụ phía trên. Nhãn "Lịch có đúng mẫu xe" và câu hướng dẫn đã bỏ: cả hai không nói
+          thêm gì mà chiếm mất hai dòng ngay phía trên bảng lịch. Lối lùi nay nằm trên thanh
+          công cụ chứ không còn ở đây. */}
+      {/* Chế độ compact (luồng đổi giờ) KHÔNG in tiêu đề ở đây nữa — nó đã nằm trên thanh công
+          cụ để canh đúng hàng với các nút. Nhãn "Lịch có đúng mẫu xe" và câu hướng dẫn cũng bỏ:
+          cả hai chiếm hai dòng ngay trên bảng lịch mà không nói thêm được gì. */}
+      {!compact && (
+        <div className="studio-schedule__heading">
+          <span>Lịch có đúng mẫu xe</span>
+          <h2>{car.name} tại {showroom.name}</h2>
+          <p>Chọn trực tiếp một ô còn xe. Bạn có thể chuyển tuần để xem những ngày xa hơn.</p>
+        </div>
+      )}
 
       <div className="schedule-calendar">
         <header className="schedule-calendar__toolbar">
@@ -159,10 +178,12 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
             <strong>{rangeLabel}</strong>
             <small>{weekAvailableCount ? `${weekAvailableCount} khung giờ còn xe` : 'Chưa có lịch trống trong tuần này'}</small>
           </div>
-          <div className="schedule-calendar__legend" aria-label="Chú thích trạng thái">
-            <span><i className="is-available" /> Còn xe</span>
-            <span><i className="is-unavailable" /> Đã kín</span>
-          </div>
+          {!compact && (
+            <div className="schedule-calendar__legend" aria-label="Chú thích trạng thái">
+              <span><i className="is-available" /> Còn xe</span>
+              <span><i className="is-unavailable" /> Đã kín</span>
+            </div>
+          )}
         </header>
 
         <div className="schedule-calendar__viewport">
@@ -199,8 +220,8 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
                             aria-label={`${entry.time}, ${day.source.dateLabel}: ${entry.isAvailable ? `${car.name} còn xe` : entry.unavailableLabel}`}
                           >
                             <span />
-                            <strong>{entry.isAvailable ? `Có ${car.name}` : entry.unavailableLabel}</strong>
-                            <small>{entry.isAvailable ? 'Sẵn sàng lái thử' : 'Không thể chọn'}</small>
+                            <strong>{entry.isAvailable ? (compact ? 'Còn xe' : `Có ${car.name}`) : entry.unavailableLabel}</strong>
+                            {!compact && <small>{entry.isAvailable ? 'Sẵn sàng lái thử' : 'Không thể chọn'}</small>}
                           </button>
                         ) : <span className="schedule-calendar__empty-cell" aria-label="Showroom chưa mở lịch" />}
                       </div>
