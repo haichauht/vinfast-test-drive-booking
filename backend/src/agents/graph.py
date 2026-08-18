@@ -68,7 +68,7 @@ async def max_tool_limit_node(state: AgentState) -> dict:
                 )
             )
 
-    response_text = "Yêu cầu này cần quá nhiều lượt xử lý tự động. Bạn vui lòng thử lại với yêu cầu ngắn gọn hơn nhé."
+    response_text = "ViVi đã ghi nhận yêu cầu. Bạn có thể chọn trực tiếp từ bảng hỗ trợ bên trái hoặc gửi câu hỏi ngắn hơn giúp ViVi nhé."
     ai_msg = AIMessage(content=response_text)
 
     return {
