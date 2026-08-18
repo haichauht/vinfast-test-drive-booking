@@ -14,6 +14,30 @@ from src.services.booking.errors import BookingError
 
 _id = new_id
 
+# Quyền cấp cho phiên truy cập, theo mục đích người dùng khai lúc xin OTP.
+#
+# ĐỂ Ở ĐÂY, ĐỪNG CHÉP LẠI. Trước 18/08/2026 bảng này tồn tại HAI bản giống hệt — một trong
+# request_access, một trong verify_access. Thêm purpose "manage" vào bản đầu mà quên bản sau
+# khiến xin OTP thì được nhưng nhập mã lại nổ KeyError: 'manage' → HTTP 500, và giao diện chỉ
+# hiện câu chung chung "Yêu cầu không thành công." vì thân lỗi 500 không có message.
+ACCESS_PERMISSIONS: dict[str, list[str]] = {
+    "lookup": ["read_booking"],
+    "reschedule": ["read_booking", "search_reschedule", "hold_reschedule", "confirm_reschedule", "update_details"],
+    "cancel": ["read_booking", "cancel_booking"],
+    "update_details": ["read_booking", "update_details"],
+    "update_notifications": ["read_booking", "update_notifications"],
+    # Một phiên quản lý đầy đủ: xem, đổi giờ và huỷ trong CÙNG một lần xác thực OTP, để màn
+    # tra cứu hiện được nút "Huỷ lịch" mà không bắt người dùng xác thực lại lần nữa.
+    "manage": [
+        "read_booking",
+        "search_reschedule",
+        "hold_reschedule",
+        "confirm_reschedule",
+        "update_details",
+        "cancel_booking",
+    ],
+}
+
 
 class AccessService(BookingBase):
     def _check_rate_counter(self, *, bucket_key: str, limit: int, window_seconds: int) -> None:
@@ -44,13 +68,7 @@ class AccessService(BookingBase):
         *,
         expose_otp: bool = False,
     ) -> dict:
-        permissions = {
-            "lookup": ["read_booking"],
-            "reschedule": ["read_booking", "search_reschedule", "hold_reschedule", "confirm_reschedule", "update_details"],
-            "cancel": ["read_booking", "cancel_booking"],
-            "update_details": ["read_booking", "update_details"],
-            "update_notifications": ["read_booking", "update_notifications"],
-        }
+        permissions = ACCESS_PERMISSIONS
         # Keep compatibility with the original positional API:
         # request_access(booking_code, contact_value, purpose). New callers use
         # explicit keywords in the order contact_value, purpose, booking_code.
@@ -227,13 +245,10 @@ class AccessService(BookingBase):
             )
             raw = secrets.token_urlsafe(32)
             token_hash = self._hash(raw, "session")
-            perms = {
-                "lookup": ["read_booking"],
-                "reschedule": ["read_booking", "search_reschedule", "hold_reschedule", "confirm_reschedule", "update_details"],
-                "cancel": ["read_booking", "cancel_booking"],
-                "update_details": ["read_booking", "update_details"],
-                "update_notifications": ["read_booking", "update_notifications"],
-            }[ch["purpose"]]
+            # Purpose lạ (dữ liệu cũ, hoặc thêm purpose mới mà quên khai) thì hạ về quyền đọc
+            # thay vì ném KeyError thành lỗi 500 — người dùng đã nhập đúng mã, không có lý do
+            # gì để họ nhận một lỗi hệ thống không đọc được.
+            perms = ACCESS_PERMISSIONS.get(ch["purpose"], ACCESS_PERMISSIONS["lookup"])
             expiry = self.now() + timedelta(seconds=self.access_session_ttl_seconds)
             c.execute(
                 "INSERT INTO booking_access_sessions VALUES(?,?,?,?,?,?,?,?)",
