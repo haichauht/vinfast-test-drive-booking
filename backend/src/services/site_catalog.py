@@ -65,11 +65,14 @@ for order, vehicle in enumerate(_VEHICLES, start=1):
     first_spec_val = short_specs[0]["value"] if short_specs else "Đang cập nhật"
     range_fact = {"label": first_spec_label, "value": first_spec_val}
     charging_fact = {"label": "Sạc nhanh 10–70%", "value": "30 phút"}
-    color_options = [
-        {"name": "Trắng Infinity Blanc", "hex": "#ECECE8", "secondaryHex": None},
-        {"name": "Đen Jet Black", "hex": "#121314", "secondaryHex": None},
-        {"name": "Xanh VinFast Blue", "hex": "#0C64E6", "secondaryHex": None},
-    ]
+    # PHẢI để rỗng — đừng gán cứng bộ màu mặc định vào đây lần nữa.
+    # Bảng màu thật của từng mẫu nằm ở _COLORS_BY_VEHICLE bên dưới và đi ra qua endpoint chi
+    # tiết (xem chỗ gán detail["colors"]). Gán trắng/đen/xanh cho cả 14 mẫu ở đây gây hai hậu quả:
+    #   1. Sai sự thật — VF 3 thật ra là Xám Zenith Grey / Hồng Rose Pink / Đỏ Crimson Red.
+    #   2. Chặn luôn bảng màu bổ sung bên frontend (data/vehicle-colors.js), vì bảng đó chỉ
+    #      nhảy vào khi backend trả RỖNG. Có 3 màu giả là nó không bao giờ nhảy vào nữa.
+    # Dải xe ngoài trang chủ tự gọi endpoint chi tiết để lấy màu thật, nên để rỗng là đúng.
+    color_options: list[dict[str, Any]] = []
     vehicle.update(
         navName=vehicle["name"],
         thumbnail=_media(f"/media/vehicles/{slug}/thumbnail.{media_extension}", vehicle["name"], focalPoint="50% 50%"),
