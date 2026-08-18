@@ -307,17 +307,15 @@ export function BookingTicket({ car, showroom, slot, person, recipient, bookingC
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(showroom.name + ' ' + (showroom.address || ''))}`
 
   const showroomElement = (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-      <span>{showroom.name}</span>
-      <a
-        href={mapsUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{ color: '#0C64E6', textDecoration: 'underline', fontSize: '0.68rem', fontWeight: 500 }}
-      >
-        (Chỉ đường Maps ↗)
-      </a>
-    </span>
+    <a
+      href={mapsUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ color: '#0C64E6', textDecoration: 'underline', fontWeight: 600 }}
+      title="Bấm để mở vị trí và chỉ đường trên Google Maps"
+    >
+      {showroom.name} ↗
+    </a>
   )
 
   const rows = [
