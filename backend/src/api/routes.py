@@ -7,6 +7,7 @@ from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import HumanMessage
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
@@ -153,6 +154,8 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                 "action_tool": "",
                 "action_input": {},
                 "action_error": "",
+                # Reset per-turn tool loop counter to 0 for each new user request
+                # (ensures each message turn receives a fresh 8-call tool budget while preventing infinite loops within 1 turn)
                 "tool_call_count": 0,
                 "metadata": {
                     "trace_id": trace_id,
@@ -248,19 +251,76 @@ def _request_demo_access(**kwargs: Any) -> dict:
 @router.post("/chat/stream")
 @router.post("/booking-agent/stream")
 async def chat_stream(body: ChatRequest, request: Request):
-    """Stream ViVi responses word-by-word using Server-Sent Events (Streamable HTTP)."""
-    response_data = await chat(request, body)
-    content = response_data.response or ""
-
+    """Stream ViVi responses using Server-Sent Events (Streamable HTTP).
+    
+    Streams real-time LLM token chunks via astream_events when supported,
+    with seamless fallback to full chat response payload.
+    """
     async def event_generator():
-        words = content.split(" ")
-        for i, word in enumerate(words):
-            chunk = word + (" " if i < len(words) - 1 else "")
-            payload = json.dumps({"type": "token", "content": chunk}, ensure_ascii=False)
-            yield f"data: {payload}\n\n"
-            await asyncio.sleep(0.02)
-        final_payload = json.dumps({"type": "done", "response": response_data.model_dump()}, ensure_ascii=False)
-        yield f"data: {final_payload}\n\n"
+        try:
+            active_agent = get_agent()
+            guardrails = get_guardrails()
+            conversation_id = body.conversation_id or str(uuid.uuid4())
+            identity = getattr(request.state, "identity", None)
+            trace_id = getattr(request.state, "trace_id", "") or str(uuid.uuid4())
+            config = {"configurable": {"thread_id": conversation_id}}
+            inputs = {
+                "messages": [HumanMessage(content=body.message)],
+                "requested_action": body.action,
+                "action_payload": body.action_payload,
+                "tool_call_count": 0,
+                "metadata": {
+                    "trace_id": trace_id,
+                    "conversation_id": conversation_id,
+                    "anon_session_id": getattr(identity, "session_id", "unknown"),
+                    "client_ip": getattr(identity, "client_ip", "unknown"),
+                    "llm_call_count": 0,
+                },
+            }
+
+            token_streamed = False
+            async for event in active_agent.astream_events(inputs, config=config, version="v2"):
+                if event.get("event") == "on_chat_model_stream":
+                    chunk = (event.get("data") or {}).get("chunk")
+                    if hasattr(chunk, "content") and chunk.content and isinstance(chunk.content, str):
+                        token_streamed = True
+                        payload = json.dumps({"type": "token", "content": chunk.content}, ensure_ascii=False)
+                        yield f"data: {payload}\n\n"
+
+            if not token_streamed:
+                response_data = await chat(request, body)
+                content = response_data.response or ""
+                words = content.split(" ")
+                for i, word in enumerate(words):
+                    chunk = word + (" " if i < len(words) - 1 else "")
+                    payload = json.dumps({"type": "token", "content": chunk}, ensure_ascii=False)
+                    yield f"data: {payload}\n\n"
+                    await asyncio.sleep(0.01)
+                final_payload = json.dumps({"type": "done", "response": response_data.model_dump()}, ensure_ascii=False)
+                yield f"data: {final_payload}\n\n"
+                return
+
+            final_state = await active_agent.aget_state(config)
+            state_values = final_state.values if final_state else {}
+            protected = guardrails.protect_output(state_values)
+            final_response = ChatResponse(
+                response=protected.response,
+                analysis=protected.analysis,
+                conversation_id=conversation_id,
+                tool_name=state_values.get("action_tool", ""),
+                tool_input=protected.tool_input,
+                action_data=protected.action_data,
+                action_error=protected.action_error,
+                intent=str(state_values.get("intent") or ""),
+                ui=_chat_ui_directive(state_values),
+            )
+            final_payload = json.dumps({"type": "done", "response": final_response.model_dump()}, ensure_ascii=False)
+            yield f"data: {final_payload}\n\n"
+        except Exception as exc:
+            logging.getLogger(__name__).warning("astream_events fallback: %s", exc)
+            response_data = await chat(request, body)
+            final_payload = json.dumps({"type": "done", "response": response_data.model_dump()}, ensure_ascii=False)
+            yield f"data: {final_payload}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
