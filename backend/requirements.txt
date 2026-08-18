@@ -23,7 +23,11 @@ redis>=5.0.0
 # hay script nào gọi tới. Cần chạy lại bảng quản trị thì: pip install streamlit
 
 # Dev tools
-ruff>=0.8.0
+# GHIM CỨNG, đừng nới thành >=.
+# Ruff đổi cách sắp xếp import giữa các bản vá nhỏ: 0.16.0 báo sạch còn 0.16.3 báo I001 trên
+# cùng một file. Để >= thì máy có venv cũ thấy xanh, CI cài bản mới nhất lại đỏ, và người sửa
+# không hiểu vì sao "máy tôi chạy được". Nâng phiên bản thì sửa ở đây, một lần, cho cả nhóm.
+ruff==0.16.3
 pytest>=8.0.0
 pytest-asyncio>=0.24.0
 httpx>=0.28.0

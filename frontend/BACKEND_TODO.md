@@ -279,12 +279,12 @@ Frontend KHÔNG sửa được: `resolveVehicleMedia` chỉ viết lại `/media
 Sửa một trong hai: đổi đuôi trong dữ liệu content thành `.webp`, hoặc cho tầng phục vụ media
 thử đuôi khác khi tra thẳng trượt.
 
-## Upsell 2 mẫu xe ở khung chat đặt lịch (Batch 9 — 18/08/2026)
+## Upsell 3 mẫu xe ở khung chat đặt lịch (Batch 9 — 18/08/2026)
 
-### P1 — Chưa có API lưu và trả 2 mẫu xe mà sale admin muốn đẩy
+### P1 — Chưa có API lưu và trả 3 mẫu xe mà sale admin muốn đẩy
 
 - Nhu cầu của frontend: khách mở thẳng ViVi mà chưa xem xe nào thì khối đầu tiên
-  họ nhìn thấy là 2 mẫu showroom đang muốn bán. Người quyết định 2 mẫu đó là sale
+  họ nhìn thấy là 3 mẫu showroom đang muốn bán. Người quyết định 3 mẫu đó là sale
   admin, nên danh sách phải nằm ở backend, không nằm trong code frontend.
 - Màn hình phụ thuộc: `/booking`, `BookingPage`, `components/booking/BookingUpsell.jsx`,
   `hooks/useSiteData.useBookingUpsell`, `api/upsell.js`.
@@ -321,7 +321,7 @@ PUT /api/v1/admin/settings/booking-upsell
 ```
 
 - Ràng buộc phía backend:
-  - `vehicleIds` nhận đúng 2 phần tử, không trùng nhau, và mỗi id phải là xe đang
+  - `vehicleIds` nhận đúng 3 phần tử, không trùng nhau, và mỗi id phải là xe đang
     publish với `testDriveEligible = true`. Sai thì trả `422 INVALID_INPUT` kèm id
     có vấn đề, đừng lặng lẽ bỏ bớt.
   - Thứ tự trong mảng là thứ tự hiển thị trái sang phải. Giữ nguyên thứ tự admin xếp.
@@ -329,10 +329,85 @@ PUT /api/v1/admin/settings/booking-upsell
     "Showroom đang ưu tiên" và ẩn dòng phụ.
   - `PUT` xong phải làm mới ETag của `GET` để khách nhận cấu hình mới ngay lần tải kế.
 - Hành vi frontend hiện tại khi chưa có endpoint: `useBookingUpsell` bắt lỗi, không
-  chặn luồng đặt lịch, và chạy cặp mặc định `['vf3', 'vf9']` trong
+  chặn luồng đặt lịch, và chạy bộ mặc định `['vf3', 'vf8', 'vf9']` trong
   `api/upsell.js:DEFAULT_UPSELL_VEHICLE_IDS`. Đây là giá trị mặc định của một tuỳ chọn
   cấu hình, không phải dữ liệu xe bịa ra: thông tin từng chiếc xe vẫn lấy từ
   `GET /vehicles`. Hook trả thêm `source: 'admin' | 'default'` để bên admin kiểm tra
   được là cấu hình đã về tới trang khách hay chưa.
-- Muốn đổi số ô upsell khác 2: sửa `UPSELL_SLOT_COUNT` trong `api/upsell.js` VÀ lưới
+- Muốn đổi số ô upsell khác 3: sửa `UPSELL_SLOT_COUNT` trong `api/upsell.js` VÀ lưới
   `.booking-upsell__grid` trong `index.css`. Hai chỗ này phải đi cùng nhau.
+
+## Màu xe: 3 màu mặc định gán cứng đè lên bảng màu thật (phát hiện 18/08/2026)
+
+### P0 — ĐỪNG gán bộ màu mặc định cho mọi mẫu xe
+
+- Chuyện đã xảy ra: commit `dc336b5` (PR #55) thêm vào vòng lặp dựng danh mục trong
+  `backend/src/services/site_catalog.py` một bộ ba màu gán cứng, áp cho **cả 14 mẫu**:
+
+```python
+color_options = [
+    {"name": "Trắng Infinity Blanc", "hex": "#ECECE8", "secondaryHex": None},
+    {"name": "Đen Jet Black",        "hex": "#121314", "secondaryHex": None},
+    {"name": "Xanh VinFast Blue",    "hex": "#0C64E6", "secondaryHex": None},
+]
+```
+
+- Hậu quả, cả hai đều nghiêm trọng:
+  1. **Sai sự thật.** VF 3 thật ra là Xám Zenith Grey / Hồng Rose Pink / Đỏ Crimson Red.
+     Trang khách hiện tên màu bịa cho 14 mẫu xe như thể đó là màu chính hãng.
+  2. **Chặn luôn đường dữ liệu đúng.** Bảng màu bổ sung bên frontend
+     (`src/data/vehicle-colors.js`) chỉ nhảy vào khi backend trả **rỗng**. Có 3 màu giả
+     là mảng không rỗng, nên bảng thật không bao giờ được dùng nữa.
+- Điều này vi phạm đúng điều kiện đã ghi ở mục "P1 — Structured vehicle catalogue
+  summary" phía trên file này: *"never substitute zero, a guessed number or a default
+  color"*.
+- Ràng buộc phía backend:
+  - `colorOptions` trong `GET /vehicles` và `colors` trong `GET /vehicles/{id}` chỉ được
+    chứa màu chính hãng có thật của **đúng mẫu đó**.
+  - Mẫu chưa có dữ liệu màu thì trả `[]`. Frontend đã xử lý sẵn: hiện `Đang cập nhật`,
+    hoặc lấy bảng màu bổ sung nếu mẫu đó có trong bảng.
+  - Không dùng màu của mẫu này làm mặc định cho mẫu khác, kể cả để "cho đỡ trống".
+- Cách kiểm tra nhanh trước khi merge: nếu hai mẫu xe khác nhau trả về danh sách màu
+  giống hệt nhau, gần như chắc chắn là đang gán cứng.
+- Trạng thái: đã sửa cục bộ ngày 18/08/2026 (`color_options` để rỗng, màu thật đi ra qua
+  `_COLORS_BY_VEHICLE` ở endpoint chi tiết). **Bản sửa này chưa có trên nhánh `testing`** —
+  ai pull `testing` về vẫn sẽ thấy 14 mẫu cùng 3 màu.
+
+## Bảng màu chính hãng còn thiếu 8/14 mẫu (18/08/2026)
+
+### P1 — Publish màu thật cho các mẫu backend đang trả rỗng
+
+- Backend hiện có màu thật (`_COLORS_BY_VEHICLE`) cho 6/14 mẫu: `vf3` (3 màu), `vf5` (4),
+  `vf7` (5), `vf8` (6), `vf9` (7), `herio-green` (3). Tám mẫu còn lại trả rỗng.
+- Frontend đang vá tạm 5 mẫu bằng `src/data/vehicle-colors.js` (chép từ vinfast.vn,
+  swatch là **ảnh chip** chứ không phải mã hex, vì sơn có kim loại nên không quy về hex
+  phẳng được):
+
+| Mẫu | Số màu frontend đang vá | Ghi chú |
+|---|---|---|
+| `vf8-the-he-moi` | 12 | swatch SVG |
+| `minio-green` | 14 | swatch webp |
+| `limo-green` | 4 | swatch webp |
+| `ec-van` | 4 | swatch png |
+| `nerio-green` | 4 | có hex, không có swatch ảnh |
+
+- Ba mẫu **không có nguồn màu ở đâu cả**, đang hiện `Đang cập nhật`: `vf6`, `vf-mpv-7`,
+  `ebus`. Cần bộ phận sản phẩm cung cấp trước, đừng tự suy ra từ ảnh studio.
+- Khi backend publish màu thật cho mẫu nào, **xoá mẫu đó khỏi `vehicle-colors.js`**.
+  Bảng bổ sung là chỗ vá tạm, không phải nguồn thứ hai để hai bên cùng giữ dữ liệu.
+- Ràng buộc: mỗi màu cần `name` là tên thương mại chính thức, kèm `hex` sáu chữ số
+  **hoặc** ảnh swatch. Màu hai tông (ví dụ "Vàng Summer Yellow · nóc Jet Black") phải nói
+  rõ trong `name` hoặc tách `secondaryHex`.
+
+## Danh mục xe vẫn bắt frontend gọi N+1 request (18/08/2026)
+
+### P1 — `GET /vehicles` trả `colorOptions` rỗng nên dải xe phải gọi thêm từng mẫu
+
+- Mục "P1 — Structured vehicle catalogue summary" ở đầu file đã yêu cầu việc này. PR #55
+  có thêm trường `colorOptions` vào response, nhưng đổ dữ liệu giả vào (xem mục P0 ngay
+  trên), nên sau khi dọn thì trường này lại rỗng. Yêu cầu gốc **vẫn chưa xong**.
+- Hệ quả hiện tại: `hooks/useSiteData.useVehicleColorOptions` phải gọi
+  `GET /vehicles/{id}` cho từng xe thuộc tab đang mở chỉ để lấy swatch.
+- Khi `GET /vehicles` trả `colorOptions` thật: **xoá hẳn hook `useVehicleColorOptions`**
+  và đọc thẳng `car.colorOptions` trong `api/adapters.js`. Ghi chú này đã có sẵn ở
+  `hooks/useSiteData.js` dòng ~121.
