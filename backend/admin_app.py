@@ -1,3 +1,12 @@
+"""Bảng quản trị Streamlit (không nằm trong luồng chạy chính).
+
+streamlit đã được GỠ khỏi backend/requirements.txt ngày 17/08/2026 vì nó kéo theo
+pandas + pyarrow + pydeck + altair, cộng lại ~250 MB trong .venv, mà file này không được
+docker-compose hay script nào gọi tới. Muốn chạy lại:
+
+    pip install streamlit && streamlit run backend/admin_app.py
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

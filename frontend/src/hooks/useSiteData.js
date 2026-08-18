@@ -9,6 +9,7 @@
  *   Dùng ở HomePage, CarDetailPage (để tìm "xe tiếp theo") và BookingPage.
  * - useVehicleDetail(id): chi tiết một mẫu xe. Dùng ở CarDetailPage.
  * - usePageContent(page): nội dung trang home / charging / after-sales.
+ * - useBookingUpsell(): 2 mẫu xe sale admin đang muốn đẩy, hiện ở khung chat đặt lịch.
  *
  * LƯU Ý: không có dữ liệu dự phòng. Backend chết thì cars = [] và trang hiện rỗng —
  * đây là chủ ý để giao diện không bịa ra catalogue giả.
@@ -17,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getPageContent } from '../api/content'
 import { vehicleDetailToCar, vehicleSummaryToCar } from '../api/adapters'
 import { getVehicle, getVehicles } from '../api/vehicles'
+import { DEFAULT_UPSELL_VEHICLE_IDS, getBookingUpsell, normalizeUpsellConfig } from '../api/upsell'
 import { withSupplementalColors } from '../data/vehicle-colors'
 
 export function useVehicleCatalog() {
@@ -49,6 +51,43 @@ export function useVehicleCatalog() {
     error,
     retry,
     source: remote ? 'backend' : 'unavailable',
+  }
+}
+
+/**
+ * useBookingUpsell() — đọc 2 mẫu xe mà sale admin chọn để upsell trong khung chat ViVi.
+ *
+ * Khác với useVehicleCatalog: hook này CÓ giá trị mặc định. Lý do là nó đọc một tuỳ chọn
+ * cấu hình chứ không đọc dữ liệu xe. Backend chưa gắn endpoint, hoặc admin chưa cấu hình,
+ * thì màn đặt lịch vẫn phải mời được khách chọn xe thay vì hiện một khoảng trống.
+ * Thông tin từng chiếc xe vẫn do useVehicleCatalog lấy từ backend, hook này chỉ trả về id.
+ */
+export function useBookingUpsell() {
+  const [config, setConfig] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    getBookingUpsell({ signal: controller.signal })
+      .then((payload) => setConfig(normalizeUpsellConfig(payload)))
+      .catch((reason) => {
+        if (reason.name === 'AbortError') return
+        // Không chặn luồng đặt lịch vì một tuỳ chọn hiển thị. Ghi lỗi lại để trang admin
+        // biết cấu hình chưa về được, còn khách vẫn thấy cặp xe mặc định.
+        setError(reason)
+        setConfig(normalizeUpsellConfig(null))
+      })
+    return () => controller.abort()
+  }, [])
+
+  return {
+    vehicleIds: config?.vehicleIds || DEFAULT_UPSELL_VEHICLE_IDS,
+    headline: config?.headline || '',
+    note: config?.note || '',
+    // 'admin' = admin đã cấu hình, 'default' = đang chạy cặp mặc định.
+    source: config?.configured ? 'admin' : 'default',
+    loading: config === null,
+    error,
   }
 }
 

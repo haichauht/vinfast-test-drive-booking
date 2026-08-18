@@ -46,30 +46,26 @@
 }
 
 .booking-film__vehicle {
+  position: relative;
   width: min(92vw, 1280px);
   height: min(72vh, 760px);
   transform-origin: 50% 58%;
+  /* Có chiều sâu để rotateY lúc xoay đuôi đọc ra là xoay, không phải bị bóp ngang. */
+  perspective: 1600px;
+  transform-style: preserve-3d;
   will-change: transform, opacity, filter;
   pointer-events: none;
 }
 
-.booking-film__vehicle .vehicle-model-surface,
-.booking-film__vehicle model-viewer,
-.booking-film__fallback,
-.booking-film__fallback img {
+/* Hai khung 360 chồng khít lên nhau; cú xoay chỉ là đổi opacity giữa hai lớp này. */
+.booking-film__frame {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-}
-
-.booking-film__vehicle model-viewer {
-  --poster-color: #000;
-  background: #000;
-}
-
-.booking-film__fallback { background: transparent; }
-.booking-film__fallback img {
   object-fit: contain;
   filter: drop-shadow(0 28px 24px rgba(0, 0, 0, 0.72));
+  backface-visibility: hidden;
 }
 
 /* Horizontal air compression follows approach velocity. It disappears before
@@ -122,8 +118,8 @@
   left: 50%;
   display: grid;
   justify-items: center;
-  gap: 14px;
-  width: min(520px, calc(100vw - 48px));
+  gap: 22px;
+  width: min(820px, calc(100vw - 48px));
   color: #f5f5f7;
   text-align: center;
   transform: translate(-50%, -50%);
@@ -131,20 +127,23 @@
   pointer-events: none;
 }
 
+/* Đường kẻ và chữ đều được nới cỡ (18/08/2026): ở kích thước cũ chúng lọt thỏm giữa nền đen
+   ngay sau khi logo và chiếc xe vừa chiếm trọn màn hình. */
 .booking-film__confirmation i {
   display: block;
-  width: 34px;
-  height: 1px;
+  width: clamp(72px, 9vw, 120px);
+  height: 2px;
+  border-radius: 2px;
   background: #f5f5f7;
   transform: scaleX(0);
 }
 
 .booking-film__confirmation strong {
   max-width: 18ch;
-  font-size: clamp(1.25rem, 2.2vw, 2rem);
-  font-weight: 520;
-  letter-spacing: -0.035em;
-  line-height: 1.12;
+  font-size: clamp(2rem, 4.2vw, 3.6rem);
+  font-weight: 560;
+  letter-spacing: -0.045em;
+  line-height: 1.06;
   text-wrap: balance;
 }
 

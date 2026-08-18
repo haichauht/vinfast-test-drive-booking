@@ -9,6 +9,8 @@ import { useEffect, useState } from 'react'
 import { ArrowRight, CaretDown, Check, X } from '@phosphor-icons/react'
 import { Link } from 'react-router-dom'
 import { SmartImage } from '../SmartImage'
+import { BookingSuccessVehicleModel } from '../Vehicle3DExperience'
+import { getVehicle3dModel } from '../../data/vehicle3d'
 import { carGroups } from '../../data/cars'
 
 export function VehicleShot({ car, className = '', eager = false, mode = car.studioShot.mode }) {
@@ -86,12 +88,19 @@ export function VehicleSwitcher({ cars, currentId, onSelect, onClose }) {
   )
 }
 
-export function VehiclePanel({ car, success3d = false }) {
+export function VehiclePanel({ car }) {
+  // Mẫu nào có file .glb đã duyệt (hiện là VF 3 và VF 9) thì màn hình trái hiện MODEL 3D xoay
+  // được, thay cho ảnh tĩnh — kể cả khi mới chọn xe chứ không đợi tới màn đặt xong. Các mẫu
+  // còn lại chưa có model nên vẫn giữ nguyên ảnh studio.
+  const hasApproved3dModel = Boolean(getVehicle3dModel(car.id))
   const [infoOpen, setInfoOpen] = useState(false)
   const extraSpecs = car.specs.slice(3)
 
   return (
-    <section className="studio-vehicle" aria-label={`Mẫu xe ${car.name}`}>
+    <section
+      className={`studio-vehicle ${hasApproved3dModel ? 'has-booking-model' : ''} ${infoOpen ? 'has-details' : ''}`.replace(/\s+/g, ' ').trim()}
+      aria-label={`Mẫu xe ${car.name}`}
+    >
       <div className="studio-vehicle__ambient" aria-hidden="true" />
       <div className="studio-vehicle__heading">
         <span>Mẫu xe đang giữ</span>
@@ -99,7 +108,9 @@ export function VehiclePanel({ car, success3d = false }) {
         <small>{car.body} · {car.seats}</small>
       </div>
       <div className="studio-vehicle__stage" key={car.id}>
-        <VehicleShot car={car} className="studio-vehicle__image" eager />
+        {hasApproved3dModel
+          ? <BookingSuccessVehicleModel car={car} className="studio-vehicle__image" />
+          : <VehicleShot car={car} className="studio-vehicle__image" eager />}
       </div>
       <div className="studio-vehicle__specs">
         {car.specs.slice(0, 3).map((spec) => (
