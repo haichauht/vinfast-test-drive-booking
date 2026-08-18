@@ -6,7 +6,9 @@ import asyncio
 import hashlib
 import logging
 import re
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 
@@ -102,8 +104,11 @@ class ZaloOtpSender:
         body: str,
         subject: str | None = None,
         html_body: str | None = None,
+        # Zalo chỉ nhận văn bản thuần: không tiêu đề, không HTML, không ảnh nhúng.
+        # Vẫn khai báo cho khớp giao thức MessagingProvider rồi bỏ qua.
+        inline_images: Sequence[Any] = (),
     ) -> ProviderResult:
-        del subject, html_body
+        del subject, html_body, inline_images
         if channel != "zalo":
             raise ValueError("ZaloOtpSender only supports the zalo channel")
         phone = normalize_phone(destination)
