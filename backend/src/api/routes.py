@@ -252,7 +252,7 @@ def _request_demo_access(**kwargs: Any) -> dict:
 @router.post("/booking-agent/stream")
 async def chat_stream(body: ChatRequest, request: Request):
     """Stream ViVi responses using Server-Sent Events (Streamable HTTP).
-    
+
     Streams real-time LLM token chunks via astream_events when supported,
     with seamless fallback to full chat response payload.
     """
