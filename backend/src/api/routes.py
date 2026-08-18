@@ -16,6 +16,7 @@ from src.agents.tools import (
 )
 from src.agents.trace import redact, trace_event
 from src.config import get_settings
+from src.database.redis_client import redis_client
 from src.dependencies import booking_service, internal_portal_service
 from src.guardrails import get_guardrails
 from src.internal_portal import InternalPrincipal, InternalRole
@@ -152,6 +153,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                 "action_tool": "",
                 "action_input": {},
                 "action_error": "",
+                "tool_call_count": 0,
                 "metadata": {
                     "trace_id": trace_id,
                     "conversation_id": conversation_id,
@@ -206,6 +208,13 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
 async def agent_status():
     """Kiểm tra trạng thái agent."""
     return {"status": "ready", "agent": "LangGraph Agent v1.0"}
+
+
+@router.get("/redis/health")
+async def redis_health():
+    """Kiểm tra kết nối Redis."""
+    connected = redis_client.is_connected()
+    return {"status": "connected" if connected else "disconnected", "enabled": redis_client.enabled}
 
 
 @router.get("/booking/health")

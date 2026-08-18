@@ -208,10 +208,10 @@ const accessErrorMessage = (error) => {
     return 'Số điện thoại này chưa liên kết với Zalo Bot của VinFast nên bạn chưa nhận được mã.'
   }
   if (error?.code === 'BOOKING_NOT_FOUND' || error?.status === 404) {
-    return 'Tôi không tìm thấy lịch nào ứng với thông tin này. Bạn kiểm tra lại email đã dùng khi đặt lịch giúp tôi nhé.'
+    return 'ViVi không tìm thấy lịch nào ứng với thông tin này. Bạn kiểm tra lại email đã dùng khi đặt lịch giúp ViVi nhé.'
   }
   if (error?.status >= 500 || !error?.code) {
-    return 'Tôi chưa gửi được mã xác thực cho bạn lúc này. Bạn thử lại sau ít phút, hoặc gọi hotline 1900 23 23 89 để được hỗ trợ trực tiếp.'
+    return 'ViVi chưa gửi được mã xác thực cho bạn lúc này. Bạn thử lại sau ít phút, hoặc gọi hotline 1900 23 23 89 để được hỗ trợ trực tiếp.'
   }
   return error.message
 }
@@ -984,7 +984,7 @@ export function BookingPage() {
   const [agentTyping, setAgentTyping] = useState(false)
   const [checkingVehicleName, setCheckingVehicleName] = useState('')
   const [isSending, setIsSending] = useState(false)
-  const [address, setAddress] = useState({ province: '', detail: '' })
+  const [address, setAddress] = useState(restoredUi.address || { province: '', detail: '' })
   const [locationSuggestions, setLocationSuggestions] = useState([])
   const [nearbyShowrooms, setNearbyShowrooms] = useState(Array.isArray(restoredUi.nearbyShowrooms) ? restoredUi.nearbyShowrooms : [])
   const [showroomId, setShowroomId] = useState(restoredUi.showroomId || '')
@@ -1028,7 +1028,7 @@ export function BookingPage() {
   const [holdExpiresAt, setHoldExpiresAt] = useState(null)
   const [timeLeft, setTimeLeft] = useState('')
   const [backendError, setBackendError] = useState('')
-  const [userLocation, setUserLocation] = useState(null)
+  const [userLocation, setUserLocation] = useState(restoredUi.userLocation || null)
   const messagesRef = useRef(null)
   const timersRef = useRef([])
   const holdActionIdsRef = useRef(new Map())
@@ -1121,10 +1121,12 @@ export function BookingPage() {
       showroomId,
       nearbyShowrooms,
       slots,
+      address,
+      userLocation,
       messages: safeMessages,
       interaction: serializeInteractionState(interaction),
     }))
-  }, [recipient, selectedCarId, showroomId, nearbyShowrooms, slots, messages, interaction])
+  }, [recipient, selectedCarId, showroomId, nearbyShowrooms, slots, address, userLocation, messages, interaction])
 
   useEffect(() => {
     if (selectedCarId || !cars.length) return
@@ -1235,10 +1237,10 @@ export function BookingPage() {
           if (showrooms.length) {
             setStage('choose_showroom')
             setActiveView('map')
-            addMessage('assistant', `Tôi đã định vị vị trí và tìm thấy ${showrooms.length} showroom gần bạn nhất có xe ${selectedCar.name}. Mời bạn chọn showroom hiển thị trên bản đồ để tiếp tục đặt lịch.`)
+            addMessage('assistant', `ViVi đã định vị vị trí và tìm thấy ${showrooms.length} showroom gần bạn nhất có xe ${selectedCar.name}. Mời bạn chọn showroom hiển thị trên bản đồ để tiếp tục đặt lịch.`)
           } else {
             setStage('need_address')
-            addMessage('assistant', `Rất tiếc, tôi chưa tìm thấy showroom nào gần vị trí của bạn có sẵn xe ${selectedCar.name}. Bạn hãy thử nhập một địa chỉ cụ thể khác ở khung chat bên dưới nhé.`)
+            addMessage('assistant', `Rất tiếc, ViVi chưa tìm thấy showroom nào gần vị trí của bạn có sẵn xe ${selectedCar.name}. Bạn hãy thử nhập một địa chỉ cụ thể khác ở khung chat bên dưới nhé.`)
           }
         } catch (error) {
           setAgentTyping(false)
@@ -1248,7 +1250,7 @@ export function BookingPage() {
       (error) => {
         setAgentTyping(false)
         console.error("Lỗi lấy vị trí: ", error)
-        addMessage('assistant', 'Tôi không nhận được phản hồi định vị. Hãy nhắn cho tôi quận/huyện hoặc tỉnh/thành phố của bạn (ví dụ: "Quận 1, TP HCM") để tôi tìm showroom nhé!')
+        addMessage('assistant', 'ViVi không nhận được phản hồi định vị. Hãy nhắn cho ViVi quận/huyện hoặc tỉnh/thành phố của bạn (ví dụ: "Quận 1, TP HCM") để ViVi tìm showroom nhé!')
       }
     )
   }
@@ -1464,13 +1466,13 @@ export function BookingPage() {
         dispatchInteraction({ type: InteractionEvent.ACCESS_LIST })
         otpChallengeIdRef.current = ''
         otpCodeRef.current = ''
-        addMessage('assistant', `Xác thực thành công. Tôi tìm thấy ${formattedBookings.length} lịch hợp lệ với email này, bạn chọn lịch muốn xem hoặc chỉnh sửa nhé.`)
+        addMessage('assistant', `Xác thực thành công. ViVi tìm thấy ${formattedBookings.length} lịch hợp lệ với email này, bạn chọn lịch muốn xem hoặc chỉnh sửa nhé.`)
         return true
       }
 
       if (formattedBookings.length === 0) {
         clearManagementContext({ resetConversation: false })
-        addMessage('assistant', 'Bạn đã xác thực thành công, nhưng tôi chưa tìm thấy lịch nào còn hiệu lực với email này.')
+        addMessage('assistant', 'Bạn đã xác thực thành công, nhưng ViVi chưa tìm thấy lịch nào còn hiệu lực với email này.')
         return true
       }
 
@@ -1514,8 +1516,12 @@ export function BookingPage() {
       const vehicleId = agentCar?.id || selectedCarId
 
       if (agentCar) {
+        if (!recipient) setRecipient('self')
+        setWorkspaceHidden(false)
         if (interaction.mode === BookingMode.MANAGE_BOOKING) {
           clearManagementContext({ resetConversation: true, event: InteractionEvent.VIEW_VEHICLE })
+        } else {
+          dispatchInteraction({ type: InteractionEvent.VIEW_VEHICLE })
         }
         setSelectedCarId(agentCar.id)
       }
@@ -1526,19 +1532,20 @@ export function BookingPage() {
         setPendingSlot(null)
         setSelectedSlot(null)
         setConfirmSlotOpen(false)
-        setShowroomId('')
+        const autoShowroomId = data.selected_showroom?.id || mapped[0]?.id || ''
+        setShowroomId(autoShowroomId)
 
-        if (queriedAddress) {
-          setAddress({ province: '', detail: queriedAddress })
+        if (mapped.length) {
+          if (queriedAddress) setAddress({ province: '', detail: queriedAddress })
           setUserLocation(null)
           setLocationSuggestions([])
           setNearbyShowrooms(mapped)
-          setStage(mapped.length ? 'choose_showroom' : 'need_address')
-          setActiveView(mapped.length ? 'map' : 'car')
+          setStage('choose_showroom')
+          setActiveView('map')
         } else {
-          setAddress({ province: '', detail: '' })
+          setAddress({ province: '', detail: queriedAddress })
           setNearbyShowrooms([])
-          setLocationSuggestions(mapped.slice(0, 5))
+          setLocationSuggestions([])
           setStage('need_address')
           setActiveView('car')
         }
@@ -1650,7 +1657,7 @@ export function BookingPage() {
           setConfirmSlotOpen(false)
           setActiveView('schedule')
           setStage('choose_slot')
-          addMessage('assistant', 'Tôi chưa đọc lại được chính xác ngày giờ của khung giờ đang giữ. Bạn chọn giúp tôi một khung giờ trong danh sách bên cạnh nhé.')
+          addMessage('assistant', 'ViVi chưa đọc lại được chính xác ngày giờ của khung giờ đang giữ. Bạn chọn giúp ViVi một khung giờ trong danh sách bên cạnh nhé.')
           return true
         }
 
@@ -1697,7 +1704,7 @@ export function BookingPage() {
       } else {
         setStage('need_address')
         setActiveView('car')
-        reply(`Tôi chưa tìm thấy showroom có ${car.name} gần “${detail}”. Bạn hãy nhập địa chỉ khác, kèm phường/xã và tỉnh/thành phố.`)
+        reply(`ViVi chưa tìm thấy showroom có ${car.name} gần “${detail}”. Bạn hãy nhập địa chỉ khác, kèm phường/xã và tỉnh/thành phố.`)
       }
     } catch (error) {
       setAgentTyping(false)
@@ -1775,17 +1782,17 @@ export function BookingPage() {
     const car = selectedCar
     addMessage(
       'assistant',
-      'Xin chào, tôi là ViVi — trợ lý đặt lịch lái thử VinFast. Tôi có thể tạo lịch mới hoặc hỗ trợ tra cứu, bổ sung và huỷ lịch đã đặt.',
+      'Xin chào, ViVi là trợ lý đặt lịch lái thử VinFast. ViVi có thể tạo lịch mới hoặc hỗ trợ tra cứu, bổ sung và huỷ lịch đã đặt.',
     )
     if (car) {
       setStage('need_address')
       setActiveView('car')
       primeLocationSuggestions(car)
-      reply(`Bạn đang xem ${car.name}. Hãy nhập địa chỉ theo phường/xã và tỉnh/thành phố để tôi tìm showroom có xe lái thử gần bạn.`, 520)
+      reply(`Bạn đang xem ${car.name}. Hãy nhập địa chỉ theo phường/xã và tỉnh/thành phố để ViVi tìm showroom có xe lái thử gần bạn.`, 520)
     } else {
       setStage('need_car')
       setActiveView('agent')
-      reply('Trước tiên, bạn muốn lái thử mẫu xe nào? Bạn có thể chọn một mẫu ngay phía trên ô nhập hoặc nhắn tên xe cho tôi.', 520)
+      reply('Trước tiên, bạn muốn lái thử mẫu xe nào? Bạn có thể chọn một mẫu ngay phía trên ô nhập hoặc nhắn tên xe cho ViVi.', 520)
     }
   }
 
@@ -1936,9 +1943,17 @@ export function BookingPage() {
     addMessage('user', value)
     setBackendError('')
 
-    // Vehicle text is only a hint for the pending status. The panel changes after
-    // the Agent tool confirms an active model in applyAgentToolResult().
     const mentionedCar = resolveAgentCar(value)
+    if (mentionedCar) {
+      if (!recipient) setRecipient('self')
+      setWorkspaceHidden(false)
+      if (interaction.mode === BookingMode.MANAGE_BOOKING) {
+        clearManagementContext({ resetConversation: true, event: InteractionEvent.VIEW_VEHICLE })
+      } else {
+        dispatchInteraction({ type: InteractionEvent.VIEW_VEHICLE })
+      }
+      setSelectedCarId(mentionedCar.id)
+    }
     setCheckingVehicleName(mentionedCar?.name || '')
 
     setAgentTyping(true)
@@ -1998,7 +2013,7 @@ export function BookingPage() {
     // icon. The backend grants update_details as part of this purpose.
     setAccessValue((current) => ({ ...current, bookingCode: '', email: email || current.email, otpCode: '' }))
     setAccessFlow({ phase: 'request', purpose: 'reschedule', challengeId: '', expiresAt: 0 })
-    reply('Để bảo vệ lịch của bạn, hãy nhập email đã đăng ký. Tôi sẽ gửi OTP qua email.')
+    reply('Để bảo vệ lịch của bạn, hãy nhập email đã đăng ký. ViVi sẽ gửi OTP qua email.')
   }
 
   /**
@@ -2030,8 +2045,8 @@ export function BookingPage() {
       bookingCode,
     })
     reply(created
-      ? 'Tôi đã tạo file lịch cho buổi lái thử này, kèm nhắc trước 2 giờ. Bạn mở file vừa tải để thêm vào ứng dụng lịch nhé.'
-      : 'Tôi chưa đọc được chính xác mốc thời gian của buổi hẹn nên chưa tạo được file lịch. Bạn xem giờ hẹn trên phiếu bên cạnh giúp tôi nhé.')
+      ? 'ViVi đã tạo file lịch cho buổi lái thử này, kèm nhắc trước 2 giờ. Bạn mở file vừa tải để thêm vào ứng dụng lịch nhé.'
+      : 'ViVi chưa đọc được chính xác mốc thời gian của buổi hẹn nên chưa tạo được file lịch. Bạn xem giờ hẹn trên phiếu bên cạnh giúp ViVi nhé.')
   }
 
   // Đặt lịch cho mẫu khác = một luồng MỚI hoàn toàn. Xoá sạch lựa chọn cũ để lịch vừa đặt
@@ -2059,11 +2074,11 @@ export function BookingPage() {
     try {
       const result = await requestBookingAccess({ bookingCode: accessValue.bookingCode.trim(), email: accessValue.email.trim(), purpose: accessFlow?.purpose || 'update_details' })
       if (!result?.challenge_id || !result?.expires_at) {
-        throw new Error('Tôi chưa mở được phiên xác thực OTP cho bạn. Bạn bấm gửi lại mã giúp tôi nhé.')
+        throw new Error('ViVi chưa mở được phiên xác thực OTP cho bạn. Bạn bấm gửi lại mã giúp ViVi nhé.')
       }
       const expiresAt = new Date(result.expires_at).getTime()
       if (Number.isNaN(expiresAt)) {
-        throw new Error('Tôi đọc không được thời hạn của mã OTP này. Bạn bấm gửi lại mã giúp tôi nhé.')
+        throw new Error('ViVi đọc không được thời hạn của mã OTP này. Bạn bấm gửi lại mã giúp ViVi nhé.')
       }
       otpChallengeIdRef.current = result.challenge_id
       setAccessFlow((current) => ({ phase: 'verify', purpose: current?.purpose || 'update_details', challengeId: result.challenge_id, expiresAt }))
@@ -2077,7 +2092,7 @@ export function BookingPage() {
         'assistant',
         mockOtp
           ? `Mã OTP mock của bạn là **${mockOtp}**. Nhập mã này để tiếp tục luồng kiểm thử.`
-          : 'Tôi đã gửi mã OTP qua email. Bạn vui lòng nhập mã để tiếp tục.',
+          : 'ViVi đã gửi mã OTP qua email. Bạn vui lòng nhập mã để tiếp tục.',
       )
     } catch (error) {
       // Hai mã giới hạn KHÁC nhau và trước đây chỉ bắt một: OTP_RATE_LIMITED là cooldown
@@ -2188,11 +2203,11 @@ export function BookingPage() {
 
   const cancelAccessOtp = () => {
     clearManagementContext({ event: InteractionEvent.CANCEL_ACCESS })
-    addMessage('assistant', 'Tôi đã dừng bước xác thực rồi. Khi nào bạn cần xem hoặc chỉnh sửa lịch, bạn cứ nhắn cho tôi nhé.')
+    addMessage('assistant', 'ViVi đã dừng bước xác thực rồi. Khi nào bạn cần xem hoặc chỉnh sửa lịch, bạn cứ nhắn cho ViVi nhé.')
   }
   const closeBookingDetails = () => {
     clearManagementContext({ event: InteractionEvent.CLOSE_BOOKING_DETAILS })
-    addMessage('assistant', 'Tôi đã đóng phần quản lý lịch. Bạn có thể tiếp tục xem xe hoặc bắt đầu một yêu cầu khác.')
+    addMessage('assistant', 'ViVi đã đóng phần quản lý lịch. Bạn có thể tiếp tục xem xe hoặc bắt đầu một yêu cầu khác.')
   }
   const resumeConversation = () => {
     // Nháp tạo trước khi lưu recipient không đủ dữ liệu để hiện lại modal;
@@ -2254,7 +2269,7 @@ export function BookingPage() {
       // Chỉ báo đã huỷ khi BACKEND nói là đã huỷ. Trước đây bỏ qua hoàn toàn response nên
       // bất kỳ phản hồi thành công một phần nào cũng bị hiển thị thành "đã huỷ xong".
       if (cancelled?.booking_status && cancelled.booking_status !== 'cancelled') {
-        setAccessError(`Lịch chưa được huỷ (trạng thái hiện tại: ${cancelled.booking_status}). Bạn thử lại hoặc gọi hotline giúp tôi nhé.`)
+        setAccessError(`Lịch chưa được huỷ (trạng thái hiện tại: ${cancelled.booking_status}). ViVi thử lại hoặc gọi hotline giúp bạn nhé.`)
         return
       }
       clearManagementContext()
@@ -2287,7 +2302,7 @@ export function BookingPage() {
       setAccessFlow((current) => current ? { ...current, phase: 'edit', purpose: 'reschedule' } : { phase: 'edit', purpose: 'reschedule', challengeId: '', expiresAt: 0 })
       dispatchInteraction({ type: InteractionEvent.START_RESCHEDULE })
       loadRescheduleSlots(car, { id: targetProfile.showroomId, name: targetProfile.showroomName })
-    } else setAccessError('Tôi chưa xác định được mẫu xe hoặc showroom của lịch này, nên tạm thời chưa đổi lịch được cho bạn.')
+    } else setAccessError('ViVi chưa xác định được mẫu xe hoặc showroom của lịch này, nên tạm thời chưa đổi lịch được cho bạn.')
   }
   const beginAccessibleReschedule = async (summary) => {
     const targetProfile = summary.id === accessProfile?.bookingId ? accessProfile : await selectAccessibleBooking(summary)
@@ -2322,7 +2337,7 @@ export function BookingPage() {
       const startsAt = new Date(rescheduleState.slot.start_at)
       setAccessProfile((current) => ({ ...current, bookingId: rescheduleState.newBookingId, slotTime: startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false }), slotDate: new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(startsAt) }))
       clearManagementContext({ event: InteractionEvent.FINISH_RESCHEDULE })
-      addMessage('assistant', `ViVi đã đổi lịch thành công. Mã lịch ${accessProfile.bookingCode} được giữ nguyên. Tôi đã gửi thông tin lịch mới qua email.`)
+      addMessage('assistant', `ViVi đã đổi lịch thành công. Mã lịch ${accessProfile.bookingCode} được giữ nguyên. ViVi đã gửi thông tin lịch mới qua email.`)
     } catch (error) { setAccessError(error.message) } finally { setAccessBusy(false) }
   }
 
@@ -2340,7 +2355,7 @@ export function BookingPage() {
     if (rescheduleSecondsLeft <= 0) {
       setRescheduleState(null)
       dispatchInteraction({ type: InteractionEvent.ACCESS_EDIT })
-      addMessage('assistant', 'Thời gian tôi giữ tạm khung giờ mới đã hết. Lịch cũ của bạn vẫn được giữ nguyên, bạn yên tâm nhé.')
+      addMessage('assistant', 'Thời gian ViVi giữ tạm khung giờ mới đã hết. Lịch cũ của bạn vẫn được giữ nguyên, bạn yên tâm nhé.')
       return undefined
     }
     const timer = window.setInterval(() => setRescheduleSecondsLeft((value) => Math.max(0, value - 1)), 1000)
@@ -2388,7 +2403,7 @@ export function BookingPage() {
       addMessage('user', 'Tôi đã hoàn tất thông tin người lái.')
       reply('ViVi đã lưu phiếu tạm cho bạn. Bạn hãy kiểm tra lại thông tin và bấm “Xác nhận đặt lịch” nhé.')
     } catch (error) {
-      reply(`Tôi chưa lưu được thông tin của bạn: ${error.message}`)
+      reply(`ViVi chưa lưu được thông tin của bạn: ${error.message}`)
     }
   }
 

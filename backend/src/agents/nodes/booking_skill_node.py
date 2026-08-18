@@ -57,11 +57,11 @@ STRUCTURED_ACTION_TO_TOOL = {
 }
 
 STRUCTURED_ACTION_RESPONSES = {
-    "search_options": "Tôi đã kiểm tra dữ liệu showroom và lịch trống mới nhất.",
-    "hold_slot": "Tôi đã giữ khung giờ này trong 2 phút.",
-    "update_draft": "Tôi đã lưu thông tin người đặt và người lái.",
+    "search_options": "ViVi đã kiểm tra dữ liệu showroom và lịch trống mới nhất.",
+    "hold_slot": "ViVi đã giữ khung giờ này trong 2 phút.",
+    "update_draft": "ViVi đã lưu thông tin người đặt và người lái.",
     "confirm_booking": "Đặt lịch lái thử đã được xác nhận.",
-    "request_access": "Tôi đã gửi mã xác thực qua email.",
+    "request_access": "ViVi đã gửi mã xác thực qua email.",
     "verify_access": "Xác thực thành công.",
 }
 
@@ -180,7 +180,7 @@ async def booking_skill_node(state: AgentState) -> dict:
             if failed
             else "Vui lòng nhập email đã đăng ký để tra cứu lịch."
             if needs_contact
-            else "Tôi đã gửi mã OTP qua email. Bạn vui lòng nhập mã để tiếp tục."
+            else "ViVi đã gửi mã OTP qua email. Bạn vui lòng nhập mã để tiếp tục."
         )
         response = AIMessage(content=response_text)
         trace_event(
@@ -364,7 +364,7 @@ async def booking_skill_node(state: AgentState) -> dict:
     except Exception as e:
         trace_event("llm.error", trace_id=trace_id, node="booking_skill", error=str(e))
         logging.getLogger(__name__).exception("Error in booking_skill_node")
-        safe_response = AIMessage(content="Đã xảy ra lỗi khi kết nối với mô hình AI. Vui lòng thử lại sau.")
+        safe_response = AIMessage(content="ViVi chưa xử lý được yêu cầu này lúc này. Bạn vui lòng thử lại hoặc chọn trực tiếp từ bảng hỗ trợ bên trái giúp ViVi nhé.")
         return {
             "messages": [safe_response],
             "response": safe_response.content,
