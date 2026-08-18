@@ -376,15 +376,25 @@ export function BookingPage() {
     setStage('success')
     setActiveView('ticket')
 
+    const rawName = (person.bookingName || person.driverName || '').trim().split(/\s+/).pop() || ''
+    const firstName = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1) : ''
+    const greeting = firstName ? `${firstName} ơi, ` : ''
+
     setMessages((current) => [
       ...current,
       {
         id: `${Date.now()}-${current.length}`,
         role: 'assistant',
+        text: `${greeting}ViVi và showroom đều đã nhận được lịch đặt lái thử của bạn.`,
+        emphasis: true,
+      },
+      {
+        id: `${Date.now()}-${current.length + 1}`,
+        role: 'assistant',
         text: 'Ba việc cần lưu ý trước buổi hẹn nằm ngay dưới đây. Bạn cứ hỏi ViVi thêm bất cứ lúc nào.',
       },
       {
-        id: `${Date.now()}-${current.length + 1}-next-steps`,
+        id: `${Date.now()}-${current.length + 2}-next-steps`,
         role: 'assistant',
         type: 'next_steps',
         text: '',
@@ -413,7 +423,7 @@ export function BookingPage() {
   useEffect(() => {
     const safeMessages = messages
       .filter((message) => !isSensitiveChatText(message.text || ''))
-      .map(({ id, role, text, type }) => ({ id, role, text, type }))
+      .map(({ id, role, text, type, emphasis }) => ({ id, role, text, type, emphasis }))
       .slice(-30)
     window.sessionStorage.setItem(BOOKING_UI_STATE_KEY, JSON.stringify({
       recipient,
