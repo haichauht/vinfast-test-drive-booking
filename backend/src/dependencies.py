@@ -7,8 +7,7 @@ from src.services.booking.gmail_provider import GmailMessagingProvider
 from src.services.booking.notifications import InMemoryMessagingProvider, RoutingMessagingProvider
 from src.services.knowledge import KnowledgeService
 from src.services.profile import ProfileService
-from src.services.profile.extractor import ProfileExtractor
-from src.services.profile.queue import ProfileExtractionQueue
+from src.services.profile.queue import ProfileUpdateQueue
 from src.services.usage_budget import UsageBudgetService
 from src.services.zalo_bot import ZaloBotClient, ZaloOtpSender
 
@@ -53,6 +52,5 @@ profile_service = ProfileService(
     database,
     identity_secret=settings.booking_access_otp_secret or "development-profile-identity-secret",
 )
-profile_extractor = ProfileExtractor()
-profile_extraction_queue = ProfileExtractionQueue(redis_client, profile_extractor, profile_service)
+profile_update_queue = ProfileUpdateQueue(redis_client, profile_service)
 knowledge_service = KnowledgeService()

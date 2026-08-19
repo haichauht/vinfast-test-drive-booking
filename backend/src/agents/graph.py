@@ -22,6 +22,7 @@ from src.agents.tools import (
     search_knowledge,
     search_test_drive_options,
     update_booking_draft,
+    update_user_profile,
     verify_booking_access,
 )
 from src.guardrails.tool_guard import build_guarded_tool_node
@@ -120,7 +121,10 @@ def build_graph(checkpointer: Any | None = None) -> CompiledStateGraph:
         "booking_tools",
         build_guarded_tool_node(booking_tools_list, skill_name="booking"),
     )
-    graph.add_node("post_booking_tools", build_guarded_tool_node([search_knowledge], skill_name="post_booking"))
+    graph.add_node(
+        "post_booking_tools",
+        build_guarded_tool_node([search_knowledge, update_user_profile], skill_name="post_booking"),
+    )
 
     # Entry point
     graph.set_entry_point("classifier")

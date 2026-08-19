@@ -8,7 +8,7 @@ from typing import cast
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
 from src.agents.state import AgentState
-from src.agents.tools import search_knowledge
+from src.agents.tools import search_knowledge, update_user_profile
 from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.utils import get_system_prompt, window_messages
 from src.dependencies import profile_service
@@ -31,7 +31,7 @@ async def post_booking_skill_node(state: AgentState) -> dict:
         booking_context = {"active": True, **profile_service.booking_context(str(action_result["booking_id"]))}
     prompt = (
         f"{get_system_prompt()}\n\n--- ACTIVE SKILL GUIDELINES (POST BOOKING) ---\n{get_post_booking_prompt()}"
-        f"\n\n--- RELEVANT USER PROFILE ---\n{json.dumps(state.get('profile_context') or {}, ensure_ascii=False)}"
+        f"\n\n--- USER PROFILE BRIEF ---\n{(state.get('profile_context') or {}).get('brief', 'Profile chưa có dữ liệu.')}"
         f"\n\n--- BOOKING CONTEXT ---\n{json.dumps(booking_context, ensure_ascii=False)}"
     )
     last = messages[-1] if messages else None
@@ -50,9 +50,9 @@ async def post_booking_skill_node(state: AgentState) -> dict:
             text = facts[0]["content"] if facts else "ViVi có thể giúp bạn chuẩn bị checklist lái thử, đánh giá pin/sạc, ADAS, không gian gia đình và các câu hỏi nên trao đổi với tư vấn viên."
             response = AIMessage(content=text)
         else:
-            bound = llm.bind_tools([search_knowledge])
+            bound = llm.bind_tools([search_knowledge, update_user_profile])
             llm_messages = [SystemMessage(content=prompt)] + window_messages(messages)
-            trace_event("llm.request", trace_id=trace_id, node="post_booking_skill", messages=messages_to_log(llm_messages), tools=[search_knowledge.name])
+            trace_event("llm.request", trace_id=trace_id, node="post_booking_skill", messages=messages_to_log(llm_messages), tools=[search_knowledge.name, update_user_profile.name])
             response = await bound.ainvoke(llm_messages)
     except Exception as exc:
         logging.getLogger(__name__).exception("Post booking skill failed")
