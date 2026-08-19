@@ -74,14 +74,16 @@ export const vehicleMediaMap = {
     thumbnail: 'VF8/product-CE18.webp',
     video: 'VF8/VF8.mp4',
     brochure: 'VF8Brochure.pdf',
-    note: 'VF8/VF8.mp4 trùng byte với video của VF 8 Thế hệ mới — hai bản ghi riêng, cố ý giữ tách.',
+    note: 'VF8/VF8.mp4 dùng chung cho cả vf8 và vf8-the-he-moi (hai bản trước trùng byte).',
   },
   'vf8-the-he-moi': {
     name: 'VF 8 Thế hệ mới',
     group: 'Động cơ điện',
     folders: ['VF8 All the new'],
     thumbnail: 'VF8 All the new/VF8PH-23.webp',
-    video: 'VF8 All the new/VF8.mp4',
+    // Dùng CHUNG file với vf8: hai bản trước trùng byte 100%, giữ hai bản chỉ tốn 10,2 MB
+    // trong bundle. Vẫn là hai bản ghi riêng để sau này thay video riêng cho từng mẫu được.
+    video: 'VF8/VF8.mp4',
     brochure: 'VF 8 The he moi All News_Brochure_final 20.05.pdf',
     note: 'Tên thư mục "VF8 All the new" không khớp mã xe vf8-the-he-moi — dễ tìm nhầm.',
   },
@@ -177,10 +179,15 @@ export const showcaseMediaMap = {
     // Khi media API có GLB/GLTF thật, ưu tiên model3dUrl theo contract BACKEND_HANDOFF.md.
     spin: [
       'lac-hong-900lx/spin-1-v2.png',
-      'lac-hong-900lx/spin-3-v2.png',
       'lac-hong-900lx/spin-5-v2.png',
+      'lac-hong-900lx/spin-3-v2.png',
       'lac-hong-900lx/spin-4-v2.png',
       'lac-hong-900lx/spin-2-v2.png',
+      //'lac-hong-900lx/spin-1-v2.png',
+      // 'lac-hong-900lx/spin-3-v2.png',
+      // 'lac-hong-900lx/spin-5-v2.png',
+      // 'lac-hong-900lx/spin-4-v2.png',
+      // 'lac-hong-900lx/spin-2-v2.png',
     ],
   },
   'lac-hong-900s': {

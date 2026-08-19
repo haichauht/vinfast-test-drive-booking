@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
-import { CalendarBlank, CaretLeft, CaretRight, CheckCircle, Clock } from '@phosphor-icons/react'
+import { CalendarBlank, CalendarPlus, CaretLeft, CaretRight, CheckCircle, Clock } from '@phosphor-icons/react'
 import { VehicleShot } from './VehicleWorkspace'
 
 const WEEKDAY_LABELS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
@@ -55,7 +55,17 @@ const timeAsMinutes = (value) => {
   return (hour * 60) + minute
 }
 
-export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
+/**
+ * Bảng chọn khung giờ. Dùng ở hai nơi:
+ *   - luồng đặt mới  → đầy đủ như cũ
+ *   - luồng ĐỔI GIỜ  → truyền `onBack` và `compact`
+ *
+ * `compact` lược bớt cho đỡ rối (anh Minh phản ánh 18/08/2026): bỏ câu hướng dẫn, bỏ chú thích
+ * màu, và bỏ tên xe lặp trong TỪNG ô. Tên xe đã nằm ở tiêu đề ngay trên, in lại ở 50 ô nữa chỉ
+ * làm mắt phải lọc. `onBack` là lối quay về danh sách lịch — trước đây vào màn này là kẹt,
+ * không có đường lùi.
+ */
+export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick, onBack, backLabel = 'Chọn lịch khác', compact = false }) {
   const root = useRef(null)
   const direction = useRef(0)
   const today = new Date()
@@ -142,11 +152,20 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
 
   return (
     <section className="studio-schedule studio-schedule--calendar" aria-label="Lịch lái thử" ref={root}>
-      <div className="studio-schedule__heading">
-        <span>Lịch có đúng mẫu xe</span>
-        <h2>{car.name} tại {showroom.name}</h2>
-        <p>Chọn trực tiếp một ô còn xe. Bạn có thể chuyển tuần để xem những ngày xa hơn.</p>
-      </div>
+      {/* Ở chế độ compact (luồng đổi giờ) chỉ còn ĐÚNG một dòng tiêu đề, canh ngang với thanh
+          công cụ phía trên. Nhãn "Lịch có đúng mẫu xe" và câu hướng dẫn đã bỏ: cả hai không nói
+          thêm gì mà chiếm mất hai dòng ngay phía trên bảng lịch. Lối lùi nay nằm trên thanh
+          công cụ chứ không còn ở đây. */}
+      {/* Chế độ compact (luồng đổi giờ) KHÔNG in tiêu đề ở đây nữa — nó đã nằm trên thanh công
+          cụ để canh đúng hàng với các nút. Nhãn "Lịch có đúng mẫu xe" và câu hướng dẫn cũng bỏ:
+          cả hai chiếm hai dòng ngay trên bảng lịch mà không nói thêm được gì. */}
+      {!compact && (
+        <div className="studio-schedule__heading">
+          <span>Lịch có đúng mẫu xe</span>
+          <h2>{car.name} tại {showroom.name}</h2>
+          <p>Chọn trực tiếp một ô còn xe. Bạn có thể chuyển tuần để xem những ngày xa hơn.</p>
+        </div>
+      )}
 
       <div className="schedule-calendar">
         <header className="schedule-calendar__toolbar">
@@ -159,10 +178,12 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
             <strong>{rangeLabel}</strong>
             <small>{weekAvailableCount ? `${weekAvailableCount} khung giờ còn xe` : 'Chưa có lịch trống trong tuần này'}</small>
           </div>
-          <div className="schedule-calendar__legend" aria-label="Chú thích trạng thái">
-            <span><i className="is-available" /> Còn xe</span>
-            <span><i className="is-unavailable" /> Đã kín</span>
-          </div>
+          {!compact && (
+            <div className="schedule-calendar__legend" aria-label="Chú thích trạng thái">
+              <span><i className="is-available" /> Còn xe</span>
+              <span><i className="is-unavailable" /> Đã kín</span>
+            </div>
+          )}
         </header>
 
         <div className="schedule-calendar__viewport">
@@ -199,8 +220,8 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
                             aria-label={`${entry.time}, ${day.source.dateLabel}: ${entry.isAvailable ? `${car.name} còn xe` : entry.unavailableLabel}`}
                           >
                             <span />
-                            <strong>{entry.isAvailable ? `Có ${car.name}` : entry.unavailableLabel}</strong>
-                            <small>{entry.isAvailable ? 'Sẵn sàng lái thử' : 'Không thể chọn'}</small>
+                            <strong>{entry.isAvailable ? (compact ? 'Còn xe' : `Có ${car.name}`) : entry.unavailableLabel}</strong>
+                            {!compact && <small>{entry.isAvailable ? 'Sẵn sàng lái thử' : 'Không thể chọn'}</small>}
                           </button>
                         ) : <span className="schedule-calendar__empty-cell" aria-label="Showroom chưa mở lịch" />}
                       </div>
@@ -223,12 +244,171 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick }) {
   )
 }
 
+/**
+ * BookingNextSteps — hướng dẫn sau khi đặt lịch thành công.
+ *
+ * Rút về ĐÚNG BA việc người vừa đặt lịch cần làm (anh Minh chốt 17/08/2026):
+ * mang giấy phép lái xe · xưng danh ở quầy lễ tân · có mặt sớm 15 phút.
+ * Bản trước có bốn mục kèm địa chỉ, chỉ đường, tư vấn viên, hotline, lịch nhắc — những thứ đó
+ * đã nằm nguyên trên phiếu lịch ở màn hình bên trái, lặp lại ở đây chỉ làm loãng.
+ *
+ * QUY TẮC NỘI DUNG giữ nguyên: mỗi dòng phải có nguồn dữ liệu thật, không bịa quy trình.
+ * Tên người lái lấy từ form; giờ hẹn lấy từ `slot`. KHÔNG in mã lịch ở đây nữa — lễ tân tra
+ * bằng tên, số điện thoại và email đã đăng ký, người dùng không phải nhớ mã.
+ *
+ * TODO [BACKEND/BOOKING]: chưa có API nào trả hạng GPLX yêu cầu cho mẫu xe
+ * (`vehicle_models.required_license_class` có trong DB nhưng không xuất hiện ở
+ * GET /vehicles/{id}), nên mục "Mang theo" chỉ nói "đúng hạng" chứ không nêu hạng cụ thể.
+ */
+/** Người dùng nên tới sớm chừng này để làm thủ tục và được nhân viên đón tiếp. */
+const ARRIVE_EARLY_MINUTES = 15
+
+export function BookingNextSteps({ slot, person, recipient }) {
+  const driverName = recipient === 'other' ? person.driverName : person.bookingName
+  const contactName = person.bookingName
+  const contactPhone = person.phone
+  const contactEmail = person.email
+
+  return (
+    <section className="booking-next-steps" aria-labelledby="booking-next-steps-title">
+      <h2 id="booking-next-steps-title">Ba việc bạn cần lưu ý trước buổi lái thử</h2>
+
+      <ol className="booking-next-steps__list">
+        <li>
+          <span className="booking-next-steps__label">Giấy tờ mang theo</span>
+          <p>
+            Bạn nhớ mang theo <strong>giấy phép lái xe</strong> còn hiệu lực và đúng hạng với mẫu xe
+            đã đăng ký. Giấy phép cần mang tên <strong>{driverName || 'người lái thử'}</strong>,
+            trùng với thông tin bạn vừa điền.
+          </p>
+        </li>
+
+        <li>
+          <span className="booking-next-steps__label">Khi tới quầy lễ tân</span>
+          <p>
+            Bạn chỉ cần đọc tên, số điện thoại và email đã đăng ký cho lễ tân là được. Bạn không cần
+            nhớ mã lịch, vì showroom tra được bằng ba thông tin này.
+          </p>
+          <p className="booking-next-steps__muted">
+            {[contactName, contactPhone, contactEmail].filter(Boolean).join(' · ')}
+          </p>
+        </li>
+
+        <li>
+          <span className="booking-next-steps__label">Thời gian có mặt</span>
+          <p>
+            Bạn nên có mặt trước giờ hẹn ít nhất <strong>{ARRIVE_EARLY_MINUTES} phút</strong> để
+            làm thủ tục, và để nhân viên showroom có thời gian đón tiếp bạn chu đáo.
+          </p>
+          {slot?.time && slot?.dateLabel && (
+            <p className="booking-next-steps__muted">
+              Giờ hẹn của bạn là {slot.time}, {slot.dateLabel}.
+            </p>
+          )}
+        </li>
+      </ol>
+    </section>
+  )
+}
+
+export function buildGoogleCalendarUrl({ car, showroom, slot, bookingCode, advisor }) {
+  if (!car || !showroom || !slot) return ''
+
+  const title = `Lái thử xe VinFast ${car.name}`
+  const location = `${showroom.name} - ${showroom.address}`
+  const details = `Mã đặt lịch: ${bookingCode || 'Tạm giữ'}\nMẫu xe: ${car.name}\nShowroom: ${showroom.name}\nTư vấn viên: ${advisor?.full_name || 'VinFast Advisor'}`
+
+  let startTimeStr = ''
+  let endTimeStr = ''
+
+  if (slot.startAt) {
+    const startDate = new Date(slot.startAt)
+    const endDate = slot.endAt ? new Date(slot.endAt) : new Date(startDate.getTime() + 45 * 60000)
+    if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+      startTimeStr = startDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+      endTimeStr = endDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+    }
+  } else if (slot.date && slot.time) {
+    const timeClean = slot.time.length === 5 ? slot.time : slot.time.padStart(5, '0')
+    const startDate = new Date(`${slot.date}T${timeClean}:00+07:00`)
+    if (!isNaN(startDate.getTime())) {
+      const endDate = new Date(startDate.getTime() + 45 * 60000)
+      startTimeStr = startDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+      endTimeStr = endDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+    }
+  }
+
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    details,
+    location,
+    ctz: 'Asia/Ho_Chi_Minh',
+    ...(startTimeStr && endTimeStr ? { dates: `${startTimeStr}/${endTimeStr}` } : {}),
+  })
+
+  return `https://calendar.google.com/calendar/render?${params.toString()}`
+}
+
 export function BookingTicket({ car, showroom, slot, person, recipient, bookingCode, advisor = null, compact = false }) {
   const advisorLabel = advisor?.full_name
     ? `${advisor.full_name}${advisor.phone ? ` · ${advisor.phone}` : ''}`
     : bookingCode
       ? 'Chưa phân công'
       : 'Sẽ được phân công khi xác nhận'
-  const rows = [['Người đặt lịch', person.bookingName], ['Người lái thử', recipient === 'other' ? person.driverName : person.bookingName], ['Điện thoại', person.phone], ['Email', person.email || 'Không đăng ký nhận email'], ['Mẫu xe', car.name], ['Showroom', showroom.name], ['Thời gian', `${slot.time} · ${slot.dateLabel}`], ['Tư vấn viên', advisorLabel]]
-  return <section className={`studio-ticket ${compact ? 'studio-ticket--compact' : ''}`}><header><span>{bookingCode ? 'Lịch lái thử đã xác nhận' : 'Kiểm tra trước khi đặt lịch'}</span>{bookingCode && <strong>{bookingCode}</strong>}</header><div className="studio-ticket__vehicle"><VehicleShot car={car} mode="cutout" /><span><strong>{car.name}</strong><small>{car.body}</small></span></div><dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><p><CheckCircle size={16} weight="fill" /> Đã xác nhận có giấy phép lái xe phù hợp.</p></section>
+  // Đặt hộ và người lái có liên hệ riêng: phiếu phải nói rõ AI nhận thông báo nào,
+  // nếu không showroom sẽ gọi nhầm người đặt trong khi người cầm lái không hay biết.
+  const bookingForOther = recipient === 'other'
+  const driverHasOwnContact = bookingForOther && person.driverSameContact === false
+  const contactLine = (phone, email) => [phone, email].filter(Boolean).join(' · ') || 'Chưa có thông tin liên hệ'
+
+  const mapsUrl = (showroom.latitude && showroom.longitude)
+    ? `https://www.google.com/maps/search/?api=1&query=${showroom.latitude},${showroom.longitude}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(showroom.name + ' ' + (showroom.address || ''))}`
+
+  const showroomElement = (
+    <a
+      href={mapsUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ color: '#0C64E6', textDecoration: 'underline', fontWeight: 600 }}
+      title="Bấm để mở vị trí và chỉ đường trên Google Maps"
+    >
+      {showroom.name} ↗
+    </a>
+  )
+
+  const rows = [
+    ['Người đặt lịch', person.bookingName],
+    ['Liên hệ người đặt', contactLine(person.phone, person.email)],
+    ['Người lái thử', bookingForOther ? person.driverName : person.bookingName],
+    ...(bookingForOther
+      ? [['Liên hệ người lái', driverHasOwnContact
+          ? contactLine(person.driverPhone, person.driverEmail)
+          : 'Dùng chung liên hệ với người đặt']]
+      : []),
+    ['Mẫu xe', car.name],
+    ['Showroom', showroomElement],
+    ['Thời gian', `${slot.time} · ${slot.dateLabel}`],
+    ['Tư vấn viên', advisorLabel],
+  ]
+
+  return (
+    <section className={`studio-ticket ${compact ? 'studio-ticket--compact' : ''}`}>
+      <header>
+        <span>{bookingCode ? 'Lịch lái thử đã xác nhận' : 'Kiểm tra trước khi đặt lịch'}</span>
+        {bookingCode && <strong>{bookingCode}</strong>}
+      </header>
+      <div className="studio-ticket__vehicle">
+        <VehicleShot car={car} mode="cutout" />
+        <span><strong>{car.name}</strong><small>{car.body}</small></span>
+      </div>
+      <dl>
+        {rows.map(([label, value]) => (
+          <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+        ))}
+      </dl>
+      <p><CheckCircle size={16} weight="fill" /> Đã xác nhận có giấy phép lái xe phù hợp.</p>
+    </section>
+  )
 }

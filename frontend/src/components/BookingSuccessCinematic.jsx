@@ -1,89 +1,53 @@
 /**
- * Post-confirmation product film.
+ * Đoạn phim ngắn chạy ngay sau khi đặt lịch thành công.
  *
- * Integration boundary:
- * - Receives the already-confirmed vehicle and an `onComplete` callback.
- * - Does not create, mutate or retry a booking.
- * - Backend state remains owned by BookingPage; this component only delays the
- *   success document until the visual sequence is complete.
+ * RANH GIỚI: chỉ nhận mẫu xe đã xác nhận và một callback `onComplete`. Không tạo, không sửa,
+ * không thử lại booking. BookingPage vẫn sở hữu toàn bộ state; component này chỉ làm chậm màn
+ * phiếu lịch lại cho tới khi hình chạy xong.
+ *
+ * ══ MỘT ĐOẠN PHIM DUY NHẤT CHO MỌI MẪU XE (đổi 18/08/2026) ══
+ * Trước đây phim dựng theo model 3D của CHÍNH mẫu vừa đặt, mà chỉ VF 3 và VF 9 có file .glb —
+ * 12 mẫu còn lại rơi về một tấm ảnh tĩnh trượt ngang, nên cùng một bước đặt lịch lại ra hai
+ * chất lượng rất khác nhau. Anh Minh chốt: thống nhất tất cả về logo VinFast + xe Lạc Hồng.
+ *
+ * ══ VÌ SAO LÀ ẢNH 360 CHỨ KHÔNG PHẢI .glb ══
+ * Kho chỉ có ba file .glb: vf3, vf9 và trạm sạc — KHÔNG có model Lạc Hồng (đã tìm cả trong
+ * `frontend/Ảnh xe vinfast/`). Bù lại Lạc Hồng có sẵn bộ 5 khung render 360 độ nền trong suốt,
+ * chính là thứ dựng nên khối xoay xe ở trang chủ. Phim này dùng lại đúng bộ đó.
+ *
+ * ══ CHIỀU CHẠY: TRÁI → PHẢI ══ (anh Minh chốt 18/08/2026, giống VF 3 và VF 9)
+ * Bộ 360 không có khung hông nào mũi hướng phải, nên khung hông được LẬT NGANG. Lật được vì
+ * đã soi ba vùng của khung hông ở cỡ x2 (đầu xe · thân xe · đuôi xe) và KHÔNG có chữ nào đọc
+ * ra — chỉ có nẹp vàng, mâm xe và logo chữ V đối xứng. Khung đuôi thì KHÔNG lật, vì biển số
+ * "Lạc Hồng 900 LX" phải đọc xuôi.
+ *
+ * ══ CHỌN KHUNG NÀO, VÌ SAO ══ (soi từng khung ở cỡ lớn trước khi quyết, không đoán theo tên)
+ *   spin-2 (lật) → hông xe ĐẦY ĐỦ, thấy trọn dãy cửa, mũi hướng PHẢI — khớp chiều xe chạy.
+ *   spin-3       → đuôi xe quay về phía người xem, thân lùi chéo sang PHẢI. Đây đúng là cú
+ *                  xoay của một chiếc xe mũi hướng phải.
+ *   spin-4       → cũng là 3/4 sau nhưng thân lùi sang TRÁI, tức thuộc chiều xoay NGƯỢC LẠI.
+ *                  Dùng nó ở đây xe sẽ như bị lộn đầu đuôi giữa chừng.
+ * Mạch đúng: hông lướt ngang → tới giữa thì đuôi xoay vào mắt người xem → lùi vào chiều sâu.
  */
 import { useEffect, useRef, useState } from 'react'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
-import { SmartImage } from './SmartImage'
-import { preloadVehicle3dRuntime } from './Vehicle3DExperience'
-import { getVehicle3dModel } from '../data/vehicle3d'
-import { vehicleImage } from '../media/assets'
+import { showcaseImage, vehicleImage } from '../media/assets'
 import './BookingSuccessCinematic.css'
 
 const vinfastWordmark = vehicleImage('Vinfast-logo-new_NO_Tagline -2D-Horizontal black.png')
 
-const splitOrbit = (orbit) => {
-  const [azimuth, ...rest] = orbit.trim().split(/\s+/)
-  return { azimuth: Number.parseFloat(azimuth), suffix: rest.join(' ') }
-}
-
-const nearestEquivalentAngle = (from, to) => {
-  const delta = ((((to - from) + 180) % 360) + 360) % 360 - 180
-  return from + delta
-}
-
-const applyModelFinish = (viewer, config) => {
-  const finish = config?.paint
-  const material = finish && viewer?.model?.getMaterialByName?.(finish.materialName)
-  const pbr = material?.pbrMetallicRoughness
-  if (!pbr) return
-  if (finish.removeBaseColorTexture) pbr.baseColorTexture?.setTexture(null)
-  pbr.setBaseColorFactor(finish.baseColor)
-  pbr.setMetallicFactor(finish.metallicFactor)
-  pbr.setRoughnessFactor(finish.roughnessFactor)
-}
-
-function CinematicModel({ car, config, viewerRef, onReady, onFailure }) {
-  const [runtimeReady, setRuntimeReady] = useState(false)
-
-  useEffect(() => {
-    let active = true
-    preloadVehicle3dRuntime()
-      .then(() => { if (active) setRuntimeReady(true) })
-      .catch(() => { if (active) onFailure() })
-    return () => { active = false }
-  }, [onFailure])
-
-  useEffect(() => {
-    const viewer = viewerRef.current
-    if (!viewer || !runtimeReady) return undefined
-    const handleLoad = () => {
-      applyModelFinish(viewer, config)
-      onReady()
-    }
-    const handleError = () => onFailure()
-    viewer.addEventListener('load', handleLoad)
-    viewer.addEventListener('error', handleError)
-    if (viewer.loaded) handleLoad()
-    return () => {
-      viewer.removeEventListener('load', handleLoad)
-      viewer.removeEventListener('error', handleError)
-    }
-  }, [config, onFailure, onReady, runtimeReady, viewerRef])
-
-  return (
-    <model-viewer
-      ref={viewerRef}
-      src={runtimeReady ? config.src : undefined}
-      alt={`Mô hình 3D ${car.name} trong chuyển cảnh xác nhận lịch`}
-      loading="eager"
-      reveal="auto"
-      interaction-prompt="none"
-      camera-orbit={config.sideOrbit}
-      field-of-view={config.fieldOfView}
-      shadow-intensity="0"
-      exposure="0.76"
-      environment-image="neutral"
-      tone-mapping="aces"
-    />
-  )
-}
+/*
+ * Hai khung dựng nên cú xoay, đã CHUẨN HOÁ sẵn thành file riêng thay vì dùng thẳng spin-2/spin-4.
+ * Lý do: hai khung gốc khác tỉ lệ (1692×929 và 1542×1020) nên khi cùng `object-fit: contain`
+ * trong một khung, chiếc xe hiện ra lệch nhau 16% chiều cao và lệch 25px đường chạm đất — lúc
+ * chồng mờ trông như hai tấm ảnh khác cỡ nhảy vào nhau chứ không phải một chiếc xe đang xoay.
+ * Hai file dưới đây đặt xe CÙNG chiều cao trên CÙNG một đường nền, trong cùng một khung 1760×900.
+ * Dựng lại bằng đoạn script ghi trong ghi chú đầu file (crop theo alpha → scale về cao 545 →
+ * dán đáy xe ở y=760).
+ */
+const lacHongSideFrame = showcaseImage('lac-hong-900lx/film-side.png')
+const lacHongRearFrame = showcaseImage('lac-hong-900lx/film-rear.png')
 
 const createSeededRandom = (text) => {
   let state = [...text].reduce((value, char) => ((value * 31) + char.charCodeAt(0)) >>> 0, 2166136261)
@@ -144,10 +108,9 @@ const useTyreSmoke = (canvasRef, rootRef, vehicleRef, controlRef, vehicleId) => 
       const rect = vehicleRef.current?.getBoundingClientRect()
       if (!rect) return [{ x: width * 0.5, y: height * 0.68 }, { x: width * 0.5, y: height * 0.68 }]
 
-      // Side profile points to the right: its rear axle sits left of centre.
-      // As cameraOrbit approaches rear view, the one visible contact patch
-      // separates into the two rear tyres. Every coordinate comes from the
-      // transformed vehicle rect, so smoke cannot drift away from the car.
+      // Khung hông đã lật nên mũi xe hướng PHẢI: trục sau nằm bên trái tâm khung. Khi khung
+      // chuyển dần sang góc đuôi, một vệt tiếp đất tách thành hai bánh sau. Mọi toạ độ lấy từ
+      // rect thật của chiếc xe nên khói không bao giờ trôi rời khỏi bánh.
       const sideX = rect.left + (rect.width * 0.355)
       const rearCenterX = rect.left + (rect.width * 0.5)
       const centerX = sideX + ((rearCenterX - sideX) * rearView)
@@ -165,6 +128,7 @@ const useTyreSmoke = (canvasRef, rootRef, vehicleRef, controlRef, vehicleId) => 
       particles.push({
         x: contact.x + ((random() - 0.5) * Math.min(width * 0.026, 30)),
         y: contact.y + ((random() - 0.5) * Math.min(height * 0.018, 15)),
+        // Xe chạy sang PHẢI nên khói tản ngược về bên trái.
         vx: (-34 - (random() * 58)) * (1 - (rearView * 0.72)),
         vy: -12 - (random() * 30),
         size,
@@ -248,27 +212,32 @@ const useTyreSmoke = (canvasRef, rootRef, vehicleRef, controlRef, vehicleId) => 
 }
 
 export function BookingSuccessCinematic({ car, onComplete }) {
-  const config = getVehicle3dModel(car?.id)
   const root = useRef(null)
-  const viewer = useRef(null)
   const vehicle = useRef(null)
   const canvas = useRef(null)
   const smoke = useRef({ intensity: 0, rearMix: 0, skid: 0 })
-  const [modelReady, setModelReady] = useState(!config)
-  const [modelFailed, setModelFailed] = useState(false)
+  // Chỉ chạy phim khi CẢ HAI khung đã nằm trong bộ nhớ đệm, nếu không cú xoay giữa phim sẽ
+  // hiện ra một khoảng trống đúng lúc người xem đang nhìn chăm chú nhất.
+  const [framesReady, setFramesReady] = useState(false)
 
-  useTyreSmoke(canvas, root, vehicle, smoke, car?.id)
-
-  useEffect(() => {
-    setModelReady(!config)
-    setModelFailed(false)
-  }, [car?.id, config])
+  useTyreSmoke(canvas, root, vehicle, smoke, 'lac-hong-900lx')
 
   useEffect(() => {
-    if (!config || modelReady || modelFailed) return undefined
-    const timeout = window.setTimeout(() => setModelFailed(true), 6000)
-    return () => window.clearTimeout(timeout)
-  }, [config, modelFailed, modelReady])
+    let active = true
+    let pending = 2
+    const done = () => { pending -= 1; if (pending <= 0 && active) setFramesReady(true) }
+    const preload = (src) => {
+      const image = new Image()
+      image.onload = done
+      image.onerror = done
+      image.src = src
+    }
+    preload(lacHongSideFrame)
+    preload(lacHongRearFrame)
+    // Mạng chậm cũng không được treo màn chờ: quá 4 giây thì cứ chạy.
+    const timeout = window.setTimeout(() => { if (active) setFramesReady(true) }, 4000)
+    return () => { active = false; window.clearTimeout(timeout) }
+  }, [])
 
   useGSAP(
     () => {
@@ -279,51 +248,32 @@ export function BookingSuccessCinematic({ car, onComplete }) {
         return () => window.clearTimeout(timer)
       }
 
-      if (config && !modelFailed && !modelReady) return undefined
+      if (!framesReady) return undefined
 
       const movingVehicle = vehicle.current
       const brandPrelude = root.current?.querySelector('.booking-film__brand')
       const air = root.current?.querySelector('.booking-film__air')
       const airLines = root.current?.querySelectorAll('.booking-film__air span')
+      const sideFrame = root.current?.querySelector('[data-frame="side"]')
+      const rearFrame = root.current?.querySelector('[data-frame="rear"]')
       const confirmation = root.current?.querySelector('.booking-film__confirmation')
       const confirmationRule = confirmation?.querySelector('i')
       if (!movingVehicle) return undefined
 
-      const sideOrbit = config ? splitOrbit(config.sideOrbit) : null
-      const rearOrbit = config ? splitOrbit(config.rearOrbit) : null
-      const camera = sideOrbit ? { azimuth: sideOrbit.azimuth } : null
-      const rearAzimuth = sideOrbit && rearOrbit
-        ? nearestEquivalentAngle(sideOrbit.azimuth, rearOrbit.azimuth)
-        : 0
-      const light = { exposure: 0.72 }
-
-      if (viewer.current && config) {
-        viewer.current.cameraOrbit = config.sideOrbit
-        viewer.current.exposure = light.exposure
-        viewer.current.jumpCameraToGoal?.()
-      }
-
       gsap.set(root.current, { autoAlpha: 0 })
+      // Xe vào từ TRÁI và chạy sang phải (mũi xe hướng phải — xem ghi chú đầu file).
       const enterX = -((root.current.clientWidth + movingVehicle.offsetWidth) / 2 + 48)
       gsap.set(movingVehicle, { x: enterX, y: 0, scale: 0.7, rotateZ: 0.18, opacity: 1, filter: 'blur(1.4px)' })
+      gsap.set(sideFrame, { opacity: 1 })
+      gsap.set(rearFrame, { opacity: 0 })
       gsap.set(brandPrelude, { autoAlpha: 0, scale: 0.82 })
       gsap.set(airLines, { scaleX: 0.08, opacity: 0, transformOrigin: 'right center' })
       gsap.set(confirmation, { opacity: 0 })
 
-      const updateCamera = () => {
-        if (!viewer.current || !camera || !rearOrbit) return
-        viewer.current.cameraOrbit = `${camera.azimuth}deg ${rearOrbit.suffix}`
-        viewer.current.jumpCameraToGoal?.()
-      }
-      const updateExposure = () => {
-        if (viewer.current) viewer.current.exposure = light.exposure
-      }
-
       const timeline = gsap.timeline({ defaults: { ease: 'power3.inOut' } })
       timeline
-        // The interface first resolves into absolute black. The approved
-        // VinFast wordmark appears front-facing, holds briefly, then clears
-        // the stage before the vehicle enters. It never spins or flips.
+        // Giao diện tắt hẳn vào nền đen, chữ VinFast hiện chính diện rồi rời sân khấu
+        // trước khi xe vào. Chữ không bao giờ xoay hay lật.
         .call(() => { root.current.dataset.phase = 'blackout' })
         .to(root.current, { autoAlpha: 1, duration: 0.3, ease: 'power2.out' })
         .call(() => { root.current.dataset.phase = 'brand-prelude' })
@@ -332,8 +282,7 @@ export function BookingSuccessCinematic({ car, onComplete }) {
         .to(brandPrelude, { autoAlpha: 0, scale: 0.96, filter: 'blur(5px)', duration: 0.36, ease: 'power2.in' })
         .set(brandPrelude, { visibility: 'hidden' })
         .addLabel('vehicle-approach')
-        // Side profile enters with acceleration. Air compression is tied to
-        // this exact interval and stops before the drift begins.
+        // Hông xe lướt vào, tăng tốc dần. Vệt gió gắn đúng vào quãng này và tắt trước khi drift.
         .call(() => { root.current.dataset.phase = 'side-approach' })
         .to(movingVehicle, { x: -132, scale: 0.76, filter: 'blur(0.55px)', duration: 1.48, ease: 'power2.in' })
         .to(movingVehicle, { x: 0, scale: 0.79, filter: 'blur(0)', duration: 0.48, ease: 'power3.out' })
@@ -341,35 +290,36 @@ export function BookingSuccessCinematic({ car, onComplete }) {
         .to(airLines, { scaleX: 1, opacity: 0.42, duration: 0.62, stagger: 0.055, ease: 'power2.in' }, 'vehicle-approach+=0.1')
         .to(airLines, { scaleX: 0.2, opacity: 0, duration: 0.5, stagger: 0.035, ease: 'power3.out' }, 'vehicle-approach+=1.1')
         .to(air, { opacity: 0, duration: 0.2 }, 'vehicle-approach+=1.62')
-        .to(light, { exposure: config?.exposure || 1.04, duration: 1.36, ease: 'power1.inOut', onUpdate: updateExposure }, 'vehicle-approach+=0.14')
-        // Load transfers forward, then the vehicle rotates through a rear
-        // three-quarter angle. Tyre smoke and skid marks begin at peak load.
+        // Trọng lượng dồn về trước, rồi xe xoay đuôi về phía người xem. Khói lốp và vệt phanh
+        // bắt đầu đúng lúc tải trọng đạt đỉnh. Cú xoay = chồng mờ hai khung 360 thật, kèm một
+        // chút rotateY để mắt đọc ra đây là chuyển động xoay chứ không phải ảnh nhảy.
         .call(() => { root.current.dataset.phase = 'drift' })
         .to(movingVehicle, { x: 44, y: 14, rotateZ: -1.25, scaleX: 1.018, scaleY: 0.982, duration: 0.28, ease: 'power2.out' })
         .to(smoke.current, { intensity: 1, skid: 1, duration: 0.16, ease: 'power2.out' }, '<')
-        .to(camera || {}, { azimuth: rearAzimuth, duration: config ? 1.12 : 0, ease: 'power2.inOut', onUpdate: updateCamera }, '<')
-        .to(smoke.current, { rearMix: 1, duration: 0.82, ease: 'power1.inOut' }, '<+=0.14')
+        .to(sideFrame, { opacity: 0, duration: 0.66, ease: 'power2.inOut' }, '<')
+        .to(rearFrame, { opacity: 1, duration: 0.66, ease: 'power2.inOut' }, '<')
+        .fromTo(movingVehicle, { rotateY: 0 }, { rotateY: 13, duration: 0.66, ease: 'power2.inOut' }, '<')
+        .to(movingVehicle, { rotateY: 0, duration: 0.5, ease: 'power2.out' }, '>')
+        .to(smoke.current, { rearMix: 1, duration: 0.82, ease: 'power1.inOut' }, '<-=0.52')
         .to(movingVehicle, { x: 0, y: 0, rotateZ: 0, scaleX: 1, scaleY: 1, duration: 0.86, ease: 'power3.out' }, '<+=0.18')
         .to(smoke.current, { intensity: 0, skid: 0, duration: 0.92, ease: 'power2.out' }, '<+=0.24')
         .to({}, { duration: 0.38 })
-        // Rear view now owns the centre. It remains sharp while accelerating
-        // into depth; opacity falls only in the last metres.
+        // Đuôi xe giữ giữa khung, vẫn nét trong lúc lao vào chiều sâu; chỉ mờ đi ở mét cuối.
         .call(() => { root.current.dataset.phase = 'rear-retreat' })
         .to(movingVehicle, { x: 0, scale: 0.055, y: -30, duration: 1.72, ease: 'expo.in' })
-        .to(light, { exposure: 0.48, duration: 1.25, ease: 'power2.in', onUpdate: updateExposure }, '<')
         .to(movingVehicle, { opacity: 0, duration: 0.28, ease: 'power1.in' }, '-=0.22')
         .to(canvas.current, { opacity: 0, duration: 0.38 }, '-=0.34')
         .call(() => { root.current.dataset.phase = 'confirmed' })
         .to(confirmation, { opacity: 1, duration: 0.42, ease: 'power2.out' })
-        .to(confirmationRule, { scaleX: 1, duration: 0.38, ease: 'power3.out' }, '<+=0.04')
-        .to({}, { duration: 0.46 })
+        .to(confirmationRule, { scaleX: 1, duration: 0.49, ease: 'power3.out' }, '<+=0.04')
+        .to({}, { duration: 0.52 })
         .to(confirmation, { opacity: 0, y: -8, duration: 0.3, ease: 'power2.in' })
         .to(root.current, { autoAlpha: 0, duration: 0.42, ease: 'power2.inOut' })
         .call(onComplete)
 
       return () => timeline.kill()
     },
-    { scope: root, dependencies: [car?.id, config, modelFailed, modelReady, onComplete] },
+    { scope: root, dependencies: [framesReady, onComplete] },
   )
 
   if (!car) return null
@@ -382,21 +332,10 @@ export function BookingSuccessCinematic({ car, onComplete }) {
       <div className="booking-film__air" aria-hidden="true"><span /><span /><span /><span /></div>
       <canvas className="booking-film__smoke" ref={canvas} aria-hidden="true" />
       <div className="booking-film__rig">
+        {/* Hai khung chồng lên nhau, chỉ đổi opacity nên trình duyệt không phải tính lại bố cục. */}
         <div className="booking-film__vehicle" ref={vehicle}>
-          {config && !modelFailed ? (
-            <CinematicModel
-              car={car}
-              config={config}
-              viewerRef={viewer}
-              onReady={() => setModelReady(true)}
-              onFailure={() => {
-                setModelFailed(true)
-                setModelReady(true)
-              }}
-            />
-          ) : (
-            <SmartImage className="booking-film__fallback" src={car.motionImage || car.intro} alt="" aria-hidden="true" fit="contain" />
-          )}
+          <img className="booking-film__frame" data-frame="side" src={lacHongSideFrame} alt="" aria-hidden="true" />
+          <img className="booking-film__frame" data-frame="rear" src={lacHongRearFrame} alt="" aria-hidden="true" />
         </div>
       </div>
       <div className="booking-film__confirmation" aria-hidden="true">

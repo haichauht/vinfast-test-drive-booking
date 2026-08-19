@@ -23,15 +23,15 @@ async def sensitive_policy_node(state: AgentState) -> dict:
         response = "Quần đảo Hoàng Sa và quần đảo Trường Sa hoàn toàn thuộc chủ quyền của Việt Nam."
     elif sub_intent in ("out_of_scope_code", "out_of_scope_math"):
         response = (
-            "Tôi là Trợ lý ảo hỗ trợ lái thử xe VinFast. "
-            "Tôi không hỗ trợ viết mã lập trình hoặc giải quyết các tác vụ kỹ thuật khác. "
-            "Tôi có thể giúp gì cho bạn về đặt lịch lái thử xe điện VinFast không?"
+            "ViVi là Trợ lý ảo hỗ trợ lái thử xe VinFast. "
+            "ViVi không hỗ trợ viết mã lập trình hoặc giải quyết các tác vụ kỹ thuật khác. "
+            "ViVi có thể giúp gì cho bạn về đặt lịch lái thử xe điện VinFast không?"
         )
     else:
         # Default safety fallback for any unknown sensitive sub_intent
         response = (
-            "Yêu cầu này nằm ngoài phạm vi hỗ trợ của tôi. "
-            "Tôi có thể hỗ trợ bạn tìm hiểu xe VinFast hoặc đặt lịch hẹn lái thử."
+            "Yêu cầu này nằm ngoài phạm vi hỗ trợ của ViVi. "
+            "ViVi có thể hỗ trợ bạn tìm hiểu xe VinFast hoặc đặt lịch hẹn lái thử."
         )
 
     return {

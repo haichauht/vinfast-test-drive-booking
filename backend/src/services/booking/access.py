@@ -14,6 +14,36 @@ from src.services.booking.errors import BookingError
 
 _id = new_id
 
+# Quyền cấp cho phiên truy cập, theo mục đích người dùng khai lúc xin OTP.
+#
+# ĐỂ Ở ĐÂY, ĐỪNG CHÉP LẠI. Trước 18/08/2026 bảng này tồn tại HAI bản giống hệt — một trong
+# request_access, một trong verify_access. Thêm purpose "manage" vào bản đầu mà quên bản sau
+# khiến xin OTP thì được nhưng nhập mã lại nổ KeyError: 'manage' → HTTP 500, và giao diện chỉ
+# hiện câu chung chung "Yêu cầu không thành công." vì thân lỗi 500 không có message.
+ACCESS_PERMISSIONS: dict[str, list[str]] = {
+    "lookup": ["read_booking"],
+    "reschedule": ["read_booking", "search_reschedule", "hold_reschedule", "confirm_reschedule", "update_details"],
+    "cancel": ["read_booking", "cancel_booking"],
+    "update_details": ["read_booking", "update_details"],
+    "update_notifications": ["read_booking", "update_notifications"],
+    # Một phiên quản lý đầy đủ: xem, đổi giờ và huỷ trong CÙNG một lần xác thực OTP, để màn
+    # tra cứu hiện được nút "Huỷ lịch" mà không bắt người dùng xác thực lại lần nữa.
+    "manage": [
+        "read_booking",
+        "search_reschedule",
+        "hold_reschedule",
+        "confirm_reschedule",
+        "update_details",
+        "cancel_booking",
+    ],
+    # Xác thực OTP khi tạo mới / chốt lịch đặt lái thử
+    "confirm_booking": [
+        "read_booking",
+        "confirm_booking",
+        "update_details",
+    ],
+}
+
 
 class AccessService(BookingBase):
     def _check_rate_counter(self, *, bucket_key: str, limit: int, window_seconds: int) -> None:
@@ -44,23 +74,18 @@ class AccessService(BookingBase):
         *,
         expose_otp: bool = False,
     ) -> dict:
-        permissions = {
-            "lookup": ["read_booking"],
-            "reschedule": ["read_booking", "search_reschedule", "hold_reschedule", "confirm_reschedule", "update_details"],
-            "cancel": ["read_booking", "cancel_booking"],
-            "update_details": ["read_booking", "update_details"],
-            "update_notifications": ["read_booking", "update_notifications"],
-        }
+        permissions = ACCESS_PERMISSIONS
         # Keep compatibility with the original positional API:
         # request_access(booking_code, contact_value, purpose). New callers use
         # explicit keywords in the order contact_value, purpose, booking_code.
         if booking_code in permissions and purpose not in permissions:
             contact_value, purpose, booking_code = purpose, booking_code, contact_value
         if purpose not in permissions:
-            raise BookingError("INVALID_INPUT", "Purpose khong hop le.")
+            raise BookingError("INVALID_INPUT", "Mục đích không hợp lệ.")
         eligible_statuses = (
             ("confirmed", "checked_in", "completed", "no_show")
             if purpose == "lookup"
+            else ("held",) if purpose == "confirm_booking"
             else ("confirmed",)
         )
         status_placeholders = ",".join("?" for _ in eligible_statuses)
@@ -70,7 +95,7 @@ class AccessService(BookingBase):
         contact = contact_value.strip()
         normalized = contact.lower() if preferred_channel == "email" else normalize_phone(contact)
         if not normalized or (preferred_channel == "email") != ("@" in normalized):
-            raise BookingError("INVALID_INPUT", "Thong tin lien he khong phu hop voi kenh OTP.")
+            raise BookingError("INVALID_INPUT", "Thông tin liên hệ không phù hợp với kênh OTP.")
         destination_hash = self._hash(normalized, "destination")
         self._check_rate_counter(
             bucket_key=f"otp_request:contact:{destination_hash}",
@@ -80,8 +105,8 @@ class AccessService(BookingBase):
         with self.db.transaction(immediate=True) as c:
             if normalized_code:
                 booking = c.execute(
-                    f"SELECT * FROM bookings WHERE booking_code=? AND status IN ({status_placeholders})",
-                    (normalized_code, *eligible_statuses),
+                    f"SELECT * FROM bookings WHERE (booking_code=? OR lower(id)=lower(?)) AND status IN ({status_placeholders})",
+                    (normalized_code, normalized_code, *eligible_statuses),
                 ).fetchone()
             elif preferred_channel == "email":
                 booking = c.execute(
@@ -100,13 +125,14 @@ class AccessService(BookingBase):
                     (normalized, normalized, *eligible_statuses),
                 ).fetchone()
             if not booking:
-                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Khong tim thay lich hen thuoc email nay.")
-            contact_matches = c.execute(
-                "SELECT 1 FROM people WHERE id IN (?,?) AND (lower(email)=? OR normalized_phone=? OR phone=?) LIMIT 1",
-                (booking["booker_person_id"], booking["driver_person_id"], normalized, normalized, contact),
-            ).fetchone()
-            if not contact_matches:
-                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Email khong thuoc lich hen nay.")
+                raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Không tìm thấy lịch hẹn thuộc email này.")
+            if purpose != "confirm_booking" or (booking["booker_person_id"] or booking["driver_person_id"]):
+                contact_matches = c.execute(
+                    "SELECT 1 FROM people WHERE id IN (?,?) AND (lower(email)=? OR normalized_phone=? OR phone=?) LIMIT 1",
+                    (booking["booker_person_id"], booking["driver_person_id"], normalized, normalized, contact),
+                ).fetchone()
+                if not contact_matches and purpose != "confirm_booking":
+                    raise BookingError("BOOKING_ACCESS_NOT_AVAILABLE", "Email không thuộc lịch hẹn này.")
             if preferred_channel == "zalo" and not hasattr(self.otp_sender, "is_linked"):
                 raise BookingError("ZALO_NOT_CONFIGURED", "Kênh Zalo chưa được cấu hình.")
             if preferred_channel == "zalo" and not self.otp_sender.is_linked(contact_value):
@@ -150,12 +176,15 @@ class AccessService(BookingBase):
                 ),
             )
             self._event(c, booking["id"], "otp_requested", "user", {"purpose": purpose})
-        delivery = self.otp_sender.send(
-            channel=preferred_channel,
-            destination=contact_value,
-            code=code,
-            expires_in_seconds=self.otp_ttl_seconds,
-        )
+        try:
+            delivery = self.otp_sender.send(
+                channel=preferred_channel,
+                destination=contact_value,
+                code=code,
+                expires_in_seconds=self.otp_ttl_seconds,
+            )
+        except ValueError as err:
+            raise BookingError("OTP_CHANNEL_UNAVAILABLE", "Kênh OTP được chọn tạm thời chưa được cấu hình.") from err
         result = {
             "challenge_id": challenge_id,
             "destination_masked": masked,
@@ -227,13 +256,10 @@ class AccessService(BookingBase):
             )
             raw = secrets.token_urlsafe(32)
             token_hash = self._hash(raw, "session")
-            perms = {
-                "lookup": ["read_booking"],
-                "reschedule": ["read_booking", "search_reschedule", "hold_reschedule", "confirm_reschedule", "update_details"],
-                "cancel": ["read_booking", "cancel_booking"],
-                "update_details": ["read_booking", "update_details"],
-                "update_notifications": ["read_booking", "update_notifications"],
-            }[ch["purpose"]]
+            # Purpose lạ (dữ liệu cũ, hoặc thêm purpose mới mà quên khai) thì hạ về quyền đọc
+            # thay vì ném KeyError thành lỗi 500 — người dùng đã nhập đúng mã, không có lý do
+            # gì để họ nhận một lỗi hệ thống không đọc được.
+            perms = ACCESS_PERMISSIONS.get(ch["purpose"], ACCESS_PERMISSIONS["lookup"])
             expiry = self.now() + timedelta(seconds=self.access_session_ttl_seconds)
             c.execute(
                 "INSERT INTO booking_access_sessions VALUES(?,?,?,?,?,?,?,?)",

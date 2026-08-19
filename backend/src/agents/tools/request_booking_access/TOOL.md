@@ -7,7 +7,8 @@ The OTP expires after 5 minutes, allows up to 5 attempts, and has a resend coold
 ## Parameters
 - `booking_code` (optional): Existing booking code. Use only when the user provides it.
 - `contact_value` (optional): Registered email address used to match the booking and receive OTP. Omit it when the user has expressed the booking-management intent but has not supplied an email; the tool then instructs the browser to show the email form.
-- `purpose`: One of `lookup`, `reschedule`, `cancel`, `update_details`, or `update_notifications`.
+- `purpose`: One of `lookup`, `reschedule`, `cancel`, `update_details`, `update_notifications`, or `manage`.
+  `manage` grants read + reschedule + cancel in a single OTP session (used by the lookup screen).
 - `preferred_channel`: OTP channel. Set to `email`.
 
 ## Security
