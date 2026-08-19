@@ -256,13 +256,15 @@
   cursor: pointer;
 }
 
-/* Hàng nút của form: nút chính + lối lùi, canh GIỮA cho cân với khối bên trên. */
+/* Hàng nút của form: nút chính + lối lùi, canh GIỮA cho cân với khối bên trên.
+   gap 18px chứ không phải 10px: hai nút nền đặc đứng cạnh nhau, khoảng hở nhỏ làm chúng
+   đọc thành một mảng liền, mắt không tách được đâu là hai hành động riêng. */
 .vivi-customer-form__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 18px;
   margin-top: 12px;
 }
 
@@ -318,14 +320,17 @@
  * nên còn một mảng trống lớn bên phải, nhìn như thiếu nội dung.
  */
 .vivi-hold-timer {
-  display: inline-flex;
+  /* PHẢI là flex (khối), không phải inline-flex: margin auto chỉ canh giữa được hộp dạng
+     khối. Bản trước để inline-flex nên phải nhờ một rule ghi đè ở tổ tiên mới canh giữa
+     được — đặt ở đâu khác là lại lệch trái. */
+  display: flex;
   align-items: center;
   gap: 9px;
   width: fit-content;
   max-width: 100%;
-  /* Nằm sát mép trái, KHÔNG canh giữa: đây là dòng trạng thái đi kèm khung chat bên dưới,
-     canh giữa làm nó trôi khỏi trục đọc của cột. */
-  margin: 0 0 16px;
+  /* Canh giữa cột chat. width: fit-content ở trên giữ hộp ôm sát chữ, margin auto đưa nó
+     vào giữa — hai thứ phải đi cùng nhau, thiếu fit-content thì hộp kéo hết bề ngang. */
+  margin: 0 auto 16px;
   padding: 9px 16px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -349,12 +354,6 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
-}
-
-/* Bộ đếm là khối canh giữa nên phải nằm trên dòng riêng của nó. */
-.vivi-studio__composer .vivi-hold-timer,
-.vivi-prompt .vivi-hold-timer {
-  display: flex;
 }
 
 .vivi-inline-otp {
