@@ -257,14 +257,14 @@
 }
 
 /* Hàng nút của form: nút chính + lối lùi, canh GIỮA cho cân với khối bên trên.
-   gap 18px chứ không phải 10px: hai nút nền đặc đứng cạnh nhau, khoảng hở nhỏ làm chúng
-   đọc thành một mảng liền, mắt không tách được đâu là hai hành động riêng. */
+   gap 40px là con số anh Minh chốt. Hai nút đều nền đặc, đứng cạnh nhau mà hở hẹp thì đọc
+   thành một mảng liền — đã thử 10px, 18px, 28px, đều còn dính. Đừng thu lại. */
 .vivi-customer-form__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 18px;
+  gap: 40px;
   margin-top: 12px;
 }
 
