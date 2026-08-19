@@ -273,6 +273,24 @@ class AccessService(BookingBase):
                 "session_expires_at": iso(expiry),
             }
 
+    def verified_identity(self, challenge_id: str) -> dict | None:
+        """Resolve the person/contact actually verified by a consumed OTP challenge."""
+        with self.db.connect() as c:
+            challenge = c.execute("SELECT booking_id,destination_hash,status FROM otp_challenges WHERE id=?", (challenge_id,)).fetchone()
+            if not challenge or challenge["status"] != "verified":
+                return None
+            booking = c.execute("SELECT booker_person_id,driver_person_id FROM bookings WHERE id=?", (challenge["booking_id"],)).fetchone()
+            if not booking:
+                return None
+            for person_id in dict.fromkeys((booking["booker_person_id"], booking["driver_person_id"])):
+                if not person_id:
+                    continue
+                person = c.execute("SELECT id,normalized_email,normalized_phone,email,phone FROM people WHERE id=?", (person_id,)).fetchone()
+                for value in (person["normalized_email"], person["email"], person["normalized_phone"], person["phone"]):
+                    if value and hmac.compare_digest(self._hash(str(value).casefold() if "@" in str(value) else str(value), "destination"), challenge["destination_hash"]):
+                        return dict(person)
+        return None
+
     def get_booking_details(
         self, access_session_token: str, *, booking_id: str | None = None, booking_code: str | None = None
     ) -> dict:

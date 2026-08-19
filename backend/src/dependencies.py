@@ -4,6 +4,9 @@ from src.internal_portal import InternalPortalService
 from src.services.booking import BookingService
 from src.services.booking.gmail_provider import GmailMessagingProvider
 from src.services.booking.notifications import InMemoryMessagingProvider, RoutingMessagingProvider
+from src.services.knowledge import KnowledgeService
+from src.services.profile import ProfileService
+from src.services.profile.extractor import ProfileExtractor
 from src.services.usage_budget import UsageBudgetService
 from src.services.zalo_bot import ZaloBotClient, ZaloOtpSender
 
@@ -44,3 +47,9 @@ internal_portal_service = InternalPortalService(
     session_ttl_seconds=settings.internal_session_ttl_seconds,
 )
 usage_budget_service = UsageBudgetService(database, settings)
+profile_service = ProfileService(
+    database,
+    identity_secret=settings.booking_access_otp_secret or "development-profile-identity-secret",
+)
+profile_extractor = ProfileExtractor()
+knowledge_service = KnowledgeService()
