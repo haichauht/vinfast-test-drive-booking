@@ -2371,7 +2371,7 @@ export function BookingPage() {
                    hệ màu và bộ chữ của web. */
                 <div className="vivi-hold-timer">
                   <Clock size={14} weight="light" aria-hidden="true" />
-                  <span>Khung giờ đang giữ tạm thời</span>
+                  <span>Khung giờ đang được ViVi giữ trong</span>
                   <strong>{timeLeft}</strong>
                 </div>
               )}

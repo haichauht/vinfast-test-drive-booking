@@ -237,14 +237,31 @@
   gap: 8px;
 }
 
+/* NHÓM BA SELECTOR NÀY PHẢI LIỀN NHAU — đừng chèn gì vào giữa.
+   Đây là hình dạng gốc của mọi nút hành động trong luồng đặt lịch: popup chọn giờ, màn xem
+   lại phiếu và form. Có lần chèn nhầm một rule vào giữa nhóm, thế là hai nút trong popup chọn
+   giờ mất sạch bo góc lẫn padding, chỉ còn lại màu nền. */
 .slot-confirm-modal > div > div:last-child button,
 .vivi-review-actions button,
-/* Hàng nút của form: nút chính + lối lùi, cùng một nhịp với .vivi-review-actions ở màn
-   xem lại phiếu để hai bước liền nhau không đổi ngôn ngữ thị giác giữa chừng. */
+.vivi-customer-form > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 45px;
+  padding: 0 17px;
+  border-radius: 14px;
+  font-size: 0.72rem;
+  font-weight: 680;
+  cursor: pointer;
+}
+
+/* Hàng nút của form: nút chính + lối lùi, canh GIỮA cho cân với khối bên trên. */
 .vivi-customer-form__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   margin-top: 12px;
 }
@@ -272,19 +289,6 @@
 .vivi-customer-form__actions > button:last-child:not(:first-child) {
   color: var(--ink);
   background: #e7e9e8;
-}
-
-.vivi-customer-form > button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  min-height: 45px;
-  padding: 0 17px;
-  border-radius: 14px;
-  font-size: 0.72rem;
-  font-weight: 680;
-  cursor: pointer;
 }
 
 .slot-confirm-modal > div > div:last-child button:first-child,
@@ -319,7 +323,9 @@
   gap: 9px;
   width: fit-content;
   max-width: 100%;
-  margin: 0 auto 16px;
+  /* Nằm sát mép trái, KHÔNG canh giữa: đây là dòng trạng thái đi kèm khung chat bên dưới,
+     canh giữa làm nó trôi khỏi trục đọc của cột. */
+  margin: 0 0 16px;
   padding: 9px 16px;
   border: 1px solid var(--line);
   border-radius: 999px;
