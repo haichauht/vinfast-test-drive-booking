@@ -19,5 +19,6 @@ class SignalCandidate(BaseModel):
 class ProfileSnapshot(BaseModel):
     id: str
     state: Literal["anonymous", "trusted", "merged"]
+    version: int = 1
     signals: list[dict[str, Any]] = Field(default_factory=list)
 

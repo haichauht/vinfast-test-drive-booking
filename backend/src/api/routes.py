@@ -7,7 +7,6 @@ from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import AIMessage, HumanMessage
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
@@ -18,7 +17,7 @@ from src.agents.tools import (
 from src.agents.trace import redact, trace_event
 from src.config import get_settings
 from src.database.redis_client import redis_client
-from src.dependencies import booking_service, internal_portal_service, profile_extraction_queue, profile_service
+from src.dependencies import booking_service, internal_portal_service, profile_service, profile_update_queue
 from src.guardrails import get_guardrails
 from src.internal_portal import InternalPrincipal, InternalRole
 from src.internal_portal.routes import current_principal
@@ -54,13 +53,13 @@ SECURITY_STATE_DATASET_FILES = {
 
 
 @router.on_event("startup")
-async def start_profile_extraction_worker() -> None:
-    profile_extraction_queue.start()
+async def start_profile_update_worker() -> None:
+    profile_update_queue.start()
 
 
 @router.on_event("shutdown")
-async def stop_profile_extraction_worker() -> None:
-    await profile_extraction_queue.stop()
+async def stop_profile_update_worker() -> None:
+    await profile_update_queue.stop()
 
 
 def _chat_ui_directive(result: dict[str, Any]) -> UiDirective | None:
@@ -211,28 +210,6 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                     result["post_booking_context"] = {"active": True, **profile_service.booking_context(str(action_data["booking_id"]))}
             except Exception:
                 logging.getLogger("profile.lifecycle").exception("profile.confirm_promotion_failed trace_id=%s booking_id=%s", trace_id, action_data.get("booking_id"))
-        try:
-            update_profile_id = str(result.get("profile_id") or (profile.id if profile else ""))
-            if update_profile_id:
-                previous_agent_message = ""
-                seen_current_user = False
-                for message in reversed(result.get("messages") or []):
-                    if isinstance(message, HumanMessage) and message.content == safe_message:
-                        seen_current_user = True
-                    elif seen_current_user and isinstance(message, AIMessage) and isinstance(message.content, str):
-                        previous_agent_message = message.content
-                        break
-                await profile_extraction_queue.enqueue(
-                    profile_id=update_profile_id,
-                    conversation_id=conversation_id,
-                    trace_id=trace_id,
-                    message=safe_message,
-                    previous_agent_message=previous_agent_message,
-                    requested_action=str(body.action or ""),
-                    context=body.context,
-                )
-        except Exception:
-            logging.getLogger("profile.lifecycle").exception("profile.sidecar_failed trace_id=%s conversation_id=%s", trace_id, conversation_id)
         protected = guardrails.protect_output(result)
         response = ChatResponse(
             response=protected.response,
@@ -282,11 +259,15 @@ async def redis_health():
 
 @router.get("/user-profiles/{user_id}/summary")
 async def user_profile_summary(user_id: str) -> dict[str, Any]:
-    """Return an LLM-generated, human-readable summary for a person/profile ID."""
+    """Return an LLM-generated, sales-facing customer summary."""
     try:
-        source = await asyncio.to_thread(profile_service.summary_source_for_user, user_id)
+        snapshot = await asyncio.to_thread(profile_service.load_for_user, user_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="User profile not found") from exc
+    source = build_profile_context(snapshot)
+    source["latest_booking"] = await asyncio.to_thread(
+        profile_service.latest_booking_context, snapshot.id
+    )
     try:
         summary = await summarize_user_profile(source)
     except RuntimeError as exc:
@@ -294,9 +275,25 @@ async def user_profile_summary(user_id: str) -> dict[str, Any]:
             raise HTTPException(status_code=503, detail="Profile summary LLM is not configured") from exc
         raise
     except Exception as exc:
-        logging.getLogger("profile.summary").exception("profile.summary.failed user_id=%s", user_id)
+        logging.getLogger("profile.summary").exception(
+            "profile.summary.failed user_id=%s profile_id=%s", user_id, snapshot.id
+        )
         raise HTTPException(status_code=502, detail="Unable to generate profile summary") from exc
-    return {"user_id": user_id, "summary": summary}
+    logging.getLogger("profile.summary").info(
+        "profile.summary.generated user_id=%s profile_id=%s version=%s",
+        user_id, snapshot.id, snapshot.version,
+    )
+    return {"user_id": user_id, "profile_id": snapshot.id, "version": snapshot.version, "summary": summary}
+
+
+@router.get("/user-profiles/{user_id}/")
+async def user_profile_detail(user_id: str) -> dict[str, Any]:
+    """Return deterministic Markdown and structured JSON profile views."""
+    try:
+        snapshot = await asyncio.to_thread(profile_service.load_for_user, user_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="User profile not found") from exc
+    return {"user_id": user_id, **build_profile_context(snapshot)}
 
 
 @router.get("/booking/health")

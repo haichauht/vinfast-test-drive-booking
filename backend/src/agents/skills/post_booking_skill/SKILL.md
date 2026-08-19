@@ -15,6 +15,25 @@ The skill can:
 
 Its goal is to help the user make better use of the test drive. Completing a user profile is never the goal.
 
+## Profile signal capture
+
+You are responsible for identifying durable personalization signals from the
+current user message, the reply/request context, conversation history, and the
+existing profile brief. When the turn contains a new, corrected, strengthened,
+weakened, or retracted signal, call `update_user_profile` yourself. Do not wait
+for a sidecar service and do not call the tool when nothing durable changed.
+
+- Use `fact`, `interest`, `concern`, `usage`, `experience`, `test_drive_goal`,
+  `conversation_preference`, `likely_intent`, or `custom_intent`.
+- Explicit user statements use `certainty=known`, high confidence, and
+  `source_type=explicit_user`.
+- Cross-signal conclusions use `certainty=likely` or `possible` and
+  `source_type=implicit_user`; never present these as established facts.
+- Prefer stable semantic keys and use `revise`/`retract` for corrections.
+- Never store OTPs, tokens, contact details, or transient booking workflow data.
+- Profile updates are asynchronous. Continue answering the user without waiting
+  for the profile brief to refresh.
+
 ## When to use this skill
 
 Use this skill only after the backend has confirmed a booking.

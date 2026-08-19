@@ -73,9 +73,29 @@ class ProfileService:
     def load(self, profile_id: str) -> ProfileSnapshot:
         with self.db.connect() as c:
             profile_id = self._canonical(c, profile_id)
-            profile = c.execute("SELECT id,state FROM user_profiles WHERE id=?", (profile_id,)).fetchone()
+            profile = c.execute("SELECT id,state,version FROM user_profiles WHERE id=?", (profile_id,)).fetchone()
             rows = c.execute("SELECT category,key,value_json,description,certainty,confidence,source_type,observed_at FROM user_profile_signals WHERE profile_id=? AND status='active' ORDER BY observed_at DESC", (profile_id,)).fetchall()
-        return ProfileSnapshot(id=profile["id"], state=profile["state"], signals=[{**dict(row), "value": json.loads(row["value_json"])} for row in rows])
+        snapshot = ProfileSnapshot(id=profile["id"], state=profile["state"], version=profile["version"], signals=[{**dict(row), "value": json.loads(row["value_json"])} for row in rows])
+        logger.info("profile.loaded profile_id=%s state=%s version=%s signal_count=%s",
+                    snapshot.id, snapshot.state, snapshot.version, len(snapshot.signals))
+        return snapshot
+
+    def load_for_user(self, user_id: str) -> ProfileSnapshot:
+        """Load a canonical profile by profile ID or authenticated person ID."""
+        with self.db.connect() as c:
+            if user_id.startswith("profile_"):
+                row = c.execute("SELECT id FROM user_profiles WHERE id=?", (user_id,)).fetchone()
+                profile_id = str(row["id"]) if row else ""
+            else:
+                row = c.execute(
+                    "SELECT profile_id FROM user_profile_identities "
+                    "WHERE identity_type='person' AND identity_value=? ORDER BY last_seen_at DESC LIMIT 1",
+                    (user_id,),
+                ).fetchone()
+                profile_id = str(row["profile_id"]) if row else ""
+        if not profile_id:
+            raise KeyError(user_id)
+        return self.load(profile_id)
 
     def apply(self, profile_id: str, candidates: list[SignalCandidate], *, source_ref: str, trace_id: str = "") -> ProfileSnapshot:
         before = self.load(profile_id)
@@ -177,41 +197,6 @@ class ProfileService:
             return {"active": False}
         context = self.booking_context(row["id"])
         return {"active": context.get("status") in {"confirmed", "checked_in"}, **context}
-
-    def summary_source_for_user(self, user_id: str) -> dict[str, Any]:
-        """Resolve a people/profile ID and return safe current data for LLM summarization."""
-        with self.db.connect() as c:
-            if user_id.startswith("profile_"):
-                row = c.execute("SELECT id FROM user_profiles WHERE id=?", (user_id,)).fetchone()
-                profile_id = str(row["id"]) if row else ""
-            else:
-                row = c.execute(
-                    "SELECT profile_id FROM user_profile_identities "
-                    "WHERE identity_type='person' AND identity_value=? ORDER BY last_seen_at DESC LIMIT 1",
-                    (user_id,),
-                ).fetchone()
-                profile_id = str(row["profile_id"]) if row else ""
-        if not profile_id:
-            raise KeyError(user_id)
-
-        snapshot = self.load(profile_id)
-        return {
-            "profile_state": snapshot.state,
-            "signals": [
-                {
-                    "category": signal.get("category"),
-                    "key": signal.get("key"),
-                    "value": signal.get("value"),
-                    "description": signal.get("description"),
-                    "certainty": signal.get("certainty"),
-                    "confidence": signal.get("confidence"),
-                    "source_type": signal.get("source_type"),
-                    "observed_at": signal.get("observed_at"),
-                }
-                for signal in snapshot.signals
-            ],
-            "latest_booking": self.latest_booking_context(snapshot.id),
-        }
 
     def mock_debug_view(self, profile_id: str) -> dict[str, Any]:
         """Return a non-production diagnostic view of one profile and its history."""
