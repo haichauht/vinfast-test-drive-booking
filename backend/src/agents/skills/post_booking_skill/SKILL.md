@@ -17,10 +17,10 @@ Its goal is to help the user make better use of the test drive. Completing a use
 
 ## When to use this skill
 
-Use this skill for advisory requests related to preparing for a test drive, evaluating a vehicle, or considering EV ownership, both before and after a booking is confirmed.
+Use this skill only after the backend has confirmed a booking.
 
-- When `post_booking_context.active=true`, use confirmed booking details when they are relevant, such as the booked model, appointment time, or showroom.
-- When `post_booking_context.active=false`, provide the same advisory support without implying that the user already has a booking.
+- Require `post_booking_context.active=true`, derived from a confirmed booking in the backend or a successful `confirm_test_drive_booking` result in the current request.
+- When `post_booking_context.active=false`, do not use this skill. Pre-booking advisory requests remain in the pre-booking/booking assistant flow.
 - Use it immediately after a successful booking confirmation to acknowledge the booking, provide useful guidance, briefly introduce the available support, and suggest a few useful directions.
 - Use it for adjacent automotive questions only to the extent that they help the user prepare for or evaluate a test drive.
 - Do not use it for create, lookup, update, reschedule, or cancel booking actions. Those requests must be routed to the Booking Skill.

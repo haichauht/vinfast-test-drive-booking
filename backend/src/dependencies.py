@@ -1,5 +1,6 @@
 from src.config import get_settings
 from src.database import Database
+from src.database.redis_client import redis_client
 from src.internal_portal import InternalPortalService
 from src.services.booking import BookingService
 from src.services.booking.gmail_provider import GmailMessagingProvider
@@ -7,6 +8,7 @@ from src.services.booking.notifications import InMemoryMessagingProvider, Routin
 from src.services.knowledge import KnowledgeService
 from src.services.profile import ProfileService
 from src.services.profile.extractor import ProfileExtractor
+from src.services.profile.queue import ProfileExtractionQueue
 from src.services.usage_budget import UsageBudgetService
 from src.services.zalo_bot import ZaloBotClient, ZaloOtpSender
 
@@ -52,4 +54,5 @@ profile_service = ProfileService(
     identity_secret=settings.booking_access_otp_secret or "development-profile-identity-secret",
 )
 profile_extractor = ProfileExtractor()
+profile_extraction_queue = ProfileExtractionQueue(redis_client, profile_extractor, profile_service)
 knowledge_service = KnowledgeService()
