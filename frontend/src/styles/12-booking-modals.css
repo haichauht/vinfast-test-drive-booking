@@ -265,6 +265,115 @@
   background: #e7e9e8;
 }
 
+/* ─── Inline Chat 6-Box OTP Verification ─────────────────────────────────── */
+.vivi-inline-otp {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 16px -8px rgba(18, 26, 36, 0.08);
+}
+
+.vivi-inline-otp__header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vivi-inline-otp__header span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.vivi-inline-otp__header small {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.vivi-inline-otp__boxes {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  max-width: 378px;
+  margin: 6px auto 2px;
+  width: 100%;
+}
+
+.vivi-inline-otp__box {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.2s var(--ease-soft), box-shadow 0.2s var(--ease-soft);
+}
+
+.vivi-inline-otp__box:focus {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.15);
+}
+
+.vivi-inline-otp__resend-wrapper {
+  text-align: center;
+  margin: 2px 0 4px;
+}
+
+.vivi-inline-otp__resend-btn {
+  display: inline;
+  width: auto;
+  border: none;
+  background: transparent;
+  color: #69a8ea;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  transition: color 0.2s ease;
+}
+
+.vivi-inline-otp__resend-btn:hover:not(:disabled) {
+  color: #1677ff;
+}
+
+.vivi-inline-otp__resend-btn:disabled {
+  color: #69a8ea;
+  cursor: default;
+}
+
+.vivi-inline-otp__error {
+  color: #ef4444;
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-align: center;
+  margin-top: 2px;
+}
+
+.vivi-review-actions button.is-disabled-confirm {
+  background: #dcdfdc !important;
+  color: #838885 !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+
+.vivi-review-actions button.is-enabled-confirm {
+  background: #0C64E6 !important;
+  color: #ffffff !important;
+  cursor: pointer !important;
+  box-shadow: 0 6px 18px -4px rgba(12, 100, 230, 0.42) !important;
+}
+
 /* ─── Bảng chọn / đổi mẫu xe trong luồng đặt lịch ─────────────────────────── */
 .vehicle-switcher {
   position: fixed;
