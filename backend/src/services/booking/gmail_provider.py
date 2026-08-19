@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Sequence
 from email.message import EmailMessage
 from email.utils import formataddr
+from typing import cast
 
-import requests
+import requests  # type: ignore[import-untyped]
 
-from src.services.booking.email_templates import render_otp_email
+from src.services.booking.email_templates import InlineImage, render_otp_email
 from src.services.booking.notifications import ProviderResult
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -39,6 +41,7 @@ class GmailMessagingProvider:
             subject=rendered.subject,
             body=rendered.plain_text,
             html_body=rendered.html,
+            inline_images=rendered.inline_images,
         )
 
     def send_message(
@@ -49,12 +52,19 @@ class GmailMessagingProvider:
         body: str,
         subject: str | None = None,
         html_body: str | None = None,
+        inline_images: Sequence[InlineImage] = (),
     ) -> ProviderResult:
         if channel != "email":
             raise ValueError("GmailMessagingProvider only supports the email channel")
         try:
             access_token = self._access_token()
-            message = self._mime_message(destination=destination, subject=subject or "VinFast", body=body, html_body=html_body)
+            message = self._mime_message(
+                destination=destination,
+                subject=subject or "VinFast",
+                body=body,
+                html_body=html_body,
+                inline_images=inline_images,
+            )
             response = requests.post(
                 GMAIL_SEND_URL,
                 headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
@@ -112,7 +122,15 @@ class GmailMessagingProvider:
             raise requests.RequestException("missing_access_token")
         return token
 
-    def _mime_message(self, *, destination: str, subject: str, body: str, html_body: str | None) -> EmailMessage:
+    def _mime_message(
+        self,
+        *,
+        destination: str,
+        subject: str,
+        body: str,
+        html_body: str | None,
+        inline_images: Sequence[InlineImage] = (),
+    ) -> EmailMessage:
         message = EmailMessage()
         message["To"] = destination
         message["From"] = formataddr((self.sender_name, self.sender_email))
@@ -120,6 +138,19 @@ class GmailMessagingProvider:
         message.set_content(body)
         if html_body:
             message.add_alternative(html_body, subtype="html")
+            # Logo đầu thư đi kèm dưới dạng ảnh inline (multipart/related) chứ không phải
+            # `data:` URI — Gmail chặn ảnh data:. `add_related` phải gọi TRÊN phần HTML, không
+            # phải trên message gốc, nếu không thư thành đính kèm rời và ảnh không hiện.
+            # `cast` vì stub của thư viện khai báo get_payload()/iter_parts() trả Message
+            # chung chung, không lộ add_related; phần vừa thêm chắc chắn là EmailMessage.
+            html_part = cast(EmailMessage, list(message.iter_parts())[-1])
+            for image in inline_images:
+                html_part.add_related(
+                    image.content,
+                    maintype="image",
+                    subtype=image.subtype,
+                    cid=f"<{image.cid}>",
+                )
         return message
 
     @staticmethod

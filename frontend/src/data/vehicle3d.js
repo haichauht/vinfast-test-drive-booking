@@ -27,12 +27,12 @@ import chargingStationModelUrl from '../media/local/models/charging-station.glb?
 export const vehicle3dModels = {
   vf3: {
     src: vf3ModelUrl,
-    orbit: '32deg 72deg 100%',
+    orbit: '32deg 80deg 78%',
     // Đã kiểm tra trực tiếp trên GLB: 0° đầu xe, -90° hông (mũi hướng
     // theo chiều chạy sang phải), 180° cốp/đuôi xe.
     sideOrbit: '-90deg 76deg 106%',
     rearOrbit: '180deg 76deg 105%',
-    fieldOfView: '30deg',
+    fieldOfView: '28deg',
     credit: {
       author: 'Hoàng Huy',
       source: 'https://sketchfab.com/3d-models/vinfast-vf3-plus-2026-aa87e1cd1fdd42ae92e5a397e3d5b125',
@@ -43,10 +43,10 @@ export const vehicle3dModels = {
     src: vf9ModelUrl,
     // VF9 dùng cùng hướng camera đã kiểm tra trực tiếp như VF3: 0° đầu xe,
     // -90° hông (mũi hướng sang phải), 180° cốp/đuôi xe.
-    orbit: '-55deg 73deg 100%',
+    orbit: '-55deg 80deg 76%',
     sideOrbit: '-90deg 77deg 108%',
     rearOrbit: '180deg 77deg 105%',
-    fieldOfView: '29deg',
+    fieldOfView: '27deg',
     // Chỉ đổi vật liệu sơn thân; đèn hậu đỏ, kính và chrome vẫn giữ nguyên.
     paint: {
       // Sau bước Draco/texture palette, `Car Paint.002` trở thành tên mesh;

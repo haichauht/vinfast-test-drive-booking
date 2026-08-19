@@ -3,6 +3,7 @@ from datetime import timedelta
 
 import pytest
 from src.services.booking import BookingError, iso
+from src.services.booking.access import ACCESS_PERMISSIONS
 from src.services.booking.notifications import ProviderResult
 from src.services.zalo_bot import ZaloOtpSender
 
@@ -252,6 +253,26 @@ def test_expired_access_session_is_rejected(booking_service, booking_db, access_
     assert error.value.code == "ACCESS_SESSION_EXPIRED"
 
 
+def test_confirm_booking_otp_flow(booking_service, ready_draft_factory):
+    ready = ready_draft_factory()
+    booking_id = ready["booking_id"]
+
+    # Đăng ký OTP với purpose confirm_booking bằng booking_id và email
+    challenge = booking_service.request_access(
+        booking_code=booking_id,
+        contact_value="chau@example.test",
+        purpose="confirm_booking",
+        preferred_channel="email",
+        expose_otp=True,
+    )
+    assert challenge["challenge_id"]
+
+    # Xác thực OTP thành công
+    verified = booking_service.verify_access(challenge["challenge_id"], challenge["otp_code"])
+    assert verified["booking_id"] == booking_id
+    assert "confirm_booking" in verified["permissions"]
+
+
 # test case of Chau + kiểm tra token lookup không được dùng để hủy booking
 def test_lookup_permission_cannot_cancel_booking(booking_service, access_factory):
     access = access_factory("lookup")
@@ -291,3 +312,36 @@ def test_booking_details_uses_boolean_license_commitment(booking_service, access
     declaration = details["license_declaration"]
     assert declaration["has_driving_license"] is True
     assert "license_number" not in declaration
+
+
+# Purpose "manage" gộp quyền xem + đổi giờ + huỷ trong MỘT lần OTP, để màn tra cứu hiện được
+# nút "Huỷ lịch". Bảng phân quyền từng bị chép làm hai bản (request_access và verify_access);
+# thêm purpose vào một bản mà quên bản kia thì xin mã vẫn được nhưng NHẬP mã nổ KeyError →
+# HTTP 500, giao diện chỉ hiện "Yêu cầu không thành công.". Hai test dưới khoá lại chuyện đó.
+def test_manage_purpose_grants_cancel_and_reschedule_in_one_session(
+    booking_service, confirmed_booking_factory
+):
+    booking = confirmed_booking_factory()
+    challenge = booking_service.request_access(
+        booking["confirmed"]["booking_code"], BOOKER_PHONE, "manage", expose_otp=True
+    )
+
+    session = booking_service.verify_access(challenge["challenge_id"], challenge["otp_code"])
+
+    assert "cancel_booking" in session["permissions"]
+    assert "confirm_reschedule" in session["permissions"]
+    assert "read_booking" in session["permissions"]
+
+
+def test_manage_purpose_is_declared_in_the_single_shared_permission_map():
+    """Bảng phân quyền phải là MỘT nguồn duy nhất.
+
+    Trước đây có hai bản chép tay; test này khoá lại việc mọi purpose đều tra từ cùng một chỗ,
+    nên không thể lặp lại cảnh xin mã được mà nhập mã thì lỗi 500.
+    """
+    assert "manage" in ACCESS_PERMISSIONS
+    assert set(ACCESS_PERMISSIONS["manage"]) >= {
+        "read_booking",
+        "confirm_reschedule",
+        "cancel_booking",
+    }

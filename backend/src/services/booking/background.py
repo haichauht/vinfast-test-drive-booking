@@ -49,6 +49,10 @@ class BackgroundJobService(BookingBase):
                         subject=rendered.subject,
                         body=rendered.plain_text,
                         html_body=rendered.html,
+                        # THIẾU dòng này là logo đầu thư vỡ: thân HTML trỏ `cid:vinfast-logo`
+                        # nhưng không có ảnh nào được đính kèm. Mail OTP đi đường khác
+                        # (GmailMessagingProvider.send) nên vẫn hiện, mail lịch thì không.
+                        inline_images=rendered.inline_images,
                     )
                     if destination
                     else None

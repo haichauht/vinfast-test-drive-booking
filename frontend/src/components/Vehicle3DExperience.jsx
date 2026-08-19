@@ -66,6 +66,7 @@ function ModelSurface({
   posterMode = 'media',
   quiet = false,
   interactionPrompt = 'auto',
+  autoRotate = true,
 }) {
   const internalRef = useRef(null)
   const [engineReady, setEngineReady] = useState(false)
@@ -124,7 +125,7 @@ function ModelSurface({
         camera-controls={interactive ? '' : undefined}
         disable-pan=""
         touch-action="pan-y"
-        auto-rotate={interactive ? '' : undefined}
+        auto-rotate={interactive && autoRotate ? '' : undefined}
         auto-rotate-delay="1600"
         rotation-per-second="14deg"
         interaction-prompt={interactive ? interactionPrompt : 'none'}
@@ -162,6 +163,13 @@ export function Vehicle3DExperience({ car, onEnter }) {
   const root = useRef(null)
   const viewer = useRef(null)
   const [interactive, setInteractive] = useState(false)
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  useEffect(() => {
+    if (!config) return undefined
+    const fallback = window.setTimeout(() => setInteractive(true), 4500)
+    return () => window.clearTimeout(fallback)
+  }, [car?.id, config])
 
   useGSAP(
     () => {
@@ -255,7 +263,16 @@ export function Vehicle3DExperience({ car, onEnter }) {
           <p>Giữ và kéo để xoay · cuộn để tiến gần hoặc lùi xa.</p>
         </div>
         <div className="vehicle-3d__viewer">
-          <ModelSurface car={car} config={config} viewerRef={viewer} interactive={interactive} eager initialOrbit={config.sideOrbit} posterMode="dark" />
+          <ModelSurface
+            car={car}
+            config={config}
+            viewerRef={viewer}
+            interactive={interactive}
+            autoRotate={!reducedMotion}
+            eager
+            initialOrbit={config.sideOrbit}
+            posterMode="dark"
+          />
           <div className="vehicle-3d__controls">
             <span><CursorClick size={17} weight="light" /> Kéo để quan sát</span>
             <button type="button" onClick={resetCamera}><ArrowCounterClockwise size={16} weight="light" /> Đặt lại góc nhìn</button>

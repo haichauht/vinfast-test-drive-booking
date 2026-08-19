@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import uuid
@@ -5,6 +6,8 @@ from collections.abc import Callable
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from langchain_core.messages import HumanMessage
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
@@ -14,6 +17,7 @@ from src.agents.tools import (
 )
 from src.agents.trace import redact, trace_event
 from src.config import get_settings
+from src.database.redis_client import redis_client
 from src.dependencies import booking_service, internal_portal_service
 from src.guardrails import get_guardrails
 from src.internal_portal import InternalPrincipal, InternalRole
@@ -150,6 +154,9 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                 "action_tool": "",
                 "action_input": {},
                 "action_error": "",
+                # Reset per-turn tool loop counter to 0 for each new user request
+                # (ensures each message turn receives a fresh 8-call tool budget while preventing infinite loops within 1 turn)
+                "tool_call_count": 0,
                 "metadata": {
                     "trace_id": trace_id,
                     "conversation_id": conversation_id,
@@ -206,6 +213,13 @@ async def agent_status():
     return {"status": "ready", "agent": "LangGraph Agent v1.0"}
 
 
+@router.get("/redis/health")
+async def redis_health():
+    """Kiểm tra kết nối Redis."""
+    connected = redis_client.is_connected()
+    return {"status": "connected" if connected else "disconnected", "enabled": redis_client.enabled}
+
+
 @router.get("/booking/health")
 async def booking_health():
     """Lightweight readiness check for the deterministic booking UI."""
@@ -234,13 +248,92 @@ def _request_demo_access(**kwargs: Any) -> dict:
     return booking_service.request_access(**kwargs, expose_otp=expose_mock_otp)
 
 
+@router.post("/chat/stream")
+@router.post("/booking-agent/stream")
+async def chat_stream(body: ChatRequest, request: Request):
+    """Stream ViVi responses using Server-Sent Events (Streamable HTTP).
+
+    Streams real-time LLM token chunks via astream_events when supported,
+    with seamless fallback to full chat response payload.
+    """
+    async def event_generator():
+        try:
+            active_agent = get_agent()
+            guardrails = get_guardrails()
+            conversation_id = body.conversation_id or str(uuid.uuid4())
+            identity = getattr(request.state, "identity", None)
+            trace_id = getattr(request.state, "trace_id", "") or str(uuid.uuid4())
+            config = {"configurable": {"thread_id": conversation_id}}
+            inputs = {
+                "messages": [HumanMessage(content=body.message)],
+                "requested_action": body.action,
+                "action_payload": body.action_payload,
+                "tool_call_count": 0,
+                "metadata": {
+                    "trace_id": trace_id,
+                    "conversation_id": conversation_id,
+                    "anon_session_id": getattr(identity, "session_id", "unknown"),
+                    "client_ip": getattr(identity, "client_ip", "unknown"),
+                    "llm_call_count": 0,
+                },
+            }
+
+            token_streamed = False
+            async for event in active_agent.astream_events(inputs, config=config, version="v2"):
+                if event.get("event") == "on_chat_model_stream":
+                    chunk = (event.get("data") or {}).get("chunk")
+                    if hasattr(chunk, "content") and chunk.content and isinstance(chunk.content, str):
+                        token_streamed = True
+                        payload = json.dumps({"type": "token", "content": chunk.content}, ensure_ascii=False)
+                        yield f"data: {payload}\n\n"
+
+            if not token_streamed:
+                response_data = await chat(request, body)
+                content = response_data.response or ""
+                words = content.split(" ")
+                for i, word in enumerate(words):
+                    chunk = word + (" " if i < len(words) - 1 else "")
+                    payload = json.dumps({"type": "token", "content": chunk}, ensure_ascii=False)
+                    yield f"data: {payload}\n\n"
+                    await asyncio.sleep(0.01)
+                final_payload = json.dumps({"type": "done", "response": response_data.model_dump()}, ensure_ascii=False)
+                yield f"data: {final_payload}\n\n"
+                return
+
+            final_state = await active_agent.aget_state(config)
+            state_values = final_state.values if final_state else {}
+            protected = guardrails.protect_output(state_values)
+            final_response = ChatResponse(
+                response=protected.response,
+                analysis=protected.analysis,
+                conversation_id=conversation_id,
+                tool_name=state_values.get("action_tool", ""),
+                tool_input=protected.tool_input,
+                action_data=protected.action_data,
+                action_error=protected.action_error,
+                intent=str(state_values.get("intent") or ""),
+                ui=_chat_ui_directive(state_values),
+            )
+            final_payload = json.dumps({"type": "done", "response": final_response.model_dump()}, ensure_ascii=False)
+            yield f"data: {final_payload}\n\n"
+        except Exception as exc:
+            logging.getLogger(__name__).warning("astream_events fallback: %s", exc)
+            response_data = await chat(request, body)
+            final_payload = json.dumps({"type": "done", "response": response_data.model_dump()}, ensure_ascii=False)
+            yield f"data: {final_payload}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @router.post("/demo/action")
+@router.post("/test-drive/actions")
 async def demo_action(request: DemoActionRequest):
     """Deterministic UI simulator: one button maps to one tool/command."""
     p = request.payload
     actions: dict[str, tuple[str, Callable[..., Any]]] = {
         "search_options": ("SearchOptionsQuery", booking_service.search_options),
         "hold_slot": ("HoldSlotCommand", booking_service.hold_slot),
+        "release_hold": ("release_hold", lambda **kw: booking_service.release_hold(kw.get("booking_id", ""))),
         "get_draft": ("get_booking_draft", lambda **kw: get_booking_draft.invoke(kw)),
         "update_draft": ("UpdateBookingDraftCommand", booking_service.update_booking_draft),
         "confirm_booking": ("ConfirmBookingCommand", booking_service.confirm_booking),
