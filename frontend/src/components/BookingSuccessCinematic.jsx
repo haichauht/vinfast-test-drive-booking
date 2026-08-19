@@ -311,7 +311,7 @@ export function BookingSuccessCinematic({ car, onComplete }) {
         .to(canvas.current, { opacity: 0, duration: 0.38 }, '-=0.34')
         .call(() => { root.current.dataset.phase = 'confirmed' })
         .to(confirmation, { opacity: 1, duration: 0.42, ease: 'power2.out' })
-        .to(confirmationRule, { scaleX: 1, duration: 0.44, ease: 'power3.out' }, '<+=0.04')
+        .to(confirmationRule, { scaleX: 1, duration: 0.49, ease: 'power3.out' }, '<+=0.04')
         .to({}, { duration: 0.52 })
         .to(confirmation, { opacity: 0, y: -8, duration: 0.3, ease: 'power2.in' })
         .to(root.current, { autoAlpha: 0, duration: 0.42, ease: 'power2.inOut' })
