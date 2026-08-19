@@ -578,6 +578,7 @@ export function BookingPage() {
           setAddress({ province: '', detail: 'Vị trí hiện tại' })
           setLocationSuggestions([])
           setNearbyShowrooms(showrooms)
+          setShowroomId('')
           setAgentTyping(false)
           if (showrooms.length) {
             setStage('choose_showroom')
@@ -877,8 +878,7 @@ export function BookingPage() {
         setPendingSlot(null)
         setSelectedSlot(null)
         setConfirmSlotOpen(false)
-        const autoShowroomId = data.selected_showroom?.id || mapped[0]?.id || ''
-        setShowroomId(autoShowroomId)
+        setShowroomId('')
 
         if (mapped.length) {
           if (queriedAddress) setAddress({ province: '', detail: queriedAddress })
@@ -886,7 +886,12 @@ export function BookingPage() {
           setLocationSuggestions([])
           setNearbyShowrooms(mapped)
           setStage('choose_showroom')
-          setActiveView('map')
+          const hasLocationInput = Boolean(queriedAddress || toolInput.latitude || toolInput.longitude || toolInput.showroom_query)
+          if (hasLocationInput) {
+            setActiveView('map')
+          } else {
+            setActiveView('car')
+          }
         } else {
           setAddress({ province: '', detail: queriedAddress })
           setNearbyShowrooms([])
@@ -1836,6 +1841,9 @@ export function BookingPage() {
       setInlineOtpError('')
       const nextFocus = Math.min(pasted.length, 6) - 1
       document.getElementById(`review-otp-${nextFocus}`)?.focus()
+      if (pasted.length === 6 && !submitting) {
+        confirmFinalBooking(pasted)
+      }
     }
   }
 
@@ -1863,8 +1871,9 @@ export function BookingPage() {
     }
   }
 
-  const confirmFinalBooking = async () => {
-    if (!isInlineOtpComplete || submitting) return
+  const confirmFinalBooking = async (overrideCode) => {
+    const codeToVerify = typeof overrideCode === 'string' ? overrideCode : inlineOtpCode
+    if (codeToVerify.length !== 6 || submitting) return
     const challengeId = inlineOtpChallengeId || otpChallengeIdRef.current
     if (!challengeId) {
       setInlineOtpError('Phiên xác thực chưa sẵn sàng. Bấm "Gửi lại OTP" giúp tôi nhé.')
@@ -1876,7 +1885,7 @@ export function BookingPage() {
       // 1. Verify 6-digit OTP
       const verified = await verifyBookingAccess({
         challengeId,
-        otpCode: inlineOtpCode,
+        otpCode: codeToVerify,
       })
 
       if (!verified || !verified.access_session_token) {
