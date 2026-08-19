@@ -47,6 +47,7 @@ async def classifier_node(state: AgentState) -> dict:
     metadata = state.get("metadata") or {}
     trace_id = metadata.get("trace_id", "")
     previous_skill = state.get("active_skill", "")
+    post_booking_active = bool((state.get("post_booking_context") or {}).get("active"))
     if state.get("requested_action"):
         trace_event(
             "classifier.bypass",
@@ -94,10 +95,11 @@ async def classifier_node(state: AgentState) -> dict:
     if any(kw in lower_query for kw in BOOKING_MUTATION_KEYWORDS):
         return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "booking"}, "tool_call_count": 0}
     if any(kw in lower_query for kw in ADVISORY_KEYWORDS):
-        return {"intent": "domain", "active_skill": "post_booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "vehicle_info"}, "tool_call_count": 0}
+        active_skill = "post_booking" if post_booking_active else "booking"
+        return {"intent": "domain", "active_skill": active_skill, "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "vehicle_info"}, "tool_call_count": 0}
     if any(phrase in lower_query for phrase in ("xin chào", "chào bạn", "hello", "hi ")):
         return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "greeting"}, "tool_call_count": 0}
-    if previous_skill == "post_booking" and len(query.split()) <= 8:
+    if post_booking_active and previous_skill == "post_booking" and len(query.split()) <= 8:
         return {"intent": "domain", "active_skill": "post_booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "contextual_followup"}, "tool_call_count": 0}
 
     # Construct prompt for the LLM classifier dynamically based on system_prompt.md
@@ -139,7 +141,7 @@ async def classifier_node(state: AgentState) -> dict:
         # This public MVP only exposes booking. Keep the detailed sub-intent
         # for OTP/workflow handling, but do not route normal requests to the
         # unfinished advisory skill.
-        active_skill = "post_booking" if sub_intent == "vehicle_info" else "booking"
+        active_skill = "post_booking" if post_booking_active and sub_intent == "vehicle_info" else "booking"
         trace_event(
             "llm.response",
             trace_id=trace_id,
@@ -178,7 +180,11 @@ async def classifier_node(state: AgentState) -> dict:
         trace_event("llm.error", trace_id=trace_id, node="classifier", error=str(e))
         # Log the specific error for debugging before falling back to keyword classifier
         logger.warning("Classifier LLM call failed (%s: %s), falling back to keyword matching.", type(e).__name__, e)
-        active_skill = "post_booking" if any(phrase in lower_query for phrase in ADVISORY_KEYWORDS) else "booking"
+        active_skill = (
+            "post_booking"
+            if post_booking_active and any(phrase in lower_query for phrase in ADVISORY_KEYWORDS)
+            else "booking"
+        )
         fallback_sub_intent = (
             "booking_lookup" if any(phrase in lower_query for phrase in LOOKUP_KEYWORDS) else "fallback_domain"
         )

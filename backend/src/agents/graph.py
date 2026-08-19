@@ -35,7 +35,10 @@ def route_intent(state: AgentState) -> str:
     intent = state.get("intent", "domain")
     if intent == "sensitive":
         return "sensitive_policy"
-    return "post_booking_skill" if state.get("active_skill") == "post_booking" else "booking_skill"
+    post_booking_active = bool((state.get("post_booking_context") or {}).get("active"))
+    if state.get("active_skill") == "post_booking" and post_booking_active:
+        return "post_booking_skill"
+    return "booking_skill"
 
 
 def should_continue_booking(state: AgentState) -> str:

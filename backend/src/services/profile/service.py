@@ -177,3 +177,177 @@ class ProfileService:
             return {"active": False}
         context = self.booking_context(row["id"])
         return {"active": context.get("status") in {"confirmed", "checked_in"}, **context}
+
+    def summary_source_for_user(self, user_id: str) -> dict[str, Any]:
+        """Resolve a people/profile ID and return safe current data for LLM summarization."""
+        with self.db.connect() as c:
+            if user_id.startswith("profile_"):
+                row = c.execute("SELECT id FROM user_profiles WHERE id=?", (user_id,)).fetchone()
+                profile_id = str(row["id"]) if row else ""
+            else:
+                row = c.execute(
+                    "SELECT profile_id FROM user_profile_identities "
+                    "WHERE identity_type='person' AND identity_value=? ORDER BY last_seen_at DESC LIMIT 1",
+                    (user_id,),
+                ).fetchone()
+                profile_id = str(row["profile_id"]) if row else ""
+        if not profile_id:
+            raise KeyError(user_id)
+
+        snapshot = self.load(profile_id)
+        return {
+            "profile_state": snapshot.state,
+            "signals": [
+                {
+                    "category": signal.get("category"),
+                    "key": signal.get("key"),
+                    "value": signal.get("value"),
+                    "description": signal.get("description"),
+                    "certainty": signal.get("certainty"),
+                    "confidence": signal.get("confidence"),
+                    "source_type": signal.get("source_type"),
+                    "observed_at": signal.get("observed_at"),
+                }
+                for signal in snapshot.signals
+            ],
+            "latest_booking": self.latest_booking_context(snapshot.id),
+        }
+
+    def mock_debug_view(self, profile_id: str) -> dict[str, Any]:
+        """Return a non-production diagnostic view of one profile and its history."""
+        with self.db.connect() as c:
+            requested = c.execute(
+                "SELECT id,state,merged_into_profile_id,version,created_at,updated_at,last_seen_at "
+                "FROM user_profiles WHERE id=?",
+                (profile_id,),
+            ).fetchone()
+            if not requested:
+                raise KeyError(profile_id)
+
+            canonical_id = self._canonical(c, profile_id)
+            lineage_ids = [canonical_id]
+            pending = [canonical_id]
+            while pending:
+                parent_id = pending.pop()
+                children = c.execute(
+                    "SELECT id FROM user_profiles WHERE merged_into_profile_id=?",
+                    (parent_id,),
+                ).fetchall()
+                for child in children:
+                    child_id = str(child["id"])
+                    if child_id not in lineage_ids:
+                        lineage_ids.append(child_id)
+                        pending.append(child_id)
+
+            lineage = []
+            signals = []
+            for lineage_id in lineage_ids:
+                row = c.execute(
+                    "SELECT id,state,merged_into_profile_id,version,created_at,updated_at,last_seen_at "
+                    "FROM user_profiles WHERE id=?",
+                    (lineage_id,),
+                ).fetchone()
+                if row:
+                    lineage.append(dict(row))
+                rows = c.execute(
+                    "SELECT id,profile_id,category,key,value_json,description,certainty,confidence,"
+                    "source_type,source_ref,observed_at,status,superseded_by_signal_id,created_at,updated_at "
+                    "FROM user_profile_signals WHERE profile_id=? ORDER BY observed_at DESC",
+                    (lineage_id,),
+                ).fetchall()
+                for signal in rows:
+                    item = dict(signal)
+                    try:
+                        item["value"] = json.loads(item["value_json"])
+                    except (TypeError, json.JSONDecodeError):
+                        item["value"] = item["value_json"]
+                    signals.append(item)
+
+            identities = [
+                dict(row)
+                for row in c.execute(
+                    "SELECT id,profile_id,identity_type,identity_value,trust_level,source,created_at,last_seen_at "
+                    "FROM user_profile_identities WHERE profile_id=? ORDER BY identity_type,created_at",
+                    (canonical_id,),
+                ).fetchall()
+            ]
+
+        signals.sort(key=lambda item: str(item.get("observed_at") or ""), reverse=True)
+        return {
+            "mock": True,
+            "requested_profile_id": profile_id,
+            "canonical_profile_id": canonical_id,
+            "requested_profile": dict(requested),
+            "lineage_profiles": lineage,
+            "identities": identities,
+            "active_signals": [item for item in signals if item["status"] == "active"],
+            "signal_history": signals,
+            "latest_booking_context": self.latest_booking_context(canonical_id),
+        }
+
+    def mock_debug_summary(self, profile_id: str) -> dict[str, Any]:
+        """Return a compact profile view grouped by evidence source and certainty."""
+        full = self.mock_debug_view(profile_id)
+
+        def compact(signal: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "category": signal["category"],
+                "key": signal["key"],
+                "value": signal["value"],
+                "description": signal.get("description"),
+                "confidence": signal.get("confidence"),
+                "observed_at": signal.get("observed_at"),
+                "source_ref": signal.get("source_ref"),
+            }
+
+        levels: dict[str, dict[str, list[dict[str, Any]]]] = {
+            source: {certainty: [] for certainty in ("known", "likely", "possible")}
+            for source in ("explicit_user", "implicit_user", "trusted_domain")
+        }
+        categories: dict[str, list[dict[str, Any]]] = {}
+        for signal in full["active_signals"]:
+            source = str(signal.get("source_type") or "implicit_user")
+            certainty = str(signal.get("certainty") or "possible")
+            levels.setdefault(source, {}).setdefault(certainty, []).append(compact(signal))
+            categories.setdefault(str(signal["category"]), []).append(compact(signal))
+
+        history = full["signal_history"]
+        identity_counts: dict[str, int] = {}
+        for identity in full["identities"]:
+            identity_type = str(identity["identity_type"])
+            identity_counts[identity_type] = identity_counts.get(identity_type, 0) + 1
+
+        return {
+            "mock": True,
+            "view": "summary",
+            "requested_profile_id": full["requested_profile_id"],
+            "canonical_profile_id": full["canonical_profile_id"],
+            "profile": full["requested_profile"],
+            "merged_profile_ids": [
+                item["id"]
+                for item in full["lineage_profiles"]
+                if item["id"] != full["canonical_profile_id"]
+            ],
+            "identity_counts": identity_counts,
+            "signal_counts": {
+                "active": len(full["active_signals"]),
+                "superseded": sum(item["status"] == "superseded" for item in history),
+                "retracted": sum(item["status"] == "retracted" for item in history),
+                "total_history": len(history),
+            },
+            "levels": levels,
+            "categories": categories,
+            "recent_changes": [
+                {
+                    **compact(item),
+                    "status": item["status"],
+                    "source_type": item["source_type"],
+                    "certainty": item["certainty"],
+                    "superseded_by_signal_id": item.get("superseded_by_signal_id"),
+                }
+                for item in history
+                if item["status"] != "active"
+            ][:20],
+            "latest_booking_context": full["latest_booking_context"],
+            "full_view_url": f"/api/v1/mock/user-profiles/{full['requested_profile_id']}",
+        }

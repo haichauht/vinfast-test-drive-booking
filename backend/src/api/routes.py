@@ -18,7 +18,7 @@ from src.agents.tools import (
 from src.agents.trace import redact, trace_event
 from src.config import get_settings
 from src.database.redis_client import redis_client
-from src.dependencies import booking_service, internal_portal_service, profile_extractor, profile_service
+from src.dependencies import booking_service, internal_portal_service, profile_extraction_queue, profile_service
 from src.guardrails import get_guardrails
 from src.internal_portal import InternalPrincipal, InternalRole
 from src.internal_portal.routes import current_principal
@@ -32,6 +32,7 @@ from src.models.schemas import (
     UiDirective,
 )
 from src.services.booking import BookingError
+from src.services.llm import summarize_user_profile
 from src.services.profile.context import build_profile_context
 
 router = APIRouter()
@@ -50,6 +51,16 @@ SECURITY_STATE_DATASET_FILES = {
     "14_booking_access_sessions.csv",
     "15_zalo_identity_links.csv",
 }
+
+
+@router.on_event("startup")
+async def start_profile_extraction_worker() -> None:
+    profile_extraction_queue.start()
+
+
+@router.on_event("shutdown")
+async def stop_profile_extraction_worker() -> None:
+    await profile_extraction_queue.stop()
 
 
 def _chat_ui_directive(result: dict[str, Any]) -> UiDirective | None:
@@ -176,7 +187,11 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                 },
                 "profile_id": profile.id if profile else "",
                 "profile_context": profile_context,
-                "post_booking_context": ({"active": True, **stored_booking_context} if stored_booking_context.get("active") else {"active": body.context.get("phase") == "success", "booking_id": body.context.get("booking_id") or ""}),
+                "post_booking_context": (
+                    {"active": True, **stored_booking_context}
+                    if stored_booking_context.get("active")
+                    else {"active": False}
+                ),
             },
             config=config,
         )
@@ -207,9 +222,15 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                     elif seen_current_user and isinstance(message, AIMessage) and isinstance(message.content, str):
                         previous_agent_message = message.content
                         break
-                candidates = await profile_extractor.extract(safe_message, previous_agent_message=previous_agent_message, trace_id=trace_id, conversation_id=conversation_id, profile_id=update_profile_id)
-                if candidates:
-                    profile_service.apply(update_profile_id, candidates, source_ref=conversation_id, trace_id=trace_id)
+                await profile_extraction_queue.enqueue(
+                    profile_id=update_profile_id,
+                    conversation_id=conversation_id,
+                    trace_id=trace_id,
+                    message=safe_message,
+                    previous_agent_message=previous_agent_message,
+                    requested_action=str(body.action or ""),
+                    context=body.context,
+                )
         except Exception:
             logging.getLogger("profile.lifecycle").exception("profile.sidecar_failed trace_id=%s conversation_id=%s", trace_id, conversation_id)
         protected = guardrails.protect_output(result)
@@ -257,6 +278,25 @@ async def redis_health():
     """Kiểm tra kết nối Redis."""
     connected = redis_client.is_connected()
     return {"status": "connected" if connected else "disconnected", "enabled": redis_client.enabled}
+
+
+@router.get("/user-profiles/{user_id}/summary")
+async def user_profile_summary(user_id: str) -> dict[str, Any]:
+    """Return an LLM-generated, human-readable summary for a person/profile ID."""
+    try:
+        source = await asyncio.to_thread(profile_service.summary_source_for_user, user_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="User profile not found") from exc
+    try:
+        summary = await summarize_user_profile(source)
+    except RuntimeError as exc:
+        if str(exc) == "LLM_NOT_CONFIGURED":
+            raise HTTPException(status_code=503, detail="Profile summary LLM is not configured") from exc
+        raise
+    except Exception as exc:
+        logging.getLogger("profile.summary").exception("profile.summary.failed user_id=%s", user_id)
+        raise HTTPException(status_code=502, detail="Unable to generate profile summary") from exc
+    return {"user_id": user_id, "summary": summary}
 
 
 @router.get("/booking/health")
