@@ -237,6 +237,10 @@
   gap: 8px;
 }
 
+/* NHÓM BA SELECTOR NÀY PHẢI LIỀN NHAU — đừng chèn gì vào giữa.
+   Đây là hình dạng gốc của mọi nút hành động trong luồng đặt lịch: popup chọn giờ, màn xem
+   lại phiếu và form. Có lần chèn nhầm một rule vào giữa nhóm, thế là hai nút trong popup chọn
+   giờ mất sạch bo góc lẫn padding, chỉ còn lại màu nền. */
 .slot-confirm-modal > div > div:last-child button,
 .vivi-review-actions button,
 .vivi-customer-form > button {
@@ -250,6 +254,43 @@
   font-size: 0.72rem;
   font-weight: 680;
   cursor: pointer;
+}
+
+/* Hàng nút của form: nút chính + lối lùi, canh GIỮA cho cân với khối bên trên.
+   gap 40px là con số anh Minh chốt. Hai nút đều nền đặc, đứng cạnh nhau mà hở hẹp thì đọc
+   thành một mảng liền — đã thử 10px, 18px, 28px, đều còn dính. Đừng thu lại. */
+.vivi-customer-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  margin-top: 12px;
+}
+
+.vivi-customer-form__actions > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 45px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 14px;
+  font-size: 0.72rem;
+  font-weight: 680;
+  cursor: pointer;
+}
+
+/* Nút chính giữ nguyên sắc xanh; lối lùi dùng nền xám nhạt đúng như nút phụ ở màn sau. */
+.vivi-customer-form__actions > button:first-child {
+  color: #fff;
+  background: var(--blue);
+}
+
+.vivi-customer-form__actions > button:last-child:not(:first-child) {
+  color: var(--ink);
+  background: #e7e9e8;
 }
 
 .slot-confirm-modal > div > div:last-child button:first-child,
@@ -266,10 +307,64 @@
 }
 
 /* ─── Inline Chat 6-Box OTP Verification ─────────────────────────────────── */
+/* Bộ đếm giữ chỗ.
+ *
+ * Bản trước gán cứng inline: nền cam rgba(239,107,7,.08), chữ #e25c00, số chạy font monospace.
+ * Cả ba đều là màu và chữ "mặc định của thư viện", không có trong hệ thống của web này —
+ * web chỉ có --ink, --blue và --danger, chữ chỉ có Be Vietnam Pro và Geist.
+ *
+ * Cách trình bày: đây là thông tin trấn an ("chỗ của bạn đang được giữ"), KHÔNG phải cảnh báo
+ * lỗi, nên dùng nền giấy trung tính với số đếm màu xanh thương hiệu, thay vì cam báo động.
+ *
+ * width: fit-content — hộp ôm sát chữ rồi tự canh giữa. Bản trước kéo hết bề ngang cột chat
+ * nên còn một mảng trống lớn bên phải, nhìn như thiếu nội dung.
+ */
+.vivi-hold-timer {
+  /* PHẢI là flex (khối), không phải inline-flex: margin auto chỉ canh giữa được hộp dạng
+     khối. Bản trước để inline-flex nên phải nhờ một rule ghi đè ở tổ tiên mới canh giữa
+     được — đặt ở đâu khác là lại lệch trái. */
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: fit-content;
+  max-width: 100%;
+  /* Canh giữa cột chat. width: fit-content ở trên giữ hộp ôm sát chữ, margin auto đưa nó
+     vào giữa — hai thứ phải đi cùng nhau, thiếu fit-content thì hộp kéo hết bề ngang. */
+  margin: 0 auto 16px;
+  padding: 9px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-soft);
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+.vivi-hold-timer svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+/* tabular-nums thay cho monospace: giữ đúng bộ chữ của web mà các chữ số vẫn cùng bề rộng,
+   nên đồng hồ đếm ngược không bị giật ngang mỗi giây. */
+.vivi-hold-timer strong {
+  color: var(--blue);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
 .vivi-inline-otp {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* Canh giữa cùng trục với bộ đếm giữ chỗ ngay phía trên. Không để tràn hết bề ngang:
+     sáu ô số chỉ rộng 378px, kéo khung ra hết cột sẽ thừa hai mảng trống hai bên. */
+  width: 100%;
+  max-width: 430px;
+  margin-inline: auto;
   margin-bottom: 14px;
   padding: 14px 16px;
   border-radius: 14px;
@@ -282,6 +377,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  text-align: center;
 }
 
 .vivi-inline-otp__header span {
@@ -319,9 +415,10 @@
   transition: border-color 0.2s var(--ease-soft), box-shadow 0.2s var(--ease-soft);
 }
 
+/* Dùng --blue của web (#1464f4), không dùng #1677ff của thư viện UI. */
 .vivi-inline-otp__box:focus {
-  border-color: #1677ff;
-  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.15);
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(20, 100, 244, 0.16);
 }
 
 .vivi-inline-otp__resend-wrapper {
@@ -334,7 +431,7 @@
   width: auto;
   border: none;
   background: transparent;
-  color: #69a8ea;
+  color: var(--blue);
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
@@ -344,16 +441,16 @@
 }
 
 .vivi-inline-otp__resend-btn:hover:not(:disabled) {
-  color: #1677ff;
+  color: var(--blue-dark);
 }
 
 .vivi-inline-otp__resend-btn:disabled {
-  color: #69a8ea;
+  color: var(--muted);
   cursor: default;
 }
 
 .vivi-inline-otp__error {
-  color: #ef4444;
+  color: var(--danger);
   font-size: 0.74rem;
   font-weight: 600;
   text-align: center;
