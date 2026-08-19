@@ -263,6 +263,22 @@ export function BookingSuccessCinematic({ car, onComplete }) {
       gsap.set(root.current, { autoAlpha: 0 })
       // Xe vào từ TRÁI và chạy sang phải (mũi xe hướng phải — xem ghi chú đầu file).
       const enterX = -((root.current.clientWidth + movingVehicle.offsetWidth) / 2 + 48)
+      // Điểm tụ của cú lùi cuối: chéo LÊN và SANG PHẢI, không phải giữa khung.
+      //
+      // Khung `spin-3` vốn đã là "đuôi xe quay về người xem, thân lùi chéo sang PHẢI" (xem ghi
+      // chú đầu file). Bản trước cho xe thu nhỏ tại x: 0 — tức thân xe chỉ sang phải còn quỹ đạo
+      // lại đi thẳng vào giữa. Hai thứ đá nhau nên mắt đọc thành "xe bị hút vào" chứ không phải
+      // "xe đang chạy đi". Cho điểm tụ trùng với hướng thân xe thì cú chạy mới thật.
+      //
+      // Đi kèm chiều LÊN vì vật ở xa luôn nằm cao hơn trong khung: cùng lúc nhỏ đi và dâng lên
+      // là cách mắt người nhận ra khoảng cách. X tính theo % bề ngang rồi chặn trần để màn rộng
+      // không quăng xe đi quá xa, màn hẹp không bị cụt.
+      //
+      // Y buộc theo X chứ KHÔNG theo chiều cao khung. Tính theo chiều cao thì tỷ lệ hai trục đổi
+      // theo từng khổ màn hình: đo thử ở khung 1100×460 ra góc chỉ ~10°, nhìn thành xe chạy ngang
+      // chứ không phải chạy xa. Buộc theo X thì góc chéo luôn cố định ~23° trên mọi màn hình.
+      const retreatX = Math.min(root.current.clientWidth * 0.22, 320)
+      const retreatY = -retreatX * 0.42
       gsap.set(movingVehicle, { x: enterX, y: 0, scale: 0.7, rotateZ: 0.18, opacity: 1, filter: 'blur(1.4px)' })
       gsap.set(sideFrame, { opacity: 1 })
       gsap.set(rearFrame, { opacity: 0 })
@@ -304,9 +320,10 @@ export function BookingSuccessCinematic({ car, onComplete }) {
         .to(movingVehicle, { x: 0, y: 0, rotateZ: 0, scaleX: 1, scaleY: 1, duration: 0.86, ease: 'power3.out' }, '<+=0.18')
         .to(smoke.current, { intensity: 0, skid: 0, duration: 0.92, ease: 'power2.out' }, '<+=0.24')
         .to({}, { duration: 0.38 })
-        // Đuôi xe giữ giữa khung, vẫn nét trong lúc lao vào chiều sâu; chỉ mờ đi ở mét cuối.
+        // Xe lùi xa theo đúng hướng thân nó đang chỉ: chéo lên góc phải. Vẫn nét trong lúc lao
+        // vào chiều sâu; chỉ mờ đi ở mét cuối.
         .call(() => { root.current.dataset.phase = 'rear-retreat' })
-        .to(movingVehicle, { x: 0, scale: 0.055, y: -30, duration: 1.72, ease: 'expo.in' })
+        .to(movingVehicle, { x: retreatX, y: retreatY, scale: 0.055, duration: 1.72, ease: 'expo.in' })
         .to(movingVehicle, { opacity: 0, duration: 0.28, ease: 'power1.in' }, '-=0.22')
         .to(canvas.current, { opacity: 0, duration: 0.38 }, '-=0.34')
         .call(() => { root.current.dataset.phase = 'confirmed' })

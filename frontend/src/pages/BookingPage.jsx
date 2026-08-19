@@ -2366,25 +2366,18 @@ export function BookingPage() {
               )}
 
               {timeLeft && (stage === 'collect_info' || stage === 'review') && (
-                <div className="vivi-hold-timer" style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  margin: '0 0 16px',
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  background: 'rgba(239, 107, 7, 0.08)',
-                  border: '1px solid rgba(239, 107, 7, 0.2)',
-                  color: '#e25c00',
-                  fontSize: '0.72rem',
-                  fontWeight: '600'
-                }}>
-                  <span>Khung giờ đang giữ tạm thời. Còn lại: <strong style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{timeLeft}</strong></span>
+                /* Style nằm ở styles/12-booking-modals.css, KHÔNG đặt inline nữa:
+                   bản cũ gán cứng màu cam #e25c00 và font monospace, cả hai đều nằm ngoài
+                   hệ màu và bộ chữ của web. */
+                <div className="vivi-hold-timer">
+                  <Clock size={14} weight="light" aria-hidden="true" />
+                  <span>Khung giờ đang giữ tạm thời</span>
+                  <strong>{timeLeft}</strong>
                 </div>
               )}
 
               {stage === 'collect_info' ? (
-                <CustomerForm recipient={recipient} value={person} errors={formErrors} onChange={changePerson} onSubmit={submitPerson} />
+                <CustomerForm recipient={recipient} value={person} errors={formErrors} onChange={changePerson} onSubmit={submitPerson} onBack={() => setActiveView('schedule')} />
               ) : stage === 'review' ? (
                 <>
                   <div className="vivi-inline-otp">
