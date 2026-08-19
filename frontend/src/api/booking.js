@@ -176,7 +176,7 @@ export const confirmHeldBooking = ({ bookingId, version, uiActionId = actionId('
 )
 
 const bookingManagementAction = async (action, payload) => {
-  const result = await apiPost('/demo/action', { action, payload })
+  const result = await apiPost('/demo/action', { action, payload, conversation_id: readConversationId() })
   return result
 }
 

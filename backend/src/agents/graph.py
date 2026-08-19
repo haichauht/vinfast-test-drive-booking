@@ -9,6 +9,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from src.agents.nodes.booking_skill_node import booking_skill_node
 from src.agents.nodes.classifier_node import classifier_node
+from src.agents.nodes.post_booking_skill_node import post_booking_skill_node
 from src.agents.nodes.sensitive_policy_node import sensitive_policy_node
 from src.agents.state import AgentState
 from src.agents.tools import (
@@ -18,6 +19,7 @@ from src.agents.tools import (
     hold_test_drive_slot,
     request_booking_access,
     request_user_location,
+    search_knowledge,
     search_test_drive_options,
     update_booking_draft,
     verify_booking_access,
@@ -33,8 +35,7 @@ def route_intent(state: AgentState) -> str:
     intent = state.get("intent", "domain")
     if intent == "sensitive":
         return "sensitive_policy"
-    # The public MVP has a single domain skill: booking.
-    return "booking_skill"
+    return "post_booking_skill" if state.get("active_skill") == "post_booking" else "booking_skill"
 
 
 def should_continue_booking(state: AgentState) -> str:
@@ -48,6 +49,10 @@ def should_continue_booking(state: AgentState) -> str:
         if (state.get("tool_call_count") or 0) >= MAX_TOOL_CALLS:
             return "max_tool_limit"
         return "continue"
+    if state.get("action_tool") == confirm_test_drive_booking.name and not state.get("action_error"):
+        result = state.get("action_result")
+        if isinstance(result, dict) and result.get("status") == "confirmed":
+            return "post_booking"
     return "end"
 
 
@@ -78,6 +83,12 @@ async def max_tool_limit_node(state: AgentState) -> dict:
     }
 
 
+def should_continue_post_booking(state: AgentState) -> str:
+    messages = state.get("messages") or []
+    last = messages[-1] if messages else None
+    return "continue" if isinstance(last, AIMessage) and last.tool_calls else "end"
+
+
 def build_graph(checkpointer: Any | None = None) -> CompiledStateGraph:
     graph = StateGraph(AgentState)
 
@@ -88,6 +99,7 @@ def build_graph(checkpointer: Any | None = None) -> CompiledStateGraph:
 
     # Public MVP skill
     graph.add_node("booking_skill", booking_skill_node)
+    graph.add_node("post_booking_skill", post_booking_skill_node)
 
     # Tách ToolNode theo từng skill để kiểm soát quyền gọi tool
     booking_tools_list = [
@@ -105,6 +117,7 @@ def build_graph(checkpointer: Any | None = None) -> CompiledStateGraph:
         "booking_tools",
         build_guarded_tool_node(booking_tools_list, skill_name="booking"),
     )
+    graph.add_node("post_booking_tools", build_guarded_tool_node([search_knowledge], skill_name="post_booking"))
 
     # Entry point
     graph.set_entry_point("classifier")
@@ -116,6 +129,7 @@ def build_graph(checkpointer: Any | None = None) -> CompiledStateGraph:
         {
             "sensitive_policy": "sensitive_policy",
             "booking_skill": "booking_skill",
+            "post_booking_skill": "post_booking_skill",
         },
     )
 
@@ -126,10 +140,13 @@ def build_graph(checkpointer: Any | None = None) -> CompiledStateGraph:
         {
             "continue": "booking_tools",
             "max_tool_limit": "max_tool_limit",
+            "post_booking": "post_booking_skill",
             "end": END,
         },
     )
     graph.add_edge("booking_tools", "booking_skill")
+    graph.add_conditional_edges("post_booking_skill", should_continue_post_booking, {"continue": "post_booking_tools", "end": END})
+    graph.add_edge("post_booking_tools", "post_booking_skill")
 
     # Các luồng kết thúc trực tiếp
     graph.add_edge("sensitive_policy", END)

@@ -46,6 +46,7 @@ class ChatResponse(BaseModel):
 class DemoActionRequest(BaseModel):
     action: str = Field(..., min_length=1)
     payload: dict[str, Any] = Field(default_factory=dict)
+    conversation_id: str = Field(default="", max_length=100)
 
 
 class CsvImportRequest(BaseModel):

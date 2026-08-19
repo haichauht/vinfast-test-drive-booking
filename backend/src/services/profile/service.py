@@ -1,0 +1,179 @@
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import logging
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+from src.database import Database
+from src.services.profile.models import ProfileSnapshot, SignalCandidate
+from src.services.profile.taxonomy import ALLOWED_CATEGORIES, normalize_key
+
+logger = logging.getLogger("profile.lifecycle")
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex}"
+
+
+class ProfileService:
+    def __init__(self, database: Database, *, identity_secret: str) -> None:
+        self.db = database
+        self.identity_secret = identity_secret.encode("utf-8")
+
+    def _hash(self, kind: str, value: str) -> str:
+        normalized = value.strip().casefold() if kind == "email" else "".join(c for c in value if c.isdigit())
+        return hmac.new(self.identity_secret, f"{kind}:{normalized}".encode(), hashlib.sha256).hexdigest()
+
+    def _canonical(self, c, profile_id: str) -> str:
+        seen: set[str] = set()
+        while profile_id and profile_id not in seen:
+            seen.add(profile_id)
+            row = c.execute("SELECT state,merged_into_profile_id FROM user_profiles WHERE id=?", (profile_id,)).fetchone()
+            if not row or row["state"] != "merged" or not row["merged_into_profile_id"]:
+                return profile_id
+            profile_id = row["merged_into_profile_id"]
+        return profile_id
+
+    def resolve_or_create(self, conversation_id: str, anon_session_id: str = "") -> ProfileSnapshot:
+        now = _now()
+        with self.db.transaction(immediate=True) as c:
+            profile_id = None
+            for typ, value in (("conversation", conversation_id), ("anon_session", anon_session_id)):
+                if not value or value == "unknown":
+                    continue
+                row = c.execute("SELECT profile_id FROM user_profile_identities WHERE identity_type=? AND identity_value=?", (typ, value)).fetchone()
+                if row:
+                    candidate_id = self._canonical(c, row["profile_id"])
+                    candidate = c.execute("SELECT state FROM user_profiles WHERE id=?", (candidate_id,)).fetchone()
+                    # An anonymous browser cookie is correlation, not authentication.
+                    # Never let it silently re-open a trusted profile in a brand-new thread.
+                    if typ == "anon_session" and candidate and candidate["state"] == "trusted":
+                        continue
+                    profile_id = candidate_id
+                    break
+            if not profile_id:
+                profile_id = _id("profile")
+                c.execute("INSERT INTO user_profiles(id,state,version,created_at,updated_at,last_seen_at) VALUES(?,'anonymous',1,?,?,?)", (profile_id, now, now, now))
+            for typ, value in (("conversation", conversation_id), ("anon_session", anon_session_id)):
+                if value and value != "unknown":
+                    existing = c.execute("SELECT profile_id FROM user_profile_identities WHERE identity_type=? AND identity_value=?", (typ, value)).fetchone()
+                    if not existing:
+                        c.execute("INSERT INTO user_profile_identities VALUES(?,?,?,?,?,?,?,?)", (_id("identity"), profile_id, typ, value, "anonymous", "chat", now, now))
+            c.execute("UPDATE user_profiles SET last_seen_at=?,updated_at=? WHERE id=?", (now, now, profile_id))
+        return self.load(profile_id)
+
+    def load(self, profile_id: str) -> ProfileSnapshot:
+        with self.db.connect() as c:
+            profile_id = self._canonical(c, profile_id)
+            profile = c.execute("SELECT id,state FROM user_profiles WHERE id=?", (profile_id,)).fetchone()
+            rows = c.execute("SELECT category,key,value_json,description,certainty,confidence,source_type,observed_at FROM user_profile_signals WHERE profile_id=? AND status='active' ORDER BY observed_at DESC", (profile_id,)).fetchall()
+        return ProfileSnapshot(id=profile["id"], state=profile["state"], signals=[{**dict(row), "value": json.loads(row["value_json"])} for row in rows])
+
+    def apply(self, profile_id: str, candidates: list[SignalCandidate], *, source_ref: str, trace_id: str = "") -> ProfileSnapshot:
+        before = self.load(profile_id)
+        logger.info("profile.update.before trace_id=%s profile_id=%s snapshot=%s", trace_id, profile_id, before.model_dump())
+        now = _now()
+        operations: list[dict[str, Any]] = []
+        with self.db.transaction(immediate=True) as c:
+            profile_id = self._canonical(c, profile_id)
+            for candidate in candidates:
+                category = candidate.category if candidate.category in ALLOWED_CATEGORIES else "custom_intent"
+                key = normalize_key(candidate.key) or "unspecified"
+                old = c.execute("SELECT id,value_json,confidence,certainty,source_type FROM user_profile_signals WHERE profile_id=? AND category=? AND key=? AND status='active' ORDER BY observed_at DESC LIMIT 1", (profile_id, category, key)).fetchone()
+                if old and old["source_type"] == "explicit_user" and candidate.source_type == "implicit_user":
+                    operations.append({"operation": "ignored_lower_precedence", "category": category, "key": key, "candidate": candidate.model_dump()})
+                    continue
+                if candidate.operation == "retract":
+                    if old:
+                        c.execute("UPDATE user_profile_signals SET status='retracted',updated_at=? WHERE id=?", (now, old["id"]))
+                    operations.append({"operation": "retract", "category": category, "key": key})
+                    continue
+                signal_id = _id("signal")
+                confidence = candidate.confidence
+                if old and candidate.operation == "strengthen":
+                    confidence = max(confidence, min(1.0, float(old["confidence"] or 0.5) + 0.15))
+                elif old and candidate.operation == "weaken":
+                    confidence = min(confidence, max(0.0, float(old["confidence"] or 0.5) - 0.25))
+                c.execute("INSERT INTO user_profile_signals VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (signal_id, profile_id, category, key, json.dumps(candidate.value, ensure_ascii=False), candidate.description, candidate.certainty, confidence, candidate.source_type, source_ref, now, "active", None, now, now))
+                if old:
+                    c.execute("UPDATE user_profile_signals SET status='superseded',superseded_by_signal_id=?,updated_at=? WHERE id=?", (signal_id, now, old["id"]))
+                operations.append({**candidate.model_dump(), "category": category, "key": key, "confidence": confidence})
+            c.execute("UPDATE user_profiles SET version=version+1,updated_at=?,last_seen_at=? WHERE id=?", (now, now, profile_id))
+        logger.info("profile.update.operations trace_id=%s profile_id=%s operations=%s", trace_id, profile_id, operations)
+        after = self.load(profile_id)
+        logger.info("profile.update.after trace_id=%s profile_id=%s snapshot=%s", trace_id, profile_id, after.model_dump())
+        return after
+
+    def promote_from_booking(self, profile_id: str | None, booking_id: str, *, source: str, trace_id: str = "") -> ProfileSnapshot | None:
+        with self.db.connect() as c:
+            row = c.execute("SELECT b.booker_person_id,COALESCE(p.normalized_email,lower(p.email)) normalized_email,COALESCE(p.normalized_phone,p.phone) normalized_phone FROM bookings b JOIN people p ON p.id=b.booker_person_id WHERE b.id=?", (booking_id,)).fetchone()
+        if not row or not row["normalized_email"]:
+            return self.load(profile_id) if profile_id else None
+        return self.promote_identity(profile_id, person_id=row["booker_person_id"], email=row["normalized_email"], phone=row["normalized_phone"] or "", source=source, trace_id=trace_id)
+
+    def promote_identity(self, profile_id: str | None, *, person_id: str, email: str, phone: str = "", source: str, trace_id: str = "") -> ProfileSnapshot:
+        email_hash = self._hash("email", email)
+        phone_hash = self._hash("phone", phone) if phone else ""
+        now = _now()
+        with self.db.transaction(immediate=True) as c:
+            target_row = c.execute("SELECT profile_id FROM user_profile_identities WHERE identity_type='email_hash' AND identity_value=?", (email_hash,)).fetchone()
+            target = self._canonical(c, target_row["profile_id"]) if target_row else None
+            if profile_id:
+                profile_id = self._canonical(c, profile_id)
+            if not profile_id:
+                profile_id = _id("profile")
+                c.execute("INSERT INTO user_profiles(id,state,version,created_at,updated_at,last_seen_at) VALUES(?,'trusted',1,?,?,?)", (profile_id, now, now, now))
+            canonical = target or profile_id
+            logger.info("profile.merge.decision trace_id=%s source=%s current=%s email_target=%s canonical=%s", trace_id, source, profile_id, target, canonical)
+            if target and profile_id != target:
+                self._merge(c, profile_id, target, now)
+            else:
+                c.execute("UPDATE user_profiles SET state='trusted',updated_at=?,last_seen_at=? WHERE id=?", (now, now, canonical))
+            aliases = [("email_hash", email_hash), ("person", person_id)]
+            if phone_hash:
+                aliases.append(("phone_hash", phone_hash))
+            for typ, value in aliases:
+                existing = c.execute("SELECT profile_id FROM user_profile_identities WHERE identity_type=? AND identity_value=?", (typ, value)).fetchone()
+                if existing and typ == "phone_hash":
+                    other = self._canonical(c, existing["profile_id"])
+                    if other != canonical:
+                        self._merge(c, other, canonical, now)
+                if not existing:
+                    c.execute("INSERT INTO user_profile_identities VALUES(?,?,?,?,?,?,?,?)", (_id("identity"), canonical, typ, value, "trusted", source, now, now))
+            logger.info("profile.merge.result trace_id=%s source=%s canonical=%s", trace_id, source, canonical)
+        return self.load(canonical)
+
+    def _merge(self, c, source: str, target: str, now: str) -> None:
+        # Email-selected target wins. Preserve all aliases and signal provenance.
+        c.execute("UPDATE user_profile_identities SET profile_id=?,last_seen_at=? WHERE profile_id=?", (target, now, source))
+        rows = c.execute("SELECT id,category,key FROM user_profile_signals WHERE profile_id=? AND status='active'", (source,)).fetchall()
+        for row in rows:
+            existing = c.execute("SELECT id FROM user_profile_signals WHERE profile_id=? AND category=? AND key=? AND status='active' ORDER BY observed_at DESC LIMIT 1", (target, row["category"], row["key"])).fetchone()
+            if existing:
+                c.execute("UPDATE user_profile_signals SET status='superseded',superseded_by_signal_id=?,updated_at=? WHERE id=?", (existing["id"], now, row["id"]))
+            else:
+                c.execute("UPDATE user_profile_signals SET profile_id=?,updated_at=? WHERE id=?", (target, now, row["id"]))
+        c.execute("UPDATE user_profiles SET state='merged',merged_into_profile_id=?,updated_at=? WHERE id=?", (target, now, source))
+        c.execute("UPDATE user_profiles SET state='trusted',version=version+1,updated_at=?,last_seen_at=? WHERE id=?", (now, now, target))
+
+    def booking_context(self, booking_id: str) -> dict[str, Any]:
+        with self.db.connect() as c:
+            row = c.execute("SELECT b.id,b.status,t.start_at,m.code model_code,m.name vehicle_model,s.id showroom_id,s.name showroom_name FROM bookings b JOIN test_drive_slots t ON t.id=b.slot_id JOIN demo_vehicles d ON d.id=t.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id JOIN vehicle_models m ON m.id=v.model_id JOIN showrooms s ON s.id=t.showroom_id WHERE b.id=?", (booking_id,)).fetchone()
+        return dict(row) if row else {}
+
+    def latest_booking_context(self, profile_id: str) -> dict[str, Any]:
+        with self.db.connect() as c:
+            profile_id = self._canonical(c, profile_id)
+            row = c.execute("SELECT b.id FROM user_profile_identities i JOIN bookings b ON b.booker_person_id=i.identity_value WHERE i.profile_id=? AND i.identity_type='person' AND b.status IN ('confirmed','checked_in','completed') ORDER BY b.confirmed_at DESC LIMIT 1", (profile_id,)).fetchone()
+        if not row:
+            return {"active": False}
+        context = self.booking_context(row["id"])
+        return {"active": context.get("status") in {"confirmed", "checked_in"}, **context}
