@@ -426,11 +426,13 @@
  * đó phải chừa 108px lề phải. Nay có ba nút nên tách hẳn thành một hàng riêng ở cuối khối —
  * vừa đủ chỗ, vừa rõ đây là vùng thao tác chứ không phải một chi tiết của dòng thời gian.
  */
+/* Hai thao tác nằm bên PHẢI thẻ lịch. Thao tác luôn đứng cuối hướng đọc — bên trái là
+   nơi của thông tin, không phải nơi của nút bấm. */
 .booking-history__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 10px;
   margin-top: 4px;
   padding-top: 14px;
@@ -440,7 +442,9 @@
 .booking-history__actions-main {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 8px;
+  /* 12px chứ không phải 8px: "Đổi giờ" và "Huỷ lịch" là hai việc trái ngược nhau,
+     đứng sát quá thì dễ bấm nhầm cái không quay lại được. */
+  gap: 12px;
 }
 
 .booking-history__back,
@@ -472,29 +476,34 @@
   background: rgba(23, 26, 32, 0.035);
 }
 
+/* Chip viền trung tính, đúng idiom nút phụ dùng khắp web (xem .booking-history__back và
+   các nút trên .workspace-switcher). Bản trước tô nền xanh nhạt — sắc xanh đó không có
+   trong hệ màu, và một nút phụ thì không nên đòi sự chú ý ngang nút chính. */
 .booking-history__action {
-  border: 1px solid rgba(20, 100, 244, 0.28);
-  color: var(--blue);
-  background: rgba(20, 100, 244, 0.08);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  background: transparent;
 }
 
 .booking-history__action:hover {
-  border-color: var(--blue);
+  border-color: var(--ink);
   color: var(--surface);
-  background: var(--blue);
+  background: var(--ink);
 }
 
 /* Huỷ lịch là thao tác không quay lại được, nên mang màu cảnh báo riêng. */
+/* Huỷ lịch không quay lại được nên vẫn mang sắc cảnh báo, nhưng dùng --danger (#a43a3f)
+   của web thay cho #c7362e gán cứng. Đỏ trầm chứ không đỏ chói. */
 .booking-history__action--danger {
-  border-color: rgba(199, 54, 46, 0.3);
-  color: #c7362e;
-  background: rgba(199, 54, 46, 0.07);
+  border-color: rgba(164, 58, 63, 0.32);
+  color: var(--danger);
+  background: transparent;
 }
 
 .booking-history__action--danger:hover {
-  border-color: #c7362e;
+  border-color: var(--danger);
   color: var(--surface);
-  background: #c7362e;
+  background: var(--danger);
 }
 
 .booking-history__back:focus-visible,
@@ -784,12 +793,18 @@
   font-size: 0.9rem;
 }
 
+/* Nhãn vai trò dùng đúng nhịp chữ của .eyebrow trên toàn web: viết hoa, giãn chữ, đậm vừa.
+   Bản trước để chữ thường 0.68rem nét mảnh — cùng bộ chữ Be Vietnam Pro nhưng khác hẳn cách
+   web trình bày nhãn phụ ở mọi chỗ khác, nên đọc lên như chữ của một sản phẩm khác. */
 .vivi-studio__head small {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .vivi-studio__head > button {
