@@ -75,7 +75,7 @@ class DriverInvitationService:
             "delivery": provider_result_dict(result),
         }
 
-    def issue(self, booking_id: str) -> "DriverInvitationLink":
+    def issue(self, booking_id: str) -> DriverInvitationLink:
         now = _now()
         token = secrets.token_urlsafe(32)
         expires_at = now + timedelta(seconds=self.ttl_seconds)

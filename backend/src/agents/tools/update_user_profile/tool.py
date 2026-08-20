@@ -1,10 +1,11 @@
+import logging
 from typing import Annotated, Any, Literal
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
+
 from src.dependencies import profile_service, profile_update_queue
 from src.services.profile.models import SignalCandidate
-import logging
 
 logger = logging.getLogger("profile.tool")
 

@@ -19,7 +19,13 @@ from src.agents.tools import (
 from src.agents.trace import redact, trace_event
 from src.config import get_settings
 from src.database.redis_client import redis_client
-from src.dependencies import booking_service, driver_invitation_service, internal_portal_service, profile_service, profile_update_queue
+from src.dependencies import (
+    booking_service,
+    driver_invitation_service,
+    internal_portal_service,
+    profile_service,
+    profile_update_queue,
+)
 from src.guardrails import get_guardrails
 from src.internal_portal import InternalPrincipal, InternalRole
 from src.internal_portal.routes import current_principal
