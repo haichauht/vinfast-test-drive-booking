@@ -338,9 +338,9 @@
 .slot-confirm-actions,
 .vivi-review-actions {
   display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 210px));
-  justify-content: center;
-  gap: 10px !important;
+  grid-template-columns: 1fr 1fr;
+  justify-content: stretch;
+  gap: 12px !important;
   width: 100%;
 }
 
