@@ -23,7 +23,7 @@
  */
 import { ArrowRight, Check } from '@phosphor-icons/react'
 
-export function BookingCustomerForm({ recipient, value, errors, onChange, onSubmit }) {
+export function BookingCustomerForm({ recipient, value, errors, onChange, onSubmit, onBack }) {
   const bookingForOther = recipient === 'other'
   const shareContact = value.driverSameContact !== false
 
@@ -65,7 +65,19 @@ export function BookingCustomerForm({ recipient, value, errors, onChange, onSubm
       <label className={`license-check ${errors.hasLicense ? 'has-error' : ''}`}><input type="checkbox" checked={value.hasLicense} onChange={(event) => onChange('hasLicense', event.target.checked)} /><span><Check size={14} weight="bold" /></span><p>Tôi xác nhận người lái thử <strong>có giấy phép lái xe</strong> phù hợp với mẫu xe đăng ký <span style={{ color: '#ef4444' }}>*</span>.</p></label>
       {errors.hasLicense && <small className="vivi-customer-form__license-error" role="alert">{errors.hasLicense}</small>}
       <label className="license-check"><input type="checkbox" checked={value.marketingConsent} onChange={(event) => onChange('marketingConsent', event.target.checked)} /><span><Check size={14} weight="bold" /></span><p>Tôi đồng ý nhận <strong>thông tin ưu đãi</strong>, <strong>khuyến mãi</strong> và <strong>sự kiện mới nhất</strong> từ VinFast.</p></label>
-      <button type="submit">Tạo phiếu để kiểm tra <ArrowRight size={16} weight="light" /></button>
+      {/* Cặp nút đi liền nhau, đúng như màn xem lại phiếu (.vivi-review-actions): nút chính
+          bên trái, lối lùi bên phải. Trước đây bước này chỉ có mỗi nút chính nên vào tới form
+          là kẹt — muốn đổi khung giờ phải tự mò sang bảng bên trái.
+
+          Nhãn "Chỉnh lại thông tin" là chữ anh Minh chọn, dùng chung với nút cùng vai ở màn xem
+          lại phiếu. Nút đưa về bảng lịch bên trái, nơi đổi được khung giờ / showroom / mẫu xe —
+          tức mọi lựa chọn đã chốt TRƯỚC bước điền form này. */}
+      <div className="vivi-customer-form__actions">
+        <button type="submit">Tạo phiếu để kiểm tra <ArrowRight size={16} weight="light" /></button>
+        {onBack && (
+          <button type="button" onClick={onBack}>Chỉnh lại thông tin</button>
+        )}
+      </div>
     </form>
   )
 }
