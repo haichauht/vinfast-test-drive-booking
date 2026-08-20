@@ -5,6 +5,7 @@ import secrets
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
+from src.database.redis_client import redis_client
 from src.services.booking.base import BookingBase
 from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
 from src.services.booking.errors import BookingError
@@ -61,6 +62,7 @@ class LifecycleService(BookingBase):
                 "UPDATE test_drive_slots SET status='held',held_until=?,current_booking_id=?,updated_at=? WHERE id=?",
                 (iso(expires), booking_id, iso(now), slot_id),
             )
+            redis_client.hold_slot(slot_id, booking_id, ttl_seconds=ttl_seconds)
             c.execute(
                 "INSERT INTO booking_driver_details(booking_id,required_license_class,created_at,updated_at) VALUES(?,?,?,?)",
                 (booking_id, slot["required_license_class"], iso(now), iso(now)),
@@ -100,10 +102,13 @@ class LifecycleService(BookingBase):
             if b and b["status"] == "held":
                 now = iso(self.now())
                 c.execute("UPDATE bookings SET status='cancelled', updated_at=? WHERE id=?", (now, booking_id))
+                slot_id = b["slot_id"]
                 c.execute(
-                    "UPDATE test_drive_slots SET status='available', current_booking_id=NULL, held_until=NULL, updated_at=? WHERE current_booking_id=?",
-                    (now, booking_id),
+                    "UPDATE test_drive_slots SET status='available', current_booking_id=NULL, held_until=NULL, updated_at=? WHERE id=? OR current_booking_id=?",
+                    (now, slot_id, booking_id),
                 )
+                if slot_id:
+                    redis_client.delete_slot_hold(slot_id)
                 self._event(c, booking_id, "hold_released", "user", {})
             return {"booking_id": booking_id, "status": "released"}
 

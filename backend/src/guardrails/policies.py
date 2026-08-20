@@ -109,6 +109,7 @@ DEMO_ACTION_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
         {"current_booking_id", "new_booking_id", "access_session_token", "ui_action_id"}
     ),
     "cancel_booking": frozenset({"booking_id", "access_session_token", "ui_action_id", "reason"}),
+    "release_hold": frozenset({"booking_id"}),
 }
 
 MUTATING_TOOL_NAMES = frozenset(

@@ -75,7 +75,7 @@ export function BookingCustomerForm({ recipient, value, errors, onChange, onSubm
       <div className="vivi-customer-form__actions">
         <button type="submit">Tạo phiếu để kiểm tra <ArrowRight size={16} weight="light" /></button>
         {onBack && (
-          <button type="button" onClick={onBack}>Chỉnh lại thông tin</button>
+          <button type="button" onClick={onBack}>Hủy</button>
         )}
       </div>
     </form>
