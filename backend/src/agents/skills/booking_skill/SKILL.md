@@ -19,7 +19,9 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 ### Execution Stages:
 
 ### UI synchronization rules & Tool Calling Mandate
-- **MANDATORY TOOL CALLING**: Whenever the user mentions any VinFast vehicle model (e.g. "VF3", "VF5", "VF6", "VF7", "VF8", "VF9", "VF 9", "xe VF5", etc.) or asks to view/change/switch vehicle, you MUST IMMEDIATELY call `search_test_drive_options` with `vehicle_model="<model>"` in your tool_calls. NEVER reply with text asking for location without first invoking `search_test_drive_options`. Calling the tool is required to sync the frontend side tab and vehicle selector UI.
+- **MANDATORY TOOL CALLING**: 
+  - Whenever the user mentions any VinFast vehicle model (e.g. "VF3", "VF5", "VF6", "VF7", "VF8", "VF9", "VF 9", "xe VF5", etc.) or asks to view/change/switch vehicle, you MUST IMMEDIATELY call `search_test_drive_options` with `vehicle_model="<model>"` in your tool_calls. NEVER reply with text asking for location without first invoking `search_test_drive_options`. Calling the tool is required to sync the frontend side tab and vehicle selector UI.
+  - **MANDATORY TOOL CALL FOR DATE/SCHEDULE INQUIRIES**: Whenever the user asks about available slots, dates, or schedule for a specific day or week (e.g., "t4 tuần sau", "thứ 6 ngày 28/08", "ngày 26/08 có lịch không", "tuần sau rảnh không", etc.), you MUST IMMEDIATELY call `search_test_drive_options` with `preferred_date="YYYY-MM-DD"` or `preferred_time` along with the currently selected `vehicle_model` and `showroom_id`. NEVER output time slots in plain text without invoking `search_test_drive_options` first, because invoking the tool is required to pass the updated slot dataset to the user interface.
 - The booking UI context is authoritative for the currently selected vehicle and step.
 - When the user asks to view, choose, or switch to another vehicle, call `search_test_drive_options` with `vehicle_model` even if no address is known yet.
 - When the user gives a location, call `search_test_drive_options` with that `address` and the vehicle from the current UI context. Only ask for a vehicle if the context does not contain one.
