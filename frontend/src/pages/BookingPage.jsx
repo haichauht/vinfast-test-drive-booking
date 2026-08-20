@@ -364,6 +364,7 @@ export function BookingPage() {
   const [timeLeft, setTimeLeft] = useState('')
   const [backendError, setBackendError] = useState('')
   const [userLocation, setUserLocation] = useState(restoredUi.userLocation || null)
+  const [searchedLocation, setSearchedLocation] = useState(null)
   const messagesRef = useRef(null)
   const timersRef = useRef([])
   const holdActionIdsRef = useRef(new Map())
@@ -879,19 +880,16 @@ export function BookingPage() {
         setSelectedSlot(null)
         setConfirmSlotOpen(false)
         setShowroomId('')
+        setSearchedLocation(data.target_coordinates || null)
 
-        if (mapped.length) {
+        const hasLocationInput = Boolean(queriedAddress || toolInput.latitude || toolInput.longitude || toolInput.showroom_query)
+        if (hasLocationInput && mapped.length) {
           if (queriedAddress) setAddress({ province: '', detail: queriedAddress })
           setUserLocation(null)
           setLocationSuggestions([])
           setNearbyShowrooms(mapped)
           setStage('choose_showroom')
-          const hasLocationInput = Boolean(queriedAddress || toolInput.latitude || toolInput.longitude || toolInput.showroom_query)
-          if (hasLocationInput) {
-            setActiveView('map')
-          } else {
-            setActiveView('car')
-          }
+          setActiveView('map')
         } else {
           setAddress({ province: '', detail: queriedAddress })
           setNearbyShowrooms([])
@@ -1299,16 +1297,6 @@ export function BookingPage() {
     setBackendError('')
 
     const mentionedCar = resolveAgentCar(value)
-    if (mentionedCar) {
-      if (!recipient) setRecipient('self')
-      setWorkspaceHidden(false)
-      if (interaction.mode === BookingMode.MANAGE_BOOKING) {
-        clearManagementContext({ resetConversation: true, event: InteractionEvent.VIEW_VEHICLE })
-      } else {
-        dispatchInteraction({ type: InteractionEvent.VIEW_VEHICLE })
-      }
-      setSelectedCarId(mentionedCar.id)
-    }
     setCheckingVehicleName(mentionedCar?.name || '')
 
     setAgentTyping(true)
@@ -2063,7 +2051,7 @@ export function BookingPage() {
         </div>
       )
     }
-    if (activeView === 'map') return <BookingShowroomMap car={selectedCar} showrooms={nearbyShowrooms} selectedId={showroomId} onSelect={setShowroomId} onConfirm={chooseShowroom} userLocation={userLocation} />
+    if (activeView === 'map') return <BookingShowroomMap car={selectedCar} showrooms={nearbyShowrooms} selectedId={showroomId} onSelect={setShowroomId} onConfirm={chooseShowroom} userLocation={userLocation} searchedLocation={searchedLocation} />
     if (activeView === 'schedule' && selectedShowroom) return <SchedulePanel car={selectedCar} showroom={selectedShowroom} slots={slots} pendingSlot={pendingSlot} onPick={chooseSlot} />
     if (activeView === 'ticket' && selectedShowroom && selectedSlot) return <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} advisor={bookingAdvisor} />
     return <VehiclePanel car={selectedCar} />
@@ -2340,20 +2328,20 @@ export function BookingPage() {
                   - "Đổi mẫu xe khác"      → trùng tab "Đổi mẫu xe" ở panel trái, bấm vào cũng
                     mở đúng bảng chọn xe đó.
                   Đừng thêm lại: hai nút này từng làm màn agent có 2 bản của cùng một hành động. */}
-              {allowedActions.some((action) => (
+              {(allowedActions.some((action) => (
                 action === 'choose_vehicle' ? !showVehicleChoices : ['use_geolocation', 'view_vehicle'].includes(action)
-              )) && (
+              )) || stage === 'need_address' || stage === 'choose_showroom') && (
                 <div className="vivi-capabilities">
+                  {(stage === 'need_address' || stage === 'choose_showroom' || allowedActions.includes('use_geolocation')) && (
+                    <button type="button" onClick={requestUserLocation}>
+                      <NavigationArrow size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                      Định vị hiện tại
+                    </button>
+                  )}
                   {allowedActions.includes('choose_vehicle') && !showVehicleChoices && (
                     <button type="button" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">
                       <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
                       Xem tất cả {cars.length} mẫu
-                    </button>
-                  )}
-                  {allowedActions.includes('use_geolocation') && (
-                    <button type="button" onClick={requestUserLocation}>
-                      <NavigationArrow size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                      Định vị hiện tại
                     </button>
                   )}
                   {allowedActions.includes('view_vehicle') && (
