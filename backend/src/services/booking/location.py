@@ -1,4 +1,8 @@
+import functools
+import json
 import math
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -26,6 +30,19 @@ class HaversineMapProvider:
 
     def distances_km(self, origin: Coordinates, destinations: list[Coordinates]) -> list[float]:
         return [self.distance_km(origin, destination) for destination in destinations]
+
+
+def _fetch_nominatim_coordinates(query_str: str) -> Coordinates | None:
+    url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query_str)}&countrycodes=vn&format=json&limit=1"
+    req = urllib.request.Request(url, headers={"User-Agent": "VinFast-Booking-Agent/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if data and len(data) > 0:
+                return Coordinates(latitude=float(data[0]["lat"]), longitude=float(data[0]["lon"]))
+    except Exception:
+        pass
+    return None
 
 
 PROVINCE_COORDINATES: dict[str, tuple[float, float]] = {
@@ -103,44 +120,33 @@ PROVINCE_COORDINATES: dict[str, tuple[float, float]] = {
 }
 
 
-DISTRICT_COORDINATES: dict[str, tuple[float, float]] = {
-    "quế sơn": (15.6558, 108.2721),
-    "que son": (15.6558, 108.2721),
-    "điện bàn": (15.8975, 108.2435),
-    "dien ban": (15.8975, 108.2435),
-    "hội an": (15.8801, 108.3380),
-    "hoi an": (15.8801, 108.3380),
-    "tam kỳ": (15.5736, 108.4740),
-    "tam ky": (15.5736, 108.4740),
-    "núi thành": (15.4225, 108.6475),
-    "duy xuyên": (15.7761, 108.2425),
-    "đại lộc": (15.8825, 108.0125),
-    "yên phong": (21.1958, 105.9467),
-    "từ sơn": (21.1138, 105.9519),
-    "quận 1": (10.7756, 106.7004),
-    "quận 3": (10.7844, 106.6844),
-    "quận 7": (10.7342, 106.7214),
-    "quận 10": (10.7716, 106.6678),
-    "quận 11": (10.7628, 106.6508),
-    "bình thạnh": (10.8147, 106.7130),
-    "tân bình": (10.8014, 106.6578),
-    "thủ đức": (10.8494, 106.7537),
-    "phú nhuận": (10.7992, 106.6803),
-    "bình tân": (10.7653, 106.5819),
-}
-
-
+@functools.lru_cache(maxsize=512)
 def resolve_address_coordinates(address: str) -> Coordinates | None:
     if not address:
         return None
     normalized = address.strip().lower()
-    # 1. Ưu tiên kiểm tra các Quận / Huyện (Bậc 2) trước
-    for key, (lat, lon) in DISTRICT_COORDINATES.items():
-        if key in normalized:
-            return Coordinates(latitude=lat, longitude=lon)
 
-    # 2. Sau đó mới đến Tỉnh / Thành (Bậc 1)
+    # 1. Kiểm tra 63 Tỉnh / Thành phố (Bậc 1) trong bộ nhớ L1
     for key, (lat, lon) in PROVINCE_COORDINATES.items():
         if key in normalized:
             return Coordinates(latitude=lat, longitude=lon)
+
+    # 2. Dynamic Geocoding cho Quận/Huyện/Xã bất kỳ: Tự động hỏi OpenStreetMap API
+    clean_addr = address.strip()
+    coords = _fetch_nominatim_coordinates(clean_addr)
+    if coords:
+        return coords
+
+    if "," in clean_addr:
+        space_addr = clean_addr.replace(",", " ")
+        coords = _fetch_nominatim_coordinates(space_addr)
+        if coords:
+            return coords
+        parts = [p.strip() for p in clean_addr.split(",") if p.strip()]
+        for part in parts:
+            coords = _fetch_nominatim_coordinates(part)
+            if coords:
+                return coords
+
     return None
+

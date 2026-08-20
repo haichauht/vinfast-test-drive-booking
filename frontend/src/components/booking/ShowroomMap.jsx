@@ -85,7 +85,12 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !searchedLocation || !leafletLoaded) return
+    if (!map || !leafletLoaded) return
+    if (!searchedLocation) {
+      searchedMarkerRef.current?.remove()
+      searchedMarkerRef.current = null
+      return
+    }
     searchedMarkerRef.current?.remove()
     const icon = window.L.divIcon({
       html: '<div class="leaflet-searched-marker" style="background:#0C64E6;width:18px;height:18px;border-radius:50%;border:2px solid #ffffff;box-shadow:0 0 12px rgba(12,100,230,0.95), 0 0 20px rgba(12,100,230,0.5);"></div>',
@@ -99,15 +104,24 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
   useEffect(() => {
     const map = mapRef.current
     if (!map || !leafletLoaded || selected) return
-    const points = showrooms
-      .filter((showroom) => Number.isFinite(showroom.latitude) && Number.isFinite(showroom.longitude))
-      .map((showroom) => [showroom.latitude, showroom.longitude])
-    if (userLocation) points.push([userLocation.latitude, userLocation.longitude])
-    if (searchedLocation && Number.isFinite(searchedLocation.latitude) && Number.isFinite(searchedLocation.longitude)) {
-      points.push([searchedLocation.latitude, searchedLocation.longitude])
+
+    const targetPoints = []
+    if (userLocation && Number.isFinite(userLocation.latitude) && Number.isFinite(userLocation.longitude)) {
+      targetPoints.push([userLocation.latitude, userLocation.longitude])
     }
+    if (searchedLocation && Number.isFinite(searchedLocation.latitude) && Number.isFinite(searchedLocation.longitude)) {
+      targetPoints.push([searchedLocation.latitude, searchedLocation.longitude])
+    }
+
+    const nearbyShowroomPoints = showrooms
+      .filter((showroom) => Number.isFinite(showroom.latitude) && Number.isFinite(showroom.longitude))
+      .slice(0, 5)
+      .map((showroom) => [showroom.latitude, showroom.longitude])
+
+    const points = [...targetPoints, ...nearbyShowroomPoints]
+
     if (points.length === 1) {
-      map.setView(points[0], 14, { animate: true })
+      map.setView(points[0], 13, { animate: true })
     } else if (points.length > 1) {
       map.fitBounds(points, { padding: [50, 50], maxZoom: 13, animate: true })
     }

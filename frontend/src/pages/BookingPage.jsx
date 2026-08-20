@@ -561,6 +561,7 @@ export function BookingPage() {
     }
 
     setBackendError('')
+    setSearchedLocation(null)
     if (addUserMessage) addMessage('user', 'Định vị vị trí hiện tại của tôi.')
     setAgentTyping(true)
 
