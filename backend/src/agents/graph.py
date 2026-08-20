@@ -34,7 +34,7 @@ MAX_TOOL_CALLS = 8
 def route_intent(state: AgentState) -> str:
     """Điều hướng dựa trên intent được phân loại."""
     intent = state.get("intent", "domain")
-    if intent == "sensitive":
+    if intent in {"sensitive", "out_of_scope"}:
         return "sensitive_policy"
     post_booking_active = bool((state.get("post_booking_context") or {}).get("active"))
     if state.get("active_skill") == "post_booking" and post_booking_active:
