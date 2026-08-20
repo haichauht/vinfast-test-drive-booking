@@ -47,7 +47,7 @@ class RedisClient:
 
     def set_otp(self, key: str, code: str, ttl_seconds: int = 60) -> bool:
         if not self._client:
-            msg = f"[REDIS BYPASS] set_otp skipped, Redis not connected"
+            msg = "[REDIS BYPASS] set_otp skipped, Redis not connected"
             print(msg, flush=True)
             return False
         try:
@@ -80,7 +80,7 @@ class RedisClient:
 
     def hold_slot(self, slot_id: str, booking_id: str, ttl_seconds: int = 120) -> bool:
         if not self._client:
-            msg = f"[REDIS BYPASS] hold_slot skipped, Redis not connected"
+            msg = "[REDIS BYPASS] hold_slot skipped, Redis not connected"
             print(msg, flush=True)
             return False
         try:
