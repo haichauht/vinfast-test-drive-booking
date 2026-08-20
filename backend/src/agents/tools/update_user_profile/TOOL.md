@@ -25,7 +25,7 @@ The tool accepts one required parameter, `signals`: an array containing at least
 | `certainty`   |       No | `known`, `likely`, `possible`                      | Default: `possible`                                                                                                                                                                          |
 | `confidence`  |       No | number `0..1`                                      | Default: `0.5`                                                                                                                                                                               |
 | `source_type` |       No | `explicit_user`, `implicit_user`, `trusted_domain` | Default: `implicit_user`                                                                                                                                                                     |
-| `subject`     |       No | `self`, `driver`                                   | Default: `self`. Use `driver` only when the booker clearly refers to a different driver in the booking; the backend automatically lowers confidence and marks it as third-party information. |
+| `subject`     |       No | `self`, `third_party`                              | Default: `self`. Use `self` for the current speaker whether they are booker or driver. Use `third_party` only when that speaker clearly provides information about the other participant in the same booking; the backend resolves the target and marks it as lower-confidence information supplied on their behalf. |
 | `operation`   |       No | `add`, `strengthen`, `weaken`, `revise`, `retract` | Default: `add`                                                                                                                                                                               |
 
 ## Category allow-list
@@ -47,6 +47,8 @@ The tool accepts one required parameter, `signals`: an array containing at least
 * Hypothesis requiring confirmation: `possible`, `implicit_user`, typically below `0.6`.
 * When the user corrects existing information, use `revise`; when they explicitly reject it, use `retract`.
 * Never turn an inference into a known fact.
+* `subject=self` is the normal choice whenever the current speaker describes their own needs, habits, experience, or concerns.
+* `subject=third_party` means the current speaker is describing the other booking participant. It is never used merely because that other person is named in the booking.
 
 ## Do not store
 

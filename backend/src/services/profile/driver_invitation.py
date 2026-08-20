@@ -32,6 +32,15 @@ class DriverInvitation:
     expires_at: str
 
 
+@dataclass(frozen=True)
+class DriverInvitationLink:
+    booking_id: str
+    driver_name: str
+    email: str
+    url: str
+    expires_at: str
+
+
 class DriverInvitationService:
     def __init__(
         self,
@@ -47,6 +56,26 @@ class DriverInvitationService:
         self.ttl_seconds = ttl_seconds
 
     def issue_and_send(self, booking_id: str) -> dict:
+        invite = self.issue(booking_id)
+        result = self.messaging_provider.send_message(
+            channel="email",
+            destination=invite.email,
+            subject="Mời bạn chuẩn bị cho buổi lái thử VinFast",
+            body=(
+                f"Xin chào {invite.driver_name},\n\n"
+                "Bạn được mời trò chuyện riêng với ViVi để chia sẻ nhu cầu và chuẩn bị cho buổi lái thử. "
+                f"Bạn có thể mở liên kết sau: {invite.url}\n\n"
+                f"Liên kết hết hạn lúc {invite.expires_at}."
+            ),
+        )
+        return {
+            "booking_id": booking_id,
+            "status": "sent",
+            "expires_at": invite.expires_at,
+            "delivery": provider_result_dict(result),
+        }
+
+    def issue(self, booking_id: str) -> "DriverInvitationLink":
         now = _now()
         token = secrets.token_urlsafe(32)
         expires_at = now + timedelta(seconds=self.ttl_seconds)
@@ -76,29 +105,23 @@ class DriverInvitationService:
                 (invitation_id, booking_id, booking["driver_person_id"], _token_hash(token), _iso(expires_at), _iso(now), _iso(now)),
             )
 
-        link = f"{self.base_url}/{token}"
-        result = self.messaging_provider.send_message(
-            channel="email",
-            destination=email,
-            subject="Mời bạn chuẩn bị cho buổi lái thử VinFast",
-            body=(
-                f"Xin chào {booking['full_name']},\n\n"
-                "Bạn được mời trò chuyện riêng với ViVi để chia sẻ nhu cầu và chuẩn bị cho buổi lái thử. "
-                f"Bạn có thể bỏ qua nếu không muốn tham gia.\n\n{link}\n\n"
-                f"Liên kết hết hạn lúc {expires_at.isoformat()}."
-            ),
+        link = (
+            f"{self.base_url}{token}"
+            if self.base_url.endswith("driver-invitation=")
+            else f"{self.base_url}/{token}"
         )
         with self.db.transaction(immediate=True) as c:
             c.execute(
                 "UPDATE driver_chat_invitations SET sent_at=?,updated_at=? WHERE id=?",
                 (_iso(now), _iso(now), invitation_id),
             )
-        return {
-            "booking_id": booking_id,
-            "status": "sent",
-            "expires_at": _iso(expires_at),
-            "delivery": provider_result_dict(result),
-        }
+        return DriverInvitationLink(
+            booking_id=booking_id,
+            driver_name=str(booking["full_name"] or ""),
+            email=email,
+            url=link,
+            expires_at=_iso(expires_at),
+        )
 
     def resolve(self, token: str) -> DriverInvitation:
         now = _now()
@@ -107,6 +130,7 @@ class DriverInvitationService:
                 "SELECT i.booking_id,i.driver_person_id,i.expires_at,p.full_name,p.email,p.normalized_email,p.phone,p.normalized_phone "
                 "FROM driver_chat_invitations i JOIN people p ON p.id=i.driver_person_id "
                 "JOIN bookings b ON b.id=i.booking_id AND b.driver_person_id=i.driver_person_id "
+                "AND b.status IN ('confirmed','checked_in') "
                 "WHERE i.token_hash=? AND i.status='active'",
                 (_token_hash(token),),
             ).fetchone()

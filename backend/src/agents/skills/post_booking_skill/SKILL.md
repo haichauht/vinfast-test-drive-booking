@@ -92,6 +92,19 @@ Bad:
 
 Identify durable personalization signals from the current message, reply context, conversation history, and existing profile brief. When a signal is new, corrected, strengthened, weakened, or retracted, call `update_user_profile`. Do not call it when nothing durable changed.
 
+### Mandatory capture gate
+
+Before answering the current user message or calling `search_knowledge`, check whether that message directly states a durable personal fact, need, habit, concern, experience, or correction. If it does, call `update_user_profile` in the same turn. This applies even when the information is also used to answer a vehicle question.
+
+For a direct statement, use `subject=self`, `source_type=explicit_user`, and `certainty=known`. If it corrects or replaces an active value for the same key, use `operation=revise`; otherwise use `add`.
+
+Examples:
+- “Gia đình tôi có 4 người” → `category=usage`, `key=household_size`, `value=4`, `operation=revise` when an earlier household size exists.
+- “Tôi thường đi đường dài” → save the durable trip-use signal before advising on range or comfort.
+- “Tôi lo lái khi trời mưa” → save the concern before giving the test-drive checklist.
+
+Never merely remember these facts in conversation history: invoke the profile tool. Do not use this gate for a question that contains no new information.
+
 Use:
 `fact`, `interest`, `concern`, `usage`, `experience`, `test_drive_goal`, `conversation_preference`, `likely_intent`, or `custom_intent`.
 
@@ -111,9 +124,13 @@ Use:
 - For `booker`, care for the booker as the current conversation participant. Do not make the conversation mainly about extracting information about another driver.
 - When the booker mentions the driver, make the subject clear and avoid pressuring disclosure of the driver's private preferences.
 - When driver-specific preferences would materially improve preparation, prefer the driver's own link.
-- If the booker clearly states a useful fact about a different driver, `update_user_profile` may use `subject=driver` sparingly. The backend marks it as third-party, possible, and low-confidence.
+- If a participant clearly states a useful fact about the other person in the booking, `update_user_profile` may use `subject=third_party` sparingly. The backend marks it as third-party, possible, and low-confidence.
 - Never infer driver preferences, concerns, or purchase intent from the booker's behavior.
 - Attendance and appointment logistics belong to booking context, not durable profile.
+
+## Private participant data
+
+For a driver invitation, booking context can contain the names and email addresses of the booker and driver. Use these only to understand the authenticated appointment and resolve ambiguity about who is speaking. Do not repeat, reveal, or compare email addresses in chat, including when the user asks for them. They are not profile signals and must never be passed to `update_user_profile`.
 
 ## When to use this skill
 

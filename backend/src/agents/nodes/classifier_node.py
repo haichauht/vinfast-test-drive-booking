@@ -22,6 +22,28 @@ from src.services.usage_budget import (
 
 logger = logging.getLogger(__name__)
 
+DRIVER_BOOKING_SCOPE_MESSAGE = (
+    "Link này dùng để ViVi hỗ trợ người lái chuẩn bị cho buổi lái thử. "
+    "Các thao tác tra cứu, đổi, hủy hoặc cập nhật lịch cần được thực hiện bởi "
+    "người đặt lịch qua luồng xác thực booking."
+)
+_DRIVER_BLOCKED_SUB_INTENTS = frozenset({
+    "booking_new", "booking_lookup", "booking_reschedule", "booking_cancel",
+    "booking_update_details", "booking_update_notifications",
+})
+
+
+def _driver_scope_block(state: AgentState, query: str, *, sub_intent: str) -> dict:
+    metadata = state.get("metadata") or {}
+    return {
+        "intent": "out_of_scope",
+        "response": DRIVER_BOOKING_SCOPE_MESSAGE,
+        "policy_response": DRIVER_BOOKING_SCOPE_MESSAGE,
+        "messages": [HumanMessage(content=query)],
+        "metadata": {**metadata, "sub_intent": sub_intent},
+        "tool_call_count": 0,
+    }
+
 
 class RouteSchema(BaseModel):
     intent: str = Field(
@@ -56,7 +78,10 @@ async def classifier_node(state: AgentState) -> dict:
     trace_id = metadata.get("trace_id", "")
     previous_skill = state.get("active_skill", "")
     post_booking_active = bool((state.get("post_booking_context") or {}).get("active"))
+    is_driver_invitation = (state.get("participant_context") or {}).get("role") == "driver"
     if state.get("requested_action"):
+        if is_driver_invitation:
+            return _driver_scope_block(state, query, sub_intent="driver_booking_scope")
         trace_event(
             "classifier.bypass",
             trace_id=trace_id,
@@ -86,6 +111,9 @@ async def classifier_node(state: AgentState) -> dict:
     # Check basic keywords as immediate priority bypass for sensitive subjects
     # to avoid LLM hallucinations and save API token cost
     lower_query = query.lower()
+
+    if is_driver_invitation and any(kw in lower_query for kw in (*BOOKING_MUTATION_KEYWORDS, *LOOKUP_KEYWORDS)):
+        return _driver_scope_block(state, query, sub_intent="driver_booking_scope")
 
     if any(kw in lower_query for kw in SOVEREIGNTY_KEYWORDS):
         trace_event("classifier.keyword_route", trace_id=trace_id, intent="sensitive", sub_intent="sovereignty")
@@ -196,6 +224,8 @@ async def classifier_node(state: AgentState) -> dict:
             intent = "domain"
 
         sub_intent = route_result.sub_intent
+        if is_driver_invitation and sub_intent in _DRIVER_BLOCKED_SUB_INTENTS:
+            return _driver_scope_block(state, query, sub_intent="driver_booking_scope")
         if intent == "domain" and not post_booking_active and sub_intent in {"post_booking_advisory", "vehicle_info"}:
             intent = "out_of_scope"
             sub_intent = "out_of_scope"
@@ -254,6 +284,8 @@ async def classifier_node(state: AgentState) -> dict:
         fallback_sub_intent = (
             "booking_lookup" if any(phrase in lower_query for phrase in LOOKUP_KEYWORDS) else "fallback_domain"
         )
+        if is_driver_invitation and fallback_sub_intent in _DRIVER_BLOCKED_SUB_INTENTS:
+            return _driver_scope_block(state, query, sub_intent="driver_booking_scope")
         trace_event(
             "classifier.fallback_route",
             trace_id=trace_id,

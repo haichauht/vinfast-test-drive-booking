@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     notification_poll_interval_seconds: int = Field(default=60, ge=5, le=300)
     notification_batch_size: int = Field(default=100, ge=1, le=500)
     notification_processing_timeout_seconds: int = Field(default=300, ge=30, le=3600)
-    driver_chat_base_url: str = "http://localhost:3000/driver-chat"
+    driver_chat_base_url: str = "http://localhost:3000/booking#driver-invitation="
     driver_chat_invitation_ttl_seconds: int = Field(default=604_800, ge=900, le=2_592_000)
 
     # Deterministic AI guardrails. These checks run before the agent, before

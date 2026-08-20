@@ -90,6 +90,20 @@ const agentAction = async (action, message, actionPayload) => {
 
 export const sendBookingMessage = (message, context = {}) => agentRequest({ message, context })
 
+// Uses the existing /chat endpoint. The invitation stays outside agent context.
+const driverChatRequest = ({ message, conversationId = '', invitationToken }) => apiPost('/chat', {
+  message,
+  conversation_id: conversationId,
+  driver_invitation_token: invitationToken,
+  context: { channel: 'driver_invitation' },
+})
+
+export const sendDriverChatMessage = (message, { conversationId, invitationToken }) => driverChatRequest({
+  message,
+  conversationId,
+  invitationToken,
+})
+
 export const resetBookingConversation = () => {
   if (typeof window !== 'undefined') window.sessionStorage.removeItem(CONVERSATION_KEY)
 }

@@ -60,4 +60,7 @@ driver_invitation_service = DriverInvitationService(
     base_url=settings.driver_chat_base_url,
     ttl_seconds=settings.driver_chat_invitation_ttl_seconds,
 )
+# Background notification rendering reuses the invitation service to embed a
+# driver chat link in the one-time booking confirmation email.
+booking_service.driver_invitation_service = driver_invitation_service
 knowledge_service = KnowledgeService()

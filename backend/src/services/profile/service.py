@@ -118,25 +118,37 @@ class ProfileService:
             trace_id=trace_id,
         )
 
-    def resolve_booking_driver_profile(self, booking_id: str) -> ProfileSnapshot:
-        """Resolve the driver profile from trusted booking data, never model input."""
+    def resolve_booking_other_participant_profile(self, booking_id: str, speaker_role: str) -> ProfileSnapshot:
+        """Resolve the other booking participant from trusted booking data."""
+        if speaker_role not in {"booker", "driver"}:
+            raise KeyError(booking_id)
         with self.db.connect() as c:
             row = c.execute(
-                "SELECT b.booker_person_id,b.driver_person_id,p.email,p.normalized_email,p.phone,p.normalized_phone "
-                "FROM bookings b JOIN people p ON p.id=b.driver_person_id WHERE b.id=?",
+                "SELECT b.booker_person_id,b.driver_person_id,booker.email booker_email,"
+                "booker.normalized_email booker_normalized_email,booker.phone booker_phone,"
+                "booker.normalized_phone booker_normalized_phone,driver.email driver_email,"
+                "driver.normalized_email driver_normalized_email,driver.phone driver_phone,"
+                "driver.normalized_phone driver_normalized_phone "
+                "FROM bookings b LEFT JOIN people booker ON booker.id=b.booker_person_id "
+                "LEFT JOIN people driver ON driver.id=b.driver_person_id WHERE b.id=?",
                 (booking_id,),
             ).fetchone()
-        if not row or not row["driver_person_id"] or row["driver_person_id"] == row["booker_person_id"]:
+        if not row:
             raise KeyError(booking_id)
-        email = str(row["normalized_email"] or row["email"] or "").strip().casefold()
+        target_role = "driver" if speaker_role == "booker" else "booker"
+        target_person_id = row[f"{target_role}_person_id"]
+        speaker_person_id = row[f"{speaker_role}_person_id"]
+        if not target_person_id or target_person_id == speaker_person_id:
+            raise KeyError(booking_id)
+        email = str(row[f"{target_role}_normalized_email"] or row[f"{target_role}_email"] or "").strip().casefold()
         if not email:
             raise KeyError(booking_id)
         return self.promote_identity(
             None,
-            person_id=str(row["driver_person_id"]),
+            person_id=str(target_person_id),
             email=email,
-            phone=str(row["normalized_phone"] or row["phone"] or ""),
-            source="booker_third_party_report",
+            phone=str(row[f"{target_role}_normalized_phone"] or row[f"{target_role}_phone"] or ""),
+            source=f"{speaker_role}_third_party_report",
         )
 
     def apply(self, profile_id: str, candidates: list[SignalCandidate], *, source_ref: str, trace_id: str = "") -> ProfileSnapshot:
@@ -230,6 +242,36 @@ class ProfileService:
         with self.db.connect() as c:
             row = c.execute("SELECT b.id,b.status,t.start_at,m.code model_code,m.name vehicle_model,s.id showroom_id,s.name showroom_name FROM bookings b JOIN test_drive_slots t ON t.id=b.slot_id JOIN demo_vehicles d ON d.id=t.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id JOIN vehicle_models m ON m.id=v.model_id JOIN showrooms s ON s.id=t.showroom_id WHERE b.id=?", (booking_id,)).fetchone()
         return dict(row) if row else {}
+
+    def booking_participants_context(self, booking_id: str) -> dict[str, Any]:
+        """Return participant identities for an authenticated booking participant.
+
+        This is intentionally separate from ``booking_context``: ordinary advisory
+        flows do not need contact data, while a driver-invitation link is already
+        authenticated for this exact booking.
+        """
+        with self.db.connect() as c:
+            row = c.execute(
+                "SELECT bp.full_name booker_name,bp.email booker_email,"
+                "dp.full_name driver_name,dp.email driver_email "
+                "FROM bookings b "
+                "LEFT JOIN people bp ON bp.id=b.booker_person_id "
+                "LEFT JOIN people dp ON dp.id=b.driver_person_id "
+                "WHERE b.id=?",
+                (booking_id,),
+            ).fetchone()
+        if not row:
+            return {}
+        return {
+            "booker": {
+                "name": str(row["booker_name"] or ""),
+                "email": str(row["booker_email"] or ""),
+            },
+            "driver": {
+                "name": str(row["driver_name"] or ""),
+                "email": str(row["driver_email"] or ""),
+            },
+        }
 
     def latest_booking_context(self, profile_id: str) -> dict[str, Any]:
         with self.db.connect() as c:

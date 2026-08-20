@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import cast
 
@@ -15,10 +16,30 @@ from src.dependencies import profile_service
 from src.services.llm import get_llm
 
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "post_booking_skill" / "SKILL.md"
+_HOUSEHOLD_SIZE_STATEMENT = re.compile(
+    r"\b(?:gia\s+đình|nhà)\s+(?:của\s+)?(?:tôi|mình|em|anh|chị|ta)?\s*"
+    r"(?:có|gồm)\s+\d+\s+(?:người|thành\s+viên)\b",
+    re.IGNORECASE,
+)
 
 
 def get_post_booking_prompt() -> str:
     return SKILL_PATH.read_text(encoding="utf-8")
+
+
+def _requires_profile_capture(messages: list[object]) -> bool:
+    """Identify explicit, durable statements that must not be answered without capture.
+
+    The skill prompt governs general capture. This narrow gate protects a common,
+    high-value correction such as "gia đình tôi có 4 người" from being skipped
+    when the model prioritizes a knowledge-search tool for the same turn.
+    """
+    last = messages[-1] if messages else None
+    return bool(
+        last
+        and getattr(last, "type", "") == "human"
+        and _HOUSEHOLD_SIZE_STATEMENT.search(str(getattr(last, "content", "")))
+    )
 
 
 async def post_booking_skill_node(state: AgentState) -> dict:
@@ -53,7 +74,11 @@ async def post_booking_skill_node(state: AgentState) -> dict:
             text = facts[0]["content"] if facts else "ViVi có thể giúp bạn chuẩn bị checklist lái thử, đánh giá pin/sạc, ADAS, không gian gia đình và các câu hỏi nên trao đổi với tư vấn viên."
             response = AIMessage(content=text)
         else:
-            bound = llm.bind_tools([search_knowledge, update_user_profile])
+            tool_choice = update_user_profile.name if _requires_profile_capture(messages) else None
+            bound = llm.bind_tools(
+                [search_knowledge, update_user_profile],
+                tool_choice=tool_choice,
+            )
             llm_messages = [SystemMessage(content=prompt)] + window_messages(messages)
             trace_event("llm.request", trace_id=trace_id, node="post_booking_skill", messages=messages_to_log(llm_messages), tools=[search_knowledge.name, update_user_profile.name])
             response = await bound.ainvoke(llm_messages)
