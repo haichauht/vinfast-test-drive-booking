@@ -16,6 +16,9 @@ class ChatRequest(BaseModel):
     )
     action_payload: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
+    # Private bearer token used only by the backend to load a driver's trusted
+    # booking context.  Never place it in ``context`` (which reaches the agent).
+    driver_invitation_token: str = Field(default="", max_length=512)
 
     @field_validator("message")
     @classmethod

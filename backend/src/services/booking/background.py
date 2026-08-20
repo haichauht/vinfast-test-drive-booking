@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
@@ -12,6 +13,11 @@ VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 class BackgroundJobService(BookingBase):
+    # Wired by src.dependencies after DriverInvitationService is constructed.
+    # Keeping the attribute explicit avoids silently losing the driver link when
+    # this mixin is used by a BookingService instance.
+    driver_invitation_service = None
+
     def dispatch_due_notifications(self, batch_size: int = 100, processing_timeout_seconds: int = 300) -> dict:
         stale_before = iso(self.now() - timedelta(seconds=processing_timeout_seconds))
         with self.db.transaction(immediate=True) as c:
@@ -41,7 +47,9 @@ class BackgroundJobService(BookingBase):
         for row in rows:
             destination = row["email"] if row["channel"] == "email" else row["phone"]
             try:
-                rendered = self._render_notification(row["booking_id"], row["notification_type"])
+                rendered = self._render_notification(
+                    row["booking_id"], row["notification_type"], row["recipient_person_id"]
+                )
                 result = (
                     self.messaging_provider.send_message(
                         channel=row["channel"],
@@ -107,10 +115,10 @@ class BackgroundJobService(BookingBase):
                     failed += 1
         return {"claimed": len(rows), "sent": sent, "failed": failed, "is_mock": True}
 
-    def _render_notification(self, booking_id: str, notification_type: str):
+    def _render_notification(self, booking_id: str, notification_type: str, recipient_person_id: str | None = None):
         with self.db.connect() as c:
             row = c.execute(
-                "SELECT b.booking_code,booker.full_name booker_name,driver.full_name driver_name,"
+                "SELECT b.booking_code,b.booker_person_id,b.driver_person_id,booker.full_name booker_name,driver.full_name driver_name,"
                 "driver.phone driver_phone,driver.email driver_email,m.name model_name,v.name variant_name,"
                 "s.name showroom_name,t.start_at,staff.full_name staff_name,staff.phone staff_phone "
                 "FROM bookings b JOIN test_drive_slots t ON t.id=b.slot_id JOIN showrooms s ON s.id=t.showroom_id "
@@ -121,7 +129,25 @@ class BackgroundJobService(BookingBase):
                 "LEFT JOIN sales_staff staff ON staff.id=b.assigned_sales_staff_id WHERE b.id=?",
                 (booking_id,),
             ).fetchone()
-        return render_booking_email(notification_type, row)
+        if not row:
+            return render_booking_email(notification_type, row, driver_invite_url=None)
+        driver_invite_url = None
+        invitation_service = getattr(self, "driver_invitation_service", None)
+        if (
+            notification_type == "booking_confirmation"
+            and invitation_service is not None
+            and recipient_person_id
+            and str(recipient_person_id) == str(row["driver_person_id"])
+            and row["driver_person_id"] != row["booker_person_id"]
+        ):
+            try:
+                driver_invite_url = invitation_service.issue(booking_id).url
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Failed to issue driver invitation link for booking %s", booking_id
+                )
+                driver_invite_url = None
+        return render_booking_email(notification_type, row, driver_invite_url=driver_invite_url)
         if not row:
             return "Lịch lái thử VinFast của bạn đã được cập nhật."
         start = parse_utc(row["start_at"]).astimezone(VIETNAM_TZ)

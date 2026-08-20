@@ -123,6 +123,10 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
         participant_context: dict[str, Any] = {"role": "user"}
         try:
             driver_invitation = getattr(request.state, "driver_invitation", None)
+            if not driver_invitation and body.driver_invitation_token:
+                driver_invitation = await asyncio.to_thread(
+                    driver_invitation_service.resolve, body.driver_invitation_token
+                )
             if driver_invitation:
                 profile = profile_service.bind_person_conversation(
                     conversation_id,
@@ -132,7 +136,13 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                     source="driver_invitation",
                     trace_id=trace_id,
                 )
-                stored_booking_context = {"active": True, **profile_service.booking_context(driver_invitation.booking_id)}
+                stored_booking_context = {
+                    "active": True,
+                    **profile_service.booking_context(driver_invitation.booking_id),
+                    "participants": profile_service.booking_participants_context(
+                        driver_invitation.booking_id
+                    ),
+                }
                 participant_context = {"role": "driver", "booking_id": driver_invitation.booking_id}
             else:
                 profile = profile_service.resolve_or_create(conversation_id, getattr(identity, "session_id", ""))
@@ -140,6 +150,10 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                 if stored_booking_context.get("active"):
                     participant_context = {"role": "booker", "booking_id": stored_booking_context.get("id")}
             profile_context = build_profile_context(profile, body.message)
+        except KeyError as exc:
+            if body.driver_invitation_token:
+                raise HTTPException(status_code=404, detail="Driver invitation is invalid or expired") from exc
+            logging.getLogger("profile.lifecycle").exception("profile.lookup_failed trace_id=%s conversation_id=%s", trace_id, conversation_id)
         except Exception:
             logging.getLogger("profile.lifecycle").exception("profile.lookup_failed trace_id=%s conversation_id=%s", trace_id, conversation_id)
         guardrails = get_guardrails()
@@ -252,6 +266,8 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             llm_call_count=(result.get("metadata") or {}).get("llm_call_count"),
         )
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         trace_event(
             "chat.error",

@@ -15,7 +15,7 @@ async def update_user_profile(
     profile_id: Annotated[str, InjectedState("profile_id")],
     metadata: Annotated[dict[str, Any], InjectedState("metadata")],
     participant_context: Annotated[dict[str, Any], InjectedState("participant_context")],
-    subject: Literal["self", "driver"] = "self",
+    subject: Literal["self", "third_party"] = "self",
 ) -> dict[str, Any]:
     """Queue profile signals identified from the current conversation.
 
@@ -32,24 +32,28 @@ async def update_user_profile(
             known, likely, or possible. Source type is explicit_user,
             implicit_user, or trusted_domain. Operation is add, strengthen,
             weaken, revise, or retract. Confidence is between 0 and 1.
-        subject: ``self`` for the current speaker. Use ``driver`` only when the
-            current booker explicitly provides information about the different
-            driver in this booking. The backend forces low-confidence third-party
-            attribution and resolves the target person from the booking.
+        subject: ``self`` for the current speaker, whether that speaker is the
+            booker or driver. Use ``third_party`` only when the speaker provides
+            information about the other participant in the same booking. The
+            backend resolves that participant and records low-confidence
+            third-party attribution.
     """
     if not profile_id:
         return {"status": "skipped", "reason": "profile_not_resolved"}
     conversation_id = str(metadata.get("conversation_id") or "")
     target_profile_id = profile_id
-    if subject == "driver":
-        if participant_context.get("role") != "booker" or not participant_context.get("booking_id"):
+    if subject == "third_party":
+        speaker_role = str(participant_context.get("role") or "")
+        if speaker_role not in {"booker", "driver"} or not participant_context.get("booking_id"):
             return {"status": "skipped", "reason": "third_party_subject_not_allowed"}
         try:
-            target = profile_service.resolve_booking_driver_profile(str(participant_context["booking_id"]))
+            target = profile_service.resolve_booking_other_participant_profile(
+                str(participant_context["booking_id"]), speaker_role
+            )
         except KeyError:
-            return {"status": "skipped", "reason": "driver_profile_not_resolved"}
+            return {"status": "skipped", "reason": "third_party_profile_not_resolved"}
         target_profile_id = target.id
-        conversation_id = f"third_party:booker:{conversation_id}"
+        conversation_id = f"third_party:{speaker_role}:{conversation_id}"
         signals = [
             item.model_copy(update={
                 "certainty": "possible",
