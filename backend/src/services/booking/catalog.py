@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from src.services.booking.base import BookingBase
 from src.services.booking.common import iso
 from src.services.booking.errors import BookingError
-from src.services.booking.location import Coordinates, HaversineMapProvider
+from src.services.booking.location import Coordinates, HaversineMapProvider, resolve_address_coordinates
 from src.services.booking.location_normalizer import normalize_location_tokens
 
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
@@ -187,6 +187,14 @@ class CatalogService(BookingBase):
                     variant_ids,
                 ).fetchall()
                 showrooms = [dict(r) for r in rows]
+                target_coords: dict[str, float] | None = None
+                if latitude is not None and longitude is not None:
+                    target_coords = {"latitude": latitude, "longitude": longitude}
+                elif address:
+                    resolved_coords = resolve_address_coordinates(address)
+                    if resolved_coords:
+                        target_coords = {"latitude": resolved_coords.latitude, "longitude": resolved_coords.longitude}
+
                 if address:
                     ranked = sorted(
                         ((self._address_match_score(address, showroom), showroom) for showroom in showrooms),
@@ -194,19 +202,29 @@ class CatalogService(BookingBase):
                         reverse=True,
                     )
                     matched = [(score, showroom) for score, showroom in ranked if score > 0]
-                    showrooms = [showroom for _, showroom in matched]
-                if latitude is not None and longitude is not None:
-                    origin = Coordinates(latitude, longitude)
+                    # Nếu địa điểm không có showroom trực thuộc (vd: Bắc Giang),
+                    # giữ nguyên toàn bộ showrooms để trả về các showroom lân cận gần nhất
+                    if matched:
+                        showrooms = [showroom for _, showroom in matched]
+
+                origin_coords = (
+                    Coordinates(target_coords["latitude"], target_coords["longitude"])
+                    if target_coords
+                    else None
+                )
+                if origin_coords:
                     destinations = [Coordinates(s["latitude"], s["longitude"]) for s in showrooms]
                     for s, distance in zip(
-                        showrooms, self.map_provider.distances_km(origin, destinations), strict=True
+                        showrooms, self.map_provider.distances_km(origin_coords, destinations), strict=True
                     ):
                         s["distance_km"] = round(distance, 2)
                     showrooms.sort(key=lambda x: x["distance_km"])
+
                 return {
                     "resolved_vehicle": {**model, "variants": variants},
                     "license_requirement": model["required_license_class"],
                     "showrooms": showrooms[:min(max(showroom_limit, 1), 30)],
+                    "target_coordinates": target_coords,
                     "slots": [],
                     "search_stage": "showroom_selection",
                     "missing_fields": [],
@@ -234,6 +252,7 @@ class CatalogService(BookingBase):
             horizon = iso(self.now() + timedelta(days=30))
             values: list[Any] = [showroom_id, *variant_ids, now, now, horizon]
             date_sql, order_sql = "", "s.start_at"
+            norm_date = None
             if preferred_date:
                 norm_date = _normalize_preferred_date(preferred_date, self.now().astimezone(VIETNAM_TZ))
                 date_sql = " AND substr(s.start_at,1,10)=?"
@@ -281,6 +300,10 @@ class CatalogService(BookingBase):
                 date_str = dt_start.strftime("%d/%m")
                 time_str = dt_start.strftime("%H:%M")
                 s["formatted_schedule"] = f"{day_label}, {date_str} {time_str}"
+
+        focused_date = norm_date if preferred_date else None
+        highlighted_dates = [focused_date[5:]] if focused_date and len(focused_date) >= 10 else []
+
         return {
             "resolved_vehicle": {**model, "variants": variants},
             "license_requirement": model["required_license_class"],
@@ -288,6 +311,8 @@ class CatalogService(BookingBase):
             "showrooms": [],
             "slots": slots,
             "search_stage": "slot_selection",
+            "focused_date": focused_date,
+            "highlighted_dates": highlighted_dates,
             "missing_fields": [],
         }
 
