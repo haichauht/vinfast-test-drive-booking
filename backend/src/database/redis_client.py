@@ -19,9 +19,23 @@ class RedisClient:
             try:
                 import redis  # type: ignore[import-not-found,import-untyped]
                 self._client = redis.from_url(self.url, decode_responses=True)
+                if self.is_connected():
+                    msg = f"[REDIS CONNECTED] Connected successfully to Redis at {self.url}"
+                    logger.info(msg)
+                    print(msg, flush=True)
+                else:
+                    msg = f"[REDIS WARNING] Ping failed to Redis at {self.url}. Will fallback to SQL."
+                    logger.warning(msg)
+                    print(msg, flush=True)
             except Exception as err:
-                logger.warning("Failed to initialize Redis client (%s). Falling back to SQL/in-memory.", err)
+                msg = f"[REDIS ERROR] Failed to initialize Redis client ({err}). Falling back to SQL/in-memory."
+                logger.warning(msg)
+                print(msg, flush=True)
                 self._client = None
+        else:
+            msg = f"[REDIS DISABLED] redis_enabled={self.enabled}, url={self.url}"
+            logger.info(msg)
+            print(msg, flush=True)
 
     def is_connected(self) -> bool:
         if not self._client:
@@ -119,31 +133,52 @@ class RedisClient:
 
     def set_otp(self, key: str, code: str, ttl_seconds: int = 60) -> bool:
         if not self._client:
+            msg = "[REDIS BYPASS] set_otp skipped, Redis not connected"
+            print(msg, flush=True)
             return False
         try:
             self._client.setex(f"otp:{key}", ttl_seconds, code)
+            msg = f"[REDIS SUCCESS] Stored OTP for {key} (TTL: {ttl_seconds}s)"
+            logger.info(msg)
+            print(msg, flush=True)
             return True
         except Exception as err:
-            logger.warning("Redis set_otp failed: %s", err)
+            msg = f"[REDIS ERROR] Redis set_otp failed: {err}"
+            logger.warning(msg)
+            print(msg, flush=True)
             return False
 
     def get_otp(self, key: str) -> str | None:
         if not self._client:
             return None
         try:
-            return self._client.get(f"otp:{key}")
+            val = self._client.get(f"otp:{key}")
+            if val:
+                msg = f"[REDIS SUCCESS] Retrieved OTP for {key} from Redis"
+                logger.info(msg)
+                print(msg, flush=True)
+            return val
         except Exception as err:
-            logger.warning("Redis get_otp failed: %s", err)
+            msg = f"[REDIS ERROR] Redis get_otp failed: {err}"
+            logger.warning(msg)
+            print(msg, flush=True)
             return None
 
     def hold_slot(self, slot_id: str, booking_id: str, ttl_seconds: int = 120) -> bool:
         if not self._client:
+            msg = "[REDIS BYPASS] hold_slot skipped, Redis not connected"
+            print(msg, flush=True)
             return False
         try:
             self._client.setex(f"hold_slot:{slot_id}", ttl_seconds, booking_id)
+            msg = f"[REDIS SUCCESS] Held slot {slot_id} for booking {booking_id} in Redis (TTL: {ttl_seconds}s)"
+            logger.info(msg)
+            print(msg, flush=True)
             return True
         except Exception as err:
-            logger.warning("Redis hold_slot failed: %s", err)
+            msg = f"[REDIS ERROR] Redis hold_slot failed: {err}"
+            logger.warning(msg)
+            print(msg, flush=True)
             return False
 
     def is_slot_held(self, slot_id: str) -> bool:
@@ -153,6 +188,21 @@ class RedisClient:
             return bool(self._client.exists(f"hold_slot:{slot_id}"))
         except Exception as err:
             logger.warning("Redis is_slot_held failed: %s", err)
+            return False
+
+    def delete_slot_hold(self, slot_id: str) -> bool:
+        if not self._client:
+            return False
+        try:
+            self._client.delete(f"hold_slot:{slot_id}")
+            msg = f"[REDIS SUCCESS] Released slot hold for {slot_id} in Redis"
+            logger.info(msg)
+            print(msg, flush=True)
+            return True
+        except Exception as err:
+            msg = f"[REDIS ERROR] Redis delete_slot_hold failed: {err}"
+            logger.warning(msg)
+            print(msg, flush=True)
             return False
 
     def release_slot_hold(self, slot_id: str) -> bool:

@@ -26,11 +26,12 @@ import { actionId } from './ids'
 const CONVERSATION_KEY = 'vinfast:booking-conversation-id'
 const PUBLIC_ACTION_ERROR_MESSAGES = {
   SLOT_NO_LONGER_AVAILABLE: 'Khung giờ này đã qua hoặc không còn khả dụng, vui lòng chọn giờ khác.',
+  SLOT_UNAVAILABLE: 'Khung giờ này không còn khả dụng, vui lòng chọn giờ khác.',
   HOLD_EXPIRED: 'Thời gian giữ chỗ đã hết hạn, vui lòng chọn lại khung giờ.',
   VEHICLE_NOT_READY: 'Xe demo hiện không sẵn sàng cho khung giờ này, vui lòng chọn lịch khác.',
   VERSION_CONFLICT: 'Thông tin đặt lịch đã thay đổi, vui lòng tải lại và thử lại.',
   INVALID_INPUT: 'Thông tin gửi lên chưa hợp lệ, vui lòng kiểm tra lại.',
-  AGENT_ACTION_FAILED: 'Agent không hoàn tất được thao tác đặt lịch.',
+  AGENT_ACTION_FAILED: 'Thao tác giữ chỗ chưa hoàn tất. Vui lòng chọn lại khung giờ.',
 }
 
 const readConversationId = () => {
@@ -140,6 +141,8 @@ export const holdBookingSlot = (slotId, uiActionId = actionId('hold')) => agentA
   },
 )
 
+
+
 /**
  * Lưu thông tin người đặt và người lái vào draft.
  *
@@ -190,9 +193,16 @@ export const confirmHeldBooking = ({ bookingId, version, uiActionId = actionId('
 )
 
 const bookingManagementAction = async (action, payload) => {
-  const result = await apiPost('/demo/action', { action, payload, conversation_id: readConversationId() })
+  const result = await apiPost('/test-drive/actions', { action, payload })
   return result
 }
+
+export const releaseBookingHold = (bookingId) => bookingManagementAction(
+  'release_hold',
+  { booking_id: bookingId },
+)
+
+
 
 export const requestBookingAccess = ({ bookingCode = '', email = '', contactValue = '', purpose = 'lookup' }) => bookingManagementAction('request_access', {
   ...((bookingCode || '').trim() ? { booking_code: (bookingCode || '').trim() } : {}),

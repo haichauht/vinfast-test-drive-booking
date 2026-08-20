@@ -6,6 +6,7 @@ import json
 import secrets
 from datetime import UTC, timedelta
 
+from src.database.redis_client import redis_client
 from src.database.rows import DbRow
 from src.security.rate_limit import consume_rate_limit_counter
 from src.services.booking.base import BookingBase
@@ -157,6 +158,7 @@ class AccessService(BookingBase):
             code = f"{secrets.randbelow(1_000_000):06d}"
             salt = secrets.token_hex(8)
             challenge_id = _id("otp")
+            redis_client.set_otp(challenge_id, code, ttl_seconds=int(self.otp_ttl_seconds))
             expires_at = self.now() + timedelta(seconds=self.otp_ttl_seconds)
             masked = self._mask(contact_value)
             c.execute(
