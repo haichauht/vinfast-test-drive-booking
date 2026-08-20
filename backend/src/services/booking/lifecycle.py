@@ -535,7 +535,7 @@ class LifecycleService(BookingBase):
         booking = c.execute("SELECT booker_person_id,driver_person_id FROM bookings WHERE id=?", (bid,)).fetchone()
         plan = c.execute("SELECT * FROM notification_plans WHERE booking_id=?", (bid,)).fetchone()
         recipients = [booking["driver_person_id"]]
-        if plan["copy_booker"] and booking["booker_person_id"] != booking["driver_person_id"]:
+        if (plan["copy_booker"] or booking["booker_person_id"] != booking["driver_person_id"]) and booking["booker_person_id"] not in recipients:
             recipients.append(booking["booker_person_id"])
         result = []
         for recipient in recipients:
