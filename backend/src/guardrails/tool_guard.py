@@ -11,13 +11,26 @@ from langgraph.prebuilt import ToolNode
 from src.config import Settings, get_settings
 from src.guardrails.models import GuardrailDecision
 from src.guardrails.policies import CONFIRMATION_TOOL_NAMES, MUTATING_TOOL_NAMES
-from src.guardrails.structure import PayloadLimits, validate_payload
+from src.guardrails.structure import PayloadLimits, normalize_text, validate_payload
 
 _CONFIRMATION_RE = re.compile(
     r"\b(?:confirm|book\s+now|xác\s+nhận|xac\s+nhan|chốt|chot|đồng\s+ý|dong\s+y)\b",
     re.IGNORECASE,
 )
+_NEGATED_CONFIRMATION_RE = re.compile(
+    r"\b(?:do\s+not|don't|dont|not|never)\s+(?:want\s+to\s+)?(?:confirm|book)\b|"
+    r"\b(?:không|khong|chưa|chua|đừng|dung)\s+(?:(?:muốn|muon)\s+)?"
+    r"(?:xác\s+nhận|xac\s+nhan|chốt|chot|đồng\s+ý|dong\s+y)\b",
+    re.IGNORECASE,
+)
 _TOOL_BLOCKED_MESSAGE = "Thao tác này đã bị chặn bởi chính sách an toàn. Vui lòng kiểm tra và thử lại."
+
+
+def _has_explicit_confirmation(query: str) -> bool:
+    normalized = normalize_text(query)
+    if _NEGATED_CONFIRMATION_RE.search(normalized):
+        return False
+    return bool(_CONFIRMATION_RE.search(normalized))
 
 
 def inspect_tool_calls(
@@ -90,7 +103,7 @@ def inspect_tool_calls(
         mutating_calls += int(name in MUTATING_TOOL_NAMES)
 
         if name in CONFIRMATION_TOOL_NAMES and not state.get("requested_action"):
-            if not _CONFIRMATION_RE.search(str(state.get("query") or "")):
+            if not _has_explicit_confirmation(str(state.get("query") or "")):
                 return GuardrailDecision.block(
                     "EXPLICIT_CONFIRMATION_REQUIRED",
                     "a booking confirmation tool requires explicit user confirmation",

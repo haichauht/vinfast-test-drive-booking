@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from src.database import DatabaseIntegrityError
@@ -17,6 +19,8 @@ def _columns(value: str) -> list[str]:
 
 
 class ImportService(BookingBase):
+    IMPORT_BATCH_SIZE = 5_000
+
     @staticmethod
     def _validate_coordinates(latitude: object, longitude: object, *, context: str) -> tuple[float, float]:
         try:
@@ -28,9 +32,11 @@ class ImportService(BookingBase):
         return lat, lon
 
     @staticmethod
-    def _normalize_slot_timestamps(rows: list[dict[str, str]], *, filename: str) -> None:
+    def _normalize_slot_timestamps(
+        rows: list[dict[str, str]], *, filename: str, line_offset: int = 0
+    ) -> None:
         """Persist slot times as explicit UTC instants, never local text values."""
-        for line, row in enumerate(rows, start=2):
+        for line, row in enumerate(rows, start=2 + line_offset):
             try:
                 start = parse_utc(row["start_at"])
                 end = parse_utc(row["end_at"])
@@ -472,6 +478,16 @@ class ImportService(BookingBase):
         if problems:
             raise BookingError("MISSING_DEPENDENCY", f"Cannot import {filename}: " + " | ".join(problems))
 
+    @staticmethod
+    @contextmanager
+    def _open_csv_reader(source: str | Path) -> Iterator[csv.DictReader]:
+        if isinstance(source, Path):
+            with source.open(encoding="utf-8-sig", newline="") as handle:
+                yield csv.DictReader(handle)
+            return
+        with io.StringIO(source.lstrip("\ufeff")) as handle:
+            yield csv.DictReader(handle)
+
     def import_eval_dataset(self, files: dict[str, str]) -> dict:
         """Import either the legacy 15-file dataset or the V5 32-table seed atomically."""
         supplied = {name.split("/")[-1]: text for name, text in files.items()}
@@ -489,7 +505,7 @@ class ImportService(BookingBase):
 
     def _import_dataset_files(
         self,
-        supplied: dict[str, str],
+        supplied: dict[str, str | Path],
         *,
         dataset_files: dict[str, tuple[str, list[str]]],
         is_v5: bool,
@@ -498,8 +514,8 @@ class ImportService(BookingBase):
         skipped: list[str] = []
         v5_people_by_id: dict[str, dict[str, str]] = {}
         if is_v5 and "19_people.csv" in supplied:
-            people_reader = csv.DictReader(io.StringIO(supplied["19_people.csv"].lstrip("\ufeff")))
-            v5_people_by_id = {row["id"]: row for row in people_reader}
+            with self._open_csv_reader(supplied["19_people.csv"]) as people_reader:
+                v5_people_by_id = {row["id"]: row for row in people_reader}
         current_filename = "dataset"
         try:
             with self.db.transaction(immediate=True) as c:
@@ -509,24 +525,8 @@ class ImportService(BookingBase):
                     current_filename = filename
                     if filename not in supplied:
                         continue
-                    reader = csv.DictReader(io.StringIO(supplied[filename].lstrip("\ufeff")))
-                    if reader.fieldnames != expected:
-                        raise BookingError("INVALID_INPUT", f"Header {filename} không đúng. Cần: {','.join(expected)}")
-                    rows = list(reader)
-                    if not rows:
-                        counts[table] = 0
-                        continue
                     slot_filename = "20_test_drive_slots.csv" if is_v5 else "06_test_drive_slots.csv"
                     showroom_filename = "04_showrooms.csv" if is_v5 else "03_showrooms.csv"
-                    if filename == slot_filename:
-                        self._normalize_slot_timestamps(rows, filename=filename)
-                    if filename == showroom_filename:
-                        for line, row in enumerate(rows, start=2):
-                            self._validate_coordinates(
-                                row["latitude"], row["longitude"], context=f"at line {line} of {filename}"
-                            )
-                    if not is_v5:
-                        self._assert_dataset_references(c, filename, rows, self.DATASET_REFERENCES.get(filename, ()))
 
                     insert_columns = list(expected)
                     if not is_v5 and filename == "14_booking_access_sessions.csv":
@@ -550,18 +550,47 @@ class ImportService(BookingBase):
                         f"INSERT INTO {table}({','.join(insert_columns)}) VALUES({marks}) "
                         f"ON CONFLICT({conflict}) {action}"
                     )
-                    values = [
-                        self._row_values(
-                            row,
-                            insert_columns,
-                            filename=filename,
-                            is_v5=is_v5,
-                            v5_people_by_id=v5_people_by_id,
-                        )
-                        for row in rows
-                    ]
-                    c.executemany(sql, values)
-                    counts[table] = len(rows)
+                    count = 0
+                    with self._open_csv_reader(supplied[filename]) as reader:
+                        if reader.fieldnames != expected:
+                            raise BookingError(
+                                "INVALID_INPUT",
+                                f"Header {filename} không đúng. Cần: {','.join(expected)}",
+                            )
+                        batch: list[dict[str, str]] = []
+                        for row in reader:
+                            batch.append(row)
+                            if len(batch) < self.IMPORT_BATCH_SIZE:
+                                continue
+                            self._import_row_batch(
+                                c,
+                                sql,
+                                batch,
+                                filename=filename,
+                                slot_filename=slot_filename,
+                                showroom_filename=showroom_filename,
+                                insert_columns=insert_columns,
+                                is_v5=is_v5,
+                                v5_people_by_id=v5_people_by_id,
+                                line_offset=count,
+                            )
+                            count += len(batch)
+                            batch = []
+                        if batch:
+                            self._import_row_batch(
+                                c,
+                                sql,
+                                batch,
+                                filename=filename,
+                                slot_filename=slot_filename,
+                                showroom_filename=showroom_filename,
+                                insert_columns=insert_columns,
+                                is_v5=is_v5,
+                                v5_people_by_id=v5_people_by_id,
+                                line_offset=count,
+                            )
+                            count += len(batch)
+                    counts[table] = count
         except BookingError:
             raise
         except DatabaseIntegrityError as exc:
@@ -576,6 +605,52 @@ class ImportService(BookingBase):
             "dataset_version": "v5" if is_v5 else "legacy",
             "missing_expected_files": [name for name in dataset_files if name not in supplied],
         }
+
+    def _import_row_batch(
+        self,
+        connection,
+        sql: str,
+        rows: list[dict[str, str]],
+        *,
+        filename: str,
+        slot_filename: str,
+        showroom_filename: str,
+        insert_columns: list[str],
+        is_v5: bool,
+        v5_people_by_id: dict[str, dict[str, str]],
+        line_offset: int,
+    ) -> None:
+        if filename == slot_filename:
+            self._normalize_slot_timestamps(
+                rows,
+                filename=filename,
+                line_offset=line_offset,
+            )
+        if filename == showroom_filename:
+            for line, row in enumerate(rows, start=2 + line_offset):
+                self._validate_coordinates(
+                    row["latitude"],
+                    row["longitude"],
+                    context=f"at line {line} of {filename}",
+                )
+        if not is_v5:
+            self._assert_dataset_references(
+                connection,
+                filename,
+                rows,
+                self.DATASET_REFERENCES.get(filename, ()),
+            )
+        values = [
+            self._row_values(
+                row,
+                insert_columns,
+                filename=filename,
+                is_v5=is_v5,
+                v5_people_by_id=v5_people_by_id,
+            )
+            for row in rows
+        ]
+        connection.executemany(sql, values)
 
     @staticmethod
     def _conflict_columns(table: str, insert_columns: list[str]) -> tuple[str, ...]:
@@ -631,11 +706,11 @@ class ImportService(BookingBase):
             "17_dataset_summary.csv",
             "18_dataset_metadata.csv",
         ]
-        files = {}
+        files: dict[str, Path] = {}
         for filename in [*dataset_files, *extra_files]:
             path = root / filename
             if path.exists():
-                files[filename] = path.read_text(encoding="utf-8-sig")
+                files[filename] = path
         if not files:
             raise BookingError("INVALID_INPUT", f"No supported eval CSV files found in: {root}")
         return self.import_eval_dataset(files)

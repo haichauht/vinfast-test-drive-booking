@@ -39,6 +39,7 @@ class BookingService(
         otp_ttl_seconds: int = 300,
         otp_resend_cooldown_seconds: int = 60,
         access_session_ttl_seconds: int = 1800,
+        booking_advance_window_days: int = 30,
         now=utcnow,
     ):
         self.db = database
@@ -53,4 +54,5 @@ class BookingService(
         self.otp_ttl_seconds = otp_ttl_seconds
         self.otp_resend_cooldown_seconds = otp_resend_cooldown_seconds
         self.access_session_ttl_seconds = access_session_ttl_seconds
+        self.booking_advance_window_days = booking_advance_window_days
         self.now = now

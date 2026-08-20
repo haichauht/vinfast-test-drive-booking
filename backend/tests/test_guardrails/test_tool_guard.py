@@ -87,6 +87,31 @@ def test_allows_booking_confirmation_after_explicit_user_confirmation():
     assert decision.allowed is True
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Tôi không xác nhận lịch này",
+        "Chưa chốt lịch nhé",
+        "Đừng đồng ý đặt lịch",
+        "Do not confirm this booking",
+        "I don't want to book now",
+    ],
+)
+def test_blocks_confirmation_when_user_phrase_is_explicitly_negated(query):
+    call = _call(
+        "confirm_test_drive_booking",
+        {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
+    )
+    decision = inspect_tool_calls(
+        _state([call], query=query),
+        allowed_tool_names={"confirm_test_drive_booking"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "EXPLICIT_CONFIRMATION_REQUIRED"
+
+
 def test_blocks_batch_containing_a_mutating_tool():
     calls = [
         _call("get_booking_draft", {"booking_id": "b1"}, "call-1"),

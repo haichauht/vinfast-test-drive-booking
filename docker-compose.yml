@@ -26,6 +26,7 @@ services:
     environment:
       DATABASE_URL: postgresql://vinfast:vinfast@postgres:5432/vinfast_booking
       EVAL_DATA_DIR: /app/eval/data
+      BOOKING_ADVANCE_WINDOW_DAYS: ${BOOKING_ADVANCE_WINDOW_DAYS:-30}
     command: ["python", "scripts/seed_dev_db.py"]
     volumes:
       - ./eval/data:/app/eval/data:ro
@@ -46,6 +47,7 @@ services:
     environment:
       DATABASE_URL: postgresql://vinfast:vinfast@postgres:5432/vinfast_booking
       EVAL_DATA_DIR: /app/eval/data
+      BOOKING_ADVANCE_WINDOW_DAYS: ${BOOKING_ADVANCE_WINDOW_DAYS:-30}
     volumes:
       - ./backend/logs:/app/logs
       - ./eval/data:/app/eval/data:ro

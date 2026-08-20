@@ -10,3 +10,12 @@ def test_production_requires_a_strong_otp_secret():
     settings = Settings(app_env="production", booking_access_otp_secret="a" * 32)
 
     assert settings.booking_access_otp_secret == "a" * 32
+
+
+def test_production_cannot_disable_guardrails():
+    with pytest.raises(ValidationError, match="GUARDRAILS_ENABLED"):
+        Settings(
+            app_env="production",
+            booking_access_otp_secret="a" * 32,
+            guardrails_enabled=False,
+        )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -190,7 +190,13 @@ class CatalogService(BookingBase):
                 if c.dialect == "postgres"
                 else "datetime(s.start_at) > datetime(?)"
             )
-            values: list[Any] = [showroom_id, *variant_ids, now, now]
+            booking_deadline = iso(self.now() + timedelta(days=self.booking_advance_window_days))
+            booking_window_sql = (
+                "s.start_at::timestamptz <= ?::timestamptz"
+                if c.dialect == "postgres"
+                else "datetime(s.start_at) <= datetime(?)"
+            )
+            values: list[Any] = [showroom_id, *variant_ids, now, now, booking_deadline]
             date_sql, order_sql = "", "s.start_at"
             if preferred_date:
                 date_sql = " AND substr(s.start_at,1,10)=?"
@@ -212,7 +218,7 @@ class CatalogService(BookingBase):
             slots = [
                 dict(r)
                 for r in c.execute(
-                    f"SELECT s.*,d.asset_code,v.name variant_name FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id WHERE s.showroom_id=? AND d.variant_id IN ({marks}) AND (s.status IN ('available','booked') OR (s.status='held' AND s.held_until>?)) AND {future_slot_sql} AND d.is_active=1 AND d.operational_status='available' AND d.battery_soc IS NOT NULL AND d.battery_soc>=d.minimum_booking_soc {date_sql} ORDER BY {order_sql} LIMIT ?",
+                    f"SELECT s.*,d.asset_code,v.name variant_name FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id JOIN vehicle_variants v ON v.id=d.variant_id WHERE s.showroom_id=? AND d.variant_id IN ({marks}) AND (s.status IN ('available','booked') OR (s.status='held' AND s.held_until>?)) AND {future_slot_sql} AND {booking_window_sql} AND d.is_active=1 AND d.operational_status='available' AND d.battery_soc IS NOT NULL AND d.battery_soc>=d.minimum_booking_soc {date_sql} ORDER BY {order_sql} LIMIT ?",
                     (*values, min(max(limit, 1), 30)),
                 )
             ]

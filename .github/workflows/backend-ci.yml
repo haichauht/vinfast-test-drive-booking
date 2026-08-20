@@ -4,11 +4,15 @@ on:
   push:
     paths:
       - 'backend/**'
+      - 'eval/benchmarks/**'
+      - 'eval/golden/**'
       - '.github/workflows/backend-ci.yml'
     branches: [testing, main, develop]
   pull_request:
     paths:
       - 'backend/**'
+      - 'eval/benchmarks/**'
+      - 'eval/golden/**'
       - '.github/workflows/backend-ci.yml'
     branches: [testing, main, develop]
 
@@ -36,6 +40,11 @@ jobs:
 
       - name: Security scanning with bandit
         run: bandit -r backend/src/ -ll --skip B104,B608
+
+      - name: Run deterministic guardrail benchmark
+        run: python backend/scripts/run_guardrail_benchmark.py --fail-under 1.0
+        env:
+          APP_ENV: test
 
       - name: Run tests with coverage
         run: pytest backend/tests/ -v --tb=short --cov=backend/src/ --cov-report=term-missing

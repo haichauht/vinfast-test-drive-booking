@@ -2,9 +2,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.messages import HumanMessage
-from src.agents.nodes import classifier_node as classifier_module
 from src.agents.nodes.classifier_node import RouteSchema, classifier_node
 from src.agents.nodes.sensitive_policy_node import sensitive_policy_node
+
+from src.agents.nodes import classifier_node as classifier_module
 
 
 # test case of Chau + kiểm tra classifier xử lý query rỗng mà không gọi LLM

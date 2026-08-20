@@ -7,6 +7,9 @@ instead of blocking every occurrence of words such as "prompt" or "system".
 
 from __future__ import annotations
 
+import re
+from functools import lru_cache
+
 PROMPT_INJECTION_PATTERNS: tuple[tuple[str, str], ...] = (
     (
         "PROMPT_INJECTION_OVERRIDE",
@@ -75,6 +78,37 @@ ACTION_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     "verify_access": frozenset({"challenge_id", "otp_code"}),
 }
 
+PERSON_PATCH_FIELDS = frozenset({"full_name", "phone", "email", "preferred_channel"})
+NOTIFICATION_PATCH_FIELDS = frozenset(
+    {
+        "copy_booker",
+        "zalo_enabled",
+        "sms_enabled",
+        "email_enabled",
+        "reminder_24h_enabled",
+        "reminder_2h_enabled",
+    }
+)
+LICENSE_PATCH_FIELDS = frozenset(
+    {
+        "has_driving_license",
+        "has_valid_license_commitment",
+        "declared_license_class",
+        "validity_acknowledged",
+    }
+)
+
+# Nested object contracts close the gap left by top-level allowlists. Domain
+# services still own type/required/business validation; this policy only blocks
+# fields that can never be accepted at the public action boundary.
+ACTION_NESTED_ALLOWED_FIELDS: dict[str, dict[str, frozenset[str]]] = {
+    "update_draft": {
+        "booker_patch": PERSON_PATCH_FIELDS,
+        "driver_patch": PERSON_PATCH_FIELDS,
+        "notification_plan_patch": NOTIFICATION_PATCH_FIELDS,
+    }
+}
+
 # `/demo/action` is also a public tool boundary, even though it bypasses the
 # LLM. Keep a separate contract because it exposes additional authenticated
 # booking-management commands.
@@ -110,6 +144,19 @@ DEMO_ACTION_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     "cancel_booking": frozenset({"booking_id", "access_session_token", "ui_action_id", "reason"}),
 }
 
+DEMO_ACTION_NESTED_ALLOWED_FIELDS: dict[str, dict[str, frozenset[str]]] = {
+    "update_draft": {
+        "booker_patch": PERSON_PATCH_FIELDS,
+        "driver_patch": PERSON_PATCH_FIELDS,
+        "license_patch": LICENSE_PATCH_FIELDS,
+        "notification_plan_patch": NOTIFICATION_PATCH_FIELDS,
+    },
+    "update_details": {
+        "booker_patch": PERSON_PATCH_FIELDS,
+        "driver_patch": PERSON_PATCH_FIELDS,
+    },
+}
+
 MUTATING_TOOL_NAMES = frozenset(
     {
         "hold_test_drive_slot",
@@ -133,16 +180,23 @@ SECRET_VALUE_KEYS = frozenset(
         "authorization",
         "challenge_id",
         "client_secret",
+        "code_hash",
         "contact_value",
         "cookie",
+        "destination_hash",
         "license_number",
         "openai_api_key",
         "openrouter_api_key",
         "otp",
         "otp_code",
         "password",
+        "private_key",
         "refresh_token",
+        "secret",
+        "session_token",
         "token",
+        "token_hash",
+        "x_api_key",
         "zalo_bot_token",
     }
 )
@@ -156,17 +210,40 @@ PUBLIC_TOOL_INPUT_SECRET_KEYS = SECRET_VALUE_KEYS | frozenset(
 # never cross this boundary.
 NEVER_PUBLIC_ACTION_DATA_KEYS = frozenset(
     {
+        "access_token",
         "api_key",
         "authorization",
         "client_secret",
+        "code_hash",
         "cookie",
+        "destination_hash",
         "openai_api_key",
         "openrouter_api_key",
         "otp",
         "otp_code",
         "password",
+        "private_key",
         "refresh_token",
+        "secret",
+        "session_token",
         "token",
+        "token_hash",
+        "x_api_key",
         "zalo_bot_token",
     }
 )
+
+
+def canonicalize_sensitive_key(key: str) -> str:
+    """Make snake-, kebab-, space- and camel-style keys comparable."""
+    return re.sub(r"[^a-z0-9]", "", key.casefold())
+
+
+@lru_cache(maxsize=16)
+def _canonical_sensitive_keys(sensitive_keys: frozenset[str]) -> frozenset[str]:
+    return frozenset(canonicalize_sensitive_key(item) for item in sensitive_keys)
+
+
+def is_sensitive_key(key: str, sensitive_keys: frozenset[str]) -> bool:
+    candidate = canonicalize_sensitive_key(key)
+    return candidate in _canonical_sensitive_keys(sensitive_keys)
