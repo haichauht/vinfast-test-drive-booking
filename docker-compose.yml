@@ -15,6 +15,17 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   db-seed:
     image: vinfast-backend:dev
     profiles: ["seed"]
@@ -45,6 +56,8 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://vinfast:vinfast@postgres:5432/vinfast_booking
+      REDIS_ENABLED: "true"
+      REDIS_URL: redis://redis:6379/0
       EVAL_DATA_DIR: /app/eval/data
     volumes:
       - ./backend/logs:/app/logs
@@ -52,6 +65,8 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
