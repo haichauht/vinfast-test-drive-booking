@@ -32,7 +32,7 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 - **Behavior**: Returns available showrooms.
 - **Agent Action**: 
   - If the user ONLY requested to view or switch vehicle models (no address/location specified yet): Inform the user that ViVi has updated the vehicle specification panel to the selected model (e.g. VF 9) on the interface, and ask them to provide their city/district/address to find nearby showrooms.
-  - If the user provided an address/location: Inform the user that the showroom map and list for that location have been updated on the workspace. Direct the user to select a showroom on the interface. If a searched location has no local showroom, explain politely that ViVi is displaying the nearest surrounding showrooms for them to choose.
+  - If the user provided an address/location (including any Vietnamese ward, commune, district, or province like "phường Thảo Điền", "phường Bình Hưng Hòa", "Quận 1", "Quế Sơn"): Whenever `search_test_drive_options` completes with `status = success`, ViVi MUST inform the user that the nearby showrooms have been updated on the map/list and invite them to select a showroom. NEVER output an out-of-scope fallback message when `search_test_drive_options` returns showrooms successfully. If a searched location has no direct showroom, explain politely that ViVi is displaying the nearest surrounding showrooms for them to choose.
 
 #### Stage 2: Slot Selection (`search_stage = "slot_selection"`)
 - **Condition**: A specific showroom is selected (`showroom_id` is supplied).
