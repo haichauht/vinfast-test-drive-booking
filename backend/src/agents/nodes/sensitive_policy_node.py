@@ -27,6 +27,12 @@ async def sensitive_policy_node(state: AgentState) -> dict:
             "ViVi không hỗ trợ viết mã lập trình hoặc giải quyết các tác vụ kỹ thuật khác. "
             "ViVi có thể giúp gì cho bạn về đặt lịch lái thử xe điện VinFast không?"
         )
+    elif sub_intent == "out_of_scope":
+        response = (
+            "ViVi hiện chỉ hỗ trợ đặt lịch lái thử xe điện VinFast. "
+            "Tính năng tư vấn thông tin xe và hướng dẫn sau khi đặt lịch chỉ khả dụng "
+            "khi bạn đã có lịch lái thử được xác nhận."
+        )
     else:
         # Default safety fallback for any unknown sensitive sub_intent
         response = (

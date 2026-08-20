@@ -25,14 +25,17 @@ logger = logging.getLogger(__name__)
 
 class RouteSchema(BaseModel):
     intent: str = Field(
-        description="The classified intent of the user. Must be one of: 'domain' or 'sensitive'"
+        description=(
+            "The classified intent of the user. Must be one of: 'domain', 'out_of_scope', "
+            "or 'sensitive'."
+        )
     )
     sub_intent: str = Field(
         description=(
             "Detailed classification. Must be one of: booking_new, booking_lookup, "
             "booking_reschedule, booking_cancel, booking_update_details, "
-            "booking_update_notifications, vehicle_info, sovereignty, "
-            "out_of_scope_code, out_of_scope_math, others"
+            "booking_update_notifications, post_booking_advisory, vehicle_info, "
+            "out_of_scope, others. If intent is sensitive, use others."
         )
     )
     contact_value: str | None = Field(
@@ -100,7 +103,9 @@ async def classifier_node(state: AgentState) -> dict:
     if any(kw in lower_query for kw in BOOKING_MUTATION_KEYWORDS):
         return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "booking"}, "tool_call_count": 0}
     if any(kw in lower_query for kw in ADVISORY_KEYWORDS):
-        active_skill = "post_booking" if post_booking_active else "booking"
+        if not post_booking_active:
+            return {"intent": "out_of_scope", "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "out_of_scope"}, "tool_call_count": 0}
+        active_skill = "post_booking"
         return {"intent": "domain", "active_skill": active_skill, "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "vehicle_info"}, "tool_call_count": 0}
     if any(phrase in lower_query for phrase in ("xin chào", "chào bạn", "hello", "hi ")):
         return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "greeting"}, "tool_call_count": 0}
@@ -158,7 +163,7 @@ async def classifier_node(state: AgentState) -> dict:
         "A successful/confirmed booking makes post_booking_advisory more likely for subsequent "
         "test-drive-related guidance, unless the user is clearly requesting another booking action.\n"
         "\n"
-        "If intent is out_of_scope or sensitive, use sub_intent=others.\n"
+        "If intent is out_of_scope, use sub_intent=out_of_scope. If intent is sensitive, use sub_intent=others.\n"
         "\n"
         "If the query contains an email, copy it exactly to contact_value. "
         "Otherwise return null. Never invent contact_value.\n"
@@ -187,14 +192,22 @@ async def classifier_node(state: AgentState) -> dict:
 
         route_result = cast(RouteSchema, result)
         intent = route_result.intent
-        if intent not in {"domain", "sensitive"}:
+        if intent not in {"domain", "out_of_scope", "sensitive"}:
             intent = "domain"
 
         sub_intent = route_result.sub_intent
-        # This public MVP only exposes booking. Keep the detailed sub-intent
-        # for OTP/workflow handling, but do not route normal requests to the
-        # unfinished advisory skill.
-        active_skill = "post_booking" if post_booking_active and sub_intent == "vehicle_info" else "booking"
+        if intent == "domain" and not post_booking_active and sub_intent in {"post_booking_advisory", "vehicle_info"}:
+            intent = "out_of_scope"
+            sub_intent = "out_of_scope"
+        active_skill = (
+            "post_booking"
+            if (
+                intent == "domain"
+                and post_booking_active
+                and sub_intent in {"post_booking_advisory", "vehicle_info"}
+            )
+            else "booking"
+        )
         trace_event(
             "llm.response",
             trace_id=trace_id,
