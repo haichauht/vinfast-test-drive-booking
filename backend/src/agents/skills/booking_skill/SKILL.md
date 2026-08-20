@@ -24,13 +24,15 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 - When the user asks to view, choose, or switch to another vehicle, call `search_test_drive_options` with `vehicle_model` even if no address is known yet.
 - When the user gives a location, call `search_test_drive_options` with that `address` and the vehicle from the current UI context. Only ask for a vehicle if the context does not contain one.
 - When the user asks to use their current location (for example "gần tôi", "định vị tôi", or "vị trí hiện tại"), call `request_user_location`. The browser client will ask for GPS permission and then call `search_test_drive_options` with latitude/longitude.
-- A vehicle-only search updates the vehicle panel and provides location suggestions. A search containing an address updates the showroom map. State that transition clearly in the answer.
-- Do not invent vehicle, showroom, distance, or availability data. UI cards are populated from the completed tool result.
+- A vehicle-only search updates the vehicle panel (`'car'`). Prompt the user to enter their location/address to find nearby showrooms. NEVER claim that the showroom map or showroom list has been updated when the user has not provided a location yet.
+- A search containing an address or location updates the showroom map (`'map'`).
 
 #### Stage 1: Showroom Selection (`search_stage = "showroom_selection"`)
-- **Condition**: User provided an address/location, but no specific showroom is selected.
-- **Behavior**: Returns matching showrooms. Distances are included only for an explicit current-location coordinate search.
-- **Agent Action**: Inform the user that the showroom map and list have been loaded on the right panel. To avoid visual redundancy and keep the chat clean, DO NOT write tables or lists of all showrooms in the chat text. Simply direct the user to click on the map marker or select from the list in the right-hand workspace.
+- **Condition**: Vehicle model is selected.
+- **Behavior**: Returns available showrooms.
+- **Agent Action**: 
+  - If the user ONLY requested to view or switch vehicle models (no address/location specified yet): Inform the user that ViVi has updated the vehicle specification panel to the selected model (e.g. VF 9) on the interface, and ask them to provide their city/district/address to find nearby showrooms.
+  - If the user provided an address/location: Inform the user that the showroom map and list for that location have been updated on the workspace. Direct the user to select a showroom on the interface. If a searched location has no local showroom, explain politely that ViVi is displaying the nearest surrounding showrooms for them to choose.
 
 #### Stage 2: Slot Selection (`search_stage = "slot_selection"`)
 - **Condition**: A specific showroom is selected (`showroom_id` is supplied).

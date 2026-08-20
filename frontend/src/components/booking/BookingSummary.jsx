@@ -77,32 +77,44 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick, onBac
     const values = [...new Set(slots.flatMap((day) => day.times.map((entry) => timeKey(entry.time))))]
     return (values.length ? values : DEFAULT_TIMES).sort((a, b) => timeAsMinutes(a) - timeAsMinutes(b))
   }, [slots])
-  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => {
-    const date = addDays(weekStart, index)
-    const key = dateKey(date)
-    const source = slotMap.get(key)
-    const availableCount = source?.times.filter((entry) => entry.isAvailable).length || 0
-    return {
-      date,
-      key,
-      source,
-      availableCount,
-      dayNumber: String(date.getDate()).padStart(2, '0'),
-      monthNumber: String(date.getMonth() + 1).padStart(2, '0'),
-    }
-  }), [slotMap, weekStart])
+  const currentPageStart = useMemo(() => {
+    const d = new Date()
+    d.setHours(12, 0, 0, 0)
+    return d
+  }, [])
 
-  const weekAvailableCount = weekDays.reduce((total, day) => total + day.availableCount, 0)
-  const weekSlotCount = weekDays.reduce((total, day) => total + (day.source?.times.length || 0), 0)
-  const weekEnd = weekDays[6]?.date || addDays(weekStart, 6)
-  const rangeLabel = `${new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit' }).format(weekStart)} – ${new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(weekEnd)}`
-  const currentPageStart = new Date()
-  currentPageStart.setHours(12, 0, 0, 0)
   const nextMonday = startOfWeek(addDays(currentPageStart, 7))
-  const lastVisibleDate = addDays(currentPageStart, 30)
+  const lastVisibleDate = addDays(currentPageStart, 90)
   const lastVisibleWeekStart = startOfWeek(lastVisibleDate)
   const isCurrentWeek = dateKey(weekStart) === dateKey(currentPageStart)
   const isLastVisibleWeek = dateKey(weekStart) >= dateKey(lastVisibleWeekStart)
+  const todayIndex = (currentPageStart.getDay() + 6) % 7
+
+  const weekDays = useMemo(() => {
+    const daysCount = isCurrentWeek ? (7 - todayIndex) : 7
+    return Array.from({ length: daysCount }, (_, index) => {
+      const offset = index
+      const date = addDays(weekStart, offset)
+      const key = dateKey(date)
+      const source = slotMap.get(key)
+      const availableCount = source?.times.filter((entry) => entry.isAvailable).length || 0
+      const weekdayIdx = isCurrentWeek ? (todayIndex + index) : index
+      return {
+        date,
+        key,
+        source,
+        availableCount,
+        weekdayIndex: weekdayIdx,
+        dayNumber: String(date.getDate()).padStart(2, '0'),
+        monthNumber: String(date.getMonth() + 1).padStart(2, '0'),
+      }
+    })
+  }, [slotMap, weekStart, isCurrentWeek, todayIndex])
+
+  const weekAvailableCount = weekDays.reduce((total, day) => total + day.availableCount, 0)
+  const weekSlotCount = weekDays.reduce((total, day) => total + (day.source?.times.length || 0), 0)
+  const weekEnd = weekDays[weekDays.length - 1]?.date || addDays(weekStart, 6)
+  const rangeLabel = `${new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit' }).format(weekStart)} – ${new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(weekEnd)}`
   const weekStamp = weekStart.getTime()
 
   useEffect(() => {
@@ -114,7 +126,7 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick, onBac
   useEffect(() => {
     if (!pendingSlot?.slotId) return
     const selectedDay = slots.find((day) => day.times.some((entry) => entry.slotId === pendingSlot.slotId))
-    if (selectedDay) setWeekStart(startOfWeek(parseDateValue(selectedDay.value)))
+    if (selectedDay) setWeekStart(parseDateValue(selectedDay.value))
   }, [pendingSlot?.slotId, slots])
 
   useGSAP(() => {
@@ -149,6 +161,8 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick, onBac
     }
     onPick({ date: day.key, dateLabel: day.source.dateLabel, time: entry.time, slotId: entry.slotId })
   }
+
+  const gridStyle = { gridTemplateColumns: `72px repeat(${weekDays.length}, minmax(118px, 1fr))` }
 
   return (
     <section className="studio-schedule studio-schedule--calendar" aria-label="Lịch lái thử" ref={root}>
@@ -188,13 +202,13 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick, onBac
 
         <div className="schedule-calendar__viewport">
           <div className="schedule-calendar__matrix" role="grid" aria-label={`Lịch tuần ${rangeLabel}`}>
-            <div className="schedule-calendar__week" role="row">
+            <div className="schedule-calendar__week" style={gridStyle} role="row">
               <div className="schedule-calendar__time-title" role="columnheader"><Clock size={15} weight="light" /> Giờ</div>
-              {weekDays.map((day, index) => {
+              {weekDays.map((day) => {
                 const isToday = dateKey(new Date()) === day.key
                 return (
                   <div className={`schedule-calendar__day ${isToday ? 'is-today' : ''}`} role="columnheader" key={day.key}>
-                    <span>{WEEKDAY_LABELS[index]}</span>
+                    <span>{WEEKDAY_LABELS[day.weekdayIndex]}</span>
                     <strong>{day.dayNumber}</strong>
                     <small>{day.availableCount ? `${day.availableCount} lịch` : `${day.monthNumber}/${day.date.getFullYear()}`}</small>
                   </div>
@@ -204,7 +218,7 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick, onBac
 
             <div className="schedule-calendar__body">
               {timeRows.map((time) => (
-                <div className="schedule-calendar__row" role="row" key={time}>
+                <div className="schedule-calendar__row" style={gridStyle} role="row" key={time}>
                   <div className="schedule-calendar__time" role="rowheader">{time}</div>
                   {weekDays.map((day) => {
                     const entry = day.source?.times.find((candidate) => timeKey(candidate.time) === time)

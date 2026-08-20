@@ -168,83 +168,8 @@ async def booking_skill_node(state: AgentState) -> dict:
     trace_id = metadata.get("trace_id", "")
 
     last_message = messages[-1] if messages else None
-    sub_intent = str(metadata.get("sub_intent") or "")
-    access_purpose = ACCESS_INTENT_PURPOSES.get(sub_intent)
 
-    if isinstance(last_message, ToolMessage) and last_message.name == request_booking_access.name:
-        failed = getattr(last_message, "status", "success") == "error"
-        decoded = _decode_tool_result(last_message)
-        error_code, public_error = _public_tool_error(decoded)
-        tool_input = _tool_call_input(messages, last_message)
-        needs_contact = isinstance(decoded, dict) and bool(decoded.get("requires_contact_value"))
-        response_text = (
-            public_error
-            if failed
-            else "Vui lòng nhập email đã đăng ký để tra cứu lịch."
-            if needs_contact
-            else "ViVi đã gửi mã OTP qua email. Bạn vui lòng nhập mã để tiếp tục."
-        )
-        response = AIMessage(content=response_text)
-        trace_event(
-            "tool.result",
-            trace_id=trace_id,
-            node="booking_skill",
-            tool_message=message_to_log(last_message),
-            input=tool_input,
-            result=decoded,
-            failed=failed,
-        )
-        tool_logger.info(
-            "tool_completed tool=%s status=%s input=%s",
-            last_message.name,
-            "error" if failed else "success",
-            _safe_tool_input(tool_input),
-        )
-        return {
-            "messages": [response],
-            "response": response_text,
-            "action_tool": last_message.name,
-            "action_input": tool_input,
-            "action_result": None if failed else decoded,
-            "action_error": error_code if failed else "",
-            "metadata": metadata,
-        }
 
-    if not state.get("requested_action") and access_purpose:
-        contact_value = str((state.get("intent_entities") or {}).get("contact_value") or "").strip()
-        action_payload = {
-            "purpose": access_purpose,
-            "preferred_channel": "email",
-        }
-        if contact_value:
-            action_payload["contact_value"] = contact_value
-        tool_call = AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": request_booking_access.name,
-                    "args": action_payload,
-                    "id": _structured_tool_call_id("intent_request_access", action_payload),
-                    "type": "tool_call",
-                }
-            ],
-        )
-        trace_event(
-            "tool.call",
-            trace_id=trace_id,
-            node="booking_skill",
-            source="classified_intent",
-            action=sub_intent,
-            tool=request_booking_access.name,
-            args=action_payload,
-            tool_call_id=tool_call.tool_calls[0].get("id"),
-        )
-        tool_logger.info(
-            "tool_dispatched tool=%s mode=classified_intent input=%s",
-            request_booking_access.name,
-            _safe_tool_input(action_payload),
-        )
-        return {"messages": [tool_call], "tool_call_count": 1, "metadata": metadata}
 
     if requested_action:
         tool = STRUCTURED_ACTION_TO_TOOL.get(requested_action)
