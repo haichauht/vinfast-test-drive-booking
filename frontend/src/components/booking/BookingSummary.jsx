@@ -84,7 +84,7 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick, onBac
   }, [])
 
   const nextMonday = startOfWeek(addDays(currentPageStart, 7))
-  const lastVisibleDate = addDays(currentPageStart, 90)
+  const lastVisibleDate = addDays(currentPageStart, 60)
   const lastVisibleWeekStart = startOfWeek(lastVisibleDate)
   const isCurrentWeek = dateKey(weekStart) === dateKey(currentPageStart)
   const isLastVisibleWeek = dateKey(weekStart) >= dateKey(lastVisibleWeekStart)
@@ -124,10 +124,27 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, onPick, onBac
   }, [car.id, showroom.id])
 
   useEffect(() => {
-    if (!pendingSlot?.slotId) return
-    const selectedDay = slots.find((day) => day.times.some((entry) => entry.slotId === pendingSlot.slotId))
-    if (selectedDay) setWeekStart(parseDateValue(selectedDay.value))
-  }, [pendingSlot?.slotId, slots])
+    if (pendingSlot?.slotId) {
+      const selectedDay = slots.find((day) => day.times.some((entry) => entry.slotId === pendingSlot.slotId))
+      if (selectedDay) {
+        setWeekStart(parseDateValue(selectedDay.value))
+        return
+      }
+    }
+    if (slots.length) {
+      const firstAvailableDay = slots.find((day) => day.times?.some((entry) => entry.isAvailable)) || slots[0]
+      if (firstAvailableDay) {
+        const dateObj = parseDateValue(firstAvailableDay.value)
+        if (dateObj) {
+          const targetKey = dateKey(dateObj)
+          const currentKey = dateKey(currentPageStart)
+          if (targetKey > currentKey) {
+            setWeekStart(dateObj)
+          }
+        }
+      }
+    }
+  }, [pendingSlot?.slotId, slots, currentPageStart])
 
   useGSAP(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
