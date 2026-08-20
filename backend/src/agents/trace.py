@@ -8,39 +8,32 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
+from src.guardrails.policies import PUBLIC_TOOL_INPUT_SECRET_KEYS, SECRET_VALUE_KEYS, is_sensitive_key
+
 LOGGER_NAME = "ai_agent"
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _PHONE_RE = re.compile(r"(?<!\d)(?:\+?84|0)(?:[\s.-]?\d){8,10}(?!\d)")
-_SECRET_KEYS = {
-    "access_session_token",
-    "access_token",
-    "api_key",
-    "authorization",
-    "code_hash",
-    "contact_value",
-    "destination_hash",
-    "email",
-    "license_number",
-    "normalized_email",
-    "normalized_phone",
-    "otp",
-    "otp_code",
-    "password",
-    "phone",
-    "token",
-    "token_hash",
-}
+_CREDENTIAL_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b("
+    r"(?:openai|openrouter|x)?[_ -]?api[_ -]?key|"
+    r"access[_ -]?(?:session[_ -]?)?token|session[_ -]?token|refresh[_ -]?token|"
+    r"authorization|client[_ -]?secret|private[_ -]?key|cookie|"
+    r"otp(?:[_ -]?code)?|password|secret|token"
+    r")\s*[:=]\s*(?:bearer\s+)?([^\s,;]+)"
+)
+_SECRET_KEYS = SECRET_VALUE_KEYS | PUBLIC_TOOL_INPUT_SECRET_KEYS
 
 
 def _mask_text(value: str, *, limit: int = 4000) -> str:
     masked = _EMAIL_RE.sub("[email]", value)
     masked = _PHONE_RE.sub("[phone]", masked)
+    masked = _CREDENTIAL_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}=[redacted]", masked)
     return masked if len(masked) <= limit else masked[:limit] + "...[truncated]"
 
 
 def redact(value: Any, *, key: str = "") -> Any:
-    if key.lower() in _SECRET_KEYS:
+    if is_sensitive_key(key, _SECRET_KEYS):
         return "[redacted]"
     if isinstance(value, str):
         return _mask_text(value)

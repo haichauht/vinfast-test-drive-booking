@@ -63,7 +63,7 @@ Ba enforcement point tương ứng:
 
 ### 4.1 Unicode normalization
 
-Tin nhắn được chuẩn hóa NFC và loại các ký tự điều khiển/zero-width thường dùng để né pattern matching. Tab và newline hợp lệ vẫn được giữ. Agent chỉ nhận `sanitized_text`, không nhận bản raw.
+Tin nhắn được chuẩn hóa NFKC để gộp compatibility/full-width glyph và loại toàn bộ Unicode format control, gồm zero-width và bidi override thường dùng để né pattern matching. Tab và newline hợp lệ vẫn được giữ. Agent chỉ nhận `sanitized_text`, không nhận bản raw.
 
 ### 4.2 Prompt injection
 
@@ -85,6 +85,8 @@ Khi block, API trả `200` với câu từ chối thân thiện và `action_erro
 
 Mỗi action chỉ nhận các top-level field được khai báo trong `ACTION_ALLOWED_FIELDS`. Ví dụ `verify_access` chỉ nhận `challenge_id` và `otp_code`; một field như `admin=true` sẽ bị chặn trước khi đến tool.
 
+Các object patch còn có allowlist cấp hai trong `ACTION_NESTED_ALLOWED_FIELDS` và `DEMO_ACTION_NESTED_ALLOWED_FIELDS`. Vì vậy `booker_patch.is_admin` hoặc một `booker_patch` không phải object bị chặn tại boundary, thay vì rơi xuống service và tạo lỗi SQL/validation không ổn định.
+
 Type, required field và validation nghiệp vụ vẫn do Pydantic schema của tool và `BookingService` xử lý. Guardrail không lặp lại các rule nghiệp vụ để tránh hai source of truth.
 
 ## 5. Chính sách tool
@@ -102,7 +104,7 @@ Trước khi `ToolNode` chạy, guard kiểm tra:
 4. Arguments là object và nằm trong payload budget.
 5. Không có hai call giống hệt nhau trong cùng model response.
 6. Tool có side effect phải chạy một mình; không batch với tool khác.
-7. `confirm_test_drive_booking` chỉ chạy khi structured action đã xác nhận hoặc câu hiện tại có ý xác nhận rõ ràng.
+7. `confirm_test_drive_booking` chỉ chạy khi structured action đã xác nhận hoặc câu hiện tại có ý xác nhận rõ ràng. Câu phủ định như “không xác nhận”, “chưa chốt” và “do not confirm” không được xem là đồng ý.
 
 Nếu một call trong batch vi phạm, **toàn bộ batch bị chặn** để tránh trạng thái partial-write. Guard tạo `ToolMessage(status="error")`; booking skill xử lý nó theo luồng lỗi hiện có.
 
@@ -118,7 +120,7 @@ Giới hạn `MAX_TOOL_CALLS=8` trong graph vẫn được giữ. Hai lớp có 
 - Số điện thoại và email trong natural-language response được thay bằng `[phone]`/`[email]`.
 - Nếu output chứa marker của system prompt, toàn bộ text được thay bằng safe fallback.
 - Output quá dài bị cắt theo `GUARDRAILS_MAX_OUTPUT_CHARS`.
-- `tool_input` là diagnostic field nên phone, email, OTP, token và contact đều bị redact đệ quy.
+- `tool_input` là diagnostic field nên phone, email, OTP, token và contact đều bị redact đệ quy. Tên key được canonicalize nên `openrouter_api_key`, `openrouterApiKey` và `openrouter-api-key` được xử lý nhất quán.
 - `action_data` là workflow channel cho frontend. `challenge_id` và `access_session_token` được giữ vì frontend cần chúng để hoàn tất OTP flow; raw OTP, API key, password và backend token vẫn bị redact.
 
 `/demo/action` không còn bật `expose_otp`; raw OTP chỉ được phép dùng trong service test fixture. Production phải gửi OTP qua provider đã cấu hình và client chỉ nhận `destination_masked` cùng `challenge_id`.
@@ -139,7 +141,7 @@ Các biến có default an toàn trong `src/config.py` và được minh họa �
 | `GUARDRAILS_MAX_TOOL_CALLS_PER_MESSAGE` | `3` | Fan-out tối đa trong một model response. |
 | `GUARDRAILS_MAX_OUTPUT_CHARS` | `8000` | Độ dài text tối đa trả về client. |
 
-Không nên tắt guardrails ở production. Nếu cần debug local, tắt bằng env và khởi động lại process vì settings/guardrails được cache.
+Không thể tắt guardrails khi `APP_ENV=production`; Settings validation sẽ fail startup. Nếu cần debug local, chỉ tắt ở development/test và khởi động lại process vì settings/guardrails được cache.
 
 ## 8. Logging và quan sát vận hành
 
@@ -157,12 +159,18 @@ Không ghi raw prompt, OTP, contact, access token hoặc tool result vào log đ
 
 ## 9. Kiểm thử
 
-Test tập trung nằm tại `backend/tests/test_guardrails/` và API integration test tại `backend/tests/test_api/test_guardrails.py`.
+Test tập trung nằm tại `backend/tests/test_guardrails/`, API integration test tại `backend/tests/test_api/test_guardrails.py`, và quality gate dữ liệu tại `backend/tests/test_guardrail_benchmark.py`. Chiến lược test đầy đủ nằm ở `backend/tests/README.md`; benchmark README nằm ở `eval/benchmarks/README.md`.
 
 Chạy từ folder `backend`:
 
 ```bash
 pytest tests/test_guardrails tests/test_api/test_guardrails.py -q
+```
+
+Chạy benchmark deterministic từ root repo:
+
+```bash
+python backend/scripts/run_guardrail_benchmark.py --fail-under 1.0
 ```
 
 Chạy toàn bộ backend regression:
@@ -218,3 +226,7 @@ Chỉ thêm pattern có tín hiệu hành động + mục tiêu rõ ràng. Trán
 - Alert khi guardrail block tăng đột biến hoặc khi tool policy bị vi phạm.
 - Chạy guardrail test và full regression trước mỗi release.
 - Review `policies.py` khi thêm action, tool, credential hoặc kênh tích hợp mới.
+
+## 13. Audit và traceability
+
+Báo cáo review theo finding, mức độ, bằng chứng, remediation và residual risk nằm tại `AUDIT_REPORT.md`. Mọi finding đã sửa phải trỏ đến unit/integration test và benchmark `case_id`; finding chưa sửa phải có owner, điều kiện đóng và không được mô tả như đã pass.

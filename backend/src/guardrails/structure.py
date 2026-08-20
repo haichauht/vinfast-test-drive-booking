@@ -6,14 +6,6 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-_REMOVED_FORMAT_CHARACTERS = {
-    "\u200b",  # zero-width space
-    "\u200c",  # zero-width non-joiner
-    "\u200d",  # zero-width joiner
-    "\u2060",  # word joiner
-    "\ufeff",  # BOM / zero-width no-break space
-}
-
 
 @dataclass(frozen=True, slots=True)
 class PayloadLimits:
@@ -24,14 +16,19 @@ class PayloadLimits:
 
 
 def normalize_text(value: str) -> str:
-    """Normalize harmless Unicode differences and remove invisible controls."""
-    normalized = unicodedata.normalize("NFC", value)
+    """Canonicalize compatibility forms and remove invisible controls.
+
+    NFKC folds full-width Latin characters and other compatibility glyphs that
+    attackers commonly use to evade ASCII-oriented policy patterns. Format
+    controls (including bidi overrides and zero-width characters) are removed
+    because they have no business meaning in this Vietnamese booking channel.
+    Newlines and tabs remain available for normal messages.
+    """
+    normalized = unicodedata.normalize("NFKC", value)
     cleaned: list[str] = []
     for character in normalized:
-        if character in _REMOVED_FORMAT_CHARACTERS:
-            continue
         category = unicodedata.category(character)
-        if category == "Cc" and character not in {"\n", "\r", "\t"}:
+        if category == "Cf" or (category == "Cc" and character not in {"\n", "\r", "\t"}):
             continue
         cleaned.append(character)
     return "".join(cleaned).strip()

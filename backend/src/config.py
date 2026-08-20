@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://vinfast:vinfast@localhost:5432/vinfast_booking"
     auto_load_eval_data: bool = True
     eval_data_dir: str = "eval/data"
+    booking_advance_window_days: int = Field(default=30, ge=1, le=365)
 
     # Media: local development serves MEDIA_ROOT at /media. Production can set
     # MEDIA_BASE_URL to an absolute CDN origin without changing API DTOs.
@@ -74,6 +75,8 @@ class Settings(BaseSettings):
     def require_production_otp_secret(self):
         if self.app_env == "production" and len(self.booking_access_otp_secret) < 32:
             raise ValueError("BOOKING_ACCESS_OTP_SECRET must be at least 32 characters in production.")
+        if self.app_env == "production" and not self.guardrails_enabled:
+            raise ValueError("GUARDRAILS_ENABLED cannot be false in production.")
         return self
 
 

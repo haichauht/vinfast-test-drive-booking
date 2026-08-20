@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from src.guardrails.models import GuardrailDecision
-from src.guardrails.policies import ACTION_ALLOWED_FIELDS, PROMPT_INJECTION_PATTERNS
+from src.guardrails.policies import (
+    ACTION_ALLOWED_FIELDS,
+    ACTION_NESTED_ALLOWED_FIELDS,
+    PROMPT_INJECTION_PATTERNS,
+)
 from src.guardrails.structure import PayloadLimits, iter_strings, normalize_text, validate_payload
 
 _SAFE_CONVERSATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$")
@@ -58,6 +63,7 @@ class InputGuard:
                 action=action,
                 payload=action_payload,
                 contracts=ACTION_ALLOWED_FIELDS,
+                nested_contracts=ACTION_NESTED_ALLOWED_FIELDS,
             )
             if not action_decision.allowed:
                 return action_decision
@@ -94,6 +100,7 @@ class InputGuard:
         action: str,
         payload: dict[str, Any],
         contracts: dict[str, frozenset[str]],
+        nested_contracts: dict[str, dict[str, frozenset[str]]] | None = None,
     ) -> GuardrailDecision:
         payload_decision = self.inspect_payload(payload, label="action_payload")
         if not payload_decision.allowed:
@@ -113,4 +120,27 @@ class InputGuard:
                 _INVALID_PAYLOAD_MESSAGE,
                 details={"action": action, "fields": unexpected},
             )
+        for field, nested_allowed_fields in (nested_contracts or {}).get(action, {}).items():
+            nested_value = payload.get(field)
+            if nested_value is None:
+                continue
+            if not isinstance(nested_value, Mapping):
+                return GuardrailDecision.block(
+                    "ACTION_FIELD_TYPE_INVALID",
+                    f"structured action field must be an object: {action}.{field}",
+                    _INVALID_PAYLOAD_MESSAGE,
+                    details={"action": action, "field": field},
+                )
+            unexpected_nested = sorted(set(map(str, nested_value)) - nested_allowed_fields)
+            if unexpected_nested:
+                return GuardrailDecision.block(
+                    "ACTION_FIELDS_NOT_ALLOWED",
+                    "structured action contains nested fields outside its contract",
+                    _INVALID_PAYLOAD_MESSAGE,
+                    details={
+                        "action": action,
+                        "field": field,
+                        "fields": unexpected_nested,
+                    },
+                )
         return GuardrailDecision.allow()

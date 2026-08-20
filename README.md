@@ -8,6 +8,7 @@
 - `backend/src/internal_portal`: authentication, RBAC, showroom scope và Internal API dùng chung booking service.
 - `admin`: Streamlit dashboard/import data.
 - `eval/data`: bộ CSV seed dữ liệu booking/catalog.
+- `eval/golden`: bộ case đánh giá agent và bảo mật được version-control, không import vào DB.
 
 ## Chạy Bằng Docker
 
@@ -42,7 +43,8 @@ eval/data -> /app/eval/data
 Importer tự nhận diện một trong hai định dạng:
 
 - Legacy: các file `01_vehicle_models.csv` đến `15_booking_events.csv` nằm trực tiếp trong `eval/data`.
-- V5: package đầy đủ nằm trong `eval/data`, với 32 file CSV trong thư mục `eval/data/seed`.
+- V5.2: enriched business snapshot PostgreSQL nằm trong `eval/data`, với 32 file CSV trong
+  thư mục `eval/data/seed`.
 
 Khi database rỗng, backend sẽ import toàn bộ các file theo thứ tự dependency. Bộ legacy gồm:
 
@@ -68,18 +70,19 @@ Bộ V5 bắt đầu bằng `seed/01_provinces.csv`, kết thúc bằng
 `seed/32_internal_audit_events.csv`, và bao gồm geography, showroom metadata,
 RBAC/Internal Portal, vận hành xe/nhân viên, booking, OTP, notification và audit.
 
-Các file data gốc được lưu tại Google Drive:
+Baseline hiện tại được xuất từ PostgreSQL sau khi gộp 10 showroom trùng. Snapshot
+có 319 showroom, 900 staff, 319 manager, một operations admin, 1.356 xe demo,
+576.300 slot và 9.369 booking. Lịch seed kéo dài đến 31/10/2026; backend chỉ
+cho tìm và giữ slot trong vòng 30 ngày tính từ thời điểm gửi yêu cầu. Số liệu chi tiết nằm trong
+`eval/data/DATASET_OVERVIEW.md` và `eval/data/VALIDATION_REPORT.json`.
 
-<REMOVED-PRIVATE-LINK>
-
-Tải các file CSV từ Drive về `eval/data`, sau đó chạy:
+Khi database rỗng, chỉ cần chạy:
 
 ```powershell
-docker compose down -v
 docker compose up --build
 ```
 
-Khi import thành công, log `db-seed` sẽ có dạng:
+Khi import thành công, log backend hoặc `db-seed` sẽ có dạng:
 
 ```text
 Imported full eval dataset from /app/eval/data: ...
@@ -102,6 +105,46 @@ docker compose up --build
 ```
 
 Nếu đã sửa code seed/import, luôn dùng `--build`; nếu không Docker có thể chạy image cũ.
+
+Snapshot không chứa session portal đang hoạt động, LangGraph checkpoints, trạng
+thái đã đọc của thông báo web hoặc Zalo polling offsets. Các phần này được tạo
+lại khi ứng dụng chạy.
+
+## Xuất Snapshot Từ PostgreSQL
+
+PostgreSQL đang chạy là nguồn dữ liệu gốc. Sau khi chỉnh dữ liệu trực tiếp trong
+DB, xuất lại business snapshot vào `eval/data` bằng đúng container backend để
+tránh kết nối nhầm một PostgreSQL local khác:
+
+```powershell
+docker compose run --rm --no-deps `
+  -v "${PWD}/backend/scripts:/app/scripts:ro" `
+  -v "${PWD}/eval/data:/app/export" `
+  backend python scripts/export_postgres_baseline.py --output-dir /app/export
+```
+
+Exporter ghi lại 32 file seed, metadata, validation report, manifest và checksum.
+Lệnh trả về lỗi nếu DB không còn đúng baseline 319 showroom, 900 staff, 319
+manager và một operations admin. Nên tạo `pg_dump` trước khi chạy migration hoặc
+thay đổi dữ liệu hàng loạt.
+
+Để nạp danh mục hành chính chính thức và sinh dữ liệu vận hành từ slot hiện có,
+chạy dry-run trước rồi mới thêm `--apply`:
+
+```powershell
+docker compose run --rm --no-deps `
+  -v "${PWD}/backend/scripts:/app/scripts:ro" `
+  -v "${PWD}/backend/reference:/app/reference:ro" `
+  backend python scripts/enrich_postgres_reference_data.py
+
+docker compose run --rm --no-deps `
+  -v "${PWD}/backend/scripts:/app/scripts:ro" `
+  -v "${PWD}/backend/reference:/app/reference:ro" `
+  backend python scripts/enrich_postgres_reference_data.py --apply
+```
+
+Script bắt buộc map duy nhất đủ 319 showroom và rollback nếu số lượng địa giới,
+metadata, giờ demo, ca staff hoặc khoảng xe không khả dụng không khớp.
 
 ## Backup PostgreSQL
 

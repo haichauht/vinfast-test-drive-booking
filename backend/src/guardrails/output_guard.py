@@ -9,19 +9,26 @@ from src.guardrails.policies import (
     NEVER_PUBLIC_ACTION_DATA_KEYS,
     PUBLIC_TOOL_INPUT_SECRET_KEYS,
     SECRET_VALUE_KEYS,
+    is_sensitive_key,
 )
 from src.guardrails.structure import normalize_text
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _PHONE_RE = re.compile(r"(?<!\d)(?:\+?84|0)(?:[\s.-]?\d){8,10}(?!\d)")
 _CREDENTIAL_ASSIGNMENT_RE = re.compile(
-    r"(?i)\b(api[_ -]?key|access[_ -]?token|session[_ -]?token|otp[_ -]?code|password|secret)"
-    r"\s*[:=]\s*([^\s,;]+)"
+    r"(?i)\b("
+    r"(?:openai|openrouter|x)?[_ -]?api[_ -]?key|"
+    r"access[_ -]?(?:session[_ -]?)?token|session[_ -]?token|refresh[_ -]?token|"
+    r"authorization|client[_ -]?secret|private[_ -]?key|cookie|"
+    r"otp(?:[_ -]?code)?|password|secret|token"
+    r")\s*[:=]\s*(?:bearer\s+)?([^\s,;]+)"
 )
-_SYSTEM_PROMPT_MARKERS = (
-    "--- system instructions ---",
-    "active skill guidelines",
-    "system instructions & behavioral protocol",
+_SYSTEM_PROMPT_LEAK_RE = re.compile(
+    r"(?im)(?:"
+    r"^-{0,4}\s*(?:system instructions?|developer message|hidden instructions?|active skill guidelines)\s*-{0,4}\s*$|"
+    r"<(?:system|developer)(?:\s[^>]*)?>|"
+    r"\b(?:system prompt|developer message)\s*[:=]\s*"
+    r")"
 )
 _SAFE_LEAK_FALLBACK = (
     "Tôi không thể hiển thị chỉ dẫn nội bộ hoặc thông tin xác thực. "
@@ -54,8 +61,7 @@ class OutputGuard:
 
     def _sanitize_text(self, value: Any, *, secret_values: set[str]) -> str:
         text = normalize_text(value if isinstance(value, str) else str(value or ""))
-        lowered = text.casefold()
-        if any(marker in lowered for marker in _SYSTEM_PROMPT_MARKERS):
+        if _SYSTEM_PROMPT_LEAK_RE.search(text):
             return _SAFE_LEAK_FALLBACK
 
         for secret in sorted(secret_values, key=len, reverse=True):
@@ -71,7 +77,7 @@ class OutputGuard:
 
 def _collect_secret_values(value: Any, *, key: str = "") -> set[str]:
     found: set[str] = set()
-    if key.casefold() in SECRET_VALUE_KEYS and isinstance(value, str) and value:
+    if is_sensitive_key(key, SECRET_VALUE_KEYS) and isinstance(value, str) and value:
         found.add(value)
     if isinstance(value, Mapping):
         for nested_key, nested in value.items():
@@ -90,7 +96,7 @@ def _redact_mapping(value: Mapping[str, Any], *, blocked_keys: frozenset[str]) -
 
 
 def _redact_value(value: Any, *, key: str = "", blocked_keys: frozenset[str]) -> Any:
-    if key.casefold() in blocked_keys:
+    if is_sensitive_key(key, blocked_keys):
         return "[redacted]"
     if isinstance(value, Mapping):
         return _redact_mapping(value, blocked_keys=blocked_keys)

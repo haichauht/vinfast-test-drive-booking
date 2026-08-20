@@ -21,6 +21,7 @@ booking_service = BookingService(
     otp_resend_cooldown_seconds=settings.booking_access_otp_resend_cooldown_seconds,
     otp_max_attempts=settings.booking_access_otp_max_attempts,
     otp_secret=settings.booking_access_otp_secret or "development-secret",
+    booking_advance_window_days=settings.booking_advance_window_days,
 )
 internal_portal_service = InternalPortalService(
     database,
