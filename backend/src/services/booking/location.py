@@ -36,7 +36,7 @@ def _fetch_nominatim_coordinates(query_str: str) -> Coordinates | None:
     url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query_str)}&countrycodes=vn&format=json&limit=1"
     req = urllib.request.Request(url, headers={"User-Agent": "VinFast-Booking-Agent/1.0"})
     try:
-        with urllib.request.urlopen(req, timeout=3) as resp:
+        with urllib.request.urlopen(req, timeout=3) as resp:  # nosec B310
             data = json.loads(resp.read().decode("utf-8"))
             if data and len(data) > 0:
                 return Coordinates(latitude=float(data[0]["lat"]), longitude=float(data[0]["lon"]))
