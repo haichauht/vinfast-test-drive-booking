@@ -33,7 +33,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r backend/requirements.txt
+        run: pip install --retries 5 --default-timeout 100 -r backend/requirements.txt
 
       - name: Lint with ruff
         run: ruff check backend/src/ backend/tests/

@@ -87,16 +87,37 @@ def _seed_showrooms_from_csv(path: Path, now_str: str, limit: int = 8) -> list[t
     return rows or None
 
 
-def _extend_mock_slots(database: Database) -> int:
-    """Extend the legacy fixture with available slots through an explicit date.
+def _ensure_all_demo_vehicles(connection) -> None:
+    now_str = _iso(datetime.now(UTC))
+    showrooms = connection.execute("SELECT id FROM showrooms WHERE is_active=1").fetchall()
+    variants = connection.execute("SELECT id, model_id FROM vehicle_variants WHERE is_active=1").fetchall()
+    for s in showrooms:
+        s_id = s["id"]
+        for v in variants:
+            v_id = v["id"]
+            existing = connection.execute(
+                "SELECT 1 FROM demo_vehicles WHERE showroom_id=? AND variant_id=? LIMIT 1",
+                (s_id, v_id),
+            ).fetchone()
+            if not existing:
+                dv_id = f"dv_auto_{s_id}_{v_id}"
+                asset_code = f"SR{s_id}-DV-{v_id[:10]}"
+                vin = f"MOCKVIN{s_id[:4]}{v_id[:6]}2026EV"
+                connection.execute(
+                    "INSERT INTO demo_vehicles(id,showroom_id,variant_id,asset_code,vin,plate_number,operational_status,battery_soc,minimum_booking_soc,charging_status,is_active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (dv_id, s_id, v_id, asset_code, vin, "30M-999.99", "available", 95, 35, "not_charging", 1, now_str, now_str),
+                )
 
-    The checked-in legacy CSV ends on a fixed date.  For a public demo it is
-    useful to keep a short booking window open without editing that source
-    CSV, or moving its existing bookings.  Only *available* slots from the
-    last fixture day are copied, so no booking, hold, or staff assignment is
-    duplicated.
+
+def _extend_mock_slots(database: Database) -> int:
+    """Extend the legacy fixture with slots through October 31, 2026.
+
+    Slots are generated day by day through 2026-10-31 with realistic availability:
+    - ~70% available
+    - ~20% booked (Đã có lịch)
+    - ~10% held (Đang được giữ)
     """
-    raw_target = os.getenv("MOCK_SLOT_END_DATE", "").strip()
+    raw_target = os.getenv("MOCK_SLOT_END_DATE", "2026-10-31").strip()
     if not raw_target:
         return 0
     try:
@@ -106,6 +127,7 @@ def _extend_mock_slots(database: Database) -> int:
 
     now_str = _iso(datetime.now(UTC))
     with database.transaction(immediate=True) as connection:
+        _ensure_all_demo_vehicles(connection)
         latest_row = connection.execute("SELECT MAX(substr(start_at,1,10)) AS latest FROM test_drive_slots").fetchone()
         latest_raw = latest_row["latest"] if latest_row else None
         if not latest_raw:
@@ -116,7 +138,7 @@ def _extend_mock_slots(database: Database) -> int:
 
         source_slots = connection.execute(
             "SELECT id,showroom_id,demo_vehicle_id,start_at,end_at FROM test_drive_slots "
-            "WHERE substr(start_at,1,10)=? AND status='available' ORDER BY id",
+            "WHERE substr(start_at,1,10)=? ORDER BY id",
             (latest_raw,),
         ).fetchall()
         if not source_slots:
@@ -124,24 +146,37 @@ def _extend_mock_slots(database: Database) -> int:
 
         inserted = 0
         day = latest_date + timedelta(days=1)
+        import hashlib
+
         while day <= target_date:
             day_prefix = day.isoformat()
-            rows = [
-                (
-                    f"mock_ext_{day:%Y%m%d}_{slot['id']}",
-                    slot["showroom_id"],
-                    slot["demo_vehicle_id"],
-                    f"{day_prefix}{slot['start_at'][10:]}",
-                    f"{day_prefix}{slot['end_at'][10:]}",
-                    "available",
-                    None,
-                    None,
-                    None,
-                    now_str,
-                    now_str,
+            rows = []
+            for slot in source_slots:
+                # Deterministic random status allocation: 70% available, 20% booked, 10% held
+                seed_key = f"{slot['id']}_{day_prefix}".encode()
+                hash_val = int(hashlib.md5(seed_key).hexdigest(), 16) % 10
+                if hash_val in (0, 1):
+                    slot_status = "booked"
+                elif hash_val == 2:
+                    slot_status = "held"
+                else:
+                    slot_status = "available"
+
+                rows.append(
+                    (
+                        f"mock_ext_{day:%Y%m%d}_{slot['id']}",
+                        slot["showroom_id"],
+                        slot["demo_vehicle_id"],
+                        f"{day_prefix}{slot['start_at'][10:]}",
+                        f"{day_prefix}{slot['end_at'][10:]}",
+                        slot_status,
+                        None,
+                        None,
+                        None,
+                        now_str,
+                        now_str,
+                    )
                 )
-                for slot in source_slots
-            ]
             connection.executemany(
                 "INSERT INTO test_drive_slots("
                 "id,showroom_id,demo_vehicle_id,start_at,end_at,status,held_until,current_booking_id,block_reason,created_at,updated_at"

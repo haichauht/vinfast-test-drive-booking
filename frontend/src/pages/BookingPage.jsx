@@ -128,7 +128,7 @@ import { BookingSuccessVehicleModel, preloadVehicle3dRuntime } from '../componen
 import { BookingSuccessCinematic } from '../components/BookingSuccessCinematic'
 import { getVehicle3dModel } from '../data/vehicle3d'
 import { RecipientModal, ResumeModal } from '../components/booking/BookingModalPrimitives'
-import { AgentMessage, ViviStatusTyping, ViViAvatar, ContextualChoices } from '../components/booking/BookingChatPrimitives'
+import { AgentMessage, ViviStatusTyping, ViViAvatar, ContextualChoices, extractTargetDates } from '../components/booking/BookingChatPrimitives'
 import { VehicleShot, VehicleSwitcher, VehiclePanel } from '../components/booking/VehicleWorkspace'
 import { BookingHeader } from '../components/booking/BookingHeader'
 
@@ -358,23 +358,28 @@ export function BookingPage() {
   const [rescheduleState, setRescheduleState] = useState(null)
   const [rescheduleSecondsLeft, setRescheduleSecondsLeft] = useState(0)
   const [slots, setSlots] = useState(Array.isArray(restoredUi.slots) ? restoredUi.slots : [])
+  const [serverHighlightedDates, setServerHighlightedDates] = useState([])
   const [bookingId, setBookingId] = useState('')
   const [bookingVersion, setBookingVersion] = useState(0)
   const [holdExpiresAt, setHoldExpiresAt] = useState(null)
   const [timeLeft, setTimeLeft] = useState('')
   const [backendError, setBackendError] = useState('')
   const [userLocation, setUserLocation] = useState(restoredUi.userLocation || null)
+  const [searchedLocation, setSearchedLocation] = useState(null)
   const messagesRef = useRef(null)
   const timersRef = useRef([])
   const holdActionIdsRef = useRef(new Map())
   // Đếm lượt tìm khung giờ. Bấm showroom A rồi bấm nhanh sang B sẽ có 2 request cùng bay;
   // ai về sau thắng, nên nếu không đánh số thì slot của A có thể đắp lên tên showroom B.
   const showroomRequestRef = useRef(0)
+  const showroomIdRef = useRef(showroomId) // mirror của showroomId để tránh stale closure trong async handlers
   const confirmActionIdsRef = useRef(new Map())
   const holdExpiredRef = useRef(false)
   const otpChallengeIdRef = useRef('')
   const otpCodeRef = useRef('')
   const sendingRef = useRef(false)
+  // Sync ref với state để async handlers luôn đọc đúng showroomId mới nhất (tránh stale closure)
+  showroomIdRef.current = showroomId
 
   const [inlineOtpDigits, setInlineOtpDigits] = useState(['', '', '', '', '', ''])
   const [inlineOtpError, setInlineOtpError] = useState('')
@@ -517,6 +522,16 @@ export function BookingPage() {
     return groups
   }, {}))
 
+  // Khi tìm lịch theo ngày cụ thể, backend chỉ trả data của ngày đó.
+  // mergeSlots giữ nguyên các ngày cũ, chỉ ghi đè ngày có data mới — UI luôn hiện đủ lịch của cả tuần.
+  const mergeSlots = (existingSlots, newSlots) => {
+    const map = new Map(existingSlots.map((day) => [day.value, day]))
+    for (const day of newSlots) {
+      map.set(day.value, day)
+    }
+    return Array.from(map.values()).sort((a, b) => (a.value < b.value ? -1 : 1))
+  }
+
   const formatBookingSummary = (booking, index = 0) => {
     const startsAt = booking.start_at ? new Date(booking.start_at) : null
     const displayTime = startsAt && !Number.isNaN(startsAt.getTime())
@@ -547,7 +562,10 @@ export function BookingPage() {
     return cars.find((car) => candidates.includes(normalize(car.id)) || candidates.includes(normalize(car.name))) || null
   }
 
+  const [isGeolocating, setIsGeolocating] = useState(false)
+
   const requestUserLocation = ({ addUserMessage = true } = {}) => {
+    if (isGeolocating || agentTyping || isSending) return
     if (!navigator.geolocation) {
       setBackendError("Trình duyệt của bạn không hỗ trợ định vị GPS.")
       return
@@ -560,6 +578,8 @@ export function BookingPage() {
     }
 
     setBackendError('')
+    setSearchedLocation(null)
+    setIsGeolocating(true)
     if (addUserMessage) addMessage('user', 'Định vị vị trí hiện tại của tôi.')
     setAgentTyping(true)
 
@@ -591,10 +611,13 @@ export function BookingPage() {
         } catch (error) {
           setAgentTyping(false)
           addMessage('assistant', `Có lỗi xảy ra khi truy vấn dữ liệu showroom: ${error.message}`)
+        } finally {
+          setIsGeolocating(false)
         }
       },
       (error) => {
         setAgentTyping(false)
+        setIsGeolocating(false)
         console.error("Lỗi lấy vị trí: ", error)
         addMessage('assistant', 'ViVi không nhận được phản hồi định vị. Hãy nhắn cho ViVi quận/huyện hoặc tỉnh/thành phố của bạn (ví dụ: "Quận 1, TP HCM") để ViVi tìm showroom nhé!')
       }
@@ -735,7 +758,7 @@ export function BookingPage() {
     if (result.tool_name === 'request_booking_access') {
       const data = result.action_data
       const toolInput = result.tool_input || {}
-      const accessPurpose = data.purpose || toolInput.purpose || 'lookup'
+      const accessPurpose = data.purpose || toolInput.purpose || 'manage'
       if (data.requires_contact_value) {
         otpChallengeIdRef.current = ''
         otpCodeRef.current = ''
@@ -778,7 +801,7 @@ export function BookingPage() {
     if (result.tool_name === 'verify_booking_access') {
       const verified = result.action_data
       completeOtpChallenge()
-      const accessPurpose = accessFlow?.purpose || result.tool_input?.purpose || 'lookup'
+      const accessPurpose = accessFlow?.purpose || result.tool_input?.purpose || 'manage'
       const bookings = await listVerifiedBookings({ accessToken: verified.access_session_token })
       const formattedBookings = (bookings.data || bookings || []).map(formatBookingSummary)
       setAccessibleBookings(formattedBookings)
@@ -879,19 +902,16 @@ export function BookingPage() {
         setSelectedSlot(null)
         setConfirmSlotOpen(false)
         setShowroomId('')
+        setSearchedLocation(data.target_coordinates || null)
 
-        if (mapped.length) {
+        const hasLocationInput = Boolean(queriedAddress || toolInput.latitude || toolInput.longitude || toolInput.showroom_query)
+        if (hasLocationInput && mapped.length) {
           if (queriedAddress) setAddress({ province: '', detail: queriedAddress })
           setUserLocation(null)
           setLocationSuggestions([])
           setNearbyShowrooms(mapped)
           setStage('choose_showroom')
-          const hasLocationInput = Boolean(queriedAddress || toolInput.latitude || toolInput.longitude || toolInput.showroom_query)
-          if (hasLocationInput) {
-            setActiveView('map')
-          } else {
-            setActiveView('car')
-          }
+          setActiveView('map')
         } else {
           setAddress({ province: '', detail: queriedAddress })
           setNearbyShowrooms([])
@@ -906,8 +926,19 @@ export function BookingPage() {
         const [showroom] = mapShowrooms([data.selected_showroom], vehicleId)
         setLocationSuggestions([])
         setNearbyShowrooms((current) => current.some((item) => item.id === showroom.id) ? current : [...current, showroom])
+        const newGrouped = groupSlots(data.slots || [])
+        // Nếu cùng showroom → merge để giữ lịch các ngày cũ, chỉ cập nhật ngày mới được tìm
+        // Dùng showroomIdRef.current (thay vì showroomId closure) để luôn so sánh với giá trị mới nhất
+        const isSameShowroom = showroom.id === showroomIdRef.current
+        setSlots((current) => isSameShowroom ? mergeSlots(current, newGrouped) : newGrouped)
         setShowroomId(showroom.id)
-        setSlots(groupSlots(data.slots || []))
+        if (Array.isArray(data.highlighted_dates) && data.highlighted_dates.length > 0) {
+          setServerHighlightedDates(data.highlighted_dates)
+        } else if (data.focused_date) {
+          setServerHighlightedDates([data.focused_date.slice(5)])
+        } else {
+          setServerHighlightedDates([])
+        }
         setStage('choose_slot')
         setActiveView('schedule')
       }
@@ -1299,16 +1330,6 @@ export function BookingPage() {
     setBackendError('')
 
     const mentionedCar = resolveAgentCar(value)
-    if (mentionedCar) {
-      if (!recipient) setRecipient('self')
-      setWorkspaceHidden(false)
-      if (interaction.mode === BookingMode.MANAGE_BOOKING) {
-        clearManagementContext({ resetConversation: true, event: InteractionEvent.VIEW_VEHICLE })
-      } else {
-        dispatchInteraction({ type: InteractionEvent.VIEW_VEHICLE })
-      }
-      setSelectedCarId(mentionedCar.id)
-    }
     setCheckingVehicleName(mentionedCar?.name || '')
 
     setAgentTyping(true)
@@ -1457,7 +1478,7 @@ export function BookingPage() {
     event?.preventDefault()
     setAccessBusy(true); setAccessError('')
     try {
-      const result = await requestBookingAccess({ bookingCode: accessValue.bookingCode.trim(), email: accessValue.email.trim(), purpose: accessFlow?.purpose || 'update_details' })
+      const result = await requestBookingAccess({ bookingCode: accessValue.bookingCode.trim(), email: accessValue.email.trim(), purpose: accessFlow?.purpose || 'manage' })
       if (!result?.challenge_id || !result?.expires_at) {
         throw new Error('ViVi chưa mở được phiên xác thực OTP cho bạn. Bạn bấm gửi lại mã giúp ViVi nhé.')
       }
@@ -1513,7 +1534,7 @@ export function BookingPage() {
       setAccessibleBookings(formattedBookings)
       setWorkspaceHidden(false)
       setActiveView('bookings')
-      const accessPurpose = accessFlow?.purpose || 'lookup'
+      const accessPurpose = accessFlow?.purpose || 'manage'
       const isCancellation = accessPurpose === 'cancel'
 
       if (accessPurpose === 'confirm_booking') {
@@ -2046,15 +2067,21 @@ export function BookingPage() {
     return ''
   })()
 
+  const highlightedDates = useMemo(() => {
+    const lastMsg = messages[messages.length - 1]
+    const text = lastMsg && lastMsg.role === 'assistant' ? String(lastMsg.text || lastMsg.content || '') : ''
+    const textDates = extractTargetDates(text, slots)
+    const combined = [...(serverHighlightedDates || []), ...textDates]
+    return [...new Set(combined)]
+  }, [serverHighlightedDates, messages, slots])
+
   const renderWorkspace = () => {
     if (activeView === 'bookings' && accessProfile) return <section className="booking-history"><div className="booking-history__list">{accessibleBookings.map((booking) => { const expanded = expandedBookingId === booking.id; const details = booking.id === accessProfile.bookingId ? accessProfile : null; const bookingCodeLabel = booking.booking_code || 'Lịch lái thử'; return <div key={booking.id} className={expanded ? 'is-active is-expanded' : ''}><button type="button" onClick={() => { setExpandedBookingId(expanded ? '' : booking.id); if (!expanded) selectAccessibleBooking(booking) }}><strong>{bookingCodeLabel}</strong><small>{booking.display_time || (booking.start_at ? new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(booking.start_at)) : 'Lịch lái thử')}</small></button>{expanded && details && <div className="booking-history__details"><p><span>Mẫu xe</span>{details.vehicleName}</p><p><span>Showroom</span>{details.showroomName}<small>{details.showroomAddress}</small></p><p><span>Thời gian</span>{details.slotTime} · {details.slotDate}</p>{rescheduleState?.step === 'pending' && <p className="booking-history__hold"><span>Khung giờ mới đang được giữ</span>Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}</p>}<p><span>Tư vấn viên</span>{details.advisorName}<small>{details.advisorPhone || 'Chưa có số điện thoại'}</small></p><div className="booking-history__actions"><span className="booking-history__actions-main">{allowedActions.includes('reschedule') && <button type="button" className="booking-history__action" onClick={() => beginAccessibleReschedule(booking)} aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}><PencilSimple size={13} weight="bold" /> Đổi giờ</button>}{details.allowedActions?.includes('cancel') && <button type="button" className="booking-history__action booking-history__action--danger" onClick={() => beginAccessibleCancellation(booking)} aria-label={`Huỷ lịch ${bookingCodeLabel}`}><Prohibit size={13} weight="bold" /> Huỷ lịch</button>}</span></div></div>}</div> })}</div></section>
     if (rescheduleState?.step === 'showroom') return <section className="studio-schedule"><div className="reschedule-left-grid">{rescheduleState.showrooms.map((showroom) => <button type="button" key={showroom.id} onClick={() => loadRescheduleSlots(rescheduleState.car, showroom)}><strong>{showroom.name}</strong><small>{showroom.address}</small></button>)}</div></section>
-    if (rescheduleState?.step === 'schedule') return <SchedulePanel compact onBack={exitReschedule} car={rescheduleState.car} showroom={rescheduleState.showroom} slots={groupSlots(rescheduleState.slots)} pendingSlot={null} onPick={(picked) => holdReschedule(rescheduleState.slots.find((slot) => slot.id === picked.slotId))} />
-    if (rescheduleState?.step === 'pending') return <SchedulePanel compact onBack={exitReschedule} car={rescheduleState.car} showroom={rescheduleState.showroom} slots={groupSlots(rescheduleState.slots)} pendingSlot={{ slotId: rescheduleState.slot.id }} onPick={(picked) => holdReschedule(rescheduleState.slots.find((slot) => slot.id === picked.slotId))} />
+    if (rescheduleState?.step === 'schedule') return <SchedulePanel compact onBack={exitReschedule} car={rescheduleState.car} showroom={rescheduleState.showroom} slots={groupSlots(rescheduleState.slots)} pendingSlot={null} highlightedDates={highlightedDates} onPick={(picked) => holdReschedule(rescheduleState.slots.find((slot) => slot.id === picked.slotId))} />
+    if (rescheduleState?.step === 'pending') return <SchedulePanel compact onBack={exitReschedule} car={rescheduleState.car} showroom={rescheduleState.showroom} slots={groupSlots(rescheduleState.slots)} pendingSlot={{ slotId: rescheduleState.slot.id }} highlightedDates={highlightedDates} onPick={(picked) => holdReschedule(rescheduleState.slots.find((slot) => slot.id === picked.slotId))} />
     if (rescheduleState?.step === 'confirm') return <section className="studio-schedule"><div className="studio-schedule__heading"><span>Đang chờ xác nhận</span><h2>Xác nhận lịch ở cửa sổ bên phải</h2></div></section>
     if (!selectedCar) return null
-    // Đặt lịch xong: panel trái giữ NGUYÊN như trước — model xe (3D nếu mẫu đó có) nằm trên,
-    // phiếu lịch nằm dưới. Chỉ panel phải đổi từ trang tĩnh về khung chat với ViVi.
     if (stage === 'success' && selectedShowroom && selectedSlot) {
       return (
         <div className="booking-success-documents">
@@ -2063,8 +2090,8 @@ export function BookingPage() {
         </div>
       )
     }
-    if (activeView === 'map') return <BookingShowroomMap car={selectedCar} showrooms={nearbyShowrooms} selectedId={showroomId} onSelect={setShowroomId} onConfirm={chooseShowroom} userLocation={userLocation} />
-    if (activeView === 'schedule' && selectedShowroom) return <SchedulePanel car={selectedCar} showroom={selectedShowroom} slots={slots} pendingSlot={pendingSlot} onPick={chooseSlot} />
+    if (activeView === 'map') return <BookingShowroomMap car={selectedCar} showrooms={nearbyShowrooms} selectedId={showroomId} onSelect={setShowroomId} onConfirm={chooseShowroom} userLocation={userLocation} searchedLocation={searchedLocation} />
+    if (activeView === 'schedule' && selectedShowroom) return <SchedulePanel car={selectedCar} showroom={selectedShowroom} slots={slots} pendingSlot={pendingSlot} highlightedDates={highlightedDates} onPick={chooseSlot} />
     if (activeView === 'ticket' && selectedShowroom && selectedSlot) return <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} advisor={bookingAdvisor} />
     return <VehiclePanel car={selectedCar} />
   }
@@ -2298,6 +2325,8 @@ export function BookingPage() {
                 locationSuggestions={locationSuggestions}
                 showrooms={nearbyShowrooms}
                 slots={slots}
+                pendingSlot={pendingSlot}
+                lastMessage={messages[messages.length - 1]}
                 onResolveArea={resolveSuggestedArea}
                 onShowroom={chooseShowroom}
                 onSlot={chooseSlot}
@@ -2340,20 +2369,20 @@ export function BookingPage() {
                   - "Đổi mẫu xe khác"      → trùng tab "Đổi mẫu xe" ở panel trái, bấm vào cũng
                     mở đúng bảng chọn xe đó.
                   Đừng thêm lại: hai nút này từng làm màn agent có 2 bản của cùng một hành động. */}
-              {allowedActions.some((action) => (
+              {(allowedActions.some((action) => (
                 action === 'choose_vehicle' ? !showVehicleChoices : ['use_geolocation', 'view_vehicle'].includes(action)
-              )) && (
+              )) || stage === 'need_address' || stage === 'choose_showroom') && (
                 <div className="vivi-capabilities">
+                  {(stage === 'need_address' || stage === 'choose_showroom' || allowedActions.includes('use_geolocation')) && (
+                    <button type="button" onClick={requestUserLocation}>
+                      <NavigationArrow size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                      Định vị hiện tại
+                    </button>
+                  )}
                   {allowedActions.includes('choose_vehicle') && !showVehicleChoices && (
                     <button type="button" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">
                       <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
                       Xem tất cả {cars.length} mẫu
-                    </button>
-                  )}
-                  {allowedActions.includes('use_geolocation') && (
-                    <button type="button" onClick={requestUserLocation}>
-                      <NavigationArrow size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                      Định vị hiện tại
                     </button>
                   )}
                   {allowedActions.includes('view_vehicle') && (
@@ -2488,7 +2517,7 @@ export function BookingPage() {
               <div><dt>Thời gian</dt><dd>{pendingSlot.time} · {pendingSlot.dateLabel}</dd></div>
               <div><dt>Mẫu xe</dt><dd>{selectedCar.name} đã được giữ cho slot này</dd></div>
             </dl>
-            <div className="slot-confirm-actions"><button type="button" onClick={confirmSlot}>Xác nhận khung giờ</button><button type="button" onClick={() => setConfirmSlotOpen(false)}>Quay lại chọn lịch</button></div>
+            <div className="slot-confirm-actions"><button type="button" onClick={confirmSlot}>Xác nhận khung giờ</button><button type="button" onClick={() => setConfirmSlotOpen(false)}>Hủy xác nhận</button></div>
           </div>
         </div>
       )}

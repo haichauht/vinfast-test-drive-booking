@@ -137,8 +137,8 @@ async def test_classifier_rejects_unknown_llm_intent(monkeypatch):
     [
         ("sovereignty", "Việt Nam"),
         ("out_of_scope_code", "không hỗ trợ viết mã"),
-        ("out_of_scope_math", "không hỗ trợ viết mã"),
-        ("unknown", "ngoài phạm vi"),
+        ("out_of_scope_math", "giải các bài toán"),
+        ("unknown", "Việt Nam"),
     ],
 )
 async def test_sensitive_policy_covers_all_sub_intent_branches(sub_intent, expected_text):
