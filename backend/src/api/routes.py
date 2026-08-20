@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import uuid
@@ -6,7 +7,8 @@ from collections.abc import Callable
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
+from langchain_core.messages import HumanMessage
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
@@ -17,7 +19,7 @@ from src.agents.tools import (
 from src.agents.trace import redact, trace_event
 from src.config import get_settings
 from src.database.redis_client import redis_client
-from src.dependencies import booking_service, internal_portal_service, profile_service, profile_update_queue
+from src.dependencies import booking_service, driver_invitation_service, internal_portal_service, profile_service, profile_update_queue
 from src.guardrails import get_guardrails
 from src.internal_portal import InternalPrincipal, InternalRole
 from src.internal_portal.routes import current_principal
@@ -118,10 +120,26 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
         profile = None
         profile_context: dict[str, Any] = {}
         stored_booking_context: dict[str, Any] = {"active": False}
+        participant_context: dict[str, Any] = {"role": "user"}
         try:
-            profile = profile_service.resolve_or_create(conversation_id, getattr(identity, "session_id", ""))
+            driver_invitation = getattr(request.state, "driver_invitation", None)
+            if driver_invitation:
+                profile = profile_service.bind_person_conversation(
+                    conversation_id,
+                    person_id=driver_invitation.driver_person_id,
+                    email=driver_invitation.email,
+                    phone=driver_invitation.phone,
+                    source="driver_invitation",
+                    trace_id=trace_id,
+                )
+                stored_booking_context = {"active": True, **profile_service.booking_context(driver_invitation.booking_id)}
+                participant_context = {"role": "driver", "booking_id": driver_invitation.booking_id}
+            else:
+                profile = profile_service.resolve_or_create(conversation_id, getattr(identity, "session_id", ""))
+                stored_booking_context = profile_service.latest_booking_context(profile.id)
+                if stored_booking_context.get("active"):
+                    participant_context = {"role": "booker", "booking_id": stored_booking_context.get("id")}
             profile_context = build_profile_context(profile, body.message)
-            stored_booking_context = profile_service.latest_booking_context(profile.id)
         except Exception:
             logging.getLogger("profile.lifecycle").exception("profile.lookup_failed trace_id=%s conversation_id=%s", trace_id, conversation_id)
         guardrails = get_guardrails()
@@ -191,6 +209,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                     if stored_booking_context.get("active")
                     else {"active": False}
                 ),
+                "participant_context": participant_context,
             },
             config=config,
         )
@@ -242,6 +261,51 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
         )
         logging.getLogger(__name__).error("Internal error in chat endpoint: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.")
+
+
+@router.post("/driver-chat/{token}/chat", response_model=ChatResponse)
+async def driver_chat(token: str, request: Request, body: ChatRequest) -> ChatResponse:
+    """Chat as the driver identified by a private, expiring invitation link."""
+    try:
+        request.state.driver_invitation = await asyncio.to_thread(driver_invitation_service.resolve, token)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Driver invitation is invalid or expired") from exc
+    namespace = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+    prefix = f"driver:{namespace}:"
+    supplied = body.conversation_id
+    conversation_id = supplied if supplied.startswith(prefix) else f"{prefix}{supplied or uuid.uuid4().hex}"
+    return await chat(request, body.model_copy(update={"conversation_id": conversation_id[:100]}))
+
+
+@router.post("/bookings/{booking_id}/driver-invitation")
+async def send_driver_invitation(booking_id: str) -> dict[str, Any]:
+    """Create and email a private chat invitation to a booking's separate driver."""
+    try:
+        return await asyncio.to_thread(driver_invitation_service.issue_and_send, booking_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Booking not found") from exc
+    except ValueError as exc:
+        code = str(exc)
+        messages = {
+            "DRIVER_IS_BOOKER": "Driver and booker are the same person; no separate invitation is needed.",
+            "DRIVER_EMAIL_REQUIRED": "The driver does not have an email address.",
+        }
+        raise HTTPException(status_code=400, detail={"code": code, "message": messages.get(code, "Unable to create driver invitation")}) from exc
+
+
+@router.get("/bookings/{booking_id}/profile-summary.md", response_class=PlainTextResponse)
+async def booking_profile_summary(booking_id: str) -> PlainTextResponse:
+    """Return the booking's booker/driver profile summary as Markdown."""
+    try:
+        source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
+        markdown = await summarize_user_profile(source)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Booking not found") from exc
+    except RuntimeError as exc:
+        if str(exc) == "LLM_NOT_CONFIGURED":
+            raise HTTPException(status_code=503, detail="Profile summary LLM is not configured") from exc
+        raise
+    return PlainTextResponse(markdown, media_type="text/markdown; charset=utf-8")
 
 
 @router.get("/status")
@@ -327,20 +391,76 @@ def _request_demo_access(**kwargs: Any) -> dict:
 @router.post("/chat/stream")
 @router.post("/booking-agent/stream")
 async def chat_stream(body: ChatRequest, request: Request):
-    """Stream the canonical `/chat` result without invoking the graph twice."""
+    """Stream ViVi responses using Server-Sent Events (Streamable HTTP).
+
+    Streams real-time LLM token chunks via astream_events when supported,
+    with seamless fallback to full chat response payload.
+    """
     async def event_generator():
         try:
-            response_data = await chat(request, body)
-            content = response_data.response or ""
-            for index, word in enumerate(content.split(" ")):
-                chunk = word + (" " if index < len(content.split(" ")) - 1 else "")
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.01)
-            final_payload = json.dumps({"type": "done", "response": response_data.model_dump()}, ensure_ascii=False)
+            active_agent = get_agent()
+            guardrails = get_guardrails()
+            conversation_id = body.conversation_id or str(uuid.uuid4())
+            identity = getattr(request.state, "identity", None)
+            trace_id = getattr(request.state, "trace_id", "") or str(uuid.uuid4())
+            config = {"configurable": {"thread_id": conversation_id}}
+            inputs = {
+                "messages": [HumanMessage(content=body.message)],
+                "requested_action": body.action,
+                "action_payload": body.action_payload,
+                "tool_call_count": 0,
+                "metadata": {
+                    "trace_id": trace_id,
+                    "conversation_id": conversation_id,
+                    "anon_session_id": getattr(identity, "session_id", "unknown"),
+                    "client_ip": getattr(identity, "client_ip", "unknown"),
+                    "llm_call_count": 0,
+                },
+            }
+
+            token_streamed = False
+            async for event in active_agent.astream_events(inputs, config=config, version="v2"):
+                if event.get("event") == "on_chat_model_stream":
+                    chunk = (event.get("data") or {}).get("chunk")
+                    if hasattr(chunk, "content") and chunk.content and isinstance(chunk.content, str):
+                        token_streamed = True
+                        payload = json.dumps({"type": "token", "content": chunk.content}, ensure_ascii=False)
+                        yield f"data: {payload}\n\n"
+
+            if not token_streamed:
+                response_data = await chat(request, body)
+                content = response_data.response or ""
+                words = content.split(" ")
+                for i, word in enumerate(words):
+                    chunk = word + (" " if i < len(words) - 1 else "")
+                    payload = json.dumps({"type": "token", "content": chunk}, ensure_ascii=False)
+                    yield f"data: {payload}\n\n"
+                    await asyncio.sleep(0.01)
+                final_payload = json.dumps({"type": "done", "response": response_data.model_dump()}, ensure_ascii=False)
+                yield f"data: {final_payload}\n\n"
+                return
+
+            final_state = await active_agent.aget_state(config)
+            state_values = final_state.values if final_state else {}
+            protected = guardrails.protect_output(state_values)
+            final_response = ChatResponse(
+                response=protected.response,
+                analysis=protected.analysis,
+                conversation_id=conversation_id,
+                tool_name=state_values.get("action_tool", ""),
+                tool_input=protected.tool_input,
+                action_data=protected.action_data,
+                action_error=protected.action_error,
+                intent=str(state_values.get("intent") or ""),
+                ui=_chat_ui_directive(state_values),
+            )
+            final_payload = json.dumps({"type": "done", "response": final_response.model_dump()}, ensure_ascii=False)
             yield f"data: {final_payload}\n\n"
         except Exception as exc:
-            logging.getLogger(__name__).exception("chat stream failed: %s", exc)
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Không thể stream phản hồi.'}, ensure_ascii=False)}\n\n"
+            logging.getLogger(__name__).warning("astream_events fallback: %s", exc)
+            response_data = await chat(request, body)
+            final_payload = json.dumps({"type": "done", "response": response_data.model_dump()}, ensure_ascii=False)
+            yield f"data: {final_payload}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

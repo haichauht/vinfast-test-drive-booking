@@ -1,8 +1,8 @@
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
-from src.dependencies import profile_update_queue
+from src.dependencies import profile_service, profile_update_queue
 from src.services.profile.models import SignalCandidate
 import logging
 
@@ -14,6 +14,8 @@ async def update_user_profile(
     signals: list[SignalCandidate],
     profile_id: Annotated[str, InjectedState("profile_id")],
     metadata: Annotated[dict[str, Any], InjectedState("metadata")],
+    participant_context: Annotated[dict[str, Any], InjectedState("participant_context")],
+    subject: Literal["self", "driver"] = "self",
 ) -> dict[str, Any]:
     """Queue profile signals identified from the current conversation.
 
@@ -30,25 +32,49 @@ async def update_user_profile(
             known, likely, or possible. Source type is explicit_user,
             implicit_user, or trusted_domain. Operation is add, strengthen,
             weaken, revise, or retract. Confidence is between 0 and 1.
+        subject: ``self`` for the current speaker. Use ``driver`` only when the
+            current booker explicitly provides information about the different
+            driver in this booking. The backend forces low-confidence third-party
+            attribution and resolves the target person from the booking.
     """
     if not profile_id:
         return {"status": "skipped", "reason": "profile_not_resolved"}
+    conversation_id = str(metadata.get("conversation_id") or "")
+    target_profile_id = profile_id
+    if subject == "driver":
+        if participant_context.get("role") != "booker" or not participant_context.get("booking_id"):
+            return {"status": "skipped", "reason": "third_party_subject_not_allowed"}
+        try:
+            target = profile_service.resolve_booking_driver_profile(str(participant_context["booking_id"]))
+        except KeyError:
+            return {"status": "skipped", "reason": "driver_profile_not_resolved"}
+        target_profile_id = target.id
+        conversation_id = f"third_party:booker:{conversation_id}"
+        signals = [
+            item.model_copy(update={
+                "certainty": "possible",
+                "confidence": min(item.confidence, 0.35),
+                "source_type": "implicit_user",
+                "operation": "add",
+            })
+            for item in signals
+        ]
     logger.info(
         "profile.tool.requested trace_id=%s conversation_id=%s profile_id=%s signals=%s",
         metadata.get("trace_id"),
         metadata.get("conversation_id"),
-        profile_id,
+        target_profile_id,
         [{"category": item.category, "key": item.key, "operation": item.operation} for item in signals],
     )
     queued = await profile_update_queue.enqueue(
-        profile_id=profile_id,
-        conversation_id=str(metadata.get("conversation_id") or ""),
+        profile_id=target_profile_id,
+        conversation_id=conversation_id,
         trace_id=str(metadata.get("trace_id") or ""),
         candidates=signals,
     )
     status = "queued" if queued else "unavailable"
     logger.info(
         "profile.tool.completed trace_id=%s profile_id=%s status=%s signal_count=%s",
-        metadata.get("trace_id"), profile_id, status, len(signals),
+        metadata.get("trace_id"), target_profile_id, status, len(signals),
     )
-    return {"status": status, "signal_count": len(signals)}
+    return {"status": status, "subject": subject, "signal_count": len(signals)}

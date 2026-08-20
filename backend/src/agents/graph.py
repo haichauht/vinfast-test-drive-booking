@@ -53,10 +53,6 @@ def should_continue_booking(state: AgentState) -> str:
         if (state.get("tool_call_count") or 0) >= MAX_TOOL_CALLS:
             return "max_tool_limit"
         return "continue"
-    if state.get("action_tool") == confirm_test_drive_booking.name and not state.get("action_error"):
-        result = state.get("action_result")
-        if isinstance(result, dict) and result.get("status") == "confirmed":
-            return "post_booking"
     return "end"
 
 
@@ -147,7 +143,6 @@ def build_graph(checkpointer: Any | None = None) -> CompiledStateGraph:
         {
             "continue": "booking_tools",
             "max_tool_limit": "max_tool_limit",
-            "post_booking": "post_booking_skill",
             "end": END,
         },
     )

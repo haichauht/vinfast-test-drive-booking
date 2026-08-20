@@ -1,57 +1,60 @@
 # Update User Profile Tool
 
-## Mô tả
+## Description
 
-Ghi nhận thông tin cá nhân hóa bền vững mà Post-booking Agent nhận ra từ message,
-lịch sử hội thoại và profile brief. Tool enqueue Redis và trả ngay; worker merge
-vào anonymous/trusted profile mà không gọi LLM khác.
+Records durable personalization information identified by the Post-booking Agent from the current message, conversation history, and profile brief.
 
-Chỉ gọi khi có signal mới, cần sửa, tăng/giảm độ tin cậy hoặc rút signal cũ.
-Không gọi chỉ để lấp đầy mọi section đang trống.
+The tool enqueues the update to Redis and returns immediately. A worker merges the signals into the anonymous/trusted profile without invoking another LLM.
 
-## Tham số
+Call this tool only when there is a new signal, an existing signal needs correction, its confidence should be strengthened or weakened, or it should be retracted.
 
-Tool nhận một tham số bắt buộc `signals`: mảng có ít nhất một
-`SignalCandidate`. `profile_id`, `conversation_id` và `trace_id` được hệ
-thống inject; agent không truyền các giá trị này.
+Do not call the tool merely to fill empty profile sections.
 
-| Field | Bắt buộc | Miền giá trị | Ý nghĩa |
-|---|---:|---|---|
-| `category` | Có | allow-list bên dưới | Nhóm thông tin |
-| `key` | Có | semantic key ổn định | Ví dụ `daily_commute_distance` |
-| `value` | Có | string/number/bool/list/object | Giá trị cần lưu |
-| `description` | Không | chuỗi ngắn | Câu hiển thị trong profile brief |
-| `certainty` | Không | `known`, `likely`, `possible` | Mặc định `possible` |
-| `confidence` | Không | số `0..1` | Mặc định `0.5` |
-| `source_type` | Không | `explicit_user`, `implicit_user`, `trusted_domain` | Mặc định `implicit_user` |
-| `operation` | Không | `add`, `strengthen`, `weaken`, `revise`, `retract` | Mặc định `add` |
+## Parameters
+
+The tool accepts one required parameter, `signals`: an array containing at least one `SignalCandidate`.
+
+`profile_id`, `conversation_id`, and `trace_id` are injected by the system; the agent must not provide them.
+
+| Field         | Required | Allowed values                                     | Meaning                                                                                                                                                                                      |
+| ------------- | -------: | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `category`    |      Yes | Allow-list below                                   | Information category                                                                                                                                                                         |
+| `key`         |      Yes | Stable semantic key                                | Example: `daily_commute_distance`                                                                                                                                                            |
+| `value`       |      Yes | string/number/bool/list/object                     | Value to store                                                                                                                                                                               |
+| `description` |       No | Short string                                       | Human-readable text shown in the profile brief                                                                                                                                               |
+| `certainty`   |       No | `known`, `likely`, `possible`                      | Default: `possible`                                                                                                                                                                          |
+| `confidence`  |       No | number `0..1`                                      | Default: `0.5`                                                                                                                                                                               |
+| `source_type` |       No | `explicit_user`, `implicit_user`, `trusted_domain` | Default: `implicit_user`                                                                                                                                                                     |
+| `subject`     |       No | `self`, `driver`                                   | Default: `self`. Use `driver` only when the booker clearly refers to a different driver in the booking; the backend automatically lowers confidence and marks it as third-party information. |
+| `operation`   |       No | `add`, `strengthen`, `weaken`, `revise`, `retract` | Default: `add`                                                                                                                                                                               |
 
 ## Category allow-list
 
-- `fact`: sự thật user nói rõ hoặc context xác nhận, như số con, xe đang dùng.
-- `usage`: cách dùng xe, quãng đường, hành trình, hoàn cảnh gia đình.
-- `experience`: kinh nghiệm lái xe hoặc EV có liên quan.
-- `interest`: topic quan tâm như charging, ADAS, family space.
-- `concern`: điều user lo ngại hoặc muốn kiểm chứng.
-- `test_drive_goal`: điều muốn đánh giá trong buổi lái thử.
-- `conversation_preference`: cách user muốn nhận hỗ trợ.
-- `likely_intent`: mục tiêu lớn được suy ra từ nhiều signal.
-- `custom_intent`: intent bền vững chưa phù hợp category trên.
+* `fact`: Facts explicitly stated by the user or confirmed by context, such as number of children or current vehicle.
+* `usage`: Vehicle usage, travel distance, recurring journeys, or family context.
+* `experience`: Relevant driving or EV experience.
+* `interest`: Topics of interest such as charging, ADAS, or family space.
+* `concern`: Something the user is worried about or wants to validate.
+* `test_drive_goal`: Something the user wants to evaluate during the test drive.
+* `conversation_preference`: How the user prefers to receive support.
+* `likely_intent`: A broader goal inferred from multiple signals.
+* `custom_intent`: A durable intent that does not fit the categories above.
 
-## Quy tắc certainty và source
+## Certainty and source rules
 
-- User nói trực tiếp: `known`, `explicit_user`, confidence thường `0.85–1.0`.
-- Suy luận có nhiều signal hỗ trợ: `likely`, `implicit_user`, thường `0.6–0.84`.
-- Giả thuyết cần xác nhận: `possible`, `implicit_user`, thường dưới `0.6`.
-- Khi user sửa thông tin dùng `revise`; phủ nhận hoàn toàn dùng `retract`.
-- Không biến inference thành known fact.
+* Direct user statement: `known`, `explicit_user`, typically confidence `0.85–1.0`.
+* Inference supported by multiple signals: `likely`, `implicit_user`, typically `0.6–0.84`.
+* Hypothesis requiring confirmation: `possible`, `implicit_user`, typically below `0.6`.
+* When the user corrects existing information, use `revise`; when they explicitly reject it, use `retract`.
+* Never turn an inference into a known fact.
 
-## Không được lưu
+## Do not store
 
-OTP, access token, email/số điện thoại, credential, raw conversation hoặc trạng
-thái booking tạm thời. Không lưu dữ liệu chỉ vì profile đang trống.
+Do not store OTPs, access tokens, email addresses, phone numbers, credentials, raw conversations, or transient booking state.
 
-## Ví dụ
+Do not store information merely because a profile section is empty.
+
+## Example
 
 ```json
 {
@@ -59,8 +62,11 @@ thái booking tạm thời. Không lưu dữ liệu chỉ vì profile đang tr�
     {
       "category": "usage",
       "key": "daily_commute_distance",
-      "value": {"distance_km": 40, "frequency": "daily"},
-      "description": "Đi làm khoảng 40 km mỗi ngày.",
+      "value": {
+        "distance_km": 40,
+        "frequency": "daily"
+      },
+      "description": "Commutes approximately 40 km per day.",
       "certainty": "known",
       "confidence": 0.95,
       "source_type": "explicit_user",
@@ -70,7 +76,7 @@ thái booking tạm thời. Không lưu dữ liệu chỉ vì profile đang tr�
       "category": "likely_intent",
       "key": "evaluate_charging_feasibility",
       "value": true,
-      "description": "Có khả năng đang đánh giá tính khả thi của việc sạc xe điện.",
+      "description": "Likely evaluating the feasibility of EV charging.",
       "certainty": "likely",
       "confidence": 0.7,
       "source_type": "implicit_user",
@@ -80,8 +86,8 @@ thái booking tạm thời. Không lưu dữ liệu chỉ vì profile đang tr�
 }
 ```
 
-## Kết quả
+## Result
 
-- `queued`: Redis đã nhận job.
-- `unavailable`: Redis chưa nhận được job; không khẳng định đã cập nhật.
-- `skipped/profile_not_resolved`: chưa resolve được profile.
+* `queued`: Redis successfully received the job.
+* `unavailable`: Redis did not receive the job; do not claim that the profile was updated.
+* `skipped/profile_not_resolved`: The profile could not be resolved.
