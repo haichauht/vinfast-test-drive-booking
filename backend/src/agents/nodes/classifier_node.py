@@ -1,6 +1,6 @@
 import logging
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel, Field
 
 from src.agents.constants import (
@@ -45,6 +45,11 @@ async def classifier_node(state: AgentState) -> dict:
     query = state.get("query", "")
     context = state.get("context") or {}
     metadata = state.get("metadata") or {}
+    previous_assistant_message = ""
+    for message in reversed(state.get("messages") or []):
+        if isinstance(message, AIMessage) and isinstance(message.content, str) and message.content.strip():
+            previous_assistant_message = message.content.strip()
+            break
     trace_id = metadata.get("trace_id", "")
     previous_skill = state.get("active_skill", "")
     post_booking_active = bool((state.get("post_booking_context") or {}).get("active"))
@@ -105,14 +110,62 @@ async def classifier_node(state: AgentState) -> dict:
     # Construct prompt for the LLM classifier dynamically based on system_prompt.md
     prompt = (
         "You classify requests for a VinFast test-drive assistant.\n"
-        "Return intent=domain for vehicle and booking requests, or intent=sensitive for unsafe/out-of-scope requests.\n"
-        "Choose exactly one sub_intent: booking_new, booking_lookup, booking_reschedule, booking_cancel, "
-        "booking_update_details, booking_update_notifications, vehicle_info, sovereignty, "
-        "out_of_scope_code, out_of_scope_math, others.\n"
-        "Use booking_lookup when the user wants to view, find, check, or retrieve an existing booking.\n"
-        "If the query contains an email, copy it exactly to contact_value. Otherwise return null. "
-        "Never invent contact_value.\n"
-        f"UI context: channel={context.get('channel', '')}, stage={context.get('stage', '')}.\n"
+        "\n"
+        "Choose exactly one intent:\n"
+        "- domain: the request is meaningfully related to VinFast vehicles, test-drive booking, "
+        "booking management, test-drive preparation, vehicle evaluation, or support surrounding "
+        "the user's test-drive journey.\n"
+        "- out_of_scope: the request is unrelated to the responsibilities of a VinFast test-drive "
+        "assistant and does not require safety-sensitive handling.\n"
+        "- sensitive: the request requires safety or policy-sensitive handling, such as requests "
+        "involving harmful or dangerous activity, illegal wrongdoing, privacy abuse, credentials "
+        "or secrets, or other content that should not be handled as a normal domain request.\n"
+        "\n"
+        "Important boundaries:\n"
+        "- Never classify a request as sensitive merely because it is unfamiliar, ambiguous, "
+        "unsupported, or outside the assistant's domain.\n"
+        "- A benign unrelated request is out_of_scope, not sensitive.\n"
+        "- A request related to the user's test-drive journey is domain even when it is not a "
+        "booking transaction.\n"
+        "- When a request is ambiguous but has a reasonable interpretation within the test-drive "
+        "journey, prefer domain.\n"
+        "\n"
+        "For intent=domain, choose exactly one sub_intent:\n"
+        "- booking_new\n"
+        "- booking_lookup\n"
+        "- booking_reschedule\n"
+        "- booking_cancel\n"
+        "- booking_update_details\n"
+        "- booking_update_notifications\n"
+        "- post_booking_advisory\n"
+        "- vehicle_info\n"
+        "- others\n"
+        "\n"
+        "Domain sub-intent rules:\n"
+        "- booking_new: create or start a new test-drive booking.\n"
+        "- booking_lookup: retrieve or check an existing booking.\n"
+        "- booking_reschedule: change the booking date, time, or slot.\n"
+        "- booking_cancel: cancel an existing booking.\n"
+        "- booking_update_details: change participant or booking details.\n"
+        "- booking_update_notifications: change booking notification preferences.\n"
+        "- post_booking_advisory: after a confirmed booking, guidance that helps the user prepare "
+        "for, participate in, or evaluate the upcoming test drive.\n"
+        "- vehicle_info: general VinFast vehicle/product questions not specifically tied to "
+        "preparing for an already-confirmed test drive.\n"
+        "- others: domain requests that do not fit another domain sub_intent.\n"
+        "\n"
+        "Use UI context as supporting evidence, not as a replacement for the user's request. "
+        "A successful/confirmed booking makes post_booking_advisory more likely for subsequent "
+        "test-drive-related guidance, unless the user is clearly requesting another booking action.\n"
+        "\n"
+        "If intent is out_of_scope or sensitive, use sub_intent=others.\n"
+        "\n"
+        "If the query contains an email, copy it exactly to contact_value. "
+        "Otherwise return null. Never invent contact_value.\n"
+        "\n"
+        f"UI context: channel={context.get('channel', '')}, "
+        f"stage={context.get('stage', '')}.\n"
+        f"Previous ViVi message: {previous_assistant_message or '(none)'}\n"
         f"User query: {query}"
     )
 
