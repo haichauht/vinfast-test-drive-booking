@@ -737,7 +737,7 @@ export function BookingPage() {
     if (result.tool_name === 'request_booking_access') {
       const data = result.action_data
       const toolInput = result.tool_input || {}
-      const accessPurpose = data.purpose || toolInput.purpose || 'lookup'
+      const accessPurpose = data.purpose || toolInput.purpose || 'manage'
       if (data.requires_contact_value) {
         otpChallengeIdRef.current = ''
         otpCodeRef.current = ''
@@ -780,7 +780,7 @@ export function BookingPage() {
     if (result.tool_name === 'verify_booking_access') {
       const verified = result.action_data
       completeOtpChallenge()
-      const accessPurpose = accessFlow?.purpose || result.tool_input?.purpose || 'lookup'
+      const accessPurpose = accessFlow?.purpose || result.tool_input?.purpose || 'manage'
       const bookings = await listVerifiedBookings({ accessToken: verified.access_session_token })
       const formattedBookings = (bookings.data || bookings || []).map(formatBookingSummary)
       setAccessibleBookings(formattedBookings)
@@ -1446,7 +1446,7 @@ export function BookingPage() {
     event?.preventDefault()
     setAccessBusy(true); setAccessError('')
     try {
-      const result = await requestBookingAccess({ bookingCode: accessValue.bookingCode.trim(), email: accessValue.email.trim(), purpose: accessFlow?.purpose || 'update_details' })
+      const result = await requestBookingAccess({ bookingCode: accessValue.bookingCode.trim(), email: accessValue.email.trim(), purpose: accessFlow?.purpose || 'manage' })
       if (!result?.challenge_id || !result?.expires_at) {
         throw new Error('ViVi chưa mở được phiên xác thực OTP cho bạn. Bạn bấm gửi lại mã giúp ViVi nhé.')
       }
@@ -1502,7 +1502,7 @@ export function BookingPage() {
       setAccessibleBookings(formattedBookings)
       setWorkspaceHidden(false)
       setActiveView('bookings')
-      const accessPurpose = accessFlow?.purpose || 'lookup'
+      const accessPurpose = accessFlow?.purpose || 'manage'
       const isCancellation = accessPurpose === 'cancel'
 
       if (accessPurpose === 'confirm_booking') {

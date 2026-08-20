@@ -35,12 +35,13 @@ def test_search_showrooms_sorted_by_distance(booking_service, catalog):
     assert result["showrooms"][0]["distance_km"] <= result["showrooms"][1]["distance_km"]
 
 
-def test_address_search_filters_showrooms_without_calculating_distance(booking_service, catalog):
+def test_address_search_filters_showrooms_and_calculates_distance(booking_service, catalog):
     result = booking_service.search_options(vehicle_model="VF6", address="Quận 7")
 
     assert result["search_stage"] == "showroom_selection"
     assert result["showrooms"][0]["id"] == catalog["showroom_q7"]
-    assert all("distance_km" not in showroom for showroom in result["showrooms"])
+    assert result["target_coordinates"] is not None
+    assert all("distance_km" in showroom for showroom in result["showrooms"])
 
 
 def test_address_match_reuses_cached_showroom_tokens():

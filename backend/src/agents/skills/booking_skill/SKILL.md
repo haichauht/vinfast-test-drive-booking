@@ -104,12 +104,12 @@ sequenceDiagram
 - **Inputs**:
   - `contact_value`: Registered email address. Use this as the primary identifier for lookup.
   - `booking_code` (optional): Only include this if the user voluntarily provides a booking code.
-  - `purpose`: Reason for lookup (`lookup`, `reschedule`, `cancel`, `update_details`, `update_notifications`).
+  - `purpose`: Reason for lookup. **ALWAYS use `"manage"` for all booking management inquiries (lookup, reschedule, cancel, view)** to grant the user a unified session with full permissions (both reschedule and cancellation buttons enabled).
 - **Security Rule**:
   - NEVER output the raw `contact_value` in the response. Always use `destination_masked` returned from the tool.
   - `booking_code` is not an authentication secret. Always return and display its complete value exactly as provided by the tool; never mask or truncate it in chat messages or workspace data.
 - **Missing email behavior**:
-  - When the user requests lookup, reschedule, cancellation, detail updates, or notification updates without an email, call this tool immediately with the correct `purpose` and omit `contact_value`.
+  - When the user requests lookup, reschedule, cancellation, detail updates, or notification updates without an email, call this tool immediately with `purpose="manage"` and omit `contact_value`.
   - The tool returns `requires_contact_value=true`; the browser renders the email form. Do not respond with only a chat request for the email.
 
 ### Step 3.2: Verify OTP Challenge (`verify_booking_access`)
