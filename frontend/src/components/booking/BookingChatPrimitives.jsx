@@ -137,7 +137,7 @@ export function ContextualChoices({ stage, allowedActions, car, locationSuggesti
   }
 
   if (stage === 'choose_slot' && allowedActions.includes('select_slot') && slots.length) {
-    const quickSlots = slots.flatMap((day) => day.times.filter((entry) => entry.isAvailable).slice(0, 1).map((entry) => ({
+    const quickSlots = slots.flatMap((day) => day.times.filter((entry) => entry.isAvailable).map((entry) => ({
       date: day.value,
       dateLabel: day.dateLabel,
       time: entry.time,

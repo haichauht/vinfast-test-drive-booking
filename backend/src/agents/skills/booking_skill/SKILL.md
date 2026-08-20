@@ -38,6 +38,7 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 - **Condition**: A specific showroom is selected (`showroom_id` is supplied).
 - **Behavior**: Returns a list of open timeslots (`slots[]`) at the showroom.
 - **Agent Action**: Show available slots and guide the user to select their preferred time. **If the user specifies a timeslot in their message (e.g. "21 giờ 8/8 đi", "tôi chọn 22:30 ngày 7/8", etc.), you MUST verify it matches the available slots. If the user's request is contradictory (e.g. choosing "Thứ 6 ngày 8/8" while August 8th is Saturday), you must clarify the correct date with them instead of guessing. Otherwise, immediately call `hold_test_drive_slot` to hold the slot for them.** Do not tell them to click the UI if they have already told you their choice in text chat!
+- **Weekly Boundary Rule**: A calendar week runs strictly from Monday to Sunday. When listing dates for "tuần sau" (next week), only list dates from Monday to Sunday of next week (e.g., Aug 24 to Aug 30). Do NOT group Monday of the week after next (e.g., Aug 31) into "tuần sau".
 
 ---
 
