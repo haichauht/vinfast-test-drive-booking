@@ -74,7 +74,7 @@ class ProfileService:
         with self.db.connect() as c:
             profile_id = self._canonical(c, profile_id)
             profile = c.execute("SELECT id,state,version FROM user_profiles WHERE id=?", (profile_id,)).fetchone()
-            rows = c.execute("SELECT category,key,value_json,description,certainty,confidence,source_type,observed_at FROM user_profile_signals WHERE profile_id=? AND status='active' ORDER BY observed_at DESC", (profile_id,)).fetchall()
+            rows = c.execute("SELECT category,key,value_json,description,certainty,confidence,source_type,source_ref,observed_at FROM user_profile_signals WHERE profile_id=? AND status='active' ORDER BY observed_at DESC", (profile_id,)).fetchall()
         snapshot = ProfileSnapshot(id=profile["id"], state=profile["state"], version=profile["version"], signals=[{**dict(row), "value": json.loads(row["value_json"])} for row in rows])
         logger.info("profile.loaded profile_id=%s state=%s version=%s signal_count=%s",
                     snapshot.id, snapshot.state, snapshot.version, len(snapshot.signals))
@@ -96,6 +96,48 @@ class ProfileService:
         if not profile_id:
             raise KeyError(user_id)
         return self.load(profile_id)
+
+    def bind_person_conversation(
+        self,
+        conversation_id: str,
+        *,
+        person_id: str,
+        email: str,
+        phone: str = "",
+        source: str,
+        trace_id: str = "",
+    ) -> ProfileSnapshot:
+        """Bind a server-authenticated conversation to one person's canonical profile."""
+        current = self.resolve_or_create(conversation_id)
+        return self.promote_identity(
+            current.id,
+            person_id=person_id,
+            email=email,
+            phone=phone,
+            source=source,
+            trace_id=trace_id,
+        )
+
+    def resolve_booking_driver_profile(self, booking_id: str) -> ProfileSnapshot:
+        """Resolve the driver profile from trusted booking data, never model input."""
+        with self.db.connect() as c:
+            row = c.execute(
+                "SELECT b.booker_person_id,b.driver_person_id,p.email,p.normalized_email,p.phone,p.normalized_phone "
+                "FROM bookings b JOIN people p ON p.id=b.driver_person_id WHERE b.id=?",
+                (booking_id,),
+            ).fetchone()
+        if not row or not row["driver_person_id"] or row["driver_person_id"] == row["booker_person_id"]:
+            raise KeyError(booking_id)
+        email = str(row["normalized_email"] or row["email"] or "").strip().casefold()
+        if not email:
+            raise KeyError(booking_id)
+        return self.promote_identity(
+            None,
+            person_id=str(row["driver_person_id"]),
+            email=email,
+            phone=str(row["normalized_phone"] or row["phone"] or ""),
+            source="booker_third_party_report",
+        )
 
     def apply(self, profile_id: str, candidates: list[SignalCandidate], *, source_ref: str, trace_id: str = "") -> ProfileSnapshot:
         before = self.load(profile_id)
@@ -197,6 +239,47 @@ class ProfileService:
             return {"active": False}
         context = self.booking_context(row["id"])
         return {"active": context.get("status") in {"confirmed", "checked_in"}, **context}
+
+    def booking_profiles_context(self, booking_id: str) -> dict[str, Any]:
+        """Build person-scoped profile inputs for a booking sales brief."""
+        with self.db.connect() as c:
+            row = c.execute(
+                "SELECT b.status,b.booker_person_id,b.driver_person_id,t.start_at,"
+                "m.name vehicle_model,s.name showroom_name,bp.full_name booker_name,dp.full_name driver_name "
+                "FROM bookings b JOIN test_drive_slots t ON t.id=b.slot_id "
+                "JOIN demo_vehicles d ON d.id=t.demo_vehicle_id "
+                "JOIN vehicle_variants v ON v.id=d.variant_id JOIN vehicle_models m ON m.id=v.model_id "
+                "JOIN showrooms s ON s.id=t.showroom_id "
+                "LEFT JOIN people bp ON bp.id=b.booker_person_id LEFT JOIN people dp ON dp.id=b.driver_person_id "
+                "WHERE b.id=?",
+                (booking_id,),
+            ).fetchone()
+        if not row:
+            raise KeyError(booking_id)
+
+        def participant(person_id: str | None, name: str, role: str) -> dict[str, Any]:
+            data: dict[str, Any] = {"role": role, "name": name, "profile_available": False}
+            if not person_id:
+                return data
+            try:
+                snapshot = self.load_for_user(person_id)
+            except KeyError:
+                return data
+            from src.services.profile.context import build_profile_context
+            return {**data, "profile_available": True, "profile": build_profile_context(snapshot)}
+
+        same_person = bool(row["booker_person_id"] and row["booker_person_id"] == row["driver_person_id"])
+        result = {
+            "booking": {
+                "status": row["status"], "start_at": row["start_at"],
+                "vehicle_model": row["vehicle_model"], "showroom_name": row["showroom_name"],
+            },
+            "same_person": same_person,
+            "booker": participant(row["booker_person_id"], str(row["booker_name"] or ""), "booker"),
+        }
+        if not same_person:
+            result["driver"] = participant(row["driver_person_id"], str(row["driver_name"] or ""), "driver")
+        return result
 
     def mock_debug_view(self, profile_id: str) -> dict[str, Any]:
         """Return a non-production diagnostic view of one profile and its history."""

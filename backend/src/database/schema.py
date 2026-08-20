@@ -589,6 +589,10 @@ TABLES = {
         "user_profile_signals",
         frozenset({"id", "profile_id", "category", "key", "value_json", "description", "certainty", "confidence", "source_type", "source_ref", "observed_at", "status", "superseded_by_signal_id", "created_at", "updated_at"}),
     ),
+    "driver_chat_invitations": TableSchema(
+        "driver_chat_invitations",
+        frozenset({"id", "booking_id", "driver_person_id", "token_hash", "status", "expires_at", "sent_at", "revoked_at", "created_at", "updated_at"}),
+    ),
 }
 
 SCHEMA_SQL = """
@@ -848,6 +852,12 @@ CREATE TABLE IF NOT EXISTS user_profile_signals (
  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','superseded','retracted')),
  superseded_by_signal_id TEXT REFERENCES user_profile_signals(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS driver_chat_invitations (
+ id TEXT PRIMARY KEY, booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+ driver_person_id TEXT NOT NULL REFERENCES people(id), token_hash TEXT NOT NULL UNIQUE,
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','expired','revoked')),
+ expires_at TEXT NOT NULL, sent_at TEXT, revoked_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_variants_model_active ON vehicle_variants(model_id,is_active);
 CREATE INDEX IF NOT EXISTS idx_showrooms_active ON showrooms(is_active);
 CREATE INDEX IF NOT EXISTS idx_demo_lookup ON demo_vehicles(showroom_id,variant_id,operational_status,is_active);
@@ -877,4 +887,5 @@ CREATE INDEX IF NOT EXISTS idx_llm_budget_ip_date ON llm_budget_ledger(client_ip
 CREATE INDEX IF NOT EXISTS idx_user_profiles_merged ON user_profiles(merged_into_profile_id);
 CREATE INDEX IF NOT EXISTS idx_profile_signals_status ON user_profile_signals(profile_id,status);
 CREATE INDEX IF NOT EXISTS idx_profile_signals_key ON user_profile_signals(profile_id,category,key,status);
+CREATE INDEX IF NOT EXISTS idx_driver_chat_invitation_booking ON driver_chat_invitations(booking_id,status,expires_at);
 """

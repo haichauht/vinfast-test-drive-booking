@@ -66,7 +66,11 @@ def build_profile_context(snapshot: ProfileSnapshot, message: str = "", *, limit
                 "description": signal.get("description"),
                 "certainty": signal.get("certainty"),
                 "confidence": signal.get("confidence"),
-                "source_type": signal.get("source_type"),
+                "source_type": (
+                    "third_party"
+                    if str(signal.get("source_ref") or "").startswith("third_party:")
+                    else signal.get("source_type")
+                ),
             }
         )
     markdown_parts = []

@@ -26,13 +26,16 @@ async def post_booking_skill_node(state: AgentState) -> dict:
     metadata = state.get("metadata") or {}
     trace_id = metadata.get("trace_id", "")
     booking_context = state.get("post_booking_context") or {"active": False}
+    participant_context = state.get("participant_context") or {"role": "booker"}
     action_result = state.get("action_result")
     if isinstance(action_result, dict) and action_result.get("status") == "confirmed" and action_result.get("booking_id"):
         booking_context = {"active": True, **profile_service.booking_context(str(action_result["booking_id"]))}
+        participant_context = {"role": "booker", "booking_id": str(action_result["booking_id"])}
     prompt = (
         f"{get_system_prompt()}\n\n--- ACTIVE SKILL GUIDELINES (POST BOOKING) ---\n{get_post_booking_prompt()}"
         f"\n\n--- USER PROFILE BRIEF ---\n{(state.get('profile_context') or {}).get('brief', 'Profile chưa có dữ liệu.')}"
         f"\n\n--- BOOKING CONTEXT ---\n{json.dumps(booking_context, ensure_ascii=False)}"
+        f"\n\n--- CURRENT PARTICIPANT ---\n{json.dumps(participant_context, ensure_ascii=False)}"
     )
     last = messages[-1] if messages else None
     if isinstance(last, ToolMessage):
