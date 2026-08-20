@@ -252,6 +252,7 @@ class CatalogService(BookingBase):
             horizon = iso(self.now() + timedelta(days=30))
             values: list[Any] = [showroom_id, *variant_ids, now, now, horizon]
             date_sql, order_sql = "", "s.start_at"
+            norm_date = None
             if preferred_date:
                 norm_date = _normalize_preferred_date(preferred_date, self.now().astimezone(VIETNAM_TZ))
                 date_sql = " AND substr(s.start_at,1,10)=?"
@@ -299,6 +300,10 @@ class CatalogService(BookingBase):
                 date_str = dt_start.strftime("%d/%m")
                 time_str = dt_start.strftime("%H:%M")
                 s["formatted_schedule"] = f"{day_label}, {date_str} {time_str}"
+
+        focused_date = norm_date if preferred_date else None
+        highlighted_dates = [focused_date[5:]] if focused_date and len(focused_date) >= 10 else []
+
         return {
             "resolved_vehicle": {**model, "variants": variants},
             "license_requirement": model["required_license_class"],
@@ -306,6 +311,8 @@ class CatalogService(BookingBase):
             "showrooms": [],
             "slots": slots,
             "search_stage": "slot_selection",
+            "focused_date": focused_date,
+            "highlighted_dates": highlighted_dates,
             "missing_fields": [],
         }
 
