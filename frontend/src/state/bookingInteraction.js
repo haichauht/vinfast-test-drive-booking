@@ -216,6 +216,7 @@ export function toLegacyStage(state) {
 
 export function selectAllowedActions(state, facts = {}) {
   const actions = new Set()
+  actions.add('start_lookup')
   if (state.phase === BookingPhase.CHOOSE_VEHICLE) actions.add('choose_vehicle')
   if (state.phase === BookingPhase.CHOOSE_LOCATION) {
     actions.add('use_geolocation')
@@ -223,9 +224,6 @@ export function selectAllowedActions(state, facts = {}) {
   }
   if (state.phase === BookingPhase.CHOOSE_SHOWROOM) actions.add('select_showroom')
   if (state.phase === BookingPhase.CHOOSE_SLOT) actions.add('select_slot')
-  if ([BookingPhase.CHOOSE_VEHICLE, BookingPhase.CHOOSE_LOCATION, BookingPhase.SUCCESS, BookingPhase.IDLE].includes(state.phase)) {
-    actions.add('start_lookup')
-  }
   if ([BookingPhase.ACCESS_REQUEST, BookingPhase.ACCESS_VERIFY].includes(state.phase)) actions.add('cancel_access')
   if (state.phase === BookingPhase.BOOKING_LIST) {
     actions.add('select_booking')
