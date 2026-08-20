@@ -6,7 +6,6 @@ from typing import Any
 
 from src.services.profile.models import ProfileSnapshot
 
-
 SECTION_TITLES = {
     "known_facts": "Known facts",
     "interests": "Interests",
