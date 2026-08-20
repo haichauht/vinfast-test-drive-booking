@@ -100,6 +100,7 @@ async def classifier_node(state: AgentState) -> dict:
         "out_of_scope_code, out_of_scope_math, others.\n"
         "Use booking_lookup when the user wants to view, find, check, or retrieve an existing booking.\n"
         "IMPORTANT: When the user mentions changing/switching a vehicle model (e.g. 'đổi VF8', 'đổi xe VF5', 'chuyển sang VF7', 'xem xe VF3'), classify as booking_new (NOT booking_reschedule). Only use booking_reschedule when the user explicitly asks to change an existing appointment time/date ('đổi lịch', 'đổi giờ hẹn').\n"
+        "IMPORTANT: Only use out_of_scope_code when the user explicitly asks for writing programming/software code. For foreign locations outside Vietnam (e.g. 'thượng hải', 'campuchia') or general off-topic queries, select sub_intent=others.\n"
         "If the query contains an email, copy it exactly to contact_value. Otherwise return null. "
         "Never invent contact_value.\n"
         f"UI context: channel={context.get('channel', '')}, stage={context.get('stage', '')}.\n"

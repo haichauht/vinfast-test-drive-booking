@@ -124,15 +124,15 @@ PROVINCE_COORDINATES: dict[str, tuple[float, float]] = {
 def resolve_address_coordinates(address: str) -> Coordinates | None:
     if not address:
         return None
-    normalized = address.strip().lower()
-
-    # 1. Kiểm tra 63 Tỉnh / Thành phố (Bậc 1) trong bộ nhớ L1
-    for key, (lat, lon) in PROVINCE_COORDINATES.items():
-        if key in normalized:
-            return Coordinates(latitude=lat, longitude=lon)
-
-    # 2. Dynamic Geocoding cho Quận/Huyện/Xã bất kỳ: Tự động hỏi OpenStreetMap API
     clean_addr = address.strip()
+    normalized = clean_addr.lower()
+
+    # 1. Nếu từ khóa tra cứu trùng khớp hoàn toàn tên Tỉnh / Thành phố chính (0ms L1 memory lookup)
+    if normalized in PROVINCE_COORDINATES:
+        lat, lon = PROVINCE_COORDINATES[normalized]
+        return Coordinates(latitude=lat, longitude=lon)
+
+    # 2. Ưu tiên Dynamic Geocoding (OpenStreetMap API) cho Phường/Xã/Quận/Huyện/Tên đường cụ thể
     coords = _fetch_nominatim_coordinates(clean_addr)
     if coords:
         return coords
@@ -147,6 +147,11 @@ def resolve_address_coordinates(address: str) -> Coordinates | None:
             coords = _fetch_nominatim_coordinates(part)
             if coords:
                 return coords
+
+    # 3. Fallback L1: Nếu API không trả về kết quả, mới quét tên Tỉnh / Thành phố lân cận
+    for key, (lat, lon) in PROVINCE_COORDINATES.items():
+        if key in normalized:
+            return Coordinates(latitude=lat, longitude=lon)
 
     return None
 
