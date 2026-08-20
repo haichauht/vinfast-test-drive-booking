@@ -102,9 +102,12 @@ def _ensure_all_demo_vehicles(connection) -> None:
             if not existing:
                 dv_id = f"dv_auto_{s_id}_{v_id}"
                 asset_code = f"SR{s_id}-DV-{v_id[:10]}"
-                vin = f"MOCKVIN{s_id[:4]}{v_id[:6]}2026EV"
+                vin = f"VIN{abs(hash(dv_id)) % 1000000000:09d}2026EV"
+                is_pg = getattr(connection, "dialect", "") == "postgres"
+                insert_prefix = "INSERT INTO" if is_pg else "INSERT OR IGNORE INTO"
+                conflict_sql = " ON CONFLICT (id) DO NOTHING" if is_pg else ""
                 connection.execute(
-                    "INSERT INTO demo_vehicles(id,showroom_id,variant_id,asset_code,vin,plate_number,operational_status,battery_soc,minimum_booking_soc,charging_status,is_active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    f"{insert_prefix} demo_vehicles(id,showroom_id,variant_id,asset_code,vin,plate_number,operational_status,battery_soc,minimum_booking_soc,charging_status,is_active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?){conflict_sql}",
                     (dv_id, s_id, v_id, asset_code, vin, "30M-999.99", "available", 95, 35, "not_charging", 1, now_str, now_str),
                 )
 
