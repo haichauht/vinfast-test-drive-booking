@@ -94,6 +94,7 @@ import {
   cancelVerifiedBooking,
   confirmVerifiedReschedule,
   holdBookingSlot,
+  releaseBookingHold,
   holdVerifiedReschedule,
   getVerifiedBooking,
   listVerifiedBookings,
@@ -1281,9 +1282,29 @@ export function BookingPage() {
         setAgentTyping(false)
         return
       }
+      // Nếu đang giữ slot cũ khác → release trước, sau đó mới hold slot mới
+      if (bookingId && (!selectedSlot || selectedSlot.slotId !== pendingSlot.slotId)) {
+        const oldBookingId = bookingId
+        const oldSlotId = selectedSlot?.slotId
+        setBookingId('')
+        try {
+          await releaseBookingHold(oldBookingId)
+        } catch {
+          // ignore, tiếp tục hold slot mới
+        }
+        // Khôi phục màu xanh cho slot cũ trên UI
+        if (oldSlotId) {
+          setSlots((prev) => prev.map((day) => ({
+            ...day,
+            times: day.times.map((t) =>
+              t.slotId === oldSlotId ? { ...t, isAvailable: true, unavailableLabel: '' } : t
+            ),
+          })))
+        }
+        holdActionIdsRef.current.clear()
+      }
       const actionKey = pendingSlot.slotId
-      const uiActionId = holdActionIdsRef.current.get(actionKey) || actionId('hold')
-      holdActionIdsRef.current.set(actionKey, uiActionId)
+      const uiActionId = actionId('hold')
       const held = await holdBookingSlot(pendingSlot.slotId, uiActionId)
       holdActionIdsRef.current.delete(actionKey)
       setBookingId(held.booking_id)
@@ -1301,14 +1322,6 @@ export function BookingPage() {
       if (error.code === 'SLOT_NO_LONGER_AVAILABLE') {
         setPendingSlot(null)
         setSelectedSlot(null)
-        if (selectedCar && selectedShowroom) {
-          try {
-            const refreshed = await searchBookingOptions({ vehicleModel: selectedCar.name, showroomId: selectedShowroom.id })
-            setSlots(groupSlots(refreshed.slots || []))
-          } catch {
-            setSlots([])
-          }
-        }
       }
       reply(`Không thể giữ khung giờ: ${error.message}`)
     }
@@ -2068,11 +2081,12 @@ export function BookingPage() {
   })()
 
   const highlightedDates = useMemo(() => {
+    if (serverHighlightedDates && serverHighlightedDates.length > 0) {
+      return serverHighlightedDates
+    }
     const lastMsg = messages[messages.length - 1]
     const text = lastMsg && lastMsg.role === 'assistant' ? String(lastMsg.text || lastMsg.content || '') : ''
-    const textDates = extractTargetDates(text, slots)
-    const combined = [...(serverHighlightedDates || []), ...textDates]
-    return [...new Set(combined)]
+    return extractTargetDates(text, slots)
   }, [serverHighlightedDates, messages, slots])
 
   const renderWorkspace = () => {
@@ -2326,7 +2340,7 @@ export function BookingPage() {
                 showrooms={nearbyShowrooms}
                 slots={slots}
                 pendingSlot={pendingSlot}
-                lastMessage={messages[messages.length - 1]}
+                lastMessage={messages.slice(-3)}
                 onResolveArea={resolveSuggestedArea}
                 onShowroom={chooseShowroom}
                 onSlot={chooseSlot}
@@ -2406,7 +2420,43 @@ export function BookingPage() {
               )}
 
               {stage === 'collect_info' ? (
-                <CustomerForm recipient={recipient} value={person} errors={formErrors} onChange={changePerson} onSubmit={submitPerson} onBack={() => setActiveView('schedule')} />
+                <CustomerForm
+                  recipient={recipient}
+                  value={person}
+                  errors={formErrors}
+                  onChange={changePerson}
+                  onSubmit={submitPerson}
+                  onBack={async () => {
+                    const currentBookingId = bookingId
+                    const canceledSlotId = pendingSlot?.slotId || selectedSlot?.slotId
+                    if (currentBookingId) {
+                      try {
+                        await releaseBookingHold(currentBookingId)
+                      } catch {
+                        // ignore error
+                      }
+                    }
+                    if (canceledSlotId) {
+                      setSlots((prevSlots) =>
+                        prevSlots.map((day) => ({
+                          ...day,
+                          times: day.times.map((t) =>
+                            t.slotId === canceledSlotId
+                              ? { ...t, isAvailable: true, unavailableLabel: '' }
+                              : t
+                          ),
+                        }))
+                      )
+                    }
+                    holdActionIdsRef.current.clear()
+                    setBookingId('')
+                    setPendingSlot(null)
+                    setSelectedSlot(null)
+                    setStage('choose_slot')
+                    setActiveView('schedule')
+                    reply('Đã hủy giữ chỗ và giải phóng khung giờ. Bạn có thể chọn lại ngay khung giờ này hoặc chọn giờ khác nhé.')
+                  }}
+                />
               ) : stage === 'review' ? (
                 <>
                   <div className="vivi-inline-otp">

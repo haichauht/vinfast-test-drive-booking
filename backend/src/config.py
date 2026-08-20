@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://vinfast:vinfast@localhost:5432/vinfast_booking"
     auto_load_eval_data: bool = True
     eval_data_dir: str = "eval/data"
-    redis_enabled: bool = False
-    redis_url: str = "redis://red-d9sklsf10e5c73a2lv80:6358"
+    redis_enabled: bool = True
+    redis_url: str = "redis://localhost:6379/0"
 
     # Media: local development serves MEDIA_ROOT at /media. Production can set
     # MEDIA_BASE_URL to an absolute CDN origin without changing API DTOs.
@@ -93,7 +93,7 @@ class Settings(BaseSettings):
     rate_limit_trust_proxy_headers: bool = False
     rate_limit_anon_cookie_name: str = "anon_session_id"
     rate_limit_anon_cookie_ttl_seconds: int = Field(default=2_592_000, ge=60, le=31_536_000)
-    rate_limit_chat_per_session_per_minute: int = Field(default=10, ge=1, le=10_000)
+    rate_limit_chat_per_session_per_minute: int = Field(default=30, ge=1, le=10_000)
     rate_limit_chat_per_session_per_hour: int = Field(default=120, ge=1, le=100_000)
     rate_limit_chat_per_ip_per_minute: int = Field(default=60, ge=1, le=100_000)
     rate_limit_chat_per_ip_per_hour: int = Field(default=600, ge=1, le=1_000_000)

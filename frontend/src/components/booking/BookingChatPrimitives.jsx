@@ -183,7 +183,9 @@ export function ContextualChoices({ stage, allowedActions, car, locationSuggesti
 
   if (stage === 'choose_slot' && allowedActions.includes('select_slot') && slots.length) {
     const availableDays = slots.filter((day) => day.times.some((entry) => entry.isAvailable))
-    const lastText = String(lastMessage?.text || lastMessage?.content || '')
+    // Lấy đúng tin nhắn MỚI NHẤT để định vị chính xác ngày người dùng vừa hỏi
+    const lastMsg = Array.isArray(lastMessage) ? lastMessage[lastMessage.length - 1] : lastMessage
+    const lastText = String(lastMsg?.text || lastMsg?.content || '')
     const targetKeys = extractTargetDates(lastText, slots)
     const matchedDays = []
 
@@ -202,50 +204,25 @@ export function ContextualChoices({ stage, allowedActions, car, locationSuggesti
     }
 
     const quickSlots = []
-    if (matchedDays.length === 1) {
-      // 1 ngày: lấy tối đa 5 slot của ngày đó
-      const avail = matchedDays[0].times.filter((entry) => entry.isAvailable)
-      for (const entry of avail.slice(0, 5)) {
-        quickSlots.push({
-          date: matchedDays[0].value,
-          dateLabel: matchedDays[0].dateLabel,
-          time: entry.time,
-          slotId: entry.slotId,
-        })
-      }
-    } else if (matchedDays.length > 1) {
-      // Nhiều ngày (2 ngày trở lên): chia đều slot giữa các ngày (max 5 slot tổng)
-      const slotsPerDay = Math.max(1, Math.ceil(5 / matchedDays.length))
-      for (const day of matchedDays) {
-        const avail = day.times.filter((entry) => entry.isAvailable)
-        for (const entry of avail.slice(0, slotsPerDay)) {
-          if (quickSlots.length < 5) {
-            quickSlots.push({
-              date: day.value,
-              dateLabel: day.dateLabel,
-              time: entry.time,
-              slotId: entry.slotId,
-            })
-          }
+    const targetDays = matchedDays.length ? matchedDays : availableDays
+
+    for (const day of targetDays) {
+      const avail = day.times.filter((entry) => entry.isAvailable)
+      // Loại bỏ các mốc giờ trùng lặp trên cùng 1 ngày (ví dụ 09:00 có ở cả bản Eco và Plus)
+      const seenTimes = new Set()
+      for (const entry of avail) {
+        if (!seenTimes.has(entry.time)) {
+          seenTimes.add(entry.time)
+          quickSlots.push({
+            date: day.value,
+            dateLabel: day.dateLabel,
+            time: entry.time,
+            slotId: entry.slotId,
+          })
+          if (quickSlots.length >= 5) break
         }
-        if (quickSlots.length >= 5) break
       }
-    } else {
-      // Mặc định (không nhắc ngày cụ thể): lấy tối đa 2 slot mỗi ngày xuyên suốt tuần, tối đa 5 slot
-      for (const day of availableDays) {
-        const avail = day.times.filter((entry) => entry.isAvailable)
-        for (const entry of avail.slice(0, 2)) {
-          if (quickSlots.length < 5) {
-            quickSlots.push({
-              date: day.value,
-              dateLabel: day.dateLabel,
-              time: entry.time,
-              slotId: entry.slotId,
-            })
-          }
-        }
-        if (quickSlots.length >= 5) break
-      }
+      if (quickSlots.length >= 5) break
     }
 
     const displaySlots = quickSlots.slice(0, 5)
@@ -254,8 +231,8 @@ export function ContextualChoices({ stage, allowedActions, car, locationSuggesti
       <div className="agent-context" aria-label="Khung giờ còn trống">
         <div className="agent-context__heading"><span>Khung giờ gần nhất</span><small>Đã ghép đúng xe {car.name}</small></div>
         <div className="agent-context__rail agent-context__rail--slots">
-          {displaySlots.map((slot) => (
-            <button type="button" key={`${slot.date}-${slot.time}`} onClick={() => onSlot(slot)}>
+          {displaySlots.map((slot, idx) => (
+            <button type="button" key={slot.slotId || `${slot.date}-${slot.time}-${idx}`} onClick={() => onSlot(slot)}>
               <span><Clock size={16} weight="light" /></span>
               <strong>{slot.time}</strong>
               <small>{slot.dateLabel}</small>
