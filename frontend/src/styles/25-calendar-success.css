@@ -134,14 +134,15 @@
 }
 
 .schedule-calendar__matrix {
-  min-width: 980px;
+  min-width: 100%;
+  width: 100%;
   font-variant-numeric: tabular-nums;
 }
 
 .schedule-calendar__week,
 .schedule-calendar__row {
   display: grid;
-  grid-template-columns: 72px repeat(7, minmax(118px, 1fr));
+  grid-template-columns: 52px repeat(7, 1fr);
 }
 
 .schedule-calendar__week {
@@ -155,7 +156,7 @@
 
 .schedule-calendar__time-title,
 .schedule-calendar__day {
-  min-height: 82px;
+  min-height: 72px;
   border-right: 1px solid var(--line);
 }
 
@@ -172,8 +173,8 @@
   display: grid;
   grid-template-columns: auto 1fr;
   align-content: center;
-  gap: 3px 8px;
-  padding: 12px 13px;
+  gap: 2px 4px;
+  padding: 8px 6px;
 }
 
 .schedule-calendar__day:last-child,
@@ -182,23 +183,23 @@
 .schedule-calendar__day span {
   align-self: end;
   color: var(--muted);
-  font-size: 0.58rem;
+  font-size: 0.56rem;
   font-weight: 680;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
 }
 
 .schedule-calendar__day strong {
   grid-row: span 2;
   align-self: center;
   justify-self: end;
-  font-size: 1.72rem;
+  font-size: 1.4rem;
   font-weight: 520;
-  letter-spacing: -0.055em;
+  letter-spacing: -0.04em;
 }
 
 .schedule-calendar__day small {
   color: var(--muted);
-  font-size: 0.56rem;
+  font-size: 0.52rem;
 }
 
 .schedule-calendar__day.is-today { color: var(--blue); background: rgba(20, 100, 244, 0.045); }
@@ -231,8 +232,8 @@
 
 .schedule-calendar__cell {
   position: relative;
-  min-height: 92px;
-  padding: 6px;
+  min-height: 76px;
+  padding: 4px 3px;
   border-right: 1px solid var(--line);
   background: #fff;
   transition: background 0.25s var(--ease-soft);
@@ -244,13 +245,13 @@
   position: relative;
   display: grid;
   align-content: center;
-  gap: 3px;
+  gap: 2px;
   width: 100%;
-  min-height: 78px;
-  padding: 11px 10px 11px 16px;
+  min-height: 68px;
+  padding: 8px 5px 8px 10px;
   overflow: hidden;
   border: 0;
-  border-radius: 11px;
+  border-radius: 9px;
   color: var(--ink);
   background: #eef3fb;
   font: inherit;
@@ -262,8 +263,8 @@
 
 .schedule-calendar__cell > button > span {
   position: absolute;
-  top: 9px;
-  bottom: 9px;
+  top: 6px;
+  bottom: 6px;
   left: 0;
   width: 3px;
   border-radius: 0 3px 3px 0;
@@ -272,7 +273,7 @@
 
 .schedule-calendar__cell > button strong {
   overflow: hidden;
-  font-size: 0.66rem;
+  font-size: 0.62rem;
   font-weight: 680;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -280,7 +281,10 @@
 
 .schedule-calendar__cell > button small {
   color: #697583;
-  font-size: 0.56rem;
+  font-size: 0.52rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .schedule-calendar__cell > button.is-available:hover,
@@ -833,9 +837,9 @@ p { text-wrap: pretty; }
   .schedule-calendar__navigation { justify-self: start; }
   .schedule-calendar__range { justify-items: start; }
   .schedule-calendar__legend { grid-column: auto; }
-  .schedule-calendar__matrix { min-width: 900px; }
+  .schedule-calendar__matrix { min-width: 100%; }
   .schedule-calendar__week,
-  .schedule-calendar__row { grid-template-columns: 64px repeat(7, minmax(108px, 1fr)); }
+  .schedule-calendar__row { grid-template-columns: 48px repeat(7, 1fr); }
 
   .booking-success-documents {
     grid-template-rows: 300px auto;

@@ -463,18 +463,23 @@ class ImportService(BookingBase):
                 or parent_column not in allowed_identifiers[parent_table]
             ):
                 raise ValueError("Invalid internal dataset reference configuration.")
-            values = {row[column] for row in rows if row[column]}
+            values = list({row[column] for row in rows if row[column]})
             if not values:
                 continue
-            marks = ",".join("?" * len(values))
-            found = {
-                row[0]
-                for row in c.execute(
-                    f"SELECT {parent_column} FROM {parent_table} WHERE {parent_column} IN ({marks})",
-                    tuple(values),
-                )
-            }
-            missing = sorted(values - found)
+            found = set()
+            chunk_size = 500
+            for i in range(0, len(values), chunk_size):
+                chunk = values[i : i + chunk_size]
+                marks = ",".join("?" * len(chunk))
+                chunk_found = {
+                    row[0]
+                    for row in c.execute(
+                        f"SELECT {parent_column} FROM {parent_table} WHERE {parent_column} IN ({marks})",
+                        tuple(chunk),
+                    )
+                }
+                found.update(chunk_found)
+            missing = sorted(set(values) - found)
             if missing:
                 preview = ", ".join(missing[:5])
                 problems.append(f"{column} missing in {parent_table}: {preview}; import {parent_file} first")

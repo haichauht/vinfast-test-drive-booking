@@ -260,11 +260,11 @@
    gap 40px là con số anh Minh chốt. Hai nút đều nền đặc, đứng cạnh nhau mà hở hẹp thì đọc
    thành một mảng liền — đã thử 10px, 18px, 28px, đều còn dính. Đừng thu lại. */
 .vivi-customer-form__actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   align-items: center;
-  justify-content: center;
-  gap: 40px;
+  gap: 12px;
+  width: 100%;
   margin-top: 12px;
 }
 
@@ -273,11 +273,12 @@
   align-items: center;
   justify-content: center;
   gap: 9px;
-  min-height: 45px;
-  padding: 0 20px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 16px;
   border: none;
   border-radius: 14px;
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-weight: 680;
   cursor: pointer;
 }
