@@ -20,7 +20,7 @@
  *
  * conversation_id được giữ trong sessionStorage để ViVi nhớ mạch hội thoại trong cùng tab.
  */
-import { ApiError, apiPost } from './client'
+import { ApiError, apiGet, apiPost } from './client'
 import { actionId } from './ids'
 
 const CONVERSATION_KEY = 'vinfast:booking-conversation-id'
@@ -104,6 +104,11 @@ export const sendDriverChatMessage = (message, { conversationId, invitationToken
   conversationId,
   invitationToken,
 })
+
+export const getDriverInvitationContext = (invitationToken) => apiGet(
+  `/driver-chat/${encodeURIComponent(invitationToken)}/context`,
+  { cacheKey: `driver-invitation:${invitationToken}`, fallbackToCache: false },
+)
 
 export const resetBookingConversation = () => {
   if (typeof window !== 'undefined') window.sessionStorage.removeItem(CONVERSATION_KEY)
