@@ -113,43 +113,98 @@ async def test_classifier_keeps_vehicle_info_inside_booking_channel(monkeypatch)
         }
     )
 
+    assert result["intent"] == "domain"
     assert result["active_skill"] == "booking"
     assert result["metadata"]["sub_intent"] == "vehicle_info"
     assert result["metadata"]["llm_call_count"] == 1
 
 
-# test case of Chau + kiểm tra classifier fallback chọn booking hoặc advise khi LLM lỗi
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("query", "expected_intent", "expected_skill"),
-    [
-        ("Xin chào bạn", "domain", "booking"),
-        ("Tôi muốn đặt lịch lái thử VF6", "domain", "booking"),
-        ("VF8 có gì nổi bật?", "domain", "booking"),
-    ],
-)
-async def test_classifier_fallback_routes_without_network(monkeypatch, query, expected_intent, expected_skill):
+async def test_classifier_keeps_new_test_drive_request_out_of_post_booking_shortcut(monkeypatch):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        return_value=RouteSchema(intent="domain", sub_intent="booking_new")
+    )
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+
+    result = await classifier_node({"query": "Tôi muốn lái thử VF9"})
+
+    assert result["intent"] == "domain"
+    assert result["active_skill"] == "booking"
+    assert result["metadata"]["sub_intent"] == "booking_new"
+    structured.ainvoke.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_driver_invitation_blocks_booking_availability(monkeypatch):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        return_value=RouteSchema(intent="domain", sub_intent="booking_availability")
+    )
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+
+    result = await classifier_node(
+        {
+            "query": "Ngày 25 còn giờ nào?",
+            "participant_context": {"role": "driver"},
+            "post_booking_context": {"active": True},
+        }
+    )
+
+    assert result["intent"] == "out_of_scope"
+    assert result["metadata"]["sub_intent"] == "driver_booking_scope"
+
+
+@pytest.mark.asyncio
+async def test_classifier_fallback_routes_without_network(monkeypatch):
     monkeypatch.setattr(
         classifier_module,
         "get_classifier_llm",
         MagicMock(side_effect=RuntimeError("classifier unavailable")),
     )
 
+    result = await classifier_node({"query": "VF8 có gì nổi bật?"})
+
+    assert result["intent"] == "domain"
+    assert result.get("active_skill") == "booking"
+    assert result["metadata"]["sub_intent"].startswith("fallback_")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "expected_sub_intent"),
+    [
+        ("Xin chào bạn", "greeting"),
+        ("Tôi muốn đặt lịch lái thử VF6", "booking"),
+    ],
+)
+async def test_classifier_keyword_routes_without_network(monkeypatch, query, expected_sub_intent):
+    get_llm = MagicMock(side_effect=AssertionError("LLM must not be called"))
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", get_llm)
+
     result = await classifier_node({"query": query})
 
-    assert result["intent"] == expected_intent
-    assert result.get("active_skill") == expected_skill
-    assert result["metadata"]["sub_intent"].startswith("fallback_")
+    assert result["intent"] == "domain"
+    assert result["active_skill"] == "booking"
+    assert result["metadata"]["sub_intent"] == expected_sub_intent
+    get_llm.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_classifier_falls_back_when_llm_is_not_configured(monkeypatch):
     monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: None)
 
-    result = await classifier_node({"query": "Tôi muốn đặt lịch lái thử VF6"})
+    result = await classifier_node({"query": "VF8 có gì nổi bật?"})
 
     assert result["intent"] == "domain"
     assert result["active_skill"] == "booking"
+    assert result["metadata"]["sub_intent"] == "fallback_domain"
 
 
 # test case of Chau + kiểm tra classifier từ chối intent lạ do LLM trả về

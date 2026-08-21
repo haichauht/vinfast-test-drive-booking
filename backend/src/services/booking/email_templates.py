@@ -107,7 +107,7 @@ def render_otp_email(*, code: str, expires_in_seconds: int) -> RenderedEmail:
     return RenderedEmail(subject=subject, plain_text=plain, html=html, inline_images=_inline_logo())
 
 
-def render_booking_email(notification_type: str, row) -> RenderedEmail:
+def render_booking_email(notification_type: str, row, *, driver_invite_url: str | None = None) -> RenderedEmail:
     if not row:
         subject = "Cập nhật lịch lái thử VinFast"
         plain = "Lịch lái thử VinFast của bạn đã được cập nhật."
@@ -149,6 +149,22 @@ def render_booking_email(notification_type: str, row) -> RenderedEmail:
         ("Tư vấn viên", staff),
     )
     plain = "\n".join((heading, *(f"{label}: {value}" for label, value in rows)))
+    invite_html = ""
+    if driver_invite_url and notification_type == "booking_confirmation":
+        safe_invite_url = escape(driver_invite_url, quote=True)
+        invite_html = (
+            '<div style="margin:22px 0 0;text-align:center;">'
+            f'<a href="{safe_invite_url}" target="_blank" rel="noreferrer" '
+            f'style="display:inline-block;padding:12px 24px;border-radius:10px;'
+            f'background:{_BLUE};color:#ffffff;font-size:14px;font-weight:600;'
+            'text-decoration:none;">Trò chuyện với ViVi</a></div>'
+            '<p style="margin:10px 0 0;font-size:13px;line-height:20px;color:#6b7280;">'
+            'Chia sẻ nhu cầu riêng để chuẩn bị tốt hơn cho buổi lái thử.</p>'
+        )
+        plain += (
+            "\n\nTrò chuyện với ViVi để chuẩn bị cho buổi lái thử: "
+            f"{driver_invite_url}"
+        )
     html = _html_document(
         title=heading,
         intro=_intro(notification_type),
@@ -158,6 +174,7 @@ def render_booking_email(notification_type: str, row) -> RenderedEmail:
         ),
         maps_url=maps_url,
         showroom_name=showroom_name,
+        post_content_html=invite_html,
     )
     return RenderedEmail(subject=subject, plain_text=plain, html=html, inline_images=_inline_logo())
 
@@ -215,6 +232,7 @@ def _html_document(
     highlight: str | None = None,
     maps_url: str | None = None,
     showroom_name: str | None = None,
+    post_content_html: str = "",
 ) -> str:
     row_list = list(rows)
     body_rows = "\n".join(
@@ -288,7 +306,7 @@ def _html_document(
         </tr>
         <tr>
           <td style="padding:0 30px 24px;font-family:{_FONT};">
-            {highlight_html}{table_html}{maps_html}{footer_html}
+            {highlight_html}{table_html}{maps_html}{post_content_html}{footer_html}
           </td>
         </tr>
       </table>
