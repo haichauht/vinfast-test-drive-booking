@@ -5,6 +5,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from src.agents.graph import agent
 from src.agents.nodes import booking_skill_node as booking_module
 from src.agents.nodes.classifier_node import classifier_node
+from src.agents.tools.search_test_drive_options import tool as search_options_module
 
 
 def _config(thread_id: str) -> dict:
@@ -28,7 +29,7 @@ async def test_booking_agent_executes_tool_and_returns_final_response(monkeypatc
         tool_calls=[
             {
                 "name": "search_test_drive_options",
-                "args": {"query": "VF8 range"},
+                "args": {"vehicle_model": "VF8"},
                 "id": "call-search-options",
                 "type": "tool_call",
             }
@@ -36,6 +37,11 @@ async def test_booking_agent_executes_tool_and_returns_final_response(monkeypatc
     )
     llm, bound = _scripted_tool_llm(tool_call, AIMessage(content="VF8 information found"))
     monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+    monkeypatch.setattr(
+        search_options_module.booking_service,
+        "search_options",
+        lambda **kwargs: {"vehicle_model": kwargs["vehicle_model"], "search_stage": "showroom_selection"},
+    )
 
     result = await agent.ainvoke({"query": "Tìm lịch lái thử VF8"}, config=_config("booking-agent-real-tool-loop"))
 
@@ -44,7 +50,7 @@ async def test_booking_agent_executes_tool_and_returns_final_response(monkeypatc
     assert result["tool_call_count"] == 1
     tool_messages = [message for message in result["messages"] if isinstance(message, ToolMessage)]
     assert len(tool_messages) == 1
-    assert "VF8 range" in tool_messages[0].content
+    assert "VF8" in tool_messages[0].content
     assert bound.ainvoke.await_count == 2
 
 
