@@ -247,6 +247,18 @@ def test_search_slots_supports_an_inclusive_date_range(booking_service, catalog)
     assert result["highlighted_dates"] == ["08-05"]
 
 
+def test_date_filter_sql_rejects_untrusted_dialect():
+    filters = {
+        "mode": "single",
+        "dates": ["2026-08-05"],
+        "from": None,
+        "to": None,
+    }
+
+    with pytest.raises(ValueError, match="Unsupported database dialect"):
+        catalog_module._date_filter_sql(filters, dialect="sqlite) OR 1=1 --")
+
+
 @pytest.mark.parametrize(
     "date_filters",
     [
