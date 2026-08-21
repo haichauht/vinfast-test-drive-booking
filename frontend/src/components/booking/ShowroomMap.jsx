@@ -31,7 +31,7 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
   const searchedMarkerRef = useRef(null)
   const [leafletLoaded, setLeafletLoaded] = useState(false)
   const selected = showrooms.find((showroom) => showroom.id === selectedId) || null
-  const hasLocation = Boolean(userLocation || searchedLocation)
+  const hasLocation = !!userLocation
 
   useEffect(() => {
     if (window.L) { setLeafletLoaded(true); return }
@@ -136,10 +136,10 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
   return (
     <section className="studio-map studio-map--familiar" aria-label="Bản đồ showroom phù hợp">
       <aside className="studio-map__list">
-        <div className="studio-map__intro"><span>{showrooms.length} showroom còn lịch cho {car.name}</span><small>{hasLocation ? 'Sắp xếp theo khoảng cách từ vị trí bạn cung cấp.' : 'Đang hiển thị theo lịch trống phù hợp.'}</small></div>
+        <div className="studio-map__intro"><span>{showrooms.length} showroom có {car.name}</span><small>{hasLocation ? 'Sắp xếp theo khoảng cách từ vị trí hiện tại.' : 'Đang hiển thị theo khu vực bạn đã nhập.'}</small></div>
         {showrooms.map((showroom, index) => (
           <button type="button" key={showroom.id} className={selectedId === showroom.id ? 'is-active' : ''} onClick={() => onSelect(showroom.id)}>
-            <span>{index + 1}</span><span><strong>{showroom.name}</strong><small>{showroom.address}</small>{showroom.available_slot_count ? <small>Còn {showroom.available_slot_count} lịch trống</small> : null}</span>{hasLocation && <em>{String(showroom.distance).replace('.', ',')} km</em>}
+            <span>{index + 1}</span><span><strong>{showroom.name}</strong><small>{showroom.address}</small></span>{hasLocation && <em>{String(showroom.distance).replace('.', ',')} km</em>}
           </button>
         ))}
       </aside>

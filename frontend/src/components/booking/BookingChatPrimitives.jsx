@@ -112,7 +112,52 @@ export function ViviStatusTyping() {
   )
 }
 
-export function ContextualChoices({ stage, allowedActions, car, locationSuggestions, showrooms, slots, pendingSlot, highlightedDates = [], onResolveArea, onShowroom, onSlot }) {
+/**
+ * Lọc chính xác các mốc ngày/tháng được ViVi nhắc tới làm mục tiêu khả dụng.
+ * Tự động loại bỏ các đoạn văn bản dẫn (VD: "Hôm nay là...", "tuần sau từ 24/08 - 30/08")
+ * để tránh highlight nhầm ngày hiện tại hoặc dải ngày đầu/cuối tuần.
+ */
+export function extractTargetDates(text = '', slots = []) {
+  if (!text) return []
+
+  // 1. Loại bỏ các khoảng tuần (dạng "24/08 - 30/08", "24/08 – 30/08", "24/08 đến 30/08")
+  let cleanText = text.replace(/(\d{1,2}\/\d{1,2})\s*(?:-|–|đến)\s*(\d{1,2}\/\d{1,2})/gi, '')
+
+  // 2. Loại bỏ hoàn toàn câu dẫn về ngày hiện tại (VD: "Hôm nay là 20/08", "nay là 20/08", "hôm nay 20/08")
+  cleanText = cleanText.replace(/(?:hôm\s+)?nay\s+(?:là\s+)?[^,.\n]*?\d{1,2}\/\d{1,2}/gi, '')
+  cleanText = cleanText.replace(/\d{1,2}\/\d{1,2}\s*\([^)]*hôm\s+nay[^)]*\)/gi, '')
+
+  // 3. Match tất cả DD/MM còn lại trong câu
+  const matches = [...cleanText.matchAll(/(\d{1,2})\/(\d{1,2})/g)]
+  const extractedKeys = []
+
+  for (const m of matches) {
+    const d = Number(m[1])
+    const mo = Number(m[2])
+    if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12) {
+      const dayNum = String(d).padStart(2, '0')
+      const monthNum = String(mo).padStart(2, '0')
+      const key = `${monthNum}-${dayNum}`
+      if (!extractedKeys.includes(key)) extractedKeys.push(key)
+    }
+  }
+
+  // 4. Bắt buộc kiểm tra với dữ liệu slots thật từ cơ sở dữ liệu:
+  // Chỉ chấp nhận những ngày THỰC SỰ có trong slots và THỰC SỰ còn khung giờ trống (isAvailable = true).
+  // Nếu ViVi tự chat ra ngày không có thật hoặc ngày đã kín lịch, ngày đó sẽ bị LOẠI BỎ hoàn toàn.
+  if (slots.length && extractedKeys.length > 0) {
+    return extractedKeys.filter((key) =>
+      slots.some((day) =>
+        (day.value?.endsWith(`-${key}`) || day.dateLabel?.includes(key.replace('-', '/'))) &&
+        day.times?.some((entry) => entry.isAvailable)
+      )
+    )
+  }
+
+  return []
+}
+
+export function ContextualChoices({ stage, allowedActions, car, locationSuggestions, showrooms, slots, pendingSlot, lastMessage, onResolveArea, onShowroom, onSlot }) {
   if (!car) return null
 
   if (stage === 'need_address' || stage === 'need_ward') {
@@ -138,7 +183,10 @@ export function ContextualChoices({ stage, allowedActions, car, locationSuggesti
 
   if (stage === 'choose_slot' && allowedActions.includes('select_slot') && slots.length) {
     const availableDays = slots.filter((day) => day.times.some((entry) => entry.isAvailable))
-    const targetKeys = highlightedDates
+    // Lấy đúng tin nhắn MỚI NHẤT để định vị chính xác ngày người dùng vừa hỏi
+    const lastMsg = Array.isArray(lastMessage) ? lastMessage[lastMessage.length - 1] : lastMessage
+    const lastText = String(lastMsg?.text || lastMsg?.content || '')
+    const targetKeys = extractTargetDates(lastText, slots)
     const matchedDays = []
 
     if (pendingSlot?.slotId) {

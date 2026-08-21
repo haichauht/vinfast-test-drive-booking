@@ -131,7 +131,7 @@ import { BookingSuccessVehicleModel, preloadVehicle3dRuntime } from '../componen
 import { BookingSuccessCinematic } from '../components/BookingSuccessCinematic'
 import { getVehicle3dModel } from '../data/vehicle3d'
 import { RecipientModal, ResumeModal } from '../components/booking/BookingModalPrimitives'
-import { AgentMessage, ViviStatusTyping, ViViAvatar, ContextualChoices } from '../components/booking/BookingChatPrimitives'
+import { AgentMessage, ViviStatusTyping, ViViAvatar, ContextualChoices, extractTargetDates } from '../components/booking/BookingChatPrimitives'
 import { VehicleShot, VehicleSwitcher, VehiclePanel } from '../components/booking/VehicleWorkspace'
 import { BookingHeader } from '../components/booking/BookingHeader'
 
@@ -652,10 +652,10 @@ export function BookingPage() {
           if (showrooms.length) {
             setStage('choose_showroom')
             setActiveView('map')
-            addMessage('assistant', `ViVi đã định vị vị trí và tìm thấy ${showrooms.length} showroom gần bạn nhất còn lịch cho ${selectedCar.name}. Mời bạn chọn showroom hiển thị trên bản đồ để tiếp tục đặt lịch.`)
+            addMessage('assistant', `ViVi đã định vị vị trí và tìm thấy ${showrooms.length} showroom gần bạn nhất có xe ${selectedCar.name}. Mời bạn chọn showroom hiển thị trên bản đồ để tiếp tục đặt lịch.`)
           } else {
             setStage('need_address')
-            addMessage('assistant', `Rất tiếc, ViVi chưa tìm thấy showroom nào gần vị trí của bạn còn lịch cho ${selectedCar.name}. Bạn hãy thử nhập một địa chỉ cụ thể khác ở khung chat bên dưới nhé.`)
+            addMessage('assistant', `Rất tiếc, ViVi chưa tìm thấy showroom nào gần vị trí của bạn có sẵn xe ${selectedCar.name}. Bạn hãy thử nhập một địa chỉ cụ thể khác ở khung chat bên dưới nhé.`)
           }
         } catch (error) {
           setAgentTyping(false)
@@ -971,22 +971,6 @@ export function BookingPage() {
         return
       }
 
-      if (data.search_stage === 'location_clarification') {
-        const queriedAddress = String(toolInput.address || '').trim()
-        setPendingSlot(null)
-        setSelectedSlot(null)
-        setConfirmSlotOpen(false)
-        setShowroomId('')
-        setSearchedLocation(null)
-        setUserLocation(null)
-        setNearbyShowrooms([])
-        setLocationSuggestions([])
-        setAddress({ province: '', detail: queriedAddress })
-        setStage('need_address')
-        setActiveView('car')
-        return
-      }
-
       if (data.search_stage === 'slot_selection' && data.selected_showroom) {
         const [showroom] = mapShowrooms([data.selected_showroom], vehicleId)
         setLocationSuggestions([])
@@ -1140,19 +1124,17 @@ export function BookingPage() {
       const result = await searchBookingOptions({ vehicleModel: car.name, address: detail })
       const showrooms = mapShowrooms(result.showrooms || [], car.id)
       setAddress({ province, detail })
-      setUserLocation(null)
-      setSearchedLocation(result.target_coordinates || null)
       setLocationSuggestions([])
       setNearbyShowrooms(showrooms)
       setAgentTyping(false)
       if (showrooms.length) {
         setStage('choose_showroom')
         setActiveView('map')
-        reply(`Đã tìm thấy ${showrooms.length} showroom gần “${detail}” còn lịch cho ${car.name}. Hãy chọn một showroom để xem chi tiết khung giờ.`)
+        reply(`Đã tìm thấy ${showrooms.length} showroom đang có ${car.name} gần “${detail}”. Hãy chọn một showroom để xem lịch trống thực tế.`)
       } else {
         setStage('need_address')
         setActiveView('car')
-        reply(`ViVi chưa tìm thấy showroom còn lịch cho ${car.name} gần “${detail}”. Bạn hãy nhập địa chỉ khác, kèm phường/xã và tỉnh/thành phố.`)
+        reply(`ViVi chưa tìm thấy showroom có ${car.name} gần “${detail}”. Bạn hãy nhập địa chỉ khác, kèm phường/xã và tỉnh/thành phố.`)
       }
     } catch (error) {
       setAgentTyping(false)
@@ -1406,9 +1388,6 @@ export function BookingPage() {
     setIsSending(true)
     setDraft('')
     addMessage('user', value)
-    // Highlight server của lượt tìm trước không được che kết quả của câu chat
-    // mới; sau khi ViVi trả lời, `highlightedDates` sẽ lấy lại từ response.
-    if (stage === 'choose_slot') setServerHighlightedDates([])
     setBackendError('')
 
     const mentionedCar = isDriverChat ? null : resolveAgentCar(value)
@@ -2169,7 +2148,14 @@ export function BookingPage() {
     return ''
   })()
 
-  const highlightedDates = serverHighlightedDates || []
+  const highlightedDates = useMemo(() => {
+    if (serverHighlightedDates && serverHighlightedDates.length > 0) {
+      return serverHighlightedDates
+    }
+    const lastMsg = messages[messages.length - 1]
+    const text = lastMsg && lastMsg.role === 'assistant' ? String(lastMsg.text || lastMsg.content || '') : ''
+    return extractTargetDates(text, slots)
+  }, [serverHighlightedDates, messages, slots])
 
   const renderWorkspace = () => {
     if (activeView === 'bookings' && accessProfile) return <section className="booking-history"><div className="booking-history__list">{accessibleBookings.map((booking) => { const expanded = expandedBookingId === booking.id; const details = booking.id === accessProfile.bookingId ? accessProfile : null; const bookingCodeLabel = booking.booking_code || 'Lịch lái thử'; return <div key={booking.id} className={expanded ? 'is-active is-expanded' : ''}><button type="button" onClick={() => { setExpandedBookingId(expanded ? '' : booking.id); if (!expanded) selectAccessibleBooking(booking) }}><strong>{bookingCodeLabel}</strong><small>{booking.display_time || (booking.start_at ? new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(booking.start_at)) : 'Lịch lái thử')}</small></button>{expanded && details && <div className="booking-history__details"><p><span>Mẫu xe</span>{details.vehicleName}</p><p><span>Showroom</span>{details.showroomName}<small>{details.showroomAddress}</small></p><p><span>Thời gian</span>{details.slotTime} · {details.slotDate}</p>{rescheduleState?.step === 'pending' && <p className="booking-history__hold"><span>Khung giờ mới đang được giữ</span>Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}</p>}<p><span>Tư vấn viên</span>{details.advisorName}<small>{details.advisorPhone || 'Chưa có số điện thoại'}</small></p><div className="booking-history__actions"><span className="booking-history__actions-main">{allowedActions.includes('reschedule') && <button type="button" className="booking-history__action" onClick={() => beginAccessibleReschedule(booking)} aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}><PencilSimple size={13} weight="bold" /> Đổi giờ</button>}{details.allowedActions?.includes('cancel') && <button type="button" className="booking-history__action booking-history__action--danger" onClick={() => beginAccessibleCancellation(booking)} aria-label={`Huỷ lịch ${bookingCodeLabel}`}><Prohibit size={13} weight="bold" /> Huỷ lịch</button>}</span></div></div>}</div> })}</div></section>
@@ -2422,7 +2408,7 @@ export function BookingPage() {
                 showrooms={nearbyShowrooms}
                 slots={slots}
                 pendingSlot={pendingSlot}
-                highlightedDates={highlightedDates}
+                lastMessage={messages.slice(-3)}
                 onResolveArea={resolveSuggestedArea}
                 onShowroom={chooseShowroom}
                 onSlot={chooseSlot}

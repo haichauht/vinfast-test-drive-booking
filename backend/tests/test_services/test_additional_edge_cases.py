@@ -6,21 +6,19 @@ from src.services.booking import BookingError, iso
 from tests.conftest import BOOKER_PHONE, FIXED_NOW
 
 
-# Tên showroom trả candidate để khách xác nhận, không tự đi thẳng vào chọn slot.
-def test_search_options_returns_showroom_query_candidate(booking_service, catalog):
+# test case of Chau + kiểm tra tìm đúng showroom bằng tên hoặc địa chỉ gần đúng
+def test_search_options_resolves_showroom_query(booking_service, catalog):
     result = booking_service.search_options(vehicle_model="VF6", showroom_query="Quận 7")
 
-    assert result["search_stage"] == "showroom_selection"
-    assert result["showrooms"][0]["id"] == catalog["showroom_q7"]
-    assert result["slots"] == []
+    assert result["search_stage"] == "slot_selection"
+    assert result["selected_showroom"]["id"] == catalog["showroom_q7"]
 
 
-def test_search_options_returns_natural_language_showroom_candidate(booking_service, catalog):
+def test_search_options_resolves_natural_language_showroom_query(booking_service, catalog):
     result = booking_service.search_options(vehicle_model="VF6", showroom_query="Tôi muốn đi VinFast Quận 7")
 
-    assert result["search_stage"] == "showroom_selection"
-    assert result["showrooms"][0]["id"] == catalog["showroom_q7"]
-    assert result["slots"] == []
+    assert result["search_stage"] == "slot_selection"
+    assert result["selected_showroom"]["id"] == catalog["showroom_q7"]
 
 
 # test case of Chau + kiểm tra từ chối vehicle variant không tồn tại

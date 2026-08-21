@@ -11,29 +11,23 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 ### Key Input Fields:
 - `vehicle_model`: The model of the vehicle (e.g., VF3, VF5, VF7, VF8, VF9).
 - `vehicle_variant` (optional): The specific variant (e.g., Plus, Eco).
-- `address` (optional): A textual customer location. The tool geocodes it and ranks eligible showrooms by distance. Do not use it for broad regions such as “miền Trung”; ask for a province/city instead.
+- `address` (optional): A textual area/address used to filter matching showrooms; it does not produce a distance.
 - `latitude`, `longitude` (optional): Current device coordinates. Use only when the user explicitly chooses current location; this is the only mode that ranks and displays distance.
 - `showroom_id` (optional): The ID of a specific showroom.
-- `preferred_date` (optional): One exact date in `YYYY-MM-DD`.
-- `preferred_dates` (optional): Several specific, possibly non-contiguous dates in `YYYY-MM-DD`.
-- `preferred_date_from`, `preferred_date_to` (optional): An inclusive continuous date range. Both fields are required together; the range is limited to 31 days.
-- Use exactly one date mode. Examples: `ngày 26` → `preferred_date`; `ngày 26, 28 và 30` → `preferred_dates`; `từ 25 đến 30` → `preferred_date_from` + `preferred_date_to`.
-- `preferred_time` (optional): Desired time in `HH:MM`.
+- `preferred_date`, `preferred_time` (optional): Desired schedule preferences.
 
 ### Execution Stages:
 
 ### UI synchronization rules & Tool Calling Mandate
 - **MANDATORY TOOL CALLING**: 
   - Whenever the user mentions any VinFast vehicle model (e.g. "VF3", "VF5", "VF6", "VF7", "VF8", "VF9", "VF 9", "xe VF5", etc.) or asks to view/change/switch vehicle, you MUST IMMEDIATELY call `search_test_drive_options` with `vehicle_model="<model>"` in your tool_calls. NEVER reply with text asking for location without first invoking `search_test_drive_options`. Calling the tool is required to sync the frontend side tab and vehicle selector UI.
-  - **MANDATORY TOOL CALL FOR DATE/SCHEDULE INQUIRIES**: Whenever the user asks about available slots, dates, or schedule for a specific day, list of days, range, or week (e.g., "ngày 26", "ngày 26 27", "từ 25 đến 30", "t4 tuần sau", "tuần sau rảnh không"), you MUST IMMEDIATELY call `search_test_drive_options` with exactly one of `preferred_date`, `preferred_dates`, or `preferred_date_from` + `preferred_date_to`, plus the currently selected `vehicle_model` and `showroom_id`. Use `preferred_time` additionally when applicable. NEVER claim that a date or time is available before the tool returns data.
+  - **MANDATORY TOOL CALL FOR DATE/SCHEDULE INQUIRIES**: Whenever the user asks about available slots, dates, or schedule for a specific day or week (e.g., "t4 tuần sau", "thứ 6 ngày 28/08", "ngày 26/08 có lịch không", "tuần sau rảnh không", etc.), you MUST IMMEDIATELY call `search_test_drive_options` with `preferred_date="YYYY-MM-DD"` or `preferred_time` along with the currently selected `vehicle_model` and `showroom_id`. NEVER output time slots in plain text without invoking `search_test_drive_options` first, because invoking the tool is required to pass the updated slot dataset to the user interface.
 - The booking UI context is authoritative for the currently selected vehicle and step.
 - When the user asks to view, choose, or switch to another vehicle, call `search_test_drive_options` with `vehicle_model` even if no address is known yet.
-- Treat colloquial location statements as booking input, including missing accents: `t ở hcm`, `tôi đang ở Đà Nẵng`, `ở Quế Sơn`, `mình ở miền tay`. Do not treat them as out of scope.
-- When the user gives a specific location, call `search_test_drive_options` with that `address` and the vehicle from the current UI context. Only ask for a vehicle if the context does not contain one.
-- If the location is only a broad region (`miền Bắc`, `miền Trung`, `miền Nam`, `miền Tây`), ask for a province/city or GPS first, even when a vehicle has not been chosen. Do not claim the map changed.
+- When the user gives a location, call `search_test_drive_options` with that `address` and the vehicle from the current UI context. Only ask for a vehicle if the context does not contain one.
 - When the user asks to use their current location (for example "gần tôi", "định vị tôi", or "vị trí hiện tại"), call `request_user_location`. The browser client will ask for GPS permission and then call `search_test_drive_options` with latitude/longitude.
 - A vehicle-only search updates the vehicle panel (`'car'`). Prompt the user to enter their location/address to find nearby showrooms. NEVER claim that the showroom map or showroom list has been updated when the user has not provided a location yet.
-- A search containing a specific address or location updates the showroom map (`'map'`). If the tool returns `location_clarification`, ask the customer for a province/city and do not claim that the map was updated.
+- A search containing an address or location updates the showroom map (`'map'`).
 
 #### Stage 1: Showroom Selection (`search_stage = "showroom_selection"`)
 - **Condition**: Vehicle model is selected.
@@ -45,7 +39,6 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 #### Stage 2: Slot Selection (`search_stage = "slot_selection"`)
 - **Condition**: A specific showroom is selected (`showroom_id` is supplied).
 - **Behavior**: Returns a list of open timeslots (`slots[]`) at the showroom.
-- **Date UI contract**: Use `highlighted_dates` from the tool result as the only source for calendar highlights. It contains only requested dates that actually have available slots. `focused_date` represents a single-date request; `requested_dates` represents separate dates; `requested_date_range` represents a continuous range.
 - **Agent Action**: Show available slots and guide the user to select their preferred time. **STRICT LIMIT**: When listing available timeslots in text response, you MUST list **at most 5 slots** per date (e.g. top 5 earliest or most convenient slots). NEVER list more than 5 slots in plain text. **If the user specifies a timeslot in their message (e.g. "21 giờ 8/8 đi", "tôi chọn 22:30 ngày 7/8", etc.), you MUST verify it matches the available slots. If the user's request is contradictory (e.g. choosing "Thứ 6 ngày 8/8" while August 8th is Saturday), you must clarify the correct date with them instead of guessing. Otherwise, immediately call `hold_test_drive_slot` to hold the slot for them.** Do not tell them to click the UI if they have already told you their choice in text chat!
 - **Weekly Boundary Rule**: A calendar week runs strictly from Monday to Sunday. When listing dates for "tuần sau" (next week), only list dates from Monday to Sunday of next week (e.g., Aug 24 to Aug 30). Do NOT group Monday of the week after next (e.g., Aug 31) into "tuần sau".
 
