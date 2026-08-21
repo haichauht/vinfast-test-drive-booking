@@ -357,12 +357,17 @@ def test_every_booking_template_carries_the_same_fields(notification_type):
 
 
 def test_lac_hong_watermark_asset_exists():
-    """Ảnh chìm của thư mã xác thực phải có thật trong kho ảnh.
+    """Ảnh chìm của thư mã xác thực phải có thật trong kho ảnh NGUỒN.
+
+    Kiểm ở frontend/src/media/local chứ không kiểm backend/data/media: thư mục
+    thứ hai bị gitignore và chỉ sinh ra khi chạy publish_site_media.py, nên trên
+    máy cài mới hay trên CI thì nó rỗng. Bài test kiểm thư mục đó sẽ hỏng ở CI
+    trong khi mã hoàn toàn đúng.
 
     Chỉ có bài test này bắt được trường hợp ai đó đổi tên hay xoá file: lúc chạy
     thật thư chỉ lặng lẽ bỏ ảnh chìm chứ không báo lỗi gì.
     """
-    from src.config import get_settings
     from src.services.booking.email_templates import _LAC_HONG_WATERMARK
 
-    assert (Path(get_settings().media_root) / _LAC_HONG_WATERMARK).is_file()
+    source = Path(__file__).resolve().parents[3] / "frontend" / "src" / "media" / "local"
+    assert (source / _LAC_HONG_WATERMARK).is_file()
