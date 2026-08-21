@@ -530,6 +530,19 @@ TABLES = {
             }
         ),
     ),
+    "guardrail_abuse_subjects": TableSchema(
+        "guardrail_abuse_subjects",
+        frozenset(
+            {
+                "subject_hash",
+                "strike_count",
+                "strike_window_started_at",
+                "banned_until",
+                "last_violation_code",
+                "updated_at",
+            }
+        ),
+    ),
     "zalo_identity_links": TableSchema(
         "zalo_identity_links",
         frozenset(
@@ -775,6 +788,11 @@ CREATE TABLE IF NOT EXISTS internal_audit_events (
  action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id TEXT,
  showroom_id TEXT REFERENCES showrooms(id), payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS guardrail_abuse_subjects (
+ subject_hash TEXT PRIMARY KEY, strike_count INTEGER NOT NULL,
+ strike_window_started_at TEXT NOT NULL, banned_until TEXT,
+ last_violation_code TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_variants_model_active ON vehicle_variants(model_id,is_active);
 CREATE INDEX IF NOT EXISTS idx_showrooms_active ON showrooms(is_active);
 CREATE INDEX IF NOT EXISTS idx_demo_lookup ON demo_vehicles(showroom_id,variant_id,operational_status,is_active);
@@ -797,4 +815,5 @@ CREATE INDEX IF NOT EXISTS idx_staff_unavailability_staff_time ON staff_unavaila
 CREATE INDEX IF NOT EXISTS idx_vehicle_unavailability_vehicle_time ON vehicle_unavailability(demo_vehicle_id,start_at,end_at);
 CREATE INDEX IF NOT EXISTS idx_vehicle_transfers_vehicle_time ON vehicle_transfers(demo_vehicle_id,effective_at);
 CREATE INDEX IF NOT EXISTS idx_internal_audit_time ON internal_audit_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_guardrail_abuse_banned_until ON guardrail_abuse_subjects(banned_until);
 """

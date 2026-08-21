@@ -14,10 +14,10 @@ def test_guardrail_benchmark_dataset_is_valid_unique_and_balanced():
     dataset = load_dataset(DEFAULT_DATASET_PATH)
     cases = dataset["cases"]
 
-    assert dataset["case_count"] == len(cases) == 63
+    assert dataset["case_count"] == len(cases) == 70
     assert len({case["case_id"] for case in cases}) == len(cases)
-    assert {case["kind"] for case in cases} == {"conversation", "input", "output", "rate_limit", "tool"}
-    assert sum(case["kind"] == "input" for case in cases) >= 25
+    assert {case["kind"] for case in cases} == {"abuse", "conversation", "input", "output", "rate_limit", "tool"}
+    assert sum(case["kind"] == "input" for case in cases) >= 30
     assert sum(case["kind"] == "output" for case in cases) >= 10
     assert sum(case["kind"] == "tool" for case in cases) >= 10
     assert any("false-positive" in case.get("tags", []) for case in cases)
@@ -27,7 +27,7 @@ def test_guardrail_benchmark_dataset_is_valid_unique_and_balanced():
 def test_every_guardrail_benchmark_case_passes_as_a_ci_regression_gate():
     report = run_benchmark(load_dataset(DEFAULT_DATASET_PATH))
 
-    assert report["summary"]["total"] == 63
+    assert report["summary"]["total"] == 70
     assert report["summary"]["failed"] == 0
     assert report["summary"]["pass_rate"] == 1.0
     assert report["quality_metrics"]["attack_block_accuracy"] == 1.0
@@ -58,6 +58,15 @@ def test_benchmark_covers_conversation_binding_and_rate_limiting():
     assert report["summary"]["failed"] == 0
 
 
+def test_benchmark_covers_persistent_three_strike_abuse_ban():
+    report = run_benchmark(load_dataset(DEFAULT_DATASET_PATH), kinds={"abuse"})
+
+    assert report["summary"]["total"] == 1
+    assert report["summary"]["failed"] == 0
+    assert report["cases"][0]["actual"]["strike_counts"] == [1, 2, 3]
+    assert report["cases"][0]["actual"]["persisted_ban"] is True
+
+
 def test_benchmark_pins_test_settings_instead_of_inheriting_production_env(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("GUARDRAILS_ENABLED", "false")
@@ -65,8 +74,20 @@ def test_benchmark_pins_test_settings_instead_of_inheriting_production_env(monke
 
     report = run_benchmark(dataset, categories={"prompt_injection"})
 
-    assert report["summary"]["total"] == 4
+    assert report["summary"]["total"] == 6
     assert report["summary"]["failed"] == 0
+
+
+def test_benchmark_fails_when_three_strike_policy_is_weakened_to_four():
+    mutant = deepcopy(load_dataset(DEFAULT_DATASET_PATH))
+    abuse_case = next(case for case in mutant["cases"] if case["kind"] == "abuse")
+    abuse_case["settings"] = {"guardrails_abuse_max_strikes": 4}
+
+    report = run_benchmark(mutant, kinds={"abuse"})
+
+    assert report["summary"]["failed"] == 1
+    assert report["cases"][0]["passed"] is False
+    assert any("banned" in failure for failure in report["cases"][0]["failures"])
 
 
 def test_benchmark_dataset_validation_rejects_duplicate_ids(tmp_path):

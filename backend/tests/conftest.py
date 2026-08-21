@@ -20,9 +20,16 @@ BOOKER_PHONE = "0901234567"
 @pytest_asyncio.fixture
 async def client():
     """Async HTTP client for testing API endpoints."""
+    from src.guardrails.abuse import get_abuse_tracker
+
+    abuse_tracker = get_abuse_tracker()
+    abuse_tracker.clear()
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        abuse_tracker.clear()
 
 
 @pytest.fixture(autouse=True)

@@ -482,6 +482,7 @@ Booking tools chỉ là adapter mỏng gọi singleton `booking_service`. `calcu
 - `context` phải qua allowlist top-level/nested, kiểm tra type/value và normalization trước khi vào graph.
 - Structured action chỉ được chứa field đúng contract.
 - Quét prompt/role injection trong cả message và string nằm trong context.
+- Chặn ngôn ngữ tục/chửi trực tiếp. Prompt injection/profanity tích lũy strike theo hash IP + conversation; lần 3 lưu ban 24 giờ trong database và trả `403` trước khi gọi LLM.
 
 ### Tool guard
 

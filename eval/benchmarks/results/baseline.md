@@ -1,9 +1,9 @@
 # Guardrail Benchmark Report
 
-- Generated: `2026-08-21T08:46:06.921195+00:00`
-- Dataset SHA-256: `88ef3952652150aa11711cf1f4ba98289d1c85ccaef53d7bafa2ca6a9ef566af`
-- Result: **63/63 PASS** (100.00%)
-- Runtime: `64.0131 ms`
+- Generated: `2026-08-21T12:55:33.618389+00:00`
+- Dataset SHA-256: `504ffc0be9291e301116035a0ae39d1d942073ecade540c6dd16a30c465b6faf`
+- Result: **70/70 PASS** (100.00%)
+- Runtime: `133.3651 ms`
 
 ## Quality Metrics
 
@@ -12,16 +12,18 @@
 | Attack-block accuracy | 100.00% |
 | Benign-allow accuracy | 100.00% |
 | Output-protection accuracy | 100.00% |
-| Median latency | 0.8652 ms |
-| p95 latency | 1.7306 ms |
+| Median latency | 1.0463 ms |
+| p95 latency | 2.2342 ms |
 
 ## Results By Category
 
 | Category | Passed | Total | Pass rate |
 |---|---:|---:|---:|
+| `abuse_ban` | 1 | 1 | 100.00% |
+| `abusive_language` | 3 | 3 | 100.00% |
 | `action_contract` | 3 | 3 | 100.00% |
 | `analysis_hiding` | 1 | 1 | 100.00% |
-| `benign_allow` | 4 | 4 | 100.00% |
+| `benign_allow` | 5 | 5 | 100.00% |
 | `benign_output` | 1 | 1 | 100.00% |
 | `context_contract` | 2 | 2 | 100.00% |
 | `context_injection` | 1 | 1 | 100.00% |
@@ -33,7 +35,7 @@
 | `output_limits` | 1 | 1 | 100.00% |
 | `payload_limits` | 1 | 1 | 100.00% |
 | `pii_redaction` | 2 | 2 | 100.00% |
-| `prompt_injection` | 4 | 4 | 100.00% |
+| `prompt_injection` | 6 | 6 | 100.00% |
 | `prompt_leakage` | 3 | 3 | 100.00% |
 | `rate_limit` | 1 | 1 | 100.00% |
 | `role_injection` | 4 | 4 | 100.00% |

@@ -16,7 +16,9 @@ from src.agents.trace import redact, trace_event
 from src.config import get_settings
 from src.dependencies import booking_service, internal_portal_service
 from src.guardrails import get_guardrails
+from src.guardrails.abuse import AbuseStatus, get_abuse_tracker
 from src.guardrails.conversation import get_conversation_token_manager
+from src.guardrails.policies import ABUSE_VIOLATION_CODES
 from src.guardrails.rate_limit import get_rate_limiter
 from src.internal_portal import InternalPrincipal, InternalRole
 from src.internal_portal.routes import current_principal
@@ -124,6 +126,26 @@ def _enforce_action_rate_limit(request: Request, action: str | None, payload: di
         )
 
 
+def _abuse_subjects(request: Request, thread_id: str) -> tuple[str, ...]:
+    subjects = [f"thread:{thread_id}"]
+    if request.client and request.client.host:
+        subjects.append(f"ip:{request.client.host}")
+    return tuple(subjects)
+
+
+def _raise_abuse_ban(status: AbuseStatus) -> None:
+    retry_after = max(1, status.retry_after_seconds)
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "code": "ABUSE_BANNED",
+            "message": "Phiên truy cập đã bị khóa do vi phạm chính sách nhiều lần.",
+            "retryable": True,
+        },
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
 def require_operations_admin(
     principal: Annotated[InternalPrincipal, Depends(current_principal)],
 ) -> InternalPrincipal:
@@ -142,14 +164,6 @@ async def chat(request: ChatRequest, http_request: Request) -> ChatResponse:
             limit=int(getattr(settings, "chat_rate_limit_requests", 120)),
         )
         trace_id = str(uuid.uuid4())
-        guardrails = get_guardrails()
-        input_decision = guardrails.inspect_input(
-            message=request.message,
-            conversation_id=request.conversation_id,
-            context=request.context,
-            action=request.action,
-            action_payload=request.action_payload,
-        )
         token_manager = get_conversation_token_manager()
         identity = token_manager.verify(request.conversation_id) if request.conversation_id else None
         if identity is None:
@@ -161,7 +175,43 @@ async def chat(request: ChatRequest, http_request: Request) -> ChatResponse:
                     reason="invalid_or_expired_conversation_token",
                 )
         conversation_id = identity.public_token
+        abuse_tracker = get_abuse_tracker()
+        abuse_subjects = _abuse_subjects(http_request, identity.thread_id)
+        existing_abuse_status = abuse_tracker.check(abuse_subjects)
+        if existing_abuse_status.banned:
+            trace_event(
+                "guardrail.abuse_ban_enforced",
+                trace_id=trace_id,
+                retry_after_seconds=existing_abuse_status.retry_after_seconds,
+            )
+            _raise_abuse_ban(existing_abuse_status)
+
+        guardrails = get_guardrails()
+        input_decision = guardrails.inspect_input(
+            message=request.message,
+            conversation_id=request.conversation_id,
+            context=request.context,
+            action=request.action,
+            action_payload=request.action_payload,
+        )
         if not input_decision.allowed:
+            if input_decision.code in ABUSE_VIOLATION_CODES:
+                abuse_status = abuse_tracker.record_violation(
+                    abuse_subjects,
+                    violation_code=input_decision.code,
+                    max_strikes=settings.guardrails_abuse_max_strikes,
+                    strike_window_seconds=settings.guardrails_abuse_strike_window_seconds,
+                    ban_seconds=settings.guardrails_abuse_ban_seconds,
+                )
+                trace_event(
+                    "guardrail.abuse_strike",
+                    trace_id=trace_id,
+                    code=input_decision.code,
+                    strike_count=abuse_status.strike_count,
+                    banned=abuse_status.banned,
+                )
+                if abuse_status.banned:
+                    _raise_abuse_ban(abuse_status)
             trace_event(
                 "guardrail.input_blocked",
                 trace_id=trace_id,
@@ -170,8 +220,15 @@ async def chat(request: ChatRequest, http_request: Request) -> ChatResponse:
                 reason=input_decision.reason,
                 details=input_decision.details,
             )
+            warning = ""
+            if input_decision.code in ABUSE_VIOLATION_CODES:
+                warning = (
+                    f" Cảnh báo vi phạm {abuse_status.strike_count}/"
+                    f"{settings.guardrails_abuse_max_strikes}; lần thứ "
+                    f"{settings.guardrails_abuse_max_strikes} sẽ bị khóa."
+                )
             return ChatResponse(
-                response=input_decision.user_message,
+                response=input_decision.user_message + warning,
                 conversation_id=conversation_id,
                 action_error=input_decision.code,
             )

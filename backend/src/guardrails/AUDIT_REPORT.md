@@ -8,7 +8,7 @@
 | Phương pháp | Manual code review, abuse-case modeling, unit/integration regression và deterministic benchmark |
 | Thành phần | `src/guardrails`, `src/api/routes.py`, `src/agents/graph.py`, `src/agents/trace.py`, booking tool boundary |
 | Ngoài phạm vi | Hạ tầng gateway/WAF, cloud IAM, secret store, provider security và pentest production |
-| Benchmark | 63 curated cases: input, output, tool, conversation capability và rate limit |
+| Benchmark | 70 curated cases: input, output, tool, conversation capability, rate limit và persistent abuse ban |
 | Kết luận | Các finding trực tiếp trong phạm vi đã được remediation và có regression gate; residual risk được liệt kê riêng |
 
 Audit này đánh giá defense-in-depth ở biên AI/tool. Nó không thay thế
@@ -177,6 +177,17 @@ response đi qua `trace.redact()` trước khi ghi structured event.
 | Unit/API test | `test_rate_limit.py`, `test_chat_rate_limit_returns_retry_after_without_calling_agent`, `test_demo_*_rate_limit*` |
 | Benchmark | `RATE-LIMIT-001` |
 
+### GR-012 — Prompt injection/profanity lặp lại không dẫn tới ban
+
+| Thuộc tính | Giá trị |
+|---|---|
+| Mức độ | High |
+| Trạng thái | Fixed |
+| Vấn đề | Input guard từng chặn từng request độc lập nhưng không tích lũy vi phạm, nên cùng client có thể thử payload độc hại liên tục. |
+| Remediation | Nhận diện thêm paraphrase và abusive language; lưu SHA-256 subject trong database; strike thứ 3 trong một giờ tạo ban 24 giờ theo IP + conversation. |
+| Unit/API test | `test_abuse.py`, `test_chat_bans_ip_and_conversation_after_three_mixed_abuse_violations` |
+| Benchmark | `INPUT-ATTACK-015/016`, `INPUT-ABUSE-001..003`, `ABUSE-BAN-001` |
+
 ## 5. Control matrix
 
 | Threat | Prevent | Detect/test | Residual control |
@@ -190,6 +201,7 @@ response đi qua `trace.redact()` trước khi ghi structured event.
 | Cross-booking access | Access-session scope in service | Service negative tests | OTP limits, token TTL/revocation, database constraints |
 | Conversation takeover | Signed bearer capability + TTL | Unit/API/benchmark | Session storage, HTTPS, no token logging |
 | Burst abuse | Process-local IP/resource sliding window | Unit/API/benchmark | Distributed gateway/WAF limit |
+| Repeated hostile input | Persistent 3-strike ban by hashed IP + conversation | Unit/API/benchmark + mutation test | Authenticated account subject và admin unban flow |
 
 ## 6. Residual risks và open actions
 
@@ -239,7 +251,7 @@ response đi qua `trace.redact()` trước khi ghi structured event.
 
 - [ ] `APP_ENV=production` không thể khởi động khi guardrails tắt.
 - [ ] Targeted guardrail/API tests pass.
-- [ ] 63/63 deterministic benchmark cases pass.
+- [ ] 70/70 deterministic benchmark cases pass.
 - [ ] Full backend regression và Ruff pass.
 - [ ] Không có raw secret/PII trong stdout, logs hoặc generated report.
 - [ ] Action/tool mới đã cập nhật top-level và nested contract.
