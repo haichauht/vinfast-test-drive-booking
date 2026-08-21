@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from threading import Barrier
 from zoneinfo import ZoneInfo
 
@@ -42,6 +43,73 @@ def test_address_search_filters_showrooms_and_calculates_distance(booking_servic
     assert result["showrooms"][0]["id"] == catalog["showroom_q7"]
     assert result["target_coordinates"] is not None
     assert all("distance_km" in showroom for showroom in result["showrooms"])
+
+
+def test_address_search_keeps_nearby_showroom_outside_text_matched_province(
+    booking_service, booking_db, catalog, monkeypatch
+):
+    """A customer location must not remove a closer showroom in a neighbouring province."""
+    created = FIXED_NOW.isoformat()
+    starts_at = (FIXED_NOW + timedelta(days=1)).isoformat()
+    ends_at = (FIXED_NOW + timedelta(days=1, minutes=30)).isoformat()
+    with booking_db.transaction(immediate=True) as connection:
+        connection.executemany(
+            """INSERT INTO showrooms(
+                id,code,name,address,latitude,longitude,timezone,is_active,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            [
+                ("showroom_da_nang", "DN", "VinFast Đà Nẵng", "Hải Châu, Đà Nẵng", 16.0678, 108.2208, "Asia/Ho_Chi_Minh", 1, created, created),
+                ("showroom_tam_ky", "TK", "VinFast Tam Kỳ", "Tam Kỳ, Quảng Nam", 15.5736, 108.4740, "Asia/Ho_Chi_Minh", 1, created, created),
+            ],
+        )
+        connection.executemany(
+            """INSERT INTO demo_vehicles(
+                id,showroom_id,variant_id,asset_code,operational_status,battery_soc,
+                minimum_booking_soc,is_active,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            [
+                ("demo_da_nang", "showroom_da_nang", "variant_plus", "DN-01", "available", 80, 20, 1, created, created),
+                ("demo_tam_ky", "showroom_tam_ky", "variant_plus", "TK-01", "available", 80, 20, 1, created, created),
+            ],
+        )
+        connection.executemany(
+            """INSERT INTO test_drive_slots(
+                id,showroom_id,demo_vehicle_id,start_at,end_at,status,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?)""",
+            [
+                ("slot_da_nang", "showroom_da_nang", "demo_da_nang", starts_at, ends_at, "available", created, created),
+                ("slot_tam_ky", "showroom_tam_ky", "demo_tam_ky", starts_at, ends_at, "available", created, created),
+            ],
+        )
+
+    monkeypatch.setattr(catalog_module, "resolve_address_coordinates", lambda _address: catalog_module.Coordinates(15.72, 108.10))
+
+    result = booking_service.search_options(vehicle_model="VF6", address="Quế Sơn, Quảng Nam", showroom_limit=30)
+
+    showroom_ids = [showroom["id"] for showroom in result["showrooms"]]
+    assert "showroom_da_nang" in showroom_ids
+    assert showroom_ids.index("showroom_da_nang") < showroom_ids.index("showroom_tam_ky")
+    assert result["showrooms"][showroom_ids.index("showroom_da_nang")]["available_slot_count"] == 1
+
+
+def test_showroom_query_returns_ranked_candidates_without_auto_selecting(booking_service, catalog):
+    result = booking_service.search_options(vehicle_model="VF6", showroom_query="VinFast")
+
+    assert result["search_stage"] == "showroom_selection"
+    assert result["slots"] == []
+    assert {showroom["id"] for showroom in result["showrooms"]} == {catalog["showroom_q7"], catalog["showroom_gv"]}
+    assert all("Khớp tên showroom" in showroom["match_reasons"] for showroom in result["showrooms"])
+
+
+@pytest.mark.parametrize("region", ["miền Bắc", "miền Trung", "miền Nam", "miền Tây", "tôi ở miền trung"])
+def test_broad_region_requires_a_province_or_city(booking_service, catalog, region):
+    result = booking_service.search_options(vehicle_model="VF6", address=region)
+
+    assert result["search_stage"] == "location_clarification"
+    assert result["location_scope"] == "broad_region"
+    assert result["missing_fields"] == ["province_or_city"]
+    assert result["showrooms"] == []
+    assert "target_coordinates" not in result
 
 
 def test_address_match_reuses_cached_showroom_tokens():
@@ -137,6 +205,79 @@ def test_search_slots_orders_by_preferred_time_in_vietnam_timezone(booking_servi
     )
 
     assert result["slots"][0]["id"] == catalog["slot_later"]
+
+
+def test_search_slots_supports_a_single_preferred_date(booking_service, catalog):
+    result = booking_service.search_options(
+        vehicle_model="VF6",
+        showroom_id=catalog["showroom_q7"],
+        preferred_date="2026-08-05",
+    )
+
+    assert result["focused_date"] == "2026-08-05"
+    assert result["requested_dates"] == []
+    assert result["requested_date_range"] is None
+    assert result["available_dates"] == ["2026-08-05"]
+    assert result["highlighted_dates"] == ["08-05"]
+
+
+def test_search_slots_supports_specific_non_contiguous_dates(booking_service, catalog):
+    result = booking_service.search_options(
+        vehicle_model="VF6",
+        showroom_id=catalog["showroom_q7"],
+        preferred_dates=["2026-08-05", "2026-08-07"],
+    )
+
+    assert result["focused_date"] is None
+    assert result["requested_dates"] == ["2026-08-05", "2026-08-07"]
+    assert result["available_dates"] == ["2026-08-05"]
+    assert result["highlighted_dates"] == ["08-05"]
+
+
+def test_search_slots_supports_an_inclusive_date_range(booking_service, catalog):
+    result = booking_service.search_options(
+        vehicle_model="VF6",
+        showroom_id=catalog["showroom_q7"],
+        preferred_date_from="2026-08-04",
+        preferred_date_to="2026-08-07",
+    )
+
+    assert result["requested_date_range"] == {"from": "2026-08-04", "to": "2026-08-07"}
+    assert result["available_dates"] == ["2026-08-05"]
+    assert result["highlighted_dates"] == ["08-05"]
+
+
+def test_date_filter_sql_rejects_untrusted_dialect():
+    filters = {
+        "mode": "single",
+        "dates": ["2026-08-05"],
+        "from": None,
+        "to": None,
+    }
+
+    with pytest.raises(ValueError, match="Unsupported database dialect"):
+        catalog_module._date_filter_sql(filters, dialect="sqlite) OR 1=1 --")
+
+
+@pytest.mark.parametrize(
+    "date_filters",
+    [
+        {"preferred_date_from": "2026-08-07", "preferred_date_to": "2026-08-04"},
+        {"preferred_date_from": "2026-08-04"},
+        {"preferred_date": "2026-08-05", "preferred_dates": ["2026-08-05"]},
+        {"preferred_dates": []},
+        {"preferred_date": "2026-02-31"},
+    ],
+)
+def test_search_slots_rejects_invalid_date_filters(booking_service, catalog, date_filters):
+    with pytest.raises(BookingError) as error:
+        booking_service.search_options(
+            vehicle_model="VF6",
+            showroom_id=catalog["showroom_q7"],
+            **date_filters,
+        )
+
+    assert error.value.code == "INVALID_INPUT"
 
 
 # test case of Chau + kiểm tra từ chối giờ mong muốn sai định dạng

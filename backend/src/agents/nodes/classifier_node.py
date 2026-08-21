@@ -28,7 +28,7 @@ DRIVER_BOOKING_SCOPE_MESSAGE = (
     "người đặt lịch qua luồng xác thực booking."
 )
 _DRIVER_BLOCKED_SUB_INTENTS = frozenset({
-    "booking_new", "booking_lookup", "booking_reschedule", "booking_cancel",
+    "booking_new", "booking_lookup", "booking_availability", "booking_reschedule", "booking_cancel",
     "booking_update_details", "booking_update_notifications",
 })
 
@@ -55,7 +55,7 @@ class RouteSchema(BaseModel):
     sub_intent: str = Field(
         description=(
             "Detailed classification. Must be one of: booking_new, booking_lookup, "
-            "booking_reschedule, booking_cancel, booking_update_details, "
+            "booking_availability, booking_reschedule, booking_cancel, booking_update_details, "
             "booking_update_notifications, post_booking_advisory, vehicle_info, "
             "out_of_scope, others. If intent is sensitive, use others."
         )
@@ -143,11 +143,6 @@ async def classifier_node(state: AgentState) -> dict:
 
     if any(kw in lower_query for kw in BOOKING_MUTATION_KEYWORDS):
         return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "booking"}, "tool_call_count": 0}
-    if any(kw in lower_query for kw in ADVISORY_KEYWORDS):
-        if not post_booking_active:
-            return {"intent": "out_of_scope", "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "out_of_scope"}, "tool_call_count": 0}
-        active_skill = "post_booking"
-        return {"intent": "domain", "active_skill": active_skill, "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "vehicle_info"}, "tool_call_count": 0}
     if any(phrase in lower_query for phrase in ("xin chào", "chào bạn", "hello", "hi ")):
         return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "greeting"}, "tool_call_count": 0}
     if post_booking_active and previous_skill == "post_booking" and len(query.split()) <= 8:
@@ -179,6 +174,7 @@ async def classifier_node(state: AgentState) -> dict:
         "For intent=domain, choose exactly one sub_intent:\n"
         "- booking_new\n"
         "- booking_lookup\n"
+        "- booking_availability\n"
         "- booking_reschedule\n"
         "- booking_cancel\n"
         "- booking_update_details\n"
@@ -190,6 +186,7 @@ async def classifier_node(state: AgentState) -> dict:
         "Domain sub-intent rules:\n"
         "- booking_new: create or start a new test-drive booking.\n"
         "- booking_lookup: retrieve or check an existing booking.\n"
+        "- booking_availability: check which test-drive dates or times are free.\n"
         "- booking_reschedule: change the booking date, time, or slot.\n"
         "- booking_cancel: cancel an existing booking.\n"
         "- booking_update_details: change participant or booking details.\n"
@@ -205,6 +202,15 @@ async def classifier_node(state: AgentState) -> dict:
         "'chuyển sang VF7', 'xem xe VF3'), classify as booking_new (NOT booking_reschedule). Only use "
         "booking_reschedule when the user explicitly asks to change an existing appointment time/date "
         "('đổi lịch', 'đổi giờ hẹn').\n"
+        "\n"
+        "Use booking_availability whenever the user asks which dates/times are free or available, "
+        "including informal forms such as 'rảnh ngày 25-26', 'ngày 26 27 có lịch không', "
+        "'từ 25 đến 30', or 'tuần sau có giờ nào'.\n"
+        "A user stating a location is a booking request, including casual or missing-accent "
+        "Vietnamese such as 't ở hcm', 'tôi đang ở Đà Nẵng', 'ở Quế Sơn', and "
+        "'mình ở miền tay'. Classify these as booking_new.\n"
+        "A broad region such as miền Bắc/Trung/Nam/Tây still belongs to booking_new; "
+        "the booking skill will ask for a province or city.\n"
         "\n"
         "Use UI context as supporting evidence, not as a replacement for the user's request. "
         "A successful/confirmed booking makes post_booking_advisory more likely for subsequent "
@@ -245,7 +251,7 @@ async def classifier_node(state: AgentState) -> dict:
         sub_intent = route_result.sub_intent
         if is_driver_invitation and sub_intent in _DRIVER_BLOCKED_SUB_INTENTS:
             return _driver_scope_block(state, query, sub_intent="driver_booking_scope")
-        if intent == "domain" and not post_booking_active and sub_intent in {"post_booking_advisory", "vehicle_info"}:
+        if intent == "domain" and not post_booking_active and sub_intent == "post_booking_advisory":
             intent = "out_of_scope"
             sub_intent = "out_of_scope"
         active_skill = (
