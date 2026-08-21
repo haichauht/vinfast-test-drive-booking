@@ -6,7 +6,8 @@ from langchain_core.tools import tool
 from langgraph.graph import END, StateGraph
 from src.agents.state import AgentState
 from src.config import Settings
-from src.guardrails.tool_guard import build_guarded_tool_node, inspect_tool_calls
+from src.guardrails.tool_guard import build_guarded_tool_node, inspect_tool_calls, serialize_tool_error
+from src.services.booking.errors import BookingError
 
 
 def _state(tool_calls, **overrides):
@@ -20,6 +21,49 @@ def _state(tool_calls, **overrides):
 
 def _call(name, args=None, call_id="call-1"):
     return {"name": name, "args": args or {}, "id": call_id, "type": "tool_call"}
+
+
+def test_booking_error_is_serialized_for_agent_clarification():
+    content = serialize_tool_error(
+        BookingError("INVALID_INPUT", "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.")
+    )
+
+    assert '"code": "INVALID_INPUT"' in content
+    assert "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." in content
+
+
+@pytest.mark.asyncio
+async def test_guarded_tool_node_returns_structured_booking_error():
+    @tool("search_test_drive_options")
+    def failing_search(preferred_date_from: str, preferred_date_to: str) -> dict:
+        """Fake search that rejects a reversed date range."""
+        raise BookingError("INVALID_INPUT", "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.")
+
+    node = build_guarded_tool_node([failing_search], skill_name="booking")
+    graph = StateGraph(AgentState)
+    graph.add_node("tools", node)
+    graph.set_entry_point("tools")
+    graph.add_edge("tools", END)
+    agent = graph.compile()
+    result = await agent.ainvoke(
+        _state(
+            [
+                _call(
+                    "search_test_drive_options",
+                    {
+                        "preferred_date_from": "2026-08-26",
+                        "preferred_date_to": "2026-08-21",
+                    },
+                )
+            ]
+        )
+    )
+
+    message = next(message for message in result["messages"] if isinstance(message, ToolMessage))
+    assert isinstance(message, ToolMessage)
+    assert message.status == "error"
+    assert '"code": "INVALID_INPUT"' in message.content
+    assert "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." in message.content
 
 
 def test_allows_tool_inside_active_skill_allowlist():
