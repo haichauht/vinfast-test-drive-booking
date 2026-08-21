@@ -225,13 +225,16 @@ def seed_db() -> None:
     now = datetime.now(UTC)
     now_str = _iso(now)
 
+    # Cot cuoi la seat_count. Truoc day khong seed cot nay nen no NULL o moi mau xe,
+    # keo theo email xac nhan khong noi duoc "xe may cho". So cho lay tu
+    # src/services/site_catalog.py, la nguon so lieu xe trong repo.
     models = [
-        ("model_vf3", "VF3", "VF 3", "Mini eSUV", "B1", "Yeu cau GPLX hang B1 tro len", 1, now_str, now_str),
-        ("model_vf5", "VF5", "VF 5", "A-SUV", "B1", "Yeu cau GPLX hang B1 tro len", 1, now_str, now_str),
-        ("model_vf6", "VF6", "VF 6", "B-SUV", "B1", "Yeu cau GPLX hang B1 tro len", 1, now_str, now_str),
-        ("model_vf7", "VF7", "VF 7", "C-SUV", "B1", "Yeu cau GPLX hang B1 tro len", 1, now_str, now_str),
-        ("model_vf8", "VF8", "VF 8", "D-SUV", "B1", "Yeu cau GPLX hang B1 tro len", 1, now_str, now_str),
-        ("model_vf9", "VF9", "VF 9", "E-SUV", "B1", "Yeu cau GPLX hang B1 tro len", 1, now_str, now_str),
+        ("model_vf3", "VF3", "VF 3", "Mini eSUV", "B1", "Yeu cau GPLX hang B1 tro len", 1, now_str, now_str, 4),
+        ("model_vf5", "VF5", "VF 5", "A-SUV", "B1", "Yeu cau GPLX hang B1 tro len", 1, now_str, now_str, 5),
+        ("model_vf6", "VF6", "VF 6", "B-SUV", "B1", "Yeu cau GPLX hang B1 tro len", 1, now_str, now_str, 5),
+        ("model_vf7", "VF7", "VF 7", "C-SUV", "B1", "Yeu cau GPLX hang B1 tro len", 1, now_str, now_str, 5),
+        ("model_vf8", "VF8", "VF 8", "D-SUV", "B1", "Yeu cau GPLX hang B1 tro len", 1, now_str, now_str, 5),
+        ("model_vf9", "VF9", "VF 9", "E-SUV", "B1", "Yeu cau GPLX hang B1 tro len", 1, now_str, now_str, 7),
     ]
 
     variants = [
@@ -356,7 +359,7 @@ def seed_db() -> None:
             connection.execute(f"DELETE FROM {table}")
 
         connection.executemany(
-            "INSERT INTO vehicle_models(id,code,name,vehicle_type,required_license_class,license_requirement_note,is_active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO vehicle_models(id,code,name,vehicle_type,required_license_class,license_requirement_note,is_active,created_at,updated_at,seat_count) VALUES(?,?,?,?,?,?,?,?,?,?)",
             models,
         )
         connection.executemany(
