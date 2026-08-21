@@ -10,9 +10,10 @@ Guardrails bảo vệ luồng `/api/v1/chat` trước các nhóm rủi ro chính
 2. Payload abuse: JSON quá lớn, quá sâu, quá nhiều node hoặc chuỗi bất thường gây tốn tài nguyên.
 3. Tool abuse: gọi tool ngoài skill đang hoạt động, gọi trùng, batch nhiều thao tác ghi, gọi quá nhiều tool hoặc xác nhận booking khi người dùng chưa đồng ý rõ ràng.
 4. Data leakage: nội dung phản hồi làm lộ OTP, access token, API key, số điện thoại, email, system prompt hoặc internal analysis.
-5. Contract abuse ở structured action: frontend gửi field không nằm trong allowlist của action.
+5. Contract abuse ở structured action/UI context: frontend gửi field không nằm trong allowlist.
+6. Conversation takeover và burst abuse: client tự chọn checkpoint key hoặc gọi dồn dập chat/hold/confirm/OTP.
 
-Guardrails không thay thế xác thực người dùng, rate limit ở API gateway, phân quyền database, validation nghiệp vụ hay monitoring. Chúng là một lớp defense-in-depth dành riêng cho biên AI/tool.
+Guardrails không thay thế xác thực người dùng, distributed rate limit ở API gateway, phân quyền database, validation nghiệp vụ hay monitoring. Chúng là một lớp defense-in-depth dành riêng cho biên AI/tool.
 
 ## 2. Vị trí trong luồng xử lý
 
@@ -21,6 +22,9 @@ Client
   │
   ▼
 ChatRequest / Pydantic
+  │
+  ▼
+Signed conversation capability + process-local rate limit
   │
   ▼
 InputGuard ── block ──► ChatResponse an toàn, không gọi LLM
@@ -58,6 +62,8 @@ Ba enforcement point tương ứng:
 | `structure.py` | Hàm dùng chung cho Unicode normalization và giới hạn JSON-like payload. |
 | `models.py` | Kiểu dữ liệu quyết định guardrail và output đã bảo vệ. |
 | `pipeline.py` | Facade kết nối settings với input/output guard. |
+| `conversation.py` | Phát và xác minh conversation capability HMAC có TTL; tách public token khỏi LangGraph thread ID. |
+| `rate_limit.py` | Sliding-window limiter process-local; subject chỉ được giữ dưới dạng SHA-256. |
 
 ## 4. Chính sách input
 
@@ -77,7 +83,7 @@ Guard chỉ block các pattern có độ tin cậy cao, ví dụ:
 
 Một câu hỏi bình thường có chữ “prompt” hoặc “system” không tự động bị block. Pattern nằm trong `policies.py` để security review có thể theo dõi thay đổi.
 
-`context` cũng được scan vì `booking_skill_node` đưa context vào prompt. `action_payload` không được đưa vào prompt khi chạy structured action; nó được bảo vệ bằng size/depth budget và field allowlist.
+`context` được scan, kiểm tra top-level/nested allowlist và chuẩn hóa. Nó không còn được nối vào `SystemMessage`; booking skill truyền context đã làm sạch dưới dạng `HumanMessage` được đánh dấu là untrusted reference data. `action_payload` không được đưa vào prompt khi chạy structured action; nó được bảo vệ bằng size/depth budget và field allowlist.
 
 Khi block, API trả `200` với câu từ chối thân thiện và `action_error` là mã máy đọc được, đồng thời **không gọi LLM hoặc tool**. Cách này giúp frontend tiếp tục render như một chat message; metric có thể nhóm theo code.
 
@@ -104,7 +110,7 @@ Trước khi `ToolNode` chạy, guard kiểm tra:
 4. Arguments là object và nằm trong payload budget.
 5. Không có hai call giống hệt nhau trong cùng model response.
 6. Tool có side effect phải chạy một mình; không batch với tool khác.
-7. `confirm_test_drive_booking` chỉ chạy khi structured action đã xác nhận hoặc câu hiện tại có ý xác nhận rõ ràng. Câu phủ định như “không xác nhận”, “chưa chốt” và “do not confirm” không được xem là đồng ý.
+7. `confirm_test_drive_booking` không được bind cho free-form LLM. Guard chỉ cho chạy khi `requested_action == confirm_booking` và `booking_id`, `expected_version`, `ui_action_id` khớp chính xác giữa structured payload và tool call.
 
 Nếu một call trong batch vi phạm, **toàn bộ batch bị chặn** để tránh trạng thái partial-write. Guard tạo `ToolMessage(status="error")`; booking skill xử lý nó theo luồng lỗi hiện có.
 
@@ -116,8 +122,8 @@ Giới hạn `MAX_TOOL_CALLS=8` trong graph vẫn được giữ. Hai lớp có 
 
 - `analysis` luôn trở thành chuỗi rỗng. Internal reasoning không phải API contract công khai.
 - Literal secret tìm được trong kết quả tool bị loại khỏi natural-language `response` và `action_error`.
-- Assignment dạng `api_key=...`, `password: ...`, `otp_code=...` bị redact.
-- Số điện thoại và email trong natural-language response được thay bằng `[phone]`/`[email]`.
+- Assignment dạng `api_key=...`, `password: ...`, `otp_code=...` và standalone provider token/JWT phổ biến bị redact.
+- Số điện thoại, email và CCCD 12 chữ số trong natural-language response được thay bằng marker; phone có hỗ trợ dạng ngoặc như `(+84) 901 234 567`.
 - Nếu output chứa marker của system prompt, toàn bộ text được thay bằng safe fallback.
 - Output quá dài bị cắt theo `GUARDRAILS_MAX_OUTPUT_CHARS`.
 - `tool_input` là diagnostic field nên phone, email, OTP, token và contact đều bị redact đệ quy. Tên key được canonicalize nên `openrouter_api_key`, `openrouterApiKey` và `openrouter-api-key` được xử lý nhất quán.
@@ -140,6 +146,14 @@ Các biến có default an toàn trong `src/config.py` và được minh họa �
 | `GUARDRAILS_MAX_PAYLOAD_STRING_CHARS` | `5000` | Độ dài tối đa của một string trong payload. |
 | `GUARDRAILS_MAX_TOOL_CALLS_PER_MESSAGE` | `3` | Fan-out tối đa trong một model response. |
 | `GUARDRAILS_MAX_OUTPUT_CHARS` | `8000` | Độ dài text tối đa trả về client. |
+| `CONVERSATION_SIGNING_SECRET` | rỗng ở dev, bắt buộc ≥32 ký tự ở production | Khóa HMAC riêng cho public conversation capability. |
+| `CONVERSATION_TOKEN_TTL_SECONDS` | `28800` | TTL của conversation capability. |
+| `RATE_LIMITS_ENABLED` | `true` | Bật limiter tại application boundary; production không thể tắt. |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Cửa sổ cho chat/hold/confirm/OTP limit. |
+| `CHAT_RATE_LIMIT_REQUESTS` | `120` | Số request chat/IP và conversation trong một cửa sổ. |
+| `BOOKING_HOLD_RATE_LIMIT_REQUESTS` | `20` | Limit hold theo IP và slot. |
+| `BOOKING_CONFIRM_RATE_LIMIT_REQUESTS` | `10` | Limit confirm theo IP và booking. |
+| `BOOKING_OTP_RATE_LIMIT_REQUESTS` | `10` | Limit OTP theo IP và contact/challenge. |
 
 Không thể tắt guardrails khi `APP_ENV=production`; Settings validation sẽ fail startup. Nếu cần debug local, chỉ tắt ở development/test và khởi động lại process vì settings/guardrails được cache.
 
@@ -212,7 +226,7 @@ Chỉ thêm pattern có tín hiệu hành động + mục tiêu rõ ràng. Trán
 
 - Regex không phát hiện mọi prompt injection đa ngôn ngữ hoặc được mã hóa tinh vi. Boundary allowlist và tool authorization mới là lớp bảo vệ quan trọng nhất.
 - Guardrails không đánh giá tính đúng/sai của nội dung tư vấn xe; cần grounding/RAG citation và eval riêng.
-- Guardrails không thay API rate limiter theo IP/user. OTP cooldown hiện nằm trong `BookingService`; chat endpoint vẫn nên có gateway rate limit khi public Internet.
+- Limiter trong app là process-local. Deployment nhiều worker/instance vẫn cần distributed gateway limit; OTP cooldown trong `BookingService` tiếp tục là domain control độc lập.
 - Guardrails không thay authentication cho admin import/dashboard endpoints.
 - Output redaction giảm rủi ro accidental leakage nhưng secret không nên được đưa vào LLM context ngay từ đầu.
 
@@ -221,6 +235,7 @@ Chỉ thêm pattern có tín hiệu hành động + mục tiêu rõ ràng. Trán
 - Giữ `GUARDRAILS_ENABLED=true`.
 - Bắt buộc HTTPS và cấu hình CORS theo origin cụ thể.
 - Rate limit `/api/v1/chat`, structured action và OTP theo IP + user/session.
+- Cấu hình cùng một `CONVERSATION_SIGNING_SECRET` trên mọi backend instance và không ghi public conversation token vào log.
 - Bảo vệ admin endpoints bằng authentication/authorization.
 - Không log request/response body tại proxy/APM nếu chưa redact.
 - Alert khi guardrail block tăng đột biến hoặc khi tool policy bị vi phạm.

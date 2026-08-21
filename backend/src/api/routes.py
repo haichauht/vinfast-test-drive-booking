@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Callable
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
@@ -16,6 +16,8 @@ from src.agents.trace import redact, trace_event
 from src.config import get_settings
 from src.dependencies import booking_service, internal_portal_service
 from src.guardrails import get_guardrails
+from src.guardrails.conversation import get_conversation_token_manager
+from src.guardrails.rate_limit import get_rate_limiter
 from src.internal_portal import InternalPrincipal, InternalRole
 from src.internal_portal.routes import current_principal
 from src.models.schemas import (
@@ -46,6 +48,82 @@ SECURITY_STATE_DATASET_FILES = {
 }
 
 
+def _client_subject(request: Request) -> str:
+    return request.client.host if request.client else "unknown-client"
+
+
+def _enforce_rate_limit(
+    request: Request,
+    *,
+    bucket: str,
+    limit: int,
+    subject: str | None = None,
+    include_ip: bool = True,
+) -> None:
+    settings = get_settings()
+    if not getattr(settings, "rate_limits_enabled", True):
+        return
+    window_seconds = int(getattr(settings, "rate_limit_window_seconds", 60))
+    limiter = get_rate_limiter()
+    subjects = [(f"{bucket}.ip", _client_subject(request))] if include_ip else []
+    if subject:
+        subjects.append((f"{bucket}.subject", subject))
+    for scoped_bucket, scoped_subject in subjects:
+        decision = limiter.check(
+            scoped_bucket,
+            scoped_subject,
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+        if decision.allowed:
+            continue
+        trace_event(
+            "rate_limit.blocked",
+            bucket=bucket,
+            scope=scoped_bucket.rsplit(".", 1)[-1],
+            retry_after_seconds=decision.retry_after_seconds,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "RATE_LIMIT_EXCEEDED",
+                "message": "Bạn thao tác quá nhanh. Vui lòng chờ một chút rồi thử lại.",
+                "retryable": True,
+            },
+            headers={"Retry-After": str(decision.retry_after_seconds)},
+        )
+
+
+def _enforce_action_rate_limit(request: Request, action: str | None, payload: dict[str, Any]) -> None:
+    if not action:
+        return
+    settings = get_settings()
+    if action in {"hold_slot", "hold_reschedule"}:
+        subject = str(payload.get("slot_id") or payload.get("new_slot_id") or "")
+        _enforce_rate_limit(
+            request,
+            bucket="booking_hold",
+            limit=int(getattr(settings, "booking_hold_rate_limit_requests", 20)),
+            subject=subject,
+        )
+    elif action in {"confirm_booking", "confirm_reschedule"}:
+        subject = str(payload.get("booking_id") or payload.get("current_booking_id") or "")
+        _enforce_rate_limit(
+            request,
+            bucket="booking_confirm",
+            limit=int(getattr(settings, "booking_confirm_rate_limit_requests", 10)),
+            subject=subject,
+        )
+    elif action in {"request_access", "verify_access"}:
+        subject = str(payload.get("contact_value") or payload.get("challenge_id") or "")
+        _enforce_rate_limit(
+            request,
+            bucket="booking_otp",
+            limit=int(getattr(settings, "booking_otp_rate_limit_requests", 10)),
+            subject=subject,
+        )
+
+
 def require_operations_admin(
     principal: Annotated[InternalPrincipal, Depends(current_principal)],
 ) -> InternalPrincipal:
@@ -54,20 +132,35 @@ def require_operations_admin(
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(request: ChatRequest, http_request: Request) -> ChatResponse:
     """Chat với AI agent."""
     try:
-        # Tạo conversation_id mới nếu client không truyền
-        conversation_id = request.conversation_id or str(uuid.uuid4())
+        settings = get_settings()
+        _enforce_rate_limit(
+            http_request,
+            bucket="chat",
+            limit=int(getattr(settings, "chat_rate_limit_requests", 120)),
+        )
         trace_id = str(uuid.uuid4())
         guardrails = get_guardrails()
         input_decision = guardrails.inspect_input(
             message=request.message,
-            conversation_id=conversation_id,
+            conversation_id=request.conversation_id,
             context=request.context,
             action=request.action,
             action_payload=request.action_payload,
         )
+        token_manager = get_conversation_token_manager()
+        identity = token_manager.verify(request.conversation_id) if request.conversation_id else None
+        if identity is None:
+            identity = token_manager.issue()
+            if request.conversation_id:
+                trace_event(
+                    "guardrail.conversation_reset",
+                    trace_id=trace_id,
+                    reason="invalid_or_expired_conversation_token",
+                )
+        conversation_id = identity.public_token
         if not input_decision.allowed:
             trace_event(
                 "guardrail.input_blocked",
@@ -84,18 +177,27 @@ async def chat(request: ChatRequest) -> ChatResponse:
             )
 
         safe_message = input_decision.sanitized_text or request.message
+        safe_context = input_decision.sanitized_context or {}
+        _enforce_rate_limit(
+            http_request,
+            bucket="chat",
+            limit=int(getattr(settings, "chat_rate_limit_requests", 120)),
+            subject=identity.thread_id,
+            include_ip=False,
+        )
+        _enforce_action_rate_limit(http_request, request.action, request.action_payload)
         trace_event(
             "chat.request",
             trace_id=trace_id,
             conversation_id=conversation_id,
             message=safe_message,
-            context=request.context,
+            context=safe_context,
             action=request.action,
             action_payload=request.action_payload,
         )
-        config = {"configurable": {"thread_id": conversation_id}}
+        config = {"configurable": {"thread_id": identity.thread_id}}
         logging.getLogger("agent.requests").info(
-            "chat_started conversation_id=%s requested_action=%s", conversation_id, request.action or "llm"
+            "chat_started trace_id=%s requested_action=%s", trace_id, request.action or "llm"
         )
         # Keep the module-level `agent` overrideable by existing tests, while
         # production resolves the graph initialized with the Postgres saver.
@@ -103,7 +205,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         result = await cast(Any, active_agent).ainvoke(
             {
                 "query": safe_message,
-                "context": request.context,
+                "context": safe_context,
                 "requested_action": request.action,
                 "action_payload": request.action_payload,
                 "action_result": None,
@@ -115,8 +217,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
             config=config,
         )
         logging.getLogger("agent.requests").info(
-            "chat_finished conversation_id=%s tool=%s status=%s",
-            conversation_id,
+            "chat_finished trace_id=%s tool=%s status=%s",
+            trace_id,
             result.get("action_tool") or "none",
             "error" if result.get("action_error") else "success",
         )
@@ -140,6 +242,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
             tool_call_count=result.get("tool_call_count"),
         )
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         trace_event(
             "chat.error",
@@ -184,7 +288,7 @@ def _request_demo_access(**kwargs: Any) -> dict:
 
 
 @router.post("/demo/action")
-async def demo_action(request: DemoActionRequest):
+async def demo_action(request: DemoActionRequest, http_request: Request):
     """Deterministic UI simulator: one button maps to one tool/command."""
     p = request.payload
     actions: dict[str, tuple[str, Callable[..., Any]]] = {
@@ -219,6 +323,7 @@ async def demo_action(request: DemoActionRequest):
             status_code=400,
             detail={"code": action_decision.code, "message": action_decision.user_message},
         )
+    _enforce_action_rate_limit(http_request, request.action, p)
     name, handler = actions[request.action]
     try:
         data = handler(**p)

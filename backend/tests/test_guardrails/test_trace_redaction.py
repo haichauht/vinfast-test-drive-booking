@@ -13,6 +13,7 @@ from src.agents.trace import LOGGER_NAME, redact, trace_event
         "client secret",
         "refreshToken",
         "challenge-id",
+        "conversation_id",
         "token_hash",
     ],
 )
@@ -32,6 +33,14 @@ def test_trace_redacts_pii_and_direct_credential_assignments_inside_text():
     assert "bearer-secret" not in value
     assert "[email]" in value
     assert "[phone]" in value
+
+
+def test_trace_redacts_standalone_token_parenthesized_phone_and_personal_id():
+    value = redact("sk-proj-FAKESECRET (+84) 901 234 567 001204123456")
+
+    assert "sk-proj-FAKESECRET" not in value
+    assert "(+84) 901 234 567" not in value
+    assert "001204123456" not in value
 
 
 def test_trace_event_never_logs_nested_credentials(caplog):

@@ -1,9 +1,9 @@
 # Guardrail Benchmark Report
 
-- Generated: `2026-08-20T08:39:49.170599+00:00`
-- Dataset SHA-256: `e127358b8aa54c554cf4ead5bae17eafe3cbe1d105940c64e6115c58425a4a5f`
-- Result: **52/52 PASS** (100.00%)
-- Runtime: `57.6337 ms`
+- Generated: `2026-08-21T08:46:06.921195+00:00`
+- Dataset SHA-256: `88ef3952652150aa11711cf1f4ba98289d1c85ccaef53d7bafa2ca6a9ef566af`
+- Result: **63/63 PASS** (100.00%)
+- Runtime: `64.0131 ms`
 
 ## Quality Metrics
 
@@ -12,8 +12,8 @@
 | Attack-block accuracy | 100.00% |
 | Benign-allow accuracy | 100.00% |
 | Output-protection accuracy | 100.00% |
-| Median latency | 0.9570 ms |
-| p95 latency | 1.6781 ms |
+| Median latency | 0.8652 ms |
+| p95 latency | 1.7306 ms |
 
 ## Results By Category
 
@@ -23,16 +23,19 @@
 | `analysis_hiding` | 1 | 1 | 100.00% |
 | `benign_allow` | 4 | 4 | 100.00% |
 | `benign_output` | 1 | 1 | 100.00% |
+| `context_contract` | 2 | 2 | 100.00% |
 | `context_injection` | 1 | 1 | 100.00% |
-| `explicit_confirmation` | 5 | 5 | 100.00% |
+| `conversation_binding` | 2 | 2 | 100.00% |
+| `explicit_confirmation` | 8 | 8 | 100.00% |
 | `input_validation` | 2 | 2 | 100.00% |
 | `mutation_isolation` | 2 | 2 | 100.00% |
 | `nested_action_contract` | 3 | 3 | 100.00% |
 | `output_limits` | 1 | 1 | 100.00% |
 | `payload_limits` | 1 | 1 | 100.00% |
-| `pii_redaction` | 1 | 1 | 100.00% |
-| `prompt_injection` | 2 | 2 | 100.00% |
+| `pii_redaction` | 2 | 2 | 100.00% |
+| `prompt_injection` | 4 | 4 | 100.00% |
 | `prompt_leakage` | 3 | 3 | 100.00% |
+| `rate_limit` | 1 | 1 | 100.00% |
 | `role_injection` | 4 | 4 | 100.00% |
 | `secret_exfiltration` | 2 | 2 | 100.00% |
 | `secret_redaction` | 2 | 2 | 100.00% |

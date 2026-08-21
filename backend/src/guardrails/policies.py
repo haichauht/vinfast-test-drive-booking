@@ -24,6 +24,16 @@ PROMPT_INJECTION_PATTERNS: tuple[tuple[str, str], ...] = (
         r"\b(?:trước|trước\s+đó|hệ\s+thống|ẩn)\b",
     ),
     (
+        "PROMPT_INJECTION_OVERRIDE",
+        r"\b(?:ignore|disregard|forget|override|bypass)\b.{0,50}"
+        r"\b(?:everything|all)\b.{0,30}\b(?:above|before|earlier)\b",
+    ),
+    (
+        "PROMPT_INJECTION_OVERRIDE",
+        r"\b(?:bo\s+qua|phot\s+lo|quen|vuot\s+qua|ghi\s+de|lam\s+trai)\b.{0,80}"
+        r"\b(?:huong\s+dan|chi\s+thi|system\s*prompt|luat|quy\s+tac|he\s+thong)\b",
+    ),
+    (
         "SECRET_EXFILTRATION",
         r"\b(?:reveal|show|print|return|dump|expose|leak)\b.{0,80}"
         r"\b(?:system\s+prompt|developer\s+message|hidden\s+instructions?|api[_ -]?keys?|"
@@ -33,6 +43,11 @@ PROMPT_INJECTION_PATTERNS: tuple[tuple[str, str], ...] = (
         "SECRET_EXFILTRATION",
         r"\b(?:hiển\s+thị|tiết\s+lộ|in\s+ra|trả\s+về|đọc\s+ra)\b.{0,80}"
         r"\b(?:system\s*prompt|chỉ\s+thị\s+ẩn|khóa\s*api|api\s*key|token|biến\s+môi\s+trường|bí\s+mật)\b",
+    ),
+    (
+        "SECRET_EXFILTRATION",
+        r"\b(?:hien\s+thi|tiet\s+lo|in\s+ra|tra\s+ve|doc\s+ra)\b.{0,80}"
+        r"\b(?:system\s*prompt|chi\s+thi\s+an|khoa\s*api|api\s*key|token|bien\s+moi\s+truong|bi\s+mat)\b",
     ),
     (
         "ROLE_INJECTION",
@@ -109,6 +124,29 @@ ACTION_NESTED_ALLOWED_FIELDS: dict[str, dict[str, frozenset[str]]] = {
     }
 }
 
+# UI context is untrusted reference data, not an instruction channel. Keep this
+# contract synchronized with frontend/src/api/booking.js.
+CONTEXT_ALLOWED_FIELDS = frozenset(
+    {
+        "channel",
+        "stage",
+        "recipient",
+        "selectedVehicle",
+        "selectedShowroom",
+        "selectedSlot",
+        "nearbyShowrooms",
+        "userLocation",
+        "bookingId",
+    }
+)
+CONTEXT_NESTED_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "selectedVehicle": frozenset({"id", "name"}),
+    "selectedShowroom": frozenset({"id", "name"}),
+    "selectedSlot": frozenset({"slotId", "time", "dateLabel", "isAvailable", "unavailableLabel"}),
+    "userLocation": frozenset({"latitude", "longitude"}),
+    "nearbyShowrooms": frozenset({"id", "name", "address", "distance"}),
+}
+
 # `/demo/action` is also a public tool boundary, even though it bypasses the
 # LLM. Keep a separate contract because it exposes additional authenticated
 # booking-management commands.
@@ -168,6 +206,10 @@ MUTATING_TOOL_NAMES = frozenset(
 )
 
 CONFIRMATION_TOOL_NAMES = frozenset({"confirm_test_drive_booking"})
+CONFIRMATION_ACTION_BY_TOOL = {"confirm_test_drive_booking": "confirm_booking"}
+CONFIRMATION_BOUND_FIELDS_BY_TOOL = {
+    "confirm_test_drive_booking": frozenset({"booking_id", "expected_version", "ui_action_id"})
+}
 
 # Values under these keys are never safe in natural-language output or public
 # diagnostic fields. Some keys are still intentionally present in action_data so
@@ -182,6 +224,8 @@ SECRET_VALUE_KEYS = frozenset(
         "client_secret",
         "code_hash",
         "contact_value",
+        "conversation_id",
+        "conversation_token",
         "cookie",
         "destination_hash",
         "license_number",

@@ -39,7 +39,7 @@ class Guardrails:
         action_payload: dict[str, Any],
     ) -> GuardrailDecision:
         if not self.enabled:
-            return GuardrailDecision.allow(sanitized_text=message)
+            return GuardrailDecision.allow(sanitized_text=message, sanitized_context=context)
         return self.input.inspect(
             message=message,
             conversation_id=conversation_id,

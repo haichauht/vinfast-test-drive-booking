@@ -14,9 +14,9 @@ def test_guardrail_benchmark_dataset_is_valid_unique_and_balanced():
     dataset = load_dataset(DEFAULT_DATASET_PATH)
     cases = dataset["cases"]
 
-    assert dataset["case_count"] == len(cases) == 52
+    assert dataset["case_count"] == len(cases) == 63
     assert len({case["case_id"] for case in cases}) == len(cases)
-    assert {case["kind"] for case in cases} == {"input", "output", "tool"}
+    assert {case["kind"] for case in cases} == {"conversation", "input", "output", "rate_limit", "tool"}
     assert sum(case["kind"] == "input" for case in cases) >= 25
     assert sum(case["kind"] == "output" for case in cases) >= 10
     assert sum(case["kind"] == "tool" for case in cases) >= 10
@@ -27,7 +27,7 @@ def test_guardrail_benchmark_dataset_is_valid_unique_and_balanced():
 def test_every_guardrail_benchmark_case_passes_as_a_ci_regression_gate():
     report = run_benchmark(load_dataset(DEFAULT_DATASET_PATH))
 
-    assert report["summary"]["total"] == 52
+    assert report["summary"]["total"] == 63
     assert report["summary"]["failed"] == 0
     assert report["summary"]["pass_rate"] == 1.0
     assert report["quality_metrics"]["attack_block_accuracy"] == 1.0
@@ -40,12 +40,22 @@ def test_benchmark_filters_are_deterministic_and_report_is_reviewable():
     report = run_benchmark(dataset, kinds={"tool"}, tags={"confirmation"})
     markdown = render_markdown(report)
 
-    assert report["summary"]["total"] == 5
+    assert report["summary"]["total"] == 8
     assert report["summary"]["failed"] == 0
     assert set(report["case_distribution"]) == {"tool"}
     assert "# Guardrail Benchmark Report" in markdown
     assert "No failed cases." in markdown
     assert "deterministic, offline policy benchmark" in markdown
+
+
+def test_benchmark_covers_conversation_binding_and_rate_limiting():
+    report = run_benchmark(
+        load_dataset(DEFAULT_DATASET_PATH),
+        kinds={"conversation", "rate_limit"},
+    )
+
+    assert report["summary"]["total"] == 3
+    assert report["summary"]["failed"] == 0
 
 
 def test_benchmark_pins_test_settings_instead_of_inheriting_production_env(monkeypatch):
@@ -55,7 +65,7 @@ def test_benchmark_pins_test_settings_instead_of_inheriting_production_env(monke
 
     report = run_benchmark(dataset, categories={"prompt_injection"})
 
-    assert report["summary"]["total"] == 2
+    assert report["summary"]["total"] == 4
     assert report["summary"]["failed"] == 0
 
 
@@ -66,4 +76,15 @@ def test_benchmark_dataset_validation_rejects_duplicate_ids(tmp_path):
     path.write_text(json.dumps(dataset, ensure_ascii=False), encoding="utf-8")
 
     with pytest.raises(ValueError, match="Duplicate benchmark case_id"):
+        load_dataset(path)
+
+
+def test_benchmark_dataset_validation_rejects_vacuous_output_expectation(tmp_path):
+    dataset = deepcopy(load_dataset(DEFAULT_DATASET_PATH))
+    output_case = next(case for case in dataset["cases"] if case["kind"] == "output")
+    output_case["expected"] = {}
+    path = tmp_path / "vacuous.json"
+    path.write_text(json.dumps(dataset, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="require at least one output assertion"):
         load_dataset(path)

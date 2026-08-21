@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -8,9 +9,17 @@ from src.guardrails.models import GuardrailDecision
 from src.guardrails.policies import (
     ACTION_ALLOWED_FIELDS,
     ACTION_NESTED_ALLOWED_FIELDS,
+    CONTEXT_ALLOWED_FIELDS,
+    CONTEXT_NESTED_ALLOWED_FIELDS,
     PROMPT_INJECTION_PATTERNS,
 )
-from src.guardrails.structure import PayloadLimits, iter_strings, normalize_text, validate_payload
+from src.guardrails.structure import (
+    PayloadLimits,
+    fold_text_for_policy,
+    iter_strings,
+    normalize_text,
+    validate_payload,
+)
 
 _SAFE_CONVERSATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$")
 
@@ -19,6 +28,21 @@ _BLOCKED_MESSAGE = (
     "nên tôi không thể xử lý. Tôi vẫn có thể hỗ trợ thông tin xe VinFast và đặt lịch lái thử."
 )
 _INVALID_PAYLOAD_MESSAGE = "Dữ liệu gửi lên không hợp lệ hoặc quá phức tạp. Vui lòng tải lại trang và thử lại."
+_CONTEXT_STRING_MAX_CHARS = 500
+_CONTEXT_LIST_MAX_ITEMS = 30
+_CONTEXT_STAGES = frozenset(
+    {
+        "idle",
+        "lookup",
+        "need_car",
+        "need_address",
+        "choose_showroom",
+        "choose_slot",
+        "collect_info",
+        "review",
+        "success",
+    }
+)
 
 
 class InputGuard:
@@ -58,6 +82,26 @@ class InputGuard:
             if not payload_decision.allowed:
                 return payload_decision
 
+        # Scan before enforcing the context contract so a known injection keeps
+        # its specific operational code instead of being reported only as an
+        # unknown UI field.
+        candidates = [normalized_message, *iter_strings(context)]
+        for candidate in candidates:
+            normalized_candidate = normalize_text(candidate)
+            folded_candidate = fold_text_for_policy(normalized_candidate)
+            for code, pattern in self._injection_patterns:
+                if pattern.search(normalized_candidate) or pattern.search(folded_candidate):
+                    return GuardrailDecision.block(
+                        code,
+                        "high-confidence prompt/role injection pattern matched",
+                        _BLOCKED_MESSAGE,
+                    )
+
+        context_decision = self.inspect_context(context)
+        if not context_decision.allowed:
+            return context_decision
+        sanitized_context = context_decision.sanitized_context or {}
+
         if action:
             action_decision = self.inspect_structured_payload(
                 action=action,
@@ -68,20 +112,112 @@ class InputGuard:
             if not action_decision.allowed:
                 return action_decision
 
-        # Context is interpolated into an LLM prompt in booking_skill_node, so it
-        # receives the same injection screening as the visible chat message.
-        candidates = [normalized_message, *iter_strings(context)]
-        for candidate in candidates:
-            normalized_candidate = normalize_text(candidate)
-            for code, pattern in self._injection_patterns:
-                if pattern.search(normalized_candidate):
-                    return GuardrailDecision.block(
-                        code,
-                        "high-confidence prompt/role injection pattern matched",
-                        _BLOCKED_MESSAGE,
-                    )
+        return GuardrailDecision.allow(
+            sanitized_text=normalized_message,
+            sanitized_context=sanitized_context,
+        )
 
-        return GuardrailDecision.allow(sanitized_text=normalized_message)
+    def inspect_context(self, context: Mapping[str, Any]) -> GuardrailDecision:
+        payload_decision = self.inspect_payload(context, label="context")
+        if not payload_decision.allowed:
+            return payload_decision
+        unexpected = sorted(set(map(str, context)) - CONTEXT_ALLOWED_FIELDS)
+        if unexpected:
+            return GuardrailDecision.block(
+                "CONTEXT_FIELDS_NOT_ALLOWED",
+                "UI context contains fields outside its public contract",
+                _INVALID_PAYLOAD_MESSAGE,
+                details={"fields": unexpected},
+            )
+
+        sanitized: dict[str, Any] = {}
+        for key, value in context.items():
+            if value is None:
+                sanitized[key] = None
+                continue
+            if key == "nearbyShowrooms":
+                if not isinstance(value, list) or len(value) > _CONTEXT_LIST_MAX_ITEMS:
+                    return self._invalid_context_type(key)
+                items: list[dict[str, Any]] = []
+                for item in value:
+                    decision, cleaned = self._inspect_context_object(key, item)
+                    if decision is not None:
+                        return decision
+                    items.append(cleaned)
+                sanitized[key] = items
+                continue
+            if key in CONTEXT_NESTED_ALLOWED_FIELDS:
+                decision, cleaned = self._inspect_context_object(key, value)
+                if decision is not None:
+                    return decision
+                sanitized[key] = cleaned
+                continue
+            if not isinstance(value, str) or len(value) > _CONTEXT_STRING_MAX_CHARS:
+                return self._invalid_context_type(key)
+            cleaned_value = normalize_text(value)
+            if key == "channel" and cleaned_value != "booking":
+                return self._invalid_context_value(key)
+            if key == "stage" and cleaned_value not in _CONTEXT_STAGES:
+                return self._invalid_context_value(key)
+            if key == "recipient" and cleaned_value not in {"", "self", "other"}:
+                return self._invalid_context_value(key)
+            sanitized[key] = cleaned_value
+        return GuardrailDecision.allow(sanitized_context=sanitized)
+
+    def _inspect_context_object(
+        self,
+        field: str,
+        value: Any,
+    ) -> tuple[GuardrailDecision | None, dict[str, Any]]:
+        if not isinstance(value, Mapping):
+            return self._invalid_context_type(field), {}
+        allowed_fields = CONTEXT_NESTED_ALLOWED_FIELDS[field]
+        unexpected = sorted(set(map(str, value)) - allowed_fields)
+        if unexpected:
+            return (
+                GuardrailDecision.block(
+                    "CONTEXT_FIELDS_NOT_ALLOWED",
+                    "UI context contains nested fields outside its public contract",
+                    _INVALID_PAYLOAD_MESSAGE,
+                    details={"field": field, "fields": unexpected},
+                ),
+                {},
+            )
+        cleaned: dict[str, Any] = {}
+        for key, nested in value.items():
+            if nested is None or isinstance(nested, bool):
+                cleaned[str(key)] = nested
+            elif isinstance(nested, str) and len(nested) <= _CONTEXT_STRING_MAX_CHARS:
+                cleaned[str(key)] = normalize_text(nested)
+            elif isinstance(nested, (int, float)) and not isinstance(nested, bool) and math.isfinite(nested):
+                if key == "latitude" and not -90 <= nested <= 90:
+                    return self._invalid_context_value(f"{field}.{key}"), {}
+                if key == "longitude" and not -180 <= nested <= 180:
+                    return self._invalid_context_value(f"{field}.{key}"), {}
+                if key == "distance" and nested < 0:
+                    return self._invalid_context_value(f"{field}.{key}"), {}
+                cleaned[str(key)] = nested
+            else:
+                return self._invalid_context_type(f"{field}.{key}"), {}
+        return None, cleaned
+
+    @staticmethod
+    def _invalid_context_type(field: str) -> GuardrailDecision:
+        return GuardrailDecision.block(
+            "CONTEXT_FIELD_TYPE_INVALID",
+            f"UI context field has an invalid type: {field}",
+            _INVALID_PAYLOAD_MESSAGE,
+            details={"field": field},
+        )
+
+    @staticmethod
+    def _invalid_context_value(field: str) -> GuardrailDecision:
+        return GuardrailDecision.block(
+            "CONTEXT_FIELD_VALUE_INVALID",
+            f"UI context field has an invalid value: {field}",
+            _INVALID_PAYLOAD_MESSAGE,
+            details={"field": field},
+        )
 
     def inspect_payload(self, payload: Any, *, label: str) -> GuardrailDecision:
         violation = validate_payload(payload, self.payload_limits)

@@ -4,13 +4,14 @@
 Agent. Suite chạy hoàn toàn offline, không gọi LLM, không truy cập mạng và không
 ghi dữ liệu booking. Runner pin `APP_ENV=test` cùng toàn bộ guardrail limits nên
 không kế thừa `.env`/production toggle của máy chạy. Mục tiêu là đo regression ổn
-định tại ba enforcement boundary: input, public output và tool execution.
+định tại năm enforcement boundary: input, public output, tool execution,
+conversation capability và application rate limit.
 
 ## 1. Thành phần
 
 | File | Vai trò |
 |---|---|
-| `guardrails_cases.json` | 52 case version-controlled, có expected decision/output rõ ràng. |
+| `guardrails_cases.json` | 63 case version-controlled, có expected decision/output rõ ràng. |
 | `backend/src/evaluation/guardrail_benchmark.py` | Loader, schema validation, executor, scorer và report renderer. |
 | `backend/scripts/run_guardrail_benchmark.py` | CLI chạy từ root repo. |
 | `results/baseline.json` | Baseline máy đọc được, gồm metric và kết quả từng case. |
@@ -44,9 +45,14 @@ không kế thừa `.env`/production toggle của máy chạy. Mục tiêu là �
 - duplicate/replay và fan-out limit;
 - payload budget;
 - read-only batch và mutation isolation;
-- explicit confirmation, structured UI confirmation và câu phủ định bằng tiếng
-  Việt/Anh;
+- structured confirmation có payload binding; mọi confirmation chỉ dựa trên
+  free-form text hoặc action không khớp đều bị block;
 - invalid tool state.
+
+### Conversation và rate limit
+
+- signed conversation capability round-trip và tamper rejection;
+- sliding-window burst blocking và recovery sau khi hết cửa sổ.
 
 ## 3. Chạy benchmark
 
@@ -114,6 +120,8 @@ Ví dụ input decision case:
 - `input`: chạy `Guardrails.inspect_input()`;
 - `output`: chạy `Guardrails.protect_output()`;
 - `tool`: tạo `AIMessage.tool_calls` rồi chạy `inspect_tool_calls()`.
+- `conversation`: phát/xác minh HMAC capability với clock cố định;
+- `rate_limit`: chạy limiter bằng clock giả lập để kiểm tra block/recovery.
 
 Decision case bắt buộc có `expected.allowed` và `expected.code`. Output case hỗ
 trợ các assertion:

@@ -34,6 +34,13 @@ def normalize_text(value: str) -> str:
     return "".join(cleaned).strip()
 
 
+def fold_text_for_policy(value: str) -> str:
+    """Return an accent-insensitive form used only for policy matching."""
+    normalized = normalize_text(value).replace("đ", "d").replace("Đ", "D")
+    decomposed = unicodedata.normalize("NFKD", normalized)
+    return "".join(character for character in decomposed if unicodedata.category(character) != "Mn")
+
+
 def iter_strings(value: Any) -> Iterator[str]:
     if isinstance(value, str):
         yield value
