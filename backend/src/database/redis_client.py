@@ -45,6 +45,92 @@ class RedisClient:
         except Exception:
             return False
 
+    @property
+    def available(self) -> bool:
+        return bool(self.enabled and self._client)
+
+    def enqueue_reliable(
+        self,
+        queue_name: str,
+        payload: dict[str, Any],
+        *,
+        dedupe_key: str,
+        dedupe_ttl_seconds: int = 30,
+    ) -> bool:
+        """Atomically claim a short dedupe key and append a JSON job to Redis."""
+        if not self._client:
+            return False
+        queue_key = f"queue:{queue_name}:pending"
+        claim_key = f"queue:{queue_name}:dedupe:{dedupe_key}"
+        encoded = json.dumps(payload, ensure_ascii=False)
+        script = (
+            "if redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1]) then "
+            "redis.call('LPUSH', KEYS[2], ARGV[2]); return 1 else return 0 end"
+        )
+        try:
+            result = self._client.eval(
+                script,
+                2,
+                claim_key,
+                queue_key,
+                str(dedupe_ttl_seconds),
+                encoded,
+            )
+            # A duplicate is already queued or was processed recently, so it is
+            # a successful no-op from the request path's perspective.
+            return result in {0, 1}
+        except Exception as err:
+            logger.warning("Redis enqueue_reliable failed for %s: %s", queue_name, err)
+            return False
+
+    def reserve_reliable(self, queue_name: str, timeout_seconds: int = 1) -> str | None:
+        """Move one job from pending to processing before returning it."""
+        if not self._client:
+            return None
+        try:
+            return self._client.brpoplpush(
+                f"queue:{queue_name}:pending",
+                f"queue:{queue_name}:processing",
+                timeout=timeout_seconds,
+            )
+        except Exception as err:
+            logger.warning("Redis reserve_reliable failed for %s: %s", queue_name, err)
+            return None
+
+    def ack_reliable(self, queue_name: str, encoded_payload: str) -> bool:
+        if not self._client:
+            return False
+        try:
+            self._client.lrem(f"queue:{queue_name}:processing", 1, encoded_payload)
+            return True
+        except Exception as err:
+            logger.warning("Redis ack_reliable failed for %s: %s", queue_name, err)
+            return False
+
+    def retry_reliable(
+        self,
+        queue_name: str,
+        encoded_payload: str,
+        payload: dict[str, Any],
+        *,
+        dead_letter: bool,
+    ) -> bool:
+        if not self._client:
+            return False
+        destination = "dead" if dead_letter else "pending"
+        try:
+            pipeline = self._client.pipeline(transaction=True)
+            pipeline.lrem(f"queue:{queue_name}:processing", 1, encoded_payload)
+            pipeline.lpush(
+                f"queue:{queue_name}:{destination}",
+                json.dumps(payload, ensure_ascii=False),
+            )
+            pipeline.execute()
+            return True
+        except Exception as err:
+            logger.warning("Redis retry_reliable failed for %s: %s", queue_name, err)
+            return False
+
     def set_otp(self, key: str, code: str, ttl_seconds: int = 60) -> bool:
         if not self._client:
             msg = "[REDIS BYPASS] set_otp skipped, Redis not connected"
