@@ -28,7 +28,7 @@ class RouteSchema(BaseModel):
     sub_intent: str = Field(
         description=(
             "Detailed classification. Must be one of: booking_new, booking_lookup, "
-            "booking_reschedule, booking_cancel, booking_update_details, "
+            "booking_availability, booking_reschedule, booking_cancel, booking_update_details, "
             "booking_update_notifications, vehicle_info, sovereignty, "
             "out_of_scope_code, out_of_scope_math, others"
         )
@@ -96,10 +96,13 @@ async def classifier_node(state: AgentState) -> dict:
         "You classify requests for a VinFast test-drive assistant.\n"
         "Return intent=domain for vehicle and booking requests, or intent=sensitive for unsafe/out-of-scope requests.\n"
         "Choose exactly one sub_intent: booking_new, booking_lookup, booking_reschedule, booking_cancel, "
-        "booking_update_details, booking_update_notifications, vehicle_info, sovereignty, "
+        "booking_availability, booking_update_details, booking_update_notifications, vehicle_info, sovereignty, "
         "out_of_scope_code, out_of_scope_math, others.\n"
         "Use booking_lookup when the user wants to view, find, check, or retrieve an existing booking.\n"
         "IMPORTANT: When the user mentions changing/switching a vehicle model (e.g. 'đổi VF8', 'đổi xe VF5', 'chuyển sang VF7', 'xem xe VF3'), classify as booking_new (NOT booking_reschedule). Only use booking_reschedule when the user explicitly asks to change an existing appointment time/date ('đổi lịch', 'đổi giờ hẹn').\n"
+        "Use booking_availability whenever the user asks which dates/times are free or available, including informal forms such as 'rảnh ngày 25-26', 'ngày 26 27 có lịch không', 'từ 25 đến 30', or 'tuần sau có giờ nào'.\n"
+        "A user stating a location is a booking request, including casual or missing-accent Vietnamese such as 't ở hcm', 'tôi đang ở Đà Nẵng', 'ở Quế Sơn' and 'mình ở miền tay'. Classify these as booking_new, never as code, math, or others.\n"
+        "A broad region such as miền Bắc/Trung/Nam/Tây still belongs to booking_new; the booking skill will ask for a province or city.\n"
         "If the query contains an email, copy it exactly to contact_value. Otherwise return null. "
         "Never invent contact_value.\n"
         f"UI context: channel={context.get('channel', '')}, stage={context.get('stage', '')}.\n"

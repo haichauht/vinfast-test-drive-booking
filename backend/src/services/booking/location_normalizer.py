@@ -35,6 +35,25 @@ _ALIAS_PATTERNS = tuple(
 
 _IGNORED_TOKENS = frozenset({"duong", "phuong", "xa", "quan", "huyen", "thi", "tran", "thanh", "pho", "tp", "so"})
 
+_BROAD_REGION_CLARIFICATIONS = (
+    (
+        "mien tay",
+        "Miền Tây khá rộng. Quý khách cho ViVi xin tỉnh/thành cụ thể, ví dụ Cần Thơ, Long An, An Giang hoặc Kiên Giang.",
+    ),
+    (
+        "mien trung",
+        "Miền Trung khá rộng. Quý khách cho ViVi xin tỉnh/thành cụ thể, ví dụ Đà Nẵng, Quảng Nam, Huế hoặc Nghệ An.",
+    ),
+    (
+        "mien nam",
+        "Miền Nam khá rộng. Quý khách cho ViVi xin tỉnh/thành cụ thể, ví dụ TP.HCM, Bình Dương, Cần Thơ hoặc Đồng Nai.",
+    ),
+    (
+        "mien bac",
+        "Miền Bắc khá rộng. Quý khách cho ViVi xin tỉnh/thành cụ thể, ví dụ Hà Nội, Hải Phòng hoặc Bắc Giang.",
+    ),
+)
+
 
 def normalize_location_text(value: str) -> str:
     """Return a lowercase, accent-free location string with known aliases expanded."""
@@ -44,6 +63,20 @@ def normalize_location_text(value: str) -> str:
     for pattern, canonical in _ALIAS_PATTERNS:
         ascii_value = pattern.sub(canonical, ascii_value)
     return ascii_value
+
+
+def broad_region_clarification(value: str) -> str | None:
+    """Ask for a province/city when the location is only a broad Vietnamese region.
+
+    This is intentionally available to the chat layer as well as catalog search,
+    so a missing vehicle model cannot cause an ambiguous region to fall through
+    to a generic out-of-scope reply.
+    """
+    normalized = normalize_location_text(value)
+    for region, prompt in _BROAD_REGION_CLARIFICATIONS:
+        if re.search(rf"(?<![a-z0-9]){re.escape(region)}(?![a-z0-9])", normalized):
+            return prompt
+    return None
 
 
 def normalize_location_tokens(value: str) -> set[str]:
