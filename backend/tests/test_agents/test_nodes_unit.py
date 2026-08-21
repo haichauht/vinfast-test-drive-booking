@@ -23,6 +23,42 @@ async def test_classifier_empty_query_uses_booking_route_without_llm(monkeypatch
     get_llm.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_classifier_prompt_marks_colloquial_locations_as_booking(monkeypatch):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(return_value=RouteSchema(intent="domain", sub_intent="booking_new"))
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+
+    result = await classifier_node({"query": "t ở Hồ Chí Minh"})
+
+    prompt = structured.ainvoke.await_args.args[0]
+    assert "t ở hcm" in prompt
+    assert result["intent"] == "domain"
+    assert result["metadata"]["sub_intent"] == "booking_new"
+
+
+@pytest.mark.asyncio
+async def test_classifier_marks_schedule_questions_as_booking_availability(monkeypatch):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        return_value=RouteSchema(intent="domain", sub_intent="booking_availability")
+    )
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+
+    result = await classifier_node({"query": "tui rảnh ngày 25-26"})
+
+    prompt = structured.ainvoke.await_args.args[0]
+    assert "booking_availability" in prompt
+    assert result["intent"] == "domain"
+    assert result["metadata"]["sub_intent"] == "booking_availability"
+
+
 # test case of Chau + kiểm tra classifier ưu tiên sensitive keyword và không phụ thuộc LLM
 @pytest.mark.asyncio
 async def test_classifier_sensitive_keyword_bypasses_llm(monkeypatch):
