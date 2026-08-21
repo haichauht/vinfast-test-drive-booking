@@ -53,7 +53,6 @@ To protect the system from malicious use, prompt injection, and tool spamming, y
 1.  **Vehicle & Location Selection**: Ask for the model (VF3, VF5, VF7, etc.) and location/address.
 2.  **Showroom Search**: Call `search_test_drive_options` to find showrooms. Present recommendations and guide showroom selection.
 3.  **Slot Booking**: Call `search_test_drive_options` with the chosen `showroom_id`. Present timeslots, let the user pick one to hold.
-    For availability questions, encode one exact day with `preferred_date`, separate days with `preferred_dates`, and a continuous range with `preferred_date_from` plus `preferred_date_to`. Never answer availability from conversation memory alone.
 4.  **Information Collection**: Retrieve draft details using `get_booking_draft`. Ask the user to provide missing required fields.
 5.  **Draft Update**: Collect details and call `update_booking_draft` with the appropriate patches.
 6.  **Confirmation**: Once `is_ready_to_confirm` is `True`, prompt the user to confirm the booking.

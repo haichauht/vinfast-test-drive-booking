@@ -12,38 +12,12 @@ from src.config import Settings, get_settings
 from src.guardrails.models import GuardrailDecision
 from src.guardrails.policies import CONFIRMATION_TOOL_NAMES, MUTATING_TOOL_NAMES
 from src.guardrails.structure import PayloadLimits, validate_payload
-from src.services.booking.errors import BookingError
 
 _CONFIRMATION_RE = re.compile(
     r"\b(?:confirm|book\s+now|xác\s+nhận|xac\s+nhan|chốt|chot|đồng\s+ý|dong\s+y)\b",
     re.IGNORECASE,
 )
 _TOOL_BLOCKED_MESSAGE = "Thao tác này đã bị chặn bởi chính sách an toàn. Vui lòng kiểm tra và thử lại."
-
-
-def serialize_tool_error(error: Exception) -> str:
-    """Preserve safe domain error details so the agent can clarify naturally."""
-    if isinstance(error, BookingError):
-        return json.dumps(
-            {
-                "error": {
-                    "code": error.code,
-                    "message": str(error),
-                    "retryable": error.retryable,
-                }
-            },
-            ensure_ascii=False,
-        )
-    return json.dumps(
-        {
-            "error": {
-                "code": "TOOL_EXECUTION_FAILED",
-                "message": "Thao tác chưa thể hoàn tất lúc này. Quý khách vui lòng thử lại.",
-                "retryable": True,
-            }
-        },
-        ensure_ascii=False,
-    )
 
 
 def inspect_tool_calls(
@@ -136,7 +110,7 @@ def inspect_tool_calls(
 
 def build_guarded_tool_node(tools: list[Any], *, skill_name: str):
     """Wrap LangGraph's ToolNode with deterministic pre-execution checks."""
-    base_node = ToolNode(tools, handle_tool_errors=serialize_tool_error)
+    base_node = ToolNode(tools, handle_tool_errors=True)
     allowed_tool_names = {tool.name for tool in tools}
 
     async def guarded_tool_node(state: dict[str, Any]) -> dict[str, Any]:
