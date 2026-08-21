@@ -124,8 +124,8 @@ sequenceDiagram
 
 ## 🎫 5. Confirm Booking (`confirm_test_drive_booking`)
 - **Purpose**: Finalize the draft booking and generate a permanent booking code.
-- **Agent Action**: Call this tool immediately when the user requests or confirms they want to chốt/xác nhận đặt lịch in the text chat (e.g. "ok chốt đi", "xác nhận đặt lịch", etc.).
+- **Agent Action**: This tool is not available to free-form text chat. Ask the user to review the booking and use the UI confirmation button. Only the structured `confirm_booking` action may dispatch it.
 - **Inputs**:
   - `booking_id`: The ID of the draft booking.
   - `expected_version`: The current version of the booking.
-  - `ui_action_id`: A random UUID or unique ID.
+  - `ui_action_id`: The exact idempotency ID from the same structured UI action.

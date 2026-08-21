@@ -18,7 +18,8 @@ def _mock_bound_llm(response):
     return llm, bound
 
 
-# test case of Chau + kiểm tra booking skill chỉ bind đúng tám booking tools
+# Confirmation is intentionally absent: only the structured confirm_booking
+# action may dispatch that high-impact tool.
 @pytest.mark.asyncio
 async def test_booking_skill_binds_only_booking_tools_and_returns_text(monkeypatch):
     llm, bound = _mock_bound_llm(AIMessage(content="Đã tìm thấy lịch lái thử"))
@@ -38,7 +39,6 @@ async def test_booking_skill_binds_only_booking_tools_and_returns_text(monkeypat
         "request_booking_access",
         "verify_booking_access",
         "get_booking_details",
-        "confirm_test_drive_booking",
     ]
     sent_messages = bound.ainvoke.await_args.args[0]
     assert isinstance(sent_messages[0], SystemMessage)
@@ -47,6 +47,30 @@ async def test_booking_skill_binds_only_booking_tools_and_returns_text(monkeypat
     assert sent_messages[1] is user_message
     assert result["response"] == "Đã tìm thấy lịch lái thử"
     assert result["tool_call_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_booking_skill_sends_context_as_untrusted_human_data_not_system_instructions(monkeypatch):
+    llm, bound = _mock_bound_llm(AIMessage(content="Đã hiểu"))
+    monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+    monkeypatch.setattr(booking_module, "get_system_prompt", lambda: "SYSTEM")
+    monkeypatch.setattr(booking_module, "get_booking_prompt", lambda: "BOOKING")
+    user_message = HumanMessage(content="Tìm lịch VF8")
+
+    await booking_skill_node(
+        {
+            "messages": [user_message],
+            "context": {"channel": "booking", "selectedVehicle": {"id": "vf8", "name": "VF8"}},
+        }
+    )
+
+    sent_messages = bound.ainvoke.await_args.args[0]
+    assert isinstance(sent_messages[0], SystemMessage)
+    assert "selectedVehicle" not in sent_messages[0].content
+    assert isinstance(sent_messages[1], HumanMessage)
+    assert "untrusted data" in sent_messages[1].content
+    assert '"selectedVehicle"' in sent_messages[1].content
+    assert sent_messages[2] is user_message
 
 
 # test case of Chau + kiểm tra booking skill tăng counter khi LLM tạo tool call

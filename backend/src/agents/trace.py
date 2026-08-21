@@ -13,7 +13,20 @@ from src.guardrails.policies import PUBLIC_TOOL_INPUT_SECRET_KEYS, SECRET_VALUE_
 LOGGER_NAME = "ai_agent"
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-_PHONE_RE = re.compile(r"(?<!\d)(?:\+?84|0)(?:[\s.-]?\d){8,10}(?!\d)")
+_PHONE_RE = re.compile(
+    r"(?<!\d)(?:(?:\(\s*\+?84\s*\)|\+?84|0)(?:[\s().-]?\d){8,10}|"
+    r"\(\s*0\d{2,3}\s*\)(?:[\s.-]?\d){6,8})(?!\d)"
+)
+_VIETNAM_ID_RE = re.compile(r"(?<!\d)\d{12}(?!\d)")
+_STANDALONE_SECRET_RE = re.compile(
+    r"(?i)(?<![\w-])(?:"
+    r"sk-(?:or-v1-)?[a-z0-9_-]{8,}|"
+    r"xox[baprs]-[a-z0-9-]{10,}|"
+    r"gh[pousr]_[a-z0-9]{20,}|"
+    r"AIza[a-z0-9_-]{20,}|"
+    r"eyJ[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}"
+    r")"
+)
 _CREDENTIAL_ASSIGNMENT_RE = re.compile(
     r"(?i)\b("
     r"(?:openai|openrouter|x)?[_ -]?api[_ -]?key|"
@@ -29,6 +42,8 @@ def _mask_text(value: str, *, limit: int = 4000) -> str:
     masked = _EMAIL_RE.sub("[email]", value)
     masked = _PHONE_RE.sub("[phone]", masked)
     masked = _CREDENTIAL_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}=[redacted]", masked)
+    masked = _STANDALONE_SECRET_RE.sub("[redacted]", masked)
+    masked = _VIETNAM_ID_RE.sub("[personal-id]", masked)
     return masked if len(masked) <= limit else masked[:limit] + "...[truncated]"
 
 

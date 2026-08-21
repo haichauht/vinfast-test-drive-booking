@@ -37,7 +37,7 @@ flowchart LR
 | --- | --- | --- |
 | Catalogue marketing, trang home/charging/after-sales | `SiteCatalogService` trong memory, có thể import snapshot JSON | Không lấy từ bảng booking |
 | Model/variant/showroom/demo vehicle/slot/booking | PostgreSQL qua `BookingService` | Nguồn sự thật cho lịch lái thử |
-| Context hội thoại LangGraph | PostgreSQL checkpointer theo `thread_id` | `conversation_id` của frontend chính là `thread_id` |
+| Context hội thoại LangGraph | PostgreSQL checkpointer theo internal `thread_id` | Frontend giữ signed conversation capability; backend xác minh rồi ánh xạ sang `thread_id` nội bộ |
 | Trạng thái giao diện booking | React state + `sessionStorage` | Không phải nguồn sự thật về slot/booking |
 | Media frontend | asset bundle và `/media` backend/CDN | Adapter frontend đổi URL khi cần |
 
@@ -204,7 +204,7 @@ Có hai đường request thực tế:
 1. Đặt lịch mới và chat: `POST /api/v1/chat`.
 2. Tra cứu/sửa/dời/hủy lịch: `POST /api/v1/demo/action`.
 
-`conversation_id` được giữ trong `sessionStorage` với key `vinfast:booking-conversation-id`. Nếu chưa có, backend sinh UUID và frontend lưu lại response. Đóng tab làm mất ID phía client; checkpoint vẫn còn trong PostgreSQL nhưng không thể resume nếu client không còn ID.
+`conversation_id` được giữ trong `sessionStorage` với key `vinfast:booking-conversation-id`. Nếu chưa có, backend phát capability ký HMAC có TTL và frontend lưu lại response. Token bị sửa, giả mạo hoặc hết hạn không bao giờ được dùng làm `thread_id`; backend cấp token/thread mới cô lập. Đóng tab làm mất token phía client; checkpoint vẫn còn trong PostgreSQL nhưng không thể resume nếu client không còn token.
 
 Các mutation tạo `ui_action_id` dạng `hold:<uuid>`, `confirm:<uuid>`, `cancel:<uuid>`, `reschedule-hold:<uuid>` hoặc `reschedule-confirm:<uuid>`. Backend dùng prefix, operation và hash payload để replay an toàn hoặc chặn reuse sai payload.
 
@@ -337,11 +337,12 @@ sequenceDiagram
 
     F->>R: ChatRequest + conversation_id
     R->>I: message, context, action, payload
+    R->>R: verify/issue signed conversation capability
     alt bị chặn
         I-->>R: code + safe user message
         R-->>F: ChatResponse(action_error)
     else hợp lệ
-        R->>G: ainvoke(state, thread_id=conversation_id)
+        R->>G: ainvoke(state, thread_id=internal thread ID)
         G->>T: AIMessage có tool_calls
         alt tool hợp lệ
             T->>B: gọi allowlisted tool
@@ -358,7 +359,7 @@ sequenceDiagram
     end
 ```
 
-`ChatRequest` giới hạn message 1–5000 ký tự. Route sinh `conversation_id` và `trace_id` khi cần, rồi invoke graph với:
+`ChatRequest` giới hạn message 1–5000 ký tự. Route sinh `trace_id`, xác minh hoặc phát signed `conversation_id`, áp rate limit theo IP và internal conversation, rồi invoke graph với:
 
 ```text
 query, context, requested_action, action_payload,
@@ -453,8 +454,8 @@ Node có hai mode.
 
 **Free-chat mode**:
 
-1. Ghép system prompt + booking skill prompt + JSON của UI context.
-2. Bind tám booking tools.
+1. Ghép system prompt + booking skill prompt. UI context đã qua allowlist được đưa thành `HumanMessage` đánh dấu là dữ liệu tham chiếu không đáng tin cậy, không nối vào system role.
+2. Bind bảy booking tools cho free chat; không bind `confirm_test_drive_booking`.
 3. Gọi LLM với history tối đa 24 message.
 4. Nếu LLM tạo tool call, trace/log input đã mask và tăng loop count.
 5. Tool node thực thi rồi quay lại booking node; node ghi tool result vào các field `action_*`, sau đó LLM có thể gọi tool tiếp hoặc trả câu cuối.
@@ -476,8 +477,9 @@ Booking tools chỉ là adapter mỏng gọi singleton `booking_service`. `calcu
 ### Input guard
 
 - Normalize Unicode/text và chặn message rỗng.
-- `conversation_id` chỉ chấp nhận ký tự an toàn và tối đa 100 ký tự.
+- `conversation_id` phải là capability HMAC hợp lệ, có TTL và tối đa 100 ký tự; token sai/hết hạn được thay bằng thread cô lập mới.
 - Giới hạn byte, depth, node count và string length của `context`/`action_payload`.
+- `context` phải qua allowlist top-level/nested, kiểm tra type/value và normalization trước khi vào graph.
 - Structured action chỉ được chứa field đúng contract.
 - Quét prompt/role injection trong cả message và string nằm trong context.
 
@@ -488,14 +490,14 @@ Booking tools chỉ là adapter mỏng gọi singleton `booking_service`. `calcu
 - Giới hạn số tool call mỗi AI message.
 - Chặn hai call trùng hoàn toàn trong cùng message.
 - Mutation phải chạy từng cái một, không batch cùng read/mutation khác.
-- `confirm_test_drive_booking` do LLM đề xuất cần câu xác nhận rõ trong query; structured UI action được xem là xác nhận từ UI.
+- `confirm_test_drive_booking` không thể chạy từ free-form LLM/query. Guard chỉ cho chạy từ structured `confirm_booking` khi `booking_id`, `expected_version` và `ui_action_id` khớp chính xác giữa action payload và tool args.
 - Khi chặn, guard tạo `ToolMessage(status="error")`; side effect chưa xảy ra.
 
 ### Output guard
 
 - Không public internal `analysis`.
 - Chặn system prompt leakage marker.
-- Redact API key, token, OTP, access session, email và số điện thoại.
+- Redact API key/token đứng độc lập, OTP, access session, email, số điện thoại có ngoặc và số định danh 12 chữ số.
 - Redact field nhạy cảm trong `tool_input` và `action_data`.
 - Cắt response quá `GUARDRAILS_MAX_OUTPUT_CHARS`.
 
@@ -595,23 +597,23 @@ Marketing pages dùng dữ liệu backend kết hợp local media/config. `HomeP
 
 ## 15. Persistence, stateless và nhiều instance
 
-Booking domain đã persistent trong PostgreSQL. Sau thay đổi checkpointer, hội thoại LangGraph cũng persistent theo `conversation_id/thread_id`:
+Booking domain đã persistent trong PostgreSQL. Hội thoại LangGraph persistent theo internal `thread_id` được suy ra sau khi xác minh signed conversation capability:
 
 ```text
-Browser sessionStorage conversation_id
+Browser sessionStorage signed conversation capability
         -> POST /chat
-        -> LangGraph config.thread_id
+        -> HMAC verify + internal LangGraph config.thread_id
         -> PostgreSQL checkpoint
 ```
 
-Vì vậy nhiều backend container/VPS có thể đọc cùng context nếu chúng dùng chung PostgreSQL và client gửi cùng conversation ID. Process vẫn giữ singleton/service objects và background task trong RAM, nhưng dữ liệu nghiệp vụ/context không phụ thuộc một process cụ thể.
+Vì vậy nhiều backend container/VPS có thể đọc đúng context nếu chúng dùng chung PostgreSQL, cùng `CONVERSATION_SIGNING_SECRET` và client gửi capability hợp lệ. Client không thể chọn trực tiếp `thread_id`. Process vẫn giữ singleton/service objects, sliding-window rate limiter và background task trong RAM; dữ liệu nghiệp vụ/context không phụ thuộc một process cụ thể.
 
 Các điểm còn cần lưu ý khi scale:
 
 - `sessionStorage` chỉ thuộc một tab; cần cơ chế account/cookie/server session nếu muốn resume cross-device.
 - Zalo polling không nên chạy đồng thời trên nhiều replica nếu provider không đảm bảo một consumer duy nhất; production phù hợp hơn với webhook hoặc một worker chuyên trách.
 - Notification loop hiện khởi tạo trong mỗi FastAPI process; khi scale nên tách worker/queue hoặc bổ sung cơ chế claim mạnh cho multi-worker.
-- Không cần Redis chỉ để nhớ conversation vì Postgres checkpointer đã đảm nhiệm. Redis chỉ đáng thêm khi cần distributed rate limit, queue, lock hoặc cache có TTL tốc độ cao.
+- Không cần Redis chỉ để nhớ conversation vì Postgres checkpointer đã đảm nhiệm. Redis/API gateway vẫn cần cân nhắc cho distributed rate limit vì limiter trong ứng dụng hiện chỉ có hiệu lực theo từng process.
 
 ## 16. Logging, tracing và error behavior
 

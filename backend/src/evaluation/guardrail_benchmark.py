@@ -18,12 +18,14 @@ from typing import Any
 from langchain_core.messages import AIMessage
 
 from src.config import Settings
+from src.guardrails.conversation import ConversationTokenManager
 from src.guardrails.pipeline import Guardrails
+from src.guardrails.rate_limit import SlidingWindowRateLimiter
 from src.guardrails.tool_guard import inspect_tool_calls
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_DATASET_PATH = PROJECT_ROOT / "eval" / "benchmarks" / "guardrails_cases.json"
-SUPPORTED_KINDS = frozenset({"input", "output", "tool"})
+SUPPORTED_KINDS = frozenset({"conversation", "input", "output", "rate_limit", "tool"})
 BENCHMARK_SETTING_DEFAULTS: dict[str, Any] = {
     "app_env": "test",
     "guardrails_enabled": True,
@@ -94,6 +96,13 @@ def load_dataset(path: Path = DEFAULT_DATASET_PATH) -> dict[str, Any]:
                 raise ValueError(f"{case_id}: decision cases require expected.allowed")
             if not isinstance(case["expected"].get("code"), str):
                 raise ValueError(f"{case_id}: decision cases require expected.code")
+        else:
+            assertion_names = ("equals", "contains", "not_contains", "ends_with")
+            if not any(
+                isinstance(case["expected"].get(name), Mapping) and case["expected"][name]
+                for name in assertion_names
+            ):
+                raise ValueError(f"{case_id}: non-decision cases require at least one output assertion")
     return dataset
 
 
@@ -141,6 +150,8 @@ def _run_tool_case(case: Mapping[str, Any]) -> dict[str, Any]:
     }
     if "requested_action" in case_input:
         state["requested_action"] = case_input["requested_action"]
+    if "action_payload" in case_input:
+        state["action_payload"] = case_input["action_payload"]
     allowed_tool_names = case_input.get("allowed_tool_names", [])
     if not isinstance(allowed_tool_names, list):
         raise ValueError(f"{case.get('case_id')}: allowed_tool_names must be a list")
@@ -150,6 +161,45 @@ def _run_tool_case(case: Mapping[str, Any]) -> dict[str, Any]:
         settings=_settings(case),
     )
     return asdict(decision)
+
+
+def _run_conversation_case(case: Mapping[str, Any]) -> dict[str, Any]:
+    case_input = case["input"]
+    operation = case_input.get("operation")
+    current = [1_000.0]
+    manager = ConversationTokenManager("benchmark-conversation-secret-32b", ttl_seconds=60, now=lambda: current[0])
+    identity = manager.issue()
+    token = identity.public_token
+    if operation == "tamper":
+        token = token[:-1] + ("A" if token[-1] != "A" else "B")
+    elif operation == "expire":
+        current[0] = 1_061.0
+    elif operation != "round_trip":
+        raise ValueError(f"{case.get('case_id')}: unsupported conversation operation")
+    verified = manager.verify(token)
+    return {
+        "valid": verified is not None,
+        "thread_matches": verified is not None and verified.thread_id == identity.thread_id,
+    }
+
+
+def _run_rate_limit_case(case: Mapping[str, Any]) -> dict[str, Any]:
+    case_input = case["input"]
+    current = [100.0]
+    limiter = SlidingWindowRateLimiter(now=lambda: current[0])
+    limit = int(case_input.get("limit", 2))
+    attempts = int(case_input.get("attempts", 3))
+    decisions = [
+        limiter.check("benchmark", "same-subject", limit=limit, window_seconds=60)
+        for _ in range(attempts)
+    ]
+    current[0] = 161.0
+    recovered = limiter.check("benchmark", "same-subject", limit=limit, window_seconds=60)
+    return {
+        "allowed": [decision.allowed for decision in decisions],
+        "retry_after_seconds": decisions[-1].retry_after_seconds,
+        "recovered": recovered.allowed,
+    }
 
 
 def _read_path(value: Any, path: str) -> Any:
@@ -211,6 +261,10 @@ def run_case(case: Mapping[str, Any]) -> CaseResult:
             actual = _run_output_case(case)
         elif kind == "tool":
             actual = _run_tool_case(case)
+        elif kind == "conversation":
+            actual = _run_conversation_case(case)
+        elif kind == "rate_limit":
+            actual = _run_rate_limit_case(case)
         else:  # load_dataset prevents this; retain a fail-closed runtime guard.
             raise ValueError(f"Unsupported case kind: {kind}")
         failures.extend(_evaluate_expected(actual, case["expected"]))

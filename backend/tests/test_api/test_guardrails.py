@@ -16,6 +16,91 @@ def _mock_agent(monkeypatch, result):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("action", "payload", "handler_name"),
+    [
+        ("hold_slot", {"slot_id": "slot-1", "ui_action_id": "hold:rate"}, "hold_slot"),
+        (
+            "confirm_booking",
+            {"booking_id": "booking-1", "expected_version": 1, "ui_action_id": "confirm:rate"},
+            "confirm_booking",
+        ),
+    ],
+)
+async def test_demo_mutation_rate_limits_execute_handler_only_once(
+    client,
+    monkeypatch,
+    action,
+    payload,
+    handler_name,
+):
+    from src.guardrails.rate_limit import get_rate_limiter
+
+    limiter = get_rate_limiter()
+    limiter.clear()
+    handler = MagicMock(return_value={"ok": True})
+    monkeypatch.setattr(routes_module.booking_service, handler_name, handler)
+    monkeypatch.setattr(
+        routes_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            app_env="development",
+            zalo_bot_enabled=False,
+            rate_limits_enabled=True,
+            rate_limit_window_seconds=60,
+            booking_hold_rate_limit_requests=1,
+            booking_confirm_rate_limit_requests=1,
+            booking_otp_rate_limit_requests=1,
+        ),
+    )
+
+    first = await client.post("/api/v1/demo/action", json={"action": action, "payload": payload})
+    second = await client.post("/api/v1/demo/action", json={"action": action, "payload": payload})
+    limiter.clear()
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    handler.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_demo_otp_rate_limit_blocks_repeated_delivery(client, monkeypatch):
+    from src.guardrails.rate_limit import get_rate_limiter
+
+    limiter = get_rate_limiter()
+    limiter.clear()
+    handler = MagicMock(return_value={"challenge_id": "challenge-1", "destination_masked": "***4567"})
+    monkeypatch.setattr(routes_module, "_request_demo_access", handler)
+    monkeypatch.setattr(
+        routes_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            app_env="development",
+            zalo_bot_enabled=False,
+            rate_limits_enabled=True,
+            rate_limit_window_seconds=60,
+            booking_hold_rate_limit_requests=1,
+            booking_confirm_rate_limit_requests=1,
+            booking_otp_rate_limit_requests=1,
+        ),
+    )
+    payload = {
+        "booking_code": "VF260803140F74",
+        "contact_value": "0901234567",
+        "purpose": "lookup",
+        "preferred_channel": "zalo",
+    }
+
+    first = await client.post("/api/v1/demo/action", json={"action": "request_access", "payload": payload})
+    second = await client.post("/api/v1/demo/action", json={"action": "request_access", "payload": payload})
+    limiter.clear()
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    handler.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_chat_blocks_prompt_injection_without_calling_agent(client, monkeypatch):
     mocked = _mock_agent(monkeypatch, {"response": "must not be returned"})
 

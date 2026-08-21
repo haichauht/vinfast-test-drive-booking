@@ -8,7 +8,7 @@
 | Phương pháp | Manual code review, abuse-case modeling, unit/integration regression và deterministic benchmark |
 | Thành phần | `src/guardrails`, `src/api/routes.py`, `src/agents/graph.py`, `src/agents/trace.py`, booking tool boundary |
 | Ngoài phạm vi | Hạ tầng gateway/WAF, cloud IAM, secret store, provider security và pentest production |
-| Benchmark | 52 curated cases: input, output và tool |
+| Benchmark | 63 curated cases: input, output, tool, conversation capability và rate limit |
 | Kết luận | Các finding trực tiếp trong phạm vi đã được remediation và có regression gate; residual risk được liệt kê riêng |
 
 Audit này đánh giá defense-in-depth ở biên AI/tool. Nó không thay thế
@@ -62,10 +62,10 @@ response đi qua `trace.redact()` trước khi ghi structured event.
 |---|---|
 | Mức độ | High |
 | Trạng thái | Fixed |
-| Vấn đề | Regex cũ tìm keyword `confirm/xác nhận/chốt` nên “Tôi không xác nhận” vẫn có thể cho phép tool chốt booking. |
-| Remediation | Thêm normalized negative-confirmation policy chạy trước positive match; structured UI action vẫn là explicit authorization path. |
-| Unit test | `test_blocks_confirmation_when_user_phrase_is_explicitly_negated` |
-| Benchmark | `TOOL-CONFIRM-003`, `TOOL-CONFIRM-004` |
+| Vấn đề | Regex keyword có thể hiểu câu phủ định, câu hỏi về chữ “confirm” hoặc đồng ý nhận tư vấn là consent chốt booking. |
+| Remediation | Loại confirmation tool khỏi free-form LLM; chỉ cho phép structured `confirm_booking` khi ba field `booking_id/version/ui_action_id` khớp chính xác tool call. |
+| Unit test | `test_natural_language_alone_never_authorizes_booking_confirmation`, `test_blocks_confirmation_not_bound_to_exact_structured_payload` |
+| Benchmark | `TOOL-CONFIRM-002` đến `TOOL-CONFIRM-008` |
 
 ### GR-002 — Unicode compatibility và bidi controls có thể né input pattern
 
@@ -133,6 +133,50 @@ response đi qua `trace.redact()` trước khi ghi structured event.
 | Unit test | `test_production_cannot_disable_guardrails` |
 | Benchmark | Không áp dụng; đây là configuration invariant. |
 
+### GR-008 — Client tự chọn persistent conversation thread
+
+| Thuộc tính | Giá trị |
+|---|---|
+| Mức độ | High |
+| Trạng thái | Fixed |
+| Vấn đề | `conversation_id` hợp lệ về cú pháp từng được dùng trực tiếp làm LangGraph `thread_id`, cho phép hai client cố ý dùng chung state. |
+| Remediation | Public ID trở thành HMAC capability có nonce/issued-at/TTL; internal thread ID chỉ được lấy sau verify. Token sai/hết hạn tạo thread cô lập mới. |
+| Unit/API test | `test_conversation.py`, `test_chat_replaces_tampered_conversation_token_with_an_isolated_thread` |
+| Benchmark | `CONVERSATION-001`, `CONVERSATION-002` |
+
+### GR-009 — Raw UI context nằm trong system role
+
+| Thuộc tính | Giá trị |
+|---|---|
+| Mức độ | High |
+| Trạng thái | Fixed |
+| Vấn đề | Arbitrary client context được JSON-encode rồi nối vào `SystemMessage`. |
+| Remediation | Top-level/nested context allowlist, type/value bounds, normalization; context sạch được gửi bằng `HumanMessage` đánh dấu untrusted data. |
+| Unit/API test | `test_context_contract_*`, `test_booking_skill_sends_context_as_untrusted_human_data_not_system_instructions` |
+| Benchmark | `INPUT-CONTEXT-001`, `INPUT-CONTEXT-002` |
+
+### GR-010 — Standalone token và formatted PII lọt output/log redaction
+
+| Thuộc tính | Giá trị |
+|---|---|
+| Mức độ | High |
+| Trạng thái | Fixed |
+| Vấn đề | Token không có `key=` metadata, phone dạng `(+84) ...` và CCCD 12 số không khớp policy cũ. |
+| Remediation | Thêm provider/JWT token patterns, Vietnamese phone variants và personal-ID marker cho output lẫn trace. |
+| Unit test | `test_redacts_standalone_provider_tokens_parenthesized_phone_and_personal_id`, `test_trace_redacts_standalone_token_parenthesized_phone_and_personal_id` |
+| Benchmark | `OUTPUT-REDACTION-008` |
+
+### GR-011 — Public mutation/chat boundary không có application rate limit
+
+| Thuộc tính | Giá trị |
+|---|---|
+| Mức độ | High |
+| Trạng thái | Fixed trong single process; distributed control vẫn open |
+| Vấn đề | Chat, hold, confirm và OTP chỉ dựa vào domain cooldown hoặc hạ tầng chưa kiểm chứng. |
+| Remediation | Sliding-window limit theo IP và conversation/slot/booking/contact/challenge; subject được SHA-256; production không thể tắt. |
+| Unit/API test | `test_rate_limit.py`, `test_chat_rate_limit_returns_retry_after_without_calling_agent`, `test_demo_*_rate_limit*` |
+| Benchmark | `RATE-LIMIT-001` |
+
 ## 5. Control matrix
 
 | Threat | Prevent | Detect/test | Residual control |
@@ -140,10 +184,12 @@ response đi qua `trace.redact()` trước khi ghi structured event.
 | Prompt/role injection | NFKC + high-confidence patterns + context scan | Input unit/API/benchmark | Skill allowlist và domain authorization vẫn là primary containment |
 | Tool privilege escalation | Per-skill allowlist | Tool unit/benchmark | Tool schema và service permission checks |
 | Duplicate/batched mutation | Fingerprint + mutation isolation | Tool unit/benchmark | Idempotency key và DB transaction |
-| Accidental confirmation | Explicit/negation-aware confirmation | Unit/benchmark | UI structured confirmation and optimistic version |
+| Accidental confirmation | Structured action + exact payload binding; tool absent from free-form LLM | Unit/API/benchmark | Optimistic version và idempotency record |
 | Payload abuse | Byte/depth/node/string/call budget | Unit/API/benchmark | Gateway body/rate limits |
 | Secret/PII leak | Key/text redaction + prompt fallback | Output/trace/API/benchmark | Minimize data before LLM, HTTPS, proxy log policy |
 | Cross-booking access | Access-session scope in service | Service negative tests | OTP limits, token TTL/revocation, database constraints |
+| Conversation takeover | Signed bearer capability + TTL | Unit/API/benchmark | Session storage, HTTPS, no token logging |
+| Burst abuse | Process-local IP/resource sliding window | Unit/API/benchmark | Distributed gateway/WAF limit |
 
 ## 6. Residual risks và open actions
 
@@ -171,15 +217,15 @@ response đi qua `trace.redact()` trước khi ghi structured event.
 - Mức độ: Medium.
 - `get/update/confirm` held draft dùng opaque booking ID và optimistic version
   trong luồng tạo booking. Đây là domain design, không chỉ guardrail.
-- Open action: threat-model entropy, lifetime, conversation binding và replay;
+- Open action: threat-model entropy, lifetime, draft-capability binding và replay;
   cân nhắc draft capability token riêng nếu public exposure mở rộng.
 
-### RR-004 — Rate limiting/gateway controls nằm ngoài module
+### RR-004 — Distributed rate limiting/gateway controls nằm ngoài process
 
 - Mức độ: High nếu endpoint public Internet không có gateway protection.
-- Cần kiểm chứng deployment: per-IP/session limit cho chat, hold, confirm và OTP;
-  request body limit; alert burst/anomaly. Guardrails payload budget không thay
-  rate limiting.
+- App đã có process-local per-IP/subject limit cho chat, hold, confirm và OTP.
+  Cần kiểm chứng deployment: distributed limit dùng chung giữa instance;
+  request body limit; trusted client-IP handling và alert burst/anomaly.
 
 ### RR-005 — Live LLM behavior chưa được chứng minh bởi offline benchmark
 
@@ -193,7 +239,7 @@ response đi qua `trace.redact()` trước khi ghi structured event.
 
 - [ ] `APP_ENV=production` không thể khởi động khi guardrails tắt.
 - [ ] Targeted guardrail/API tests pass.
-- [ ] 52/52 deterministic benchmark cases pass.
+- [ ] 63/63 deterministic benchmark cases pass.
 - [ ] Full backend regression và Ruff pass.
 - [ ] Không có raw secret/PII trong stdout, logs hoặc generated report.
 - [ ] Action/tool mới đã cập nhật top-level và nested contract.

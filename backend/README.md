@@ -156,7 +156,7 @@ Nghiệp vụ giữ slot, draft, xác nhận, OTP, tra cứu/chỉnh sửa booki
 - `search_knowledge` chưa có RAG/vector search thực tế.
 - Frontend đã kết nối LangGraph nhưng streaming và persistence lịch sử hội thoại production chưa hoàn thiện.
 - Chưa có worker/gateway production để gửi notification ra SMS/email thực tế.
-- Authentication/authorization cho admin, rate limiting và secret management production chưa hoàn thiện.
+- Authentication/authorization cho admin, distributed rate limiting ở gateway và secret management production chưa hoàn thiện; backend đã có limiter theo process và bắt buộc signing/OTP secret ở production.
 - Một số catalogue detail như màu xe, chapter và gallery vẫn rỗng hoặc chưa đủ media.
 - PostgreSQL trong `.env.example` chỉ là định hướng cũ; persistence hiện tại chỉ hỗ trợ SQLite.
 

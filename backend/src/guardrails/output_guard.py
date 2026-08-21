@@ -14,7 +14,20 @@ from src.guardrails.policies import (
 from src.guardrails.structure import normalize_text
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-_PHONE_RE = re.compile(r"(?<!\d)(?:\+?84|0)(?:[\s.-]?\d){8,10}(?!\d)")
+_PHONE_RE = re.compile(
+    r"(?<!\d)(?:(?:\(\s*\+?84\s*\)|\+?84|0)(?:[\s().-]?\d){8,10}|"
+    r"\(\s*0\d{2,3}\s*\)(?:[\s.-]?\d){6,8})(?!\d)"
+)
+_VIETNAM_ID_RE = re.compile(r"(?<!\d)\d{12}(?!\d)")
+_STANDALONE_SECRET_RE = re.compile(
+    r"(?i)(?<![\w-])(?:"
+    r"sk-(?:or-v1-)?[a-z0-9_-]{8,}|"
+    r"xox[baprs]-[a-z0-9-]{10,}|"
+    r"gh[pousr]_[a-z0-9]{20,}|"
+    r"AIza[a-z0-9_-]{20,}|"
+    r"eyJ[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}"
+    r")"
+)
 _CREDENTIAL_ASSIGNMENT_RE = re.compile(
     r"(?i)\b("
     r"(?:openai|openrouter|x)?[_ -]?api[_ -]?key|"
@@ -68,8 +81,10 @@ class OutputGuard:
             if len(secret) >= 4:
                 text = text.replace(secret, "[redacted]")
         text = _CREDENTIAL_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}=[redacted]", text)
+        text = _STANDALONE_SECRET_RE.sub("[redacted]", text)
         text = _EMAIL_RE.sub("[email]", text)
         text = _PHONE_RE.sub("[phone]", text)
+        text = _VIETNAM_ID_RE.sub("[personal-id]", text)
         if len(text) > self.max_output_chars:
             text = text[: self.max_output_chars] + "…[truncated]"
         return text

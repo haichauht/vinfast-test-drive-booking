@@ -183,6 +183,24 @@ def test_redacts_direct_credential_assignments_without_structured_secret_metadat
     assert "client-secret" not in protected.response
 
 
+def test_redacts_standalone_provider_tokens_parenthesized_phone_and_personal_id():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": (
+                "Mã là sk-proj-FAKESECRET, gọi (+84) 901 234 567, "
+                "CCCD 001204123456"
+            )
+        }
+    )
+
+    assert "sk-proj-FAKESECRET" not in protected.response
+    assert "(+84) 901 234 567" not in protected.response
+    assert "001204123456" not in protected.response
+    assert "[redacted]" in protected.response
+    assert "[phone]" in protected.response
+    assert "[personal-id]" in protected.response
+
+
 @pytest.mark.parametrize(
     "response",
     [
