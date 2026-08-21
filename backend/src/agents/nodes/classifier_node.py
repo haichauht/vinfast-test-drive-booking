@@ -112,9 +112,6 @@ async def classifier_node(state: AgentState) -> dict:
     # to avoid LLM hallucinations and save API token cost
     lower_query = query.lower()
 
-    if is_driver_invitation and any(kw in lower_query for kw in (*BOOKING_MUTATION_KEYWORDS, *LOOKUP_KEYWORDS)):
-        return _driver_scope_block(state, query, sub_intent="driver_booking_scope")
-
     if any(kw in lower_query for kw in SOVEREIGNTY_KEYWORDS):
         trace_event("classifier.keyword_route", trace_id=trace_id, intent="sensitive", sub_intent="sovereignty")
         return {
@@ -127,6 +124,22 @@ async def classifier_node(state: AgentState) -> dict:
     if any(kw in lower_query for kw in OUT_OF_SCOPE_KEYWORDS):
         trace_event("classifier.keyword_route", trace_id=trace_id, intent="sensitive", sub_intent="out_of_scope_code")
         return {"intent": "sensitive", "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "out_of_scope_code"}, "tool_call_count": 0}
+
+    # A driver invitation is authenticated for one confirmed booking.  Never let
+    # its requests enter the general booking skill (which owns OTP and mutation
+    # tools): booking changes are rejected here, while all other questions are
+    # answered by the advisory skill with the invitation's trusted context.
+    if is_driver_invitation:
+        if any(kw in lower_query for kw in BOOKING_MUTATION_KEYWORDS):
+            return _driver_scope_block(state, query, sub_intent="driver_booking_scope")
+        return {
+            "intent": "domain",
+            "active_skill": "post_booking",
+            "previous_active_skill": previous_skill,
+            "messages": [HumanMessage(content=query)],
+            "metadata": {**metadata, "sub_intent": "driver_advisory"},
+            "tool_call_count": 0,
+        }
 
     if any(kw in lower_query for kw in BOOKING_MUTATION_KEYWORDS):
         return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "booking"}, "tool_call_count": 0}
