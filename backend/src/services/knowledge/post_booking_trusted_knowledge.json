@@ -1,0 +1,974 @@
+{
+  "schema_version": "2.1",
+  "dataset": "post_booking_trusted_knowledge_vinfast_only",
+  "generated_at": "2026-08-19",
+  "market_default": "VN",
+  "publisher_policy": "Only official VinFast-owned web sources are allowed in this dataset.",
+  "allowed_source_hosts": [
+    "vinfastauto.com",
+    "shop.vinfastauto.com"
+  ],
+  "review_status": "pending_internal_review",
+  "source_priority": [
+    "VinFast centralized current policy / warranty pages",
+    "VinFast current model-specific product pages",
+    "VinFast current model-specific FAQ pages",
+    "VinFast general FAQ / service / locator pages",
+    "Older VinFast articles only when no current authoritative page exists"
+  ],
+  "rules": {
+    "required_fields": [
+      "id",
+      "topic",
+      "title",
+      "content",
+      "source",
+      "updated_at"
+    ],
+    "product_or_policy_requires": [
+      "provenance.source_uri",
+      "provenance.market",
+      "provenance.models",
+      "provenance.trims",
+      "provenance.model_years",
+      "provenance.review_status",
+      "provenance.time_sensitivity",
+      "provenance.next_review_date"
+    ],
+    "strict_source_rule": "Reject any entry whose source_uri host is not vinfastauto.com or shop.vinfastauto.com.",
+    "conflict_policy": "Prefer current centralized VinFast policy pages for policy/warranty; prefer current model-specific VinFast product/FAQ pages for equipment/specs. Keep the narrowest model/trim/model-year scope and do not merge conflicting values.",
+    "expiry_policy": "High-sensitivity entries must not be used past next_review_date without refresh. Medium-sensitivity product entries should be periodically re-crawled.",
+    "do_not_store_as_static_knowledge": [
+      "current booking status",
+      "slot availability",
+      "temporary showroom availability",
+      "short-lived promotions without effective-date versioning",
+      "facts without a VinFast-owned source"
+    ]
+  },
+  "entries": [
+    {
+      "id": "vinfast.test_drive.preparation.requirements",
+      "topic": "test_drive.preparation",
+      "title": "Điều kiện cơ bản để tham gia lái thử VinFast",
+      "content": "Khách hàng cần sắp xếp thời gian theo lịch hẹn, ký cam kết trước khi lái thử, chuẩn bị giấy phép lái xe còn hiệu lực bản cứng hoặc VNeID, bảo đảm đủ sức khỏe tham gia giao thông và không sử dụng rượu bia hoặc chất kích thích trước khi lái.",
+      "source": "VinFast FAQ / chính sách bán hàng về chuẩn bị lái thử",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-xe-o-to",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "high",
+        "next_review_date": "2026-09-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "driver-license",
+          "VNeID",
+          "safety",
+          "preparation"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.documents.supporting_faq",
+      "topic": "test_drive.preparation",
+      "title": "Giấy tờ được FAQ VinFast nêu cho buổi lái thử",
+      "content": "Một FAQ chính thức của VinFast nêu khách hàng tham gia lái thử cần giấy phép lái xe trong nước hoặc quốc tế còn giá trị sử dụng và CMND/CCCD. Vì trang FAQ chuẩn bị lái thử hiện hành dùng wording mới hơn về GPLX bản cứng/VNeID, agent nên ưu tiên yêu cầu hiện hành và chỉ dùng entry này như nguồn bổ sung.",
+      "source": "VinFast FAQ về chính sách bán hàng",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to/chinh-sach-ban-hang",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "high",
+        "next_review_date": "2026-09-19",
+        "notes": "Supporting FAQ; current preparation FAQ should take precedence if wording differs."
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "documents",
+          "identity"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.home.duration_distance",
+      "topic": "test_drive.general_process",
+      "title": "Thời lượng và quãng đường lái thử tại nhà",
+      "content": "FAQ VinFast nêu lái thử tại nhà có thể diễn ra trong quãng đường khoảng 5-10 km và thời gian tối đa 30 phút cho một lượt. Đây là scope riêng cho dịch vụ lái thử tại nhà, không nên áp dụng mặc định cho mọi hình thức lái thử tại showroom.",
+      "source": "VinFast FAQ về lái thử tại nhà",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "home-test-drive",
+          "duration",
+          "distance"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.home.fee",
+      "topic": "test_drive.general_process",
+      "title": "Dịch vụ lái thử tại nhà được FAQ VinFast nêu là miễn phí",
+      "content": "FAQ VinFast nêu dịch vụ lái thử tại nhà được cung cấp miễn phí cho khách hàng quan tâm sản phẩm. Agent cần giữ đúng scope 'lái thử tại nhà' khi dùng fact này.",
+      "source": "VinFast FAQ về lái thử tại nhà",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "home-test-drive",
+          "fee"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.home.models",
+      "topic": "test_drive.general_process",
+      "title": "Các mẫu xe được FAQ VinFast nêu cho dịch vụ lái thử tại nhà",
+      "content": "FAQ VinFast hiện nêu các dòng đang phục vụ lái thử tại nhà gồm VF 3, VF 5, VF 6, VF 7, VF 8, VF 9, Limo Green, Minio Green, EC Van và có thể bổ sung các dòng chuẩn bị ra mắt.",
+      "source": "VinFast FAQ về lái thử",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-xe-o-to",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "high",
+        "next_review_date": "2026-09-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "home-test-drive",
+          "models"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.ev.range.real_world_disclaimer",
+      "topic": "ev.range",
+      "title": "Quãng đường thực tế có thể khác kết quả kiểm định",
+      "content": "VinFast lưu ý quãng đường thực tế có thể khác số liệu kiểm định NEDC/WLTP do các yếu tố như tốc độ, nhiệt độ, địa hình, thói quen lái, chế độ lái, số hành khách và điều kiện giao thông. Agent không nên diễn giải range công bố thành quãng đường được bảo đảm trong mọi điều kiện.",
+      "source": "VinFast product-page range disclaimer",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://shop.vinfastauto.com/vn_vi/dat-coc-xe-dien-vf7.html",
+        "publisher": "VinFast",
+        "source_type": "official_product_page",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "low",
+        "next_review_date": "2027-02-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "ev",
+          "range",
+          "real-world",
+          "NEDC",
+          "WLTP"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf3.product.positioning",
+      "topic": "vehicle.model_features",
+      "title": "VF 3 - thông tin sản phẩm hiện hành",
+      "content": "Trang sản phẩm VinFast mô tả VF 3 là mẫu xe điện đô thị nhỏ gọn, có 4 chỗ ngồi và la-zăng 16 inch. Khi tư vấn test drive, agent có thể dùng fact này để ưu tiên kiểm tra tính cơ động, không gian 4 chỗ và sự phù hợp với nhu cầu đô thị.",
+      "source": "VinFast official VF 3 product page",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://shop.vinfastauto.com/vn_vi/dat-coc-xe-dien-vf3.html",
+        "publisher": "VinFast",
+        "source_type": "official_product_page",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 3"
+        ],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf3",
+          "urban",
+          "4-seats",
+          "wheels"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf5.warranty.current",
+      "topic": "ownership.warranty",
+      "title": "VF 5 - bảo hành xe và pin cao áp",
+      "content": "VinFast hiện nêu VF 5 có bảo hành xe mới 7 năm hoặc 160.000 km và bảo hành pin cao áp mua lần đầu theo xe mới 8 năm hoặc 160.000 km, tùy điều kiện nào đến trước.",
+      "source": "VinFast official VF 5 FAQ/product page",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/node/11476",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 5"
+        ],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "high",
+        "next_review_date": "2026-09-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf5",
+          "warranty",
+          "battery-warranty"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf5.product.current",
+      "topic": "vehicle.model_features",
+      "title": "VF 5 - thông tin sản phẩm hiện hành",
+      "content": "Trang sản phẩm VinFast hiện công bố VF 5 thuộc dòng xe điện đô thị và kèm thông tin sản phẩm, giá, trang bị và chính sách hiện hành. Với các câu hỏi thông số chi tiết, retrieval phải đọc đúng entry scoped theo VF 5 thay vì suy từ model khác.",
+      "source": "VinFast official VF 5 product page",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://shop.vinfastauto.com/vn_vi/dat-coc-xe-dien-vf5.html",
+        "publisher": "VinFast",
+        "source_type": "official_product_page",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 5"
+        ],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf5",
+          "product"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf6.dimensions.current",
+      "topic": "vehicle.model_features",
+      "title": "VF 6 - kích thước tổng thể và chiều dài cơ sở",
+      "content": "FAQ VinFast nêu VF 6 có kích thước tổng thể 4.241 x 1.834 x 1.580 mm trên cả Eco và Plus, với chiều dài cơ sở 2.730 mm.",
+      "source": "VinFast official VF 6 FAQ",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to/san-pham/vf-6",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 6"
+        ],
+        "trims": [
+          "Eco",
+          "Plus"
+        ],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf6",
+          "dimensions",
+          "wheelbase"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf6.isofix.current",
+      "topic": "vehicle.family_practicality",
+      "title": "VF 6 - móc cố định ghế trẻ em ISOFIX",
+      "content": "FAQ VinFast nêu VF 6 có móc cố định ghế trẻ em ISOFIX ở hàng ghế thứ 2. Agent có thể dùng fact này để gợi ý user kiểm tra khả năng tiếp cận và lắp ghế trẻ em thực tế.",
+      "source": "VinFast official VF 6 FAQ",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to/san-pham/vf-6",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 6"
+        ],
+        "trims": [
+          "Eco",
+          "Plus"
+        ],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf6",
+          "ISOFIX",
+          "child-seat",
+          "family"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf6.camera_trim.current",
+      "topic": "vehicle.adas",
+      "title": "VF 6 - camera lùi và camera 360 theo phiên bản",
+      "content": "FAQ VinFast nêu VF 6 Eco dùng camera lùi, còn VF 6 Plus có camera 360. Cảnh báo điểm mù được nêu trên cả hai phiên bản. Agent phải filter theo trim khi trả lời.",
+      "source": "VinFast official VF 6 FAQ",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to/san-pham/vf-6",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 6"
+        ],
+        "trims": [
+          "Eco",
+          "Plus"
+        ],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf6",
+          "camera-360",
+          "rear-camera",
+          "blind-spot",
+          "parking"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf7.dimensions.current",
+      "topic": "vehicle.model_features",
+      "title": "VF 7 - kích thước tổng thể và chiều dài cơ sở",
+      "content": "FAQ VinFast nêu VF 7 có kích thước tổng thể 4.545 x 1.890 x 1.635,75 mm trên Eco và Plus, chiều dài cơ sở 2.840 mm.",
+      "source": "VinFast official FAQ",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 7"
+        ],
+        "trims": [
+          "Eco",
+          "Plus"
+        ],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf7",
+          "dimensions",
+          "wheelbase"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf7.performance_plus_awd.current",
+      "topic": "vehicle.model_features",
+      "title": "VF 7 Plus AWD - công suất và mô-men xoắn được trang sản phẩm công bố",
+      "content": "Trang sản phẩm VinFast hiện nêu VF 7 Plus tùy chọn AWD có công suất tối đa 260 kW và mô-men xoắn cực đại 500 Nm. Không áp dụng fact này cho Eco hoặc Plus cấu hình khác nếu nguồn không xác nhận.",
+      "source": "VinFast official VF 7 product page",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://shop.vinfastauto.com/vn_vi/dat-coc-xe-dien-vf7.html",
+        "publisher": "VinFast",
+        "source_type": "official_product_page",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 7"
+        ],
+        "trims": [
+          "Plus AWD"
+        ],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf7",
+          "performance",
+          "awd",
+          "power",
+          "torque"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf8.hud.current",
+      "topic": "vehicle.model_features",
+      "title": "VF 8 - nội dung hiển thị trên HUD",
+      "content": "FAQ VinFast nêu HUD trên VF 8 hiển thị điều hướng, tốc độ, vị trí cần số, phạm vi đi được còn lại, nội dung ADAS, thông báo và cảnh báo.",
+      "source": "VinFast official VF 8 FAQ",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to/san-pham/vf-8",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 8"
+        ],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf8",
+          "HUD",
+          "ADAS",
+          "range-display"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf8.safety.current",
+      "topic": "vehicle.adas",
+      "title": "VF 8 - một số hệ thống an toàn được FAQ VinFast nêu",
+      "content": "FAQ VinFast nêu VF 8 có các hệ thống như ABS, EBD, hỗ trợ phanh khẩn cấp BA, cân bằng điện tử ESC, kiểm soát lực kéo TCS và hỗ trợ khởi hành ngang dốc HSA. Số túi khí được FAQ nêu khác nhau theo phiên bản.",
+      "source": "VinFast official product FAQ",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to/san-pham",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 8"
+        ],
+        "trims": [
+          "Eco",
+          "Plus"
+        ],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf8",
+          "safety",
+          "ABS",
+          "ESC",
+          "TCS",
+          "HSA"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf8.warranty.current",
+      "topic": "ownership.warranty",
+      "title": "VF 8 - bảo hành xe và pin cao áp",
+      "content": "FAQ VinFast hiện nêu VF 8 có bảo hành xe mới 10 năm hoặc 200.000 km và pin cao áp mua lần đầu theo xe mới 10 năm hoặc 200.000 km trong điều kiện sử dụng tiêu chuẩn; xe dùng mục đích dịch vụ thương mại có điều kiện khác.",
+      "source": "VinFast official VF 8 FAQ",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to/san-pham/vf-8",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 8"
+        ],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "high",
+        "next_review_date": "2026-09-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf8",
+          "warranty",
+          "battery-warranty"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf9.range_eco_catl.current",
+      "topic": "vehicle.model_features",
+      "title": "VF 9 Eco pin CATL - quãng đường WLTP được công bố",
+      "content": "Trang sản phẩm VinFast hiện nêu VF 9 phiên bản Eco dùng pin CATL có quãng đường 626 km mỗi lần sạc đầy theo WLTP. Fact này chỉ áp dụng cho đúng scope phiên bản/pin được nguồn nêu.",
+      "source": "VinFast official VF 9 product page",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://shop.vinfastauto.com/vn_vi/dat-coc-xe-vf9.html",
+        "publisher": "VinFast",
+        "source_type": "official_product_page",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 9"
+        ],
+        "trims": [
+          "Eco - CATL battery"
+        ],
+        "model_years": [],
+        "standard": "WLTP",
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf9",
+          "range",
+          "WLTP",
+          "CATL"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf9.performance.current",
+      "topic": "vehicle.model_features",
+      "title": "VF 9 - công suất và mô-men xoắn được trang sản phẩm công bố",
+      "content": "Trang sản phẩm VinFast hiện nêu VF 9 có công suất 402 hp và mô-men xoắn 620 Nm.",
+      "source": "VinFast official VF 9 product page",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://shop.vinfastauto.com/vn_vi/dat-coc-xe-vf9.html",
+        "publisher": "VinFast",
+        "source_type": "official_product_page",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 9"
+        ],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf9",
+          "power",
+          "torque",
+          "performance"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.vf9.warranty.current",
+      "topic": "ownership.warranty",
+      "title": "VF 9 - bảo hành xe và pin cao áp",
+      "content": "VinFast hiện nêu VF 9 có bảo hành xe mới 10 năm hoặc 200.000 km và pin cao áp mua lần đầu theo xe mới 10 năm hoặc 200.000 km trong điều kiện sử dụng tiêu chuẩn; điều kiện dịch vụ thương mại khác.",
+      "source": "VinFast official VF 9 FAQ",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/vf-9",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 9"
+        ],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "high",
+        "next_review_date": "2026-09-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "vf9",
+          "warranty",
+          "battery-warranty"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.warranty.current.vehicle_groups",
+      "topic": "ownership.warranty",
+      "title": "Nhóm thời hạn bảo hành xe mới VinFast hiện hành",
+      "content": "Trang thông tin bảo hành hiện hành của VinFast phân nhóm thời hạn theo model. VF 8 và VF 9 thuộc nhóm 10 năm hoặc 200.000 km trong điều kiện tiêu chuẩn; VF 3, VF 5, VF 6, VF 7 và VF 8 The All New thuộc nhóm 7 năm hoặc 160.000 km. Agent phải filter đúng model vì tên gần giống không đồng nghĩa cùng chính sách.",
+      "source": "VinFast official warranty information",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/thong-tin-bao-hanh",
+        "publisher": "VinFast",
+        "source_type": "official_policy",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [
+          "VF 3",
+          "VF 5",
+          "VF 6",
+          "VF 7",
+          "VF 8",
+          "VF 8 The All New",
+          "VF 9"
+        ],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "high",
+        "next_review_date": "2026-09-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "warranty",
+          "policy",
+          "vehicle-warranty"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.warranty.current.commercial_use_boundary",
+      "topic": "ownership.warranty",
+      "title": "Bảo hành có điều kiện riêng cho xe dùng dịch vụ thương mại",
+      "content": "Trang thông tin bảo hành VinFast hiện nêu một số hạng mục và model có thời hạn riêng khi xe đang hoặc đã từng được sử dụng cho mục đích dịch vụ thương mại. Agent không được áp dụng warranty tiêu chuẩn nếu user hỏi xe dịch vụ mà chưa retrieval đúng điều kiện.",
+      "source": "VinFast official warranty information",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/thong-tin-bao-hanh",
+        "publisher": "VinFast",
+        "source_type": "official_policy",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "high",
+        "next_review_date": "2026-09-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "warranty",
+          "commercial-use",
+          "policy"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.maintenance.periodic.general",
+      "topic": "ownership.maintenance",
+      "title": "VinFast có lịch bảo dưỡng định kỳ theo từng hạng mục",
+      "content": "Trang dịch vụ bảo dưỡng VinFast công bố lịch kiểm tra/thay thế định kỳ cho nhiều hạng mục như dầu phanh, dầu bộ truyền động, nước làm mát, lốp và các kiểm tra chung. Agent nên retrieval trang hiện hành khi user hỏi mốc bảo dưỡng cụ thể thay vì dùng một con số chung cho mọi model.",
+      "source": "VinFast official periodic maintenance page",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/dich-vu-bao-duong",
+        "publisher": "VinFast",
+        "source_type": "official_service_page",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "maintenance",
+          "service",
+          "periodic"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.policy.current.catalog_boundary",
+      "topic": "ownership.policy",
+      "title": "Chính sách bán hàng và ưu đãi phải retrieval theo phiên bản thời gian",
+      "content": "VinFast duy trì kho chính sách theo từng thời kỳ. Giá, ưu đãi, hỗ trợ chuyển đổi, thuê pin và chính sách bán hàng có thể thay đổi theo tháng/chương trình. Không nên snapshot một promotion hiện tại thành knowledge dài hạn; retrieval phải chọn tài liệu có effective date phù hợp.",
+      "source": "VinFast official policy catalog",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/hop-dong-va-chinh-sach/chinh-sach/cho-xe-oto",
+        "publisher": "VinFast",
+        "source_type": "official_policy_catalog",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "high",
+        "next_review_date": "2026-09-19",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "policy",
+          "pricing",
+          "promotion",
+          "effective-date"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.showroom.locator.live_boundary",
+      "topic": "showroom.general_process",
+      "title": "Showroom và điểm dịch vụ cụ thể là dữ liệu thay đổi theo thời gian",
+      "content": "VinFast cung cấp các trang/danh sách chính thức để tra cứu hệ thống showroom và điểm dịch vụ. Knowledge JSON chỉ nên giữ nguyên tắc sử dụng nguồn live; địa chỉ, giờ hoạt động và availability cụ thể không nên được coi là fact tĩnh lâu dài.",
+      "source": "VinFast official dealer/service locator content",
+      "updated_at": "2026-08-19",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/danh-sach-dai-ly-xe-may-dien",
+        "publisher": "VinFast",
+        "source_type": "official_live_locator",
+        "retrieved_at": "2026-08-19",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "high",
+        "next_review_date": "2026-09-19",
+        "notes": "Use the correct automobile locator/service endpoint in runtime if available; this entry only encodes the live-data boundary."
+      },
+      "retrieval": {
+        "tags": [
+          "showroom",
+          "service",
+          "locator",
+          "live-data"
+        ],
+        "live_data_required": true
+      }
+    }
+  ]
+}

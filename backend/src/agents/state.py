@@ -22,7 +22,13 @@ class AgentState(TypedDict, total=False):
     intent: str
     policy_response: str
     messages: Annotated[list[AnyMessage], add_messages]
-    active_skill: str  # "booking" or "advise"
+    active_skill: str  # "booking" or "post_booking"
+    previous_active_skill: str
+    profile_id: str
+    profile_context: dict
+    post_booking_context: dict
+    participant_context: dict
+    next_skill_hint: str
     intent_entities: dict
     tool_call_count: int  # số vòng tool đã gọi, giới hạn tối đa 8
     requested_action: str | None
