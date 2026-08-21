@@ -46,7 +46,7 @@ def test_address_search_filters_showrooms_and_calculates_distance(booking_servic
 
 
 def test_address_search_keeps_nearby_showroom_outside_text_matched_province(
-    booking_service, booking_db, monkeypatch
+    booking_service, booking_db, catalog, monkeypatch
 ):
     """A customer location must not remove a closer showroom in a neighbouring province."""
     created = FIXED_NOW.isoformat()
@@ -102,7 +102,7 @@ def test_showroom_query_returns_ranked_candidates_without_auto_selecting(booking
 
 
 @pytest.mark.parametrize("region", ["miền Bắc", "miền Trung", "miền Nam", "miền Tây", "tôi ở miền trung"])
-def test_broad_region_requires_a_province_or_city(booking_service, region):
+def test_broad_region_requires_a_province_or_city(booking_service, catalog, region):
     result = booking_service.search_options(vehicle_model="VF6", address=region)
 
     assert result["search_stage"] == "location_clarification"

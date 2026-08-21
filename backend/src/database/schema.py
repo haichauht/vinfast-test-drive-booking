@@ -577,6 +577,22 @@ TABLES = {
             }
         ),
     ),
+    "user_profiles": TableSchema(
+        "user_profiles",
+        frozenset({"id", "state", "merged_into_profile_id", "version", "created_at", "updated_at", "last_seen_at"}),
+    ),
+    "user_profile_identities": TableSchema(
+        "user_profile_identities",
+        frozenset({"id", "profile_id", "identity_type", "identity_value", "trust_level", "source", "created_at", "last_seen_at"}),
+    ),
+    "user_profile_signals": TableSchema(
+        "user_profile_signals",
+        frozenset({"id", "profile_id", "category", "key", "value_json", "description", "certainty", "confidence", "source_type", "source_ref", "observed_at", "status", "superseded_by_signal_id", "created_at", "updated_at"}),
+    ),
+    "driver_chat_invitations": TableSchema(
+        "driver_chat_invitations",
+        frozenset({"id", "booking_id", "driver_person_id", "token_hash", "status", "expires_at", "sent_at", "revoked_at", "created_at", "updated_at"}),
+    ),
 }
 
 SCHEMA_SQL = """
@@ -814,6 +830,34 @@ CREATE TABLE IF NOT EXISTS internal_audit_events (
  action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id TEXT,
  showroom_id TEXT REFERENCES showrooms(id), payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS user_profiles (
+ id TEXT PRIMARY KEY,
+ state TEXT NOT NULL CHECK(state IN ('anonymous','trusted','merged')),
+ merged_into_profile_id TEXT REFERENCES user_profiles(id), version INTEGER NOT NULL DEFAULT 1,
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_seen_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS user_profile_identities (
+ id TEXT PRIMARY KEY, profile_id TEXT NOT NULL REFERENCES user_profiles(id),
+ identity_type TEXT NOT NULL CHECK(identity_type IN ('conversation','anon_session','person','email_hash','phone_hash')),
+ identity_value TEXT NOT NULL, trust_level TEXT NOT NULL CHECK(trust_level IN ('anonymous','trusted')),
+ source TEXT NOT NULL, created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL,
+ UNIQUE(identity_type,identity_value)
+);
+CREATE TABLE IF NOT EXISTS user_profile_signals (
+ id TEXT PRIMARY KEY, profile_id TEXT NOT NULL REFERENCES user_profiles(id), category TEXT NOT NULL,
+ key TEXT NOT NULL, value_json TEXT NOT NULL, description TEXT,
+ certainty TEXT NOT NULL CHECK(certainty IN ('known','likely','possible')),
+ confidence REAL, source_type TEXT NOT NULL CHECK(source_type IN ('explicit_user','implicit_user','trusted_domain')),
+ source_ref TEXT, observed_at TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','superseded','retracted')),
+ superseded_by_signal_id TEXT REFERENCES user_profile_signals(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS driver_chat_invitations (
+ id TEXT PRIMARY KEY, booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+ driver_person_id TEXT NOT NULL REFERENCES people(id), token_hash TEXT NOT NULL UNIQUE,
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','expired','revoked')),
+ expires_at TEXT NOT NULL, sent_at TEXT, revoked_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_variants_model_active ON vehicle_variants(model_id,is_active);
 CREATE INDEX IF NOT EXISTS idx_showrooms_active ON showrooms(is_active);
 CREATE INDEX IF NOT EXISTS idx_demo_lookup ON demo_vehicles(showroom_id,variant_id,operational_status,is_active);
@@ -840,4 +884,8 @@ CREATE INDEX IF NOT EXISTS idx_rate_limit_expiry ON rate_limit_counters(expires_
 CREATE INDEX IF NOT EXISTS idx_llm_budget_date_status ON llm_budget_ledger(usage_date,status);
 CREATE INDEX IF NOT EXISTS idx_llm_budget_session_date ON llm_budget_ledger(session_id,usage_date,status);
 CREATE INDEX IF NOT EXISTS idx_llm_budget_ip_date ON llm_budget_ledger(client_ip,usage_date,status);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_merged ON user_profiles(merged_into_profile_id);
+CREATE INDEX IF NOT EXISTS idx_profile_signals_status ON user_profile_signals(profile_id,status);
+CREATE INDEX IF NOT EXISTS idx_profile_signals_key ON user_profile_signals(profile_id,category,key,status);
+CREATE INDEX IF NOT EXISTS idx_driver_chat_invitation_booking ON driver_chat_invitations(booking_id,status,expires_at);
 """

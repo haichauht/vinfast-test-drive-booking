@@ -101,6 +101,7 @@ import {
   requestBookingAccess,
   resetBookingConversation,
   saveBookingCustomer,
+  sendDriverChatMessage,
   sendBookingMessage,
   searchBookingOptions,
   updateVerifiedBooking,
@@ -136,6 +137,27 @@ import { BookingHeader } from '../components/booking/BookingHeader'
 const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
 const BOOKING_UI_STATE_KEY = 'vinfast:booking-ui-state'
+const DRIVER_INVITATION_HISTORY_KEY = 'vinfastDriverInvitationToken'
+const DRIVER_GREETING = 'ViVi sẽ đồng hành cùng bạn chuẩn bị cho buổi lái thử. ViVi có thể giúp chọn những điều nên thử trên xe, các câu hỏi nên trao đổi với tư vấn viên và checklist trước giờ hẹn. Chia sẻ tình huống sử dụng xe chính—đi làm, chở gia đình hay đi xa—để ViVi ưu tiên các bài test sát nhu cầu.'
+
+const takeDriverInvitationToken = () => {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const token = params.get('driver-invitation') || ''
+  const state = window.history.state && typeof window.history.state === 'object'
+    ? window.history.state
+    : {}
+  if (!token) return typeof state[DRIVER_INVITATION_HISTORY_KEY] === 'string'
+    ? state[DRIVER_INVITATION_HISTORY_KEY]
+    : ''
+  params.delete('driver-invitation')
+  const hash = params.toString()
+  window.history.replaceState(
+    { ...state, [DRIVER_INVITATION_HISTORY_KEY]: token },
+    '',
+    `${window.location.pathname}${window.location.search}${hash ? `#${hash}` : ''}`,
+  )
+  return token
+}
 
 // Dùng chung cho cả người đặt lẫn người lái — hai đầu mối phải được kiểm cùng một chuẩn.
 const PHONE_PATTERN = /^(0|\+84)[0-9\s.-]{8,12}$/
@@ -266,6 +288,8 @@ export function BookingPage() {
   // The browser may render optimistically, but inventory holds and terminal booking
   // state are always server-authoritative. Full transition table: BACKEND_HANDOFF.md.
   const [searchParams] = useSearchParams()
+  const [driverInvitationToken] = useState(takeDriverInvitationToken)
+  const isDriverChat = Boolean(driverInvitationToken)
   const { cars } = useVehicleCatalog()
   const [restoredUi] = useState(readBookingUiState)
   const getCar = (id) => cars.find((car) => car.id === id)
@@ -275,7 +299,7 @@ export function BookingPage() {
   const upsellCars = upsell.vehicleIds.map(getCar).filter(Boolean)
   const routeCar = getCar(searchParams.get('car'))
   const initialCar = routeCar || null
-  const shouldOfferResume = Boolean(
+  const shouldOfferResume = !isDriverChat && Boolean(
     !initialCar && (
       (restoredUi.stage && restoredUi.stage !== 'idle') ||
       (restoredUi.interaction?.phase && restoredUi.interaction.phase !== 'idle') ||
@@ -291,7 +315,7 @@ export function BookingPage() {
     }
   }, [])
 
-  const [recipient, setRecipient] = useState(initialCar ? '' : restoredUi.recipient || '')
+  const [recipient, setRecipient] = useState(isDriverChat ? 'driver' : (initialCar ? '' : restoredUi.recipient || ''))
   const [resumePending, setResumePending] = useState(() => Boolean(
     shouldOfferResume,
   ))
@@ -299,8 +323,8 @@ export function BookingPage() {
   const [interaction, dispatchInteraction] = useReducer(
     bookingInteractionReducer,
     {
-      stage: shouldOfferResume ? restoredUi.stage || 'idle' : initialCar ? 'need_address' : 'idle',
-      activeView: initialCar ? 'car' : restoredUi.activeView || 'agent',
+      stage: isDriverChat ? 'idle' : (shouldOfferResume ? restoredUi.stage || 'idle' : initialCar ? 'need_address' : 'idle'),
+      activeView: isDriverChat ? 'agent' : (initialCar ? 'car' : restoredUi.activeView || 'agent'),
       interaction: shouldOfferResume ? restoredUi.interaction : null,
     },
     createInteractionState,
@@ -313,7 +337,9 @@ export function BookingPage() {
   const setActiveView = useCallback((nextView) => {
     dispatchInteraction({ type: InteractionEvent.SET_ACTIVE_VIEW, activeView: nextView })
   }, [])
-  const [messages, setMessages] = useState(shouldOfferResume && Array.isArray(restoredUi.messages) ? restoredUi.messages : [])
+  const [messages, setMessages] = useState(isDriverChat
+    ? [{ id: 'driver-invitation-greeting', role: 'assistant', text: DRIVER_GREETING }]
+    : (shouldOfferResume && Array.isArray(restoredUi.messages) ? restoredUi.messages : []))
   const [draft, setDraft] = useState('')
   const [agentTyping, setAgentTyping] = useState(false)
   const [checkingVehicleName, setCheckingVehicleName] = useState('')
@@ -381,6 +407,7 @@ export function BookingPage() {
   const sendingRef = useRef(false)
   // Sync ref với state để async handlers luôn đọc đúng showroomId mới nhất (tránh stale closure)
   showroomIdRef.current = showroomId
+  const driverConversationIdRef = useRef('')
 
   const [inlineOtpDigits, setInlineOtpDigits] = useState(['', '', '', '', '', ''])
   const [inlineOtpError, setInlineOtpError] = useState('')
@@ -393,9 +420,9 @@ export function BookingPage() {
   // Mỗi slot đã mang id thật của backend; cặp ngày/giờ trong UI chỉ để hiển thị.
   const selectedShowroom = nearbyShowrooms.find((showroom) => showroom.id === showroomId)
   const composerDisabled = isSending || agentTyping
-  const allowedActions = useMemo(() => selectAllowedActions(interaction, {
+  const allowedActions = useMemo(() => (isDriverChat ? [] : selectAllowedActions(interaction, {
     allowedBookingActions: accessProfile?.allowedActions || [],
-  }), [interaction, accessProfile?.allowedActions])
+  })), [interaction, accessProfile?.allowedActions, isDriverChat])
   const workspaceModel = useMemo(() => selectWorkspace(interaction), [interaction])
   const composerMode = useMemo(() => selectComposerMode(interaction), [interaction])
   const hasWorkspaceContent = Boolean(selectedCar || accessProfile)
@@ -432,7 +459,7 @@ export function BookingPage() {
       {
         id: `${Date.now()}-${current.length + 1}`,
         role: 'assistant',
-        text: 'Ba việc cần lưu ý trước buổi hẹn nằm ngay dưới đây. Bạn cứ hỏi ViVi thêm bất cứ lúc nào.',
+        text: DRIVER_GREETING,
       },
       {
         id: `${Date.now()}-${current.length + 2}-next-steps`,
@@ -462,6 +489,7 @@ export function BookingPage() {
   }, [selectedCarId])
 
   useEffect(() => {
+    if (isDriverChat) return
     const safeMessages = messages
       .filter((message) => !isSensitiveChatText(message.text || ''))
       .map(({ id, role, text, type, emphasis }) => ({ id, role, text, type, emphasis }))
@@ -477,7 +505,7 @@ export function BookingPage() {
       messages: safeMessages,
       interaction: serializeInteractionState(interaction),
     }))
-  }, [recipient, selectedCarId, showroomId, nearbyShowrooms, slots, address, userLocation, messages, interaction])
+  }, [recipient, selectedCarId, showroomId, nearbyShowrooms, slots, address, userLocation, messages, interaction, isDriverChat])
 
   useEffect(() => {
     if (selectedCarId || !cars.length) return
@@ -1363,12 +1391,27 @@ export function BookingPage() {
     if (stage === 'choose_slot') setServerHighlightedDates([])
     setBackendError('')
 
-    const mentionedCar = resolveAgentCar(value)
+    const mentionedCar = isDriverChat ? null : resolveAgentCar(value)
+    if (mentionedCar) {
+      if (!recipient) setRecipient('self')
+      setWorkspaceHidden(false)
+      if (interaction.mode === BookingMode.MANAGE_BOOKING) {
+        clearManagementContext({ resetConversation: true, event: InteractionEvent.VIEW_VEHICLE })
+      } else {
+        dispatchInteraction({ type: InteractionEvent.VIEW_VEHICLE })
+      }
+      setSelectedCarId(mentionedCar.id)
+    }
     setCheckingVehicleName(mentionedCar?.name || '')
 
     setAgentTyping(true)
     try {
-      const result = await sendBookingMessage(value, {
+      const result = isDriverChat
+        ? await sendDriverChatMessage(value, {
+          conversationId: driverConversationIdRef.current,
+          invitationToken: driverInvitationToken,
+        })
+        : await sendBookingMessage(value, {
         mode: interaction.mode,
         phase: interaction.phase,
         stage,
@@ -1386,7 +1429,12 @@ export function BookingPage() {
         userLocation,
         bookingId: bookingId || null,
         channel: 'booking',
-      })
+        })
+      if (isDriverChat) {
+        driverConversationIdRef.current = result.conversation_id || driverConversationIdRef.current
+        addMessage('assistant', result.response)
+        return
+      }
       if (mentionedCar && result.intent === 'vehicle_info') {
         if (interaction.mode === BookingMode.MANAGE_BOOKING) {
           clearManagementContext({ event: InteractionEvent.VIEW_VEHICLE })
@@ -2284,7 +2332,7 @@ export function BookingPage() {
           <section className="vivi-studio">
             <div className="vivi-studio__head">
               <ViViAvatar />
-              <div><strong>ViVi</strong><small><span /> Trợ lý đặt lịch lái thử</small></div>
+              <div><strong>ViVi</strong><small><span /> {isDriverChat ? 'Hỗ trợ chuẩn bị lái thử' : 'Trợ lý đặt lịch lái thử'}</small></div>
               {allowedActions.includes('start_lookup') && <button type="button" onClick={startLookup}>Tra cứu lịch</button>}
             </div>
 
@@ -2540,7 +2588,7 @@ export function BookingPage() {
                 <form className="vivi-prompt" onSubmit={handlePrompt} aria-busy={composerDisabled}>
                   <label htmlFor="vivi-booking-prompt">Nhắn cho ViVi</label>
                   <div>
-                    <textarea id="vivi-booking-prompt" rows="2" value={draft} maxLength={CHAT_MESSAGE_MAX_LENGTH} disabled={composerDisabled} onChange={(event) => setDraft(event.target.value)} placeholder={composerDisabled ? 'ViVi đang thực hiện tác vụ cho bạn' : stage === 'need_address' || stage === 'need_ward' ? 'Ví dụ: Phường Bến Nghé, TP. Hồ Chí Minh' : 'Nhập mẫu xe, địa chỉ, showroom hoặc thời gian…'} onKeyDown={(event) => {
+                    <textarea id="vivi-booking-prompt" rows="2" value={draft} maxLength={CHAT_MESSAGE_MAX_LENGTH} disabled={composerDisabled} onChange={(event) => setDraft(event.target.value)} placeholder={composerDisabled ? 'ViVi đang thực hiện tác vụ cho bạn' : isDriverChat ? 'Chia sẻ điều bạn muốn chuẩn bị cho buổi lái thử…' : stage === 'need_address' || stage === 'need_ward' ? 'Ví dụ: Phường Bến Nghé, TP. Hồ Chí Minh' : 'Nhập mẫu xe, địa chỉ, showroom hoặc thời gian…'} onKeyDown={(event) => {
                       if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault()
                         if (!composerDisabled) event.currentTarget.form?.requestSubmit()
