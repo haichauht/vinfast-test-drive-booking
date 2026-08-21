@@ -77,6 +77,7 @@ ACCESS_INTENT_PURPOSES = {
 
 PUBLIC_TOOL_ERRORS = {
     "SLOT_NO_LONGER_AVAILABLE": "Khung giờ này đã qua hoặc không còn khả dụng, vui lòng chọn giờ khác.",
+    "SLOT_UNAVAILABLE": "Khung giờ này không còn khả dụng, vui lòng chọn giờ khác.",
     "HOLD_EXPIRED": "Thời gian giữ chỗ đã hết hạn, vui lòng chọn lại khung giờ.",
     "VEHICLE_NOT_READY": "Xe demo hiện không sẵn sàng cho khung giờ này, vui lòng chọn lịch khác.",
     "VERSION_CONFLICT": "Thông tin đặt lịch đã thay đổi, vui lòng tải lại và thử lại.",
@@ -107,8 +108,13 @@ def _public_tool_error(decoded: object) -> tuple[str, str]:
             if known_code in text:
                 code = known_code
                 break
-        if not code and ("Slot đã bắt đầu" in text or "Slot da bat dau" in text or "đã qua" in text):
-            code = "SLOT_NO_LONGER_AVAILABLE"
+        if not code:
+            if "không còn khả dụng" in text or "khai thác" in text or "đã qua" in text or "Slot đã bắt đầu" in text or "Slot da bat dau" in text:
+                code = "SLOT_NO_LONGER_AVAILABLE"
+            elif "hết hạn" in text:
+                code = "HOLD_EXPIRED"
+            elif "Xe demo" in text or "Pin xe" in text:
+                code = "VEHICLE_NOT_READY"
 
     if code in PUBLIC_TOOL_ERRORS:
         return code, PUBLIC_TOOL_ERRORS[code]
