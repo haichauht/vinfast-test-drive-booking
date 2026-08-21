@@ -133,7 +133,17 @@ def _normalize_date_filters(
     return {"mode": "none", "dates": [], "from": None, "to": None}
 
 
-def _date_filter_sql(filters: dict[str, Any], slot_date_sql: str) -> tuple[str, list[str]]:
+def _date_filter_sql(filters: dict[str, Any], *, dialect: str) -> tuple[str, list[str]]:
+    # SQL expressions cannot be bound as query parameters. Select them from a
+    # closed internal allowlist so callers can never inject an arbitrary SQL
+    # fragment into this helper.
+    if dialect == "postgres":
+        slot_date_sql = "to_char(s.start_at::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD')"
+    elif dialect == "sqlite":
+        slot_date_sql = "strftime('%Y-%m-%d', datetime(s.start_at, '+7 hours'))"
+    else:
+        raise ValueError(f"Unsupported database dialect: {dialect}")
+
     if filters["mode"] == "range":
         return f" AND {slot_date_sql} BETWEEN ? AND ?", [filters["from"], filters["to"]]
     dates = filters["dates"]
@@ -268,12 +278,7 @@ class CatalogService(BookingBase):
                 preferred_date_to=preferred_date_to,
                 now_dt=self.now().astimezone(VIETNAM_TZ),
             )
-            slot_date_sql = (
-                "to_char(s.start_at::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD')"
-                if c.dialect == "postgres"
-                else "strftime('%Y-%m-%d', datetime(s.start_at, '+7 hours'))"
-            )
-            date_sql, date_values = _date_filter_sql(date_filters, slot_date_sql)
+            date_sql, date_values = _date_filter_sql(date_filters, dialect=c.dialect)
 
             if not showroom_id:
                 # A location belongs to the customer, not to a showroom. Do not
