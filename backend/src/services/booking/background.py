@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 import logging
 from datetime import timedelta
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from src.services.booking.base import BookingBase
 from src.services.booking.common import iso, parse_utc
 from src.services.booking.email_templates import render_booking_email
+
+if TYPE_CHECKING:
+    from src.services.profile.driver_invitation import DriverInvitationService
 
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
@@ -16,7 +20,7 @@ class BackgroundJobService(BookingBase):
     # Wired by src.dependencies after DriverInvitationService is constructed.
     # Keeping the attribute explicit avoids silently losing the driver link when
     # this mixin is used by a BookingService instance.
-    driver_invitation_service = None
+    driver_invitation_service: DriverInvitationService | None = None
 
     def dispatch_due_notifications(self, batch_size: int = 100, processing_timeout_seconds: int = 300) -> dict:
         stale_before = iso(self.now() - timedelta(seconds=processing_timeout_seconds))
