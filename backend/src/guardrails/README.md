@@ -24,10 +24,11 @@ Client
 ChatRequest / Pydantic
   │
   ▼
-Signed conversation capability + process-local rate limit
+Signed conversation capability + process-local rate limit + persistent abuse status
   │
   ▼
-InputGuard ── block ──► ChatResponse an toàn, không gọi LLM
+InputGuard ── violation ──► persistent strike ──► lần 3: HTTP 403 ban
+  │ other block / strike 1-2  ► ChatResponse an toàn, không gọi LLM
   │ allow + normalize
   ▼
 LangGraph classifier / skill
@@ -80,12 +81,14 @@ Guard chỉ block các pattern có độ tin cậy cao, ví dụ:
 - “Reveal the system prompt/API key …”
 - giả mạo `<tool_call>`, `<system>` hoặc dòng `Developer:`.
 - ép agent chuyển thành terminal/developer mode.
+- paraphrase tiếng Việt như vô hiệu hóa quy tắc cũ hoặc chỉ làm theo lệnh mới.
+- ngôn ngữ tục/chửi trực tiếp có độ tin cậy cao, có cả biến thể không dấu.
 
 Một câu hỏi bình thường có chữ “prompt” hoặc “system” không tự động bị block. Pattern nằm trong `policies.py` để security review có thể theo dõi thay đổi.
 
 `context` được scan, kiểm tra top-level/nested allowlist và chuẩn hóa. Nó không còn được nối vào `SystemMessage`; booking skill truyền context đã làm sạch dưới dạng `HumanMessage` được đánh dấu là untrusted reference data. `action_payload` không được đưa vào prompt khi chạy structured action; nó được bảo vệ bằng size/depth budget và field allowlist.
 
-Khi block, API trả `200` với câu từ chối thân thiện và `action_error` là mã máy đọc được, đồng thời **không gọi LLM hoặc tool**. Cách này giúp frontend tiếp tục render như một chat message; metric có thể nhóm theo code.
+Khi block, API đồng thời **không gọi LLM hoặc tool**. Vi phạm prompt injection, role/secret exfiltration hoặc abusive language lần 1–2 trả `200`, câu từ chối, mã `action_error` và cảnh báo `n/3`. Lần 3 ghi ban vào database và trả `403 ABUSE_BANNED` cùng `Retry-After`; request sau đó bị chặn trước input/LLM. Subject lưu trong bảng chỉ là SHA-256 của IP và internal conversation ID, không lưu IP thô.
 
 ### 4.3 Structured action contract
 
@@ -146,6 +149,9 @@ Các biến có default an toàn trong `src/config.py` và được minh họa �
 | `GUARDRAILS_MAX_PAYLOAD_STRING_CHARS` | `5000` | Độ dài tối đa của một string trong payload. |
 | `GUARDRAILS_MAX_TOOL_CALLS_PER_MESSAGE` | `3` | Fan-out tối đa trong một model response. |
 | `GUARDRAILS_MAX_OUTPUT_CHARS` | `8000` | Độ dài text tối đa trả về client. |
+| `GUARDRAILS_ABUSE_MAX_STRIKES` | `3` | Số vi phạm prompt-injection/profanity trước khi ban. |
+| `GUARDRAILS_ABUSE_STRIKE_WINDOW_SECONDS` | `3600` | Cửa sổ cộng dồn strike; quá cửa sổ thì đếm lại. |
+| `GUARDRAILS_ABUSE_BAN_SECONDS` | `86400` | Thời gian ban sau strike cuối, mặc định 24 giờ. |
 | `CONVERSATION_SIGNING_SECRET` | rỗng ở dev, bắt buộc ≥32 ký tự ở production | Khóa HMAC riêng cho public conversation capability. |
 | `CONVERSATION_TOKEN_TTL_SECONDS` | `28800` | TTL của conversation capability. |
 | `RATE_LIMITS_ENABLED` | `true` | Bật limiter tại application boundary; production không thể tắt. |
@@ -227,6 +233,7 @@ Chỉ thêm pattern có tín hiệu hành động + mục tiêu rõ ràng. Trán
 - Regex không phát hiện mọi prompt injection đa ngôn ngữ hoặc được mã hóa tinh vi. Boundary allowlist và tool authorization mới là lớp bảo vệ quan trọng nhất.
 - Guardrails không đánh giá tính đúng/sai của nội dung tư vấn xe; cần grounding/RAG citation và eval riêng.
 - Limiter trong app là process-local. Deployment nhiều worker/instance vẫn cần distributed gateway limit; OTP cooldown trong `BookingService` tiếp tục là domain control độc lập.
+- Abuse ban được lưu trong database dùng chung, nhưng chat công khai chưa có account identity nên IP ban có thể ảnh hưởng nhiều người dùng chung NAT. Khi có đăng nhập, ưu tiên subject theo account/session đã xác thực.
 - Guardrails không thay authentication cho admin import/dashboard endpoints.
 - Output redaction giảm rủi ro accidental leakage nhưng secret không nên được đưa vào LLM context ngay từ đầu.
 
@@ -239,6 +246,7 @@ Chỉ thêm pattern có tín hiệu hành động + mục tiêu rõ ràng. Trán
 - Bảo vệ admin endpoints bằng authentication/authorization.
 - Không log request/response body tại proxy/APM nếu chưa redact.
 - Alert khi guardrail block tăng đột biến hoặc khi tool policy bị vi phạm.
+- Theo dõi `guardrail.abuse_strike` và `guardrail.abuse_ban_enforced`; xây luồng admin unban trước khi dùng ban dài hạn.
 - Chạy guardrail test và full regression trước mỗi release.
 - Review `policies.py` khi thêm action, tool, credential hoặc kênh tích hợp mới.
 

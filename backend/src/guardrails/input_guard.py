@@ -7,6 +7,7 @@ from typing import Any
 
 from src.guardrails.models import GuardrailDecision
 from src.guardrails.policies import (
+    ABUSIVE_LANGUAGE_PATTERNS,
     ACTION_ALLOWED_FIELDS,
     ACTION_NESTED_ALLOWED_FIELDS,
     CONTEXT_ALLOWED_FIELDS,
@@ -26,6 +27,10 @@ _SAFE_CONVERSATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$")
 _BLOCKED_MESSAGE = (
     "Yêu cầu này có dấu hiệu cố gắng thay đổi chỉ dẫn hoặc truy cập thông tin nội bộ, "
     "nên tôi không thể xử lý. Tôi vẫn có thể hỗ trợ thông tin xe VinFast và đặt lịch lái thử."
+)
+_ABUSIVE_BLOCKED_MESSAGE = (
+    "Tin nhắn có ngôn ngữ tục hoặc xúc phạm nên đã bị chặn. "
+    "Vui lòng trao đổi lịch sự để tiếp tục sử dụng trợ lý."
 )
 _INVALID_PAYLOAD_MESSAGE = "Dữ liệu gửi lên không hợp lệ hoặc quá phức tạp. Vui lòng tải lại trang và thử lại."
 _CONTEXT_STRING_MAX_CHARS = 500
@@ -51,6 +56,10 @@ class InputGuard:
         self._injection_patterns = tuple(
             (code, re.compile(expression, re.IGNORECASE | re.DOTALL))
             for code, expression in PROMPT_INJECTION_PATTERNS
+        )
+        self._abusive_patterns = tuple(
+            re.compile(expression, re.IGNORECASE | re.DOTALL)
+            for expression in ABUSIVE_LANGUAGE_PATTERNS
         )
 
     def inspect(
@@ -96,6 +105,15 @@ class InputGuard:
                         "high-confidence prompt/role injection pattern matched",
                         _BLOCKED_MESSAGE,
                     )
+            if any(
+                pattern.search(normalized_candidate) or pattern.search(folded_candidate)
+                for pattern in self._abusive_patterns
+            ):
+                return GuardrailDecision.block(
+                    "ABUSIVE_LANGUAGE",
+                    "high-confidence abusive language pattern matched",
+                    _ABUSIVE_BLOCKED_MESSAGE,
+                )
 
         context_decision = self.inspect_context(context)
         if not context_decision.allowed:

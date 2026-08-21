@@ -34,6 +34,24 @@ PROMPT_INJECTION_PATTERNS: tuple[tuple[str, str], ...] = (
         r"\b(?:huong\s+dan|chi\s+thi|system\s*prompt|luat|quy\s+tac|he\s+thong)\b",
     ),
     (
+        "PROMPT_INJECTION_OVERRIDE",
+        r"\b(?:khong\s+can|dung|ngung)\s+(?:tuan\s+theo|lam\s+theo)\b.{0,60}"
+        r"\b(?:chi\s+thi|huong\s+dan|quy\s+tac|luat)\b.{0,40}"
+        r"\b(?:he\s+thong|truoc|cu)\b",
+    ),
+    (
+        "PROMPT_INJECTION_OVERRIDE",
+        r"\b(?:xem|coi)\b.{0,50}\b(?:noi\s+dung|chi\s+dan|quy\s+tac)\b.{0,40}"
+        r"\b(?:phia\s+tren|truoc\s+do)\b.{0,40}"
+        r"\b(?:vo\s+hieu|khong\s+ton\s+tai|het\s+hieu\s+luc)\b",
+    ),
+    (
+        "PROMPT_INJECTION_OVERRIDE",
+        r"\b(?:tu\s+gio|ke\s+tu\s+bay\s+gio)\b.{0,60}"
+        r"\b(?:chi\s+lam\s+theo|uu\s+tien)\b.{0,40}"
+        r"\b(?:lenh|yeu\s+cau|quy\s+tac)\b.{0,30}\b(?:cua\s+toi|sau\s+day|moi)\b",
+    ),
+    (
         "SECRET_EXFILTRATION",
         r"\b(?:reveal|show|print|return|dump|expose|leak)\b.{0,80}"
         r"\b(?:system\s+prompt|developer\s+message|hidden\s+instructions?|api[_ -]?keys?|"
@@ -59,6 +77,26 @@ PROMPT_INJECTION_PATTERNS: tuple[tuple[str, str], ...] = (
         r"\b(?:you\s+are\s+now|act\s+as)\b.{0,50}"
         r"\b(?:linux\s+terminal|shell|developer\s+mode|system\s+administrator)\b",
     ),
+)
+
+# High-confidence direct profanity/abuse only. Avoid broad words such as
+# "chó" or folded one-syllable forms such as "du" because they create common
+# Vietnamese false positives (for example "đủ").
+ABUSIVE_LANGUAGE_PATTERNS: tuple[str, ...] = (
+    r"\b(?:địt|đụ|đéo|cặc|lồn|buồi)\b",
+    r"\b(?:dit\s+(?:me|ma)|du\s+ma|deo\s+(?:me|can|hieu)|vai\s+lon|cai\s+lon|"
+    r"con\s+di|suc\s+vat|(?:do|thang|con|may)\s+ngu|oc\s+cho|"
+    r"cut\s+(?:di|me)|me\s+may)\b",
+    r"\b(?:fuck(?:\s+you)?|motherfucker|asshole|bitch|piece\s+of\s+shit)\b",
+)
+
+ABUSE_VIOLATION_CODES = frozenset(
+    {
+        "ABUSIVE_LANGUAGE",
+        "PROMPT_INJECTION_OVERRIDE",
+        "ROLE_INJECTION",
+        "SECRET_EXFILTRATION",
+    }
 )
 
 ACTION_ALLOWED_FIELDS: dict[str, frozenset[str]] = {

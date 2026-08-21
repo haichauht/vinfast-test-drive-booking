@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     guardrails_max_payload_string_chars: int = Field(default=5_000, ge=128, le=100_000)
     guardrails_max_tool_calls_per_message: int = Field(default=3, ge=1, le=8)
     guardrails_max_output_chars: int = Field(default=8_000, ge=256, le=100_000)
+    guardrails_abuse_max_strikes: int = Field(default=3, ge=1, le=10)
+    guardrails_abuse_strike_window_seconds: int = Field(default=3_600, ge=60, le=604_800)
+    guardrails_abuse_ban_seconds: int = Field(default=86_400, ge=60, le=2_592_000)
 
     # Public conversation IDs are signed bearer capabilities.  A dedicated
     # secret prevents a client-selected LangGraph thread ID from joining

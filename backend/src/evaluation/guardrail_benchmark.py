@@ -7,6 +7,7 @@ import math
 import platform
 import statistics
 import sys
+import tempfile
 import time
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
@@ -18,6 +19,8 @@ from typing import Any
 from langchain_core.messages import AIMessage
 
 from src.config import Settings
+from src.database import Database
+from src.guardrails.abuse import AbuseTracker
 from src.guardrails.conversation import ConversationTokenManager
 from src.guardrails.pipeline import Guardrails
 from src.guardrails.rate_limit import SlidingWindowRateLimiter
@@ -25,7 +28,7 @@ from src.guardrails.tool_guard import inspect_tool_calls
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_DATASET_PATH = PROJECT_ROOT / "eval" / "benchmarks" / "guardrails_cases.json"
-SUPPORTED_KINDS = frozenset({"conversation", "input", "output", "rate_limit", "tool"})
+SUPPORTED_KINDS = frozenset({"abuse", "conversation", "input", "output", "rate_limit", "tool"})
 BENCHMARK_SETTING_DEFAULTS: dict[str, Any] = {
     "app_env": "test",
     "guardrails_enabled": True,
@@ -35,6 +38,9 @@ BENCHMARK_SETTING_DEFAULTS: dict[str, Any] = {
     "guardrails_max_payload_string_chars": 5_000,
     "guardrails_max_tool_calls_per_message": 3,
     "guardrails_max_output_chars": 8_000,
+    "guardrails_abuse_max_strikes": 3,
+    "guardrails_abuse_strike_window_seconds": 3_600,
+    "guardrails_abuse_ban_seconds": 86_400,
 }
 
 
@@ -202,6 +208,47 @@ def _run_rate_limit_case(case: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _run_abuse_case(case: Mapping[str, Any]) -> dict[str, Any]:
+    case_input = case["input"]
+    if case_input.get("operation") != "three_strikes":
+        raise ValueError(f"{case.get('case_id')}: unsupported abuse operation")
+    settings = _settings(case)
+    current = datetime(2026, 8, 21, 8, 0, tzinfo=UTC)
+    subjects = ("ip:benchmark-client", "thread:benchmark-conversation")
+    violation_codes = case_input.get(
+        "violation_codes",
+        ["PROMPT_INJECTION_OVERRIDE", "ABUSIVE_LANGUAGE", "ROLE_INJECTION"],
+    )
+    if not isinstance(violation_codes, list) or not all(isinstance(code, str) for code in violation_codes):
+        raise ValueError(f"{case.get('case_id')}: violation_codes must be a string list")
+    with tempfile.TemporaryDirectory(prefix="guardrail-abuse-benchmark-") as temp_dir:
+        database = Database(Path(temp_dir) / "abuse.db")
+        tracker = AbuseTracker(database, now=lambda: current)
+        tracker.ensure_schema()
+        statuses = [
+            tracker.record_violation(
+                subjects,
+                violation_code=code,
+                max_strikes=settings.guardrails_abuse_max_strikes,
+                strike_window_seconds=settings.guardrails_abuse_strike_window_seconds,
+                ban_seconds=settings.guardrails_abuse_ban_seconds,
+            )
+            for code in violation_codes
+        ]
+        persisted = AbuseTracker(database, now=lambda: current).check(subjects)
+        with database.connect() as connection:
+            stored_subject_rows = connection.execute(
+                "SELECT count(*) FROM guardrail_abuse_subjects"
+            ).fetchone()[0]
+    return {
+        "strike_counts": [status.strike_count for status in statuses],
+        "banned": [status.banned for status in statuses],
+        "persisted_ban": persisted.banned,
+        "retry_after_seconds": persisted.retry_after_seconds,
+        "stored_subject_rows": stored_subject_rows,
+    }
+
+
 def _read_path(value: Any, path: str) -> Any:
     current = value
     for segment in path.split("."):
@@ -265,6 +312,8 @@ def run_case(case: Mapping[str, Any]) -> CaseResult:
             actual = _run_conversation_case(case)
         elif kind == "rate_limit":
             actual = _run_rate_limit_case(case)
+        elif kind == "abuse":
+            actual = _run_abuse_case(case)
         else:  # load_dataset prevents this; retain a fail-closed runtime guard.
             raise ValueError(f"Unsupported case kind: {kind}")
         failures.extend(_evaluate_expected(actual, case["expected"]))

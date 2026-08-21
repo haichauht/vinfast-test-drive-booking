@@ -37,3 +37,11 @@ def test_production_requires_conversation_signing_and_rate_limits():
             conversation_signing_secret="b" * 32,
             rate_limits_enabled=False,
         )
+
+
+def test_abuse_ban_defaults_to_three_strikes_and_twenty_four_hours():
+    settings = Settings(_env_file=None, app_env="test")
+
+    assert settings.guardrails_abuse_max_strikes == 3
+    assert settings.guardrails_abuse_strike_window_seconds == 3600
+    assert settings.guardrails_abuse_ban_seconds == 86400
