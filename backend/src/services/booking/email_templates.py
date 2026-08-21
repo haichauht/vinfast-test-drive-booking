@@ -95,12 +95,22 @@ def _inline_logo() -> tuple[InlineImage, ...]:
     return (InlineImage(cid=_LOGO_CID, content=data),) if data else ()
 
 
-def render_booking_email(notification_type: str, row) -> RenderedEmail:
+def render_booking_email(
+    notification_type: str, row, *, driver_invite_url: str | None = None
+) -> RenderedEmail:
+    """Điểm vào duy nhất cho mọi thư về lịch hẹn.
+
+    `driver_invite_url` chỉ có giá trị khi người đặt KHÁC người lái: đó là link
+    mời người lái vào trò chuyện với ViVi. Thư nền tối nhận và dựng thêm một nút
+    cho link này, xem render_booking_dark_email().
+    """
     # Mọi loại thư về lịch hẹn đều đi bản nền tối nhấn vàng, chung một bộ khung.
     # Chỉ khi thiếu dữ liệu lịch mới rơi về bản nền sáng tối giản bên dưới, vì lúc
     # đó không cá nhân hoá được gì.
     if row and notification_type in _BOOKING_COPY:
-        return render_booking_dark_email(notification_type, row)
+        return render_booking_dark_email(
+            notification_type, row, driver_invite_url=driver_invite_url
+        )
     if not row:
         subject = "Cập nhật lịch lái thử VinFast"
         plain = "Lịch lái thử VinFast của bạn đã được cập nhật."
@@ -142,6 +152,22 @@ def render_booking_email(notification_type: str, row) -> RenderedEmail:
         ("Tư vấn viên", staff),
     )
     plain = "\n".join((heading, *(f"{label}: {value}" for label, value in rows)))
+    invite_html = ""
+    if driver_invite_url and notification_type == "booking_confirmation":
+        safe_invite_url = escape(driver_invite_url, quote=True)
+        invite_html = (
+            '<div style="margin:22px 0 0;text-align:center;">'
+            f'<a href="{safe_invite_url}" target="_blank" rel="noreferrer" '
+            f'style="display:inline-block;padding:12px 24px;border-radius:10px;'
+            f'background:{_BLUE};color:#ffffff;font-size:14px;font-weight:600;'
+            'text-decoration:none;">Trò chuyện với ViVi</a></div>'
+            '<p style="margin:10px 0 0;font-size:13px;line-height:20px;color:#6b7280;">'
+            'Chia sẻ nhu cầu riêng để chuẩn bị tốt hơn cho buổi lái thử.</p>'
+        )
+        plain += (
+            "\n\nTrò chuyện với ViVi để chuẩn bị cho buổi lái thử: "
+            f"{driver_invite_url}"
+        )
     html = _html_document(
         title=heading,
         intro=_intro(notification_type),
@@ -151,6 +177,7 @@ def render_booking_email(notification_type: str, row) -> RenderedEmail:
         ),
         maps_url=maps_url,
         showroom_name=showroom_name,
+        post_content_html=invite_html,
     )
     return RenderedEmail(subject=subject, plain_text=plain, html=html, inline_images=_inline_logo())
 
@@ -208,6 +235,7 @@ def _html_document(
     highlight: str | None = None,
     maps_url: str | None = None,
     showroom_name: str | None = None,
+    post_content_html: str = "",
 ) -> str:
     row_list = list(rows)
     body_rows = "\n".join(
@@ -281,7 +309,7 @@ def _html_document(
         </tr>
         <tr>
           <td style="padding:0 30px 24px;font-family:{_FONT};">
-            {highlight_html}{table_html}{maps_html}{footer_html}
+            {highlight_html}{table_html}{maps_html}{post_content_html}{footer_html}
           </td>
         </tr>
       </table>
@@ -1215,13 +1243,19 @@ def _plain_staff_line(facts: dict) -> str:
     return f"{line} - {facts['staff_phone']}" if facts["staff_phone"] else line
 
 
-def render_booking_dark_email(notification_type: str, row) -> RenderedEmail:
+def render_booking_dark_email(
+    notification_type: str, row, *, driver_invite_url: str | None = None
+) -> RenderedEmail:
     """Thư về lịch hẹn, cá nhân hoá theo đúng lịch của khách.
 
     Mọi thứ lấy từ `row` của _render_notification: tên và liên hệ của khách,
     showroom cùng địa chỉ và toạ độ, mẫu xe và phiên bản cùng thông số, nhân viên
     phụ trách, giờ hẹn. Ảnh xe chọn theo mã mẫu xe. KHÔNG có gì đặt cứng theo một
     khách hay một mẫu xe cụ thể.
+
+    `driver_invite_url` chỉ có giá trị khi người đặt KHÁC người lái. Khi đó thư
+    gửi cho NGƯỜI LÁI có thêm một nút mời vào trò chuyện với ViVi, để họ nói nhu
+    cầu riêng của mình chứ không phải nghe lại qua người đặt hộ.
 
     Bản xem trước sinh bằng backend/scripts/preview_confirmation_email.py.
     """
@@ -1282,6 +1316,21 @@ def render_booking_dark_email(notification_type: str, row) -> RenderedEmail:
             watermark_url=_watermark_url(row["model_code"]),
         )
     )
+    # Nút mời người lái. Đặt ngay dưới card thông tin, sau khi người ta đã đọc
+    # xong lịch hẹn của mình, chứ không chen lên trước làm loãng tin chính.
+    if driver_invite_url:
+        blocks.append(
+            f'    <tr><td class="px a5" align="center" style="padding:30px 24px 0;">'
+            f'{_gold_button(driver_invite_url, "Trò chuyện với ViVi")}</td></tr>'
+        )
+        blocks.append(
+            _para_row(
+                "16px",
+                "Bạn chia sẻ nhu cầu riêng để ViVi chuẩn bị tốt hơn cho buổi lái thử nhé.",
+                "a5",
+            )
+        )
+
     if copy.show_vehicle:
         blocks.append(_para_row("38px", escape(_vehicle_paragraph(row)), "a5"))
         blocks.append(_photo_grid(_photo_urls(row["model_code"]), f["model"]))
@@ -1303,6 +1352,11 @@ def render_booking_dark_email(notification_type: str, row) -> RenderedEmail:
         year=f["start"].year,
     )
 
+    invite_plain = (
+        f"\n\nTrò chuyện với ViVi để chuẩn bị cho buổi lái thử: {driver_invite_url}"
+        if driver_invite_url
+        else ""
+    )
     plain = "\n".join(
         (
             f"{copy.headline[0]} {copy.headline[1]}".upper(),
@@ -1323,7 +1377,7 @@ def render_booking_dark_email(notification_type: str, row) -> RenderedEmail:
             f"Trang đặt lịch VinFast: {site}/",
             "Đây là thư gửi tự động, bạn vui lòng không trả lời mail này.",
         )
-    )
+    ) + invite_plain
     sms = (
         f"{copy.sms_lead} Mã {f['code']}, {f['when']}, {f['model']} tại {f['showroom']}. "
         "Chi tiết đầy đủ đã gửi vào email của bạn."

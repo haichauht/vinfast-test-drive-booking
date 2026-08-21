@@ -1,9 +1,14 @@
 from src.config import get_settings
 from src.database import Database
+from src.database.redis_client import redis_client
 from src.internal_portal import InternalPortalService
 from src.services.booking import BookingService
 from src.services.booking.gmail_provider import GmailMessagingProvider
 from src.services.booking.notifications import InMemoryMessagingProvider, RoutingMessagingProvider
+from src.services.knowledge import KnowledgeService
+from src.services.profile import ProfileService
+from src.services.profile.driver_invitation import DriverInvitationService
+from src.services.profile.queue import ProfileUpdateQueue
 from src.services.usage_budget import UsageBudgetService
 from src.services.zalo_bot import ZaloBotClient, ZaloOtpSender
 
@@ -44,3 +49,18 @@ internal_portal_service = InternalPortalService(
     session_ttl_seconds=settings.internal_session_ttl_seconds,
 )
 usage_budget_service = UsageBudgetService(database, settings)
+profile_service = ProfileService(
+    database,
+    identity_secret=settings.booking_access_otp_secret or "development-profile-identity-secret",
+)
+profile_update_queue = ProfileUpdateQueue(redis_client, profile_service)
+driver_invitation_service = DriverInvitationService(
+    database,
+    fallback_provider,
+    base_url=settings.driver_chat_base_url,
+    ttl_seconds=settings.driver_chat_invitation_ttl_seconds,
+)
+# Background notification rendering reuses the invitation service to embed a
+# driver chat link in the one-time booking confirmation email.
+booking_service.driver_invitation_service = driver_invitation_service
+knowledge_service = KnowledgeService()
