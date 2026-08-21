@@ -133,8 +133,9 @@ class BackgroundJobService(BookingBase):
                 # Gộp cột của hai nhánh: booker_person_id và driver_person_id phục vụ
                 # link mời người lái, phần còn lại phục vụ thư nền tối.
                 "SELECT b.booking_code,b.booker_person_id,b.driver_person_id,"
-                "booker.full_name booker_name,driver.full_name driver_name,"
-                "driver.phone driver_phone,driver.email driver_email,m.name model_name,m.code model_code,"
+                "booker.full_name booker_name,booker.phone booker_phone,booker.email booker_email,"
+                "driver.full_name driver_name,driver.phone driver_phone,driver.email driver_email,"
+                "m.name model_name,m.code model_code,"
                 "v.name variant_name,v.estimated_range_km,v.motor_power_kw,v.battery_capacity_kwh,"
                 "m.seat_count,s.name showroom_name,s.address showroom_address,"
                 "s.latitude showroom_lat,s.longitude showroom_lng,"
@@ -153,7 +154,9 @@ class BackgroundJobService(BookingBase):
                 (booking_id,),
             ).fetchone()
         if not row:
-            return render_booking_email(notification_type, row, driver_invite_url=None)
+            return render_booking_email(
+                notification_type, row, driver_invite_url=None, recipient_person_id=recipient_person_id
+            )
         driver_invite_url = None
         invitation_service = getattr(self, "driver_invitation_service", None)
         if (
@@ -170,4 +173,9 @@ class BackgroundJobService(BookingBase):
                     "Failed to issue driver invitation link for booking %s", booking_id
                 )
                 driver_invite_url = None
-        return render_booking_email(notification_type, row, driver_invite_url=driver_invite_url)
+        return render_booking_email(
+            notification_type,
+            row,
+            driver_invite_url=driver_invite_url,
+            recipient_person_id=recipient_person_id,
+        )

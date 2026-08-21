@@ -139,13 +139,13 @@ const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
 const BOOKING_UI_STATE_KEY = 'vinfast:booking-ui-state'
 const DRIVER_INVITATION_HISTORY_KEY = 'vinfastDriverInvitationToken'
-const BOOKING_PREPARATION_GREETING = 'ViVi sẽ đồng hành cùng bạn chuẩn bị cho buổi lái thử. ViVi có thể giúp chọn những điều nên thử trên xe, các câu hỏi nên trao đổi với tư vấn viên và checklist trước giờ hẹn. Chia sẻ tình huống sử dụng xe chính—đi làm, chở gia đình hay đi xa—để ViVi ưu tiên các bài test sát nhu cầu.'
+const BOOKING_PREPARATION_GREETING = 'ViVi sẽ đồng hành cùng bạn chuẩn bị cho buổi lái thử. Mình có thể giúp Anh/Chị chuẩn bị những nội dung nên ưu tiên trải nghiệm trên xe, các điểm cần trao đổi với tư vấn viên và checklist trước giờ hẹn. Anh/Chị có thể chia sẻ thêm về nhu cầu và cách mình dự định sử dụng xe trong thực tế; từ đó, ViVi sẽ gợi ý những tình huống và tiêu chí nên tập trung kiểm tra trong buổi lái thử để sát với nhu cầu của Anh/Chị hơn.'
 
 const driverGreeting = ({ driver, booking }) => {
   const name = driver?.name || 'bạn'
   const vehicle = booking?.vehicle_model || 'xe VinFast'
   const showroom = booking?.showroom_name || 'showroom VinFast'
-  return `Chào ${name}, ViVi rất vui được hỗ trợ bạn chuẩn bị cho buổi lái thử ${vehicle} tại ${showroom}. Mình có thể gợi ý những điều nên trải nghiệm trên xe, các câu hỏi nên trao đổi với tư vấn viên và checklist trước giờ hẹn. Bạn thường dùng xe để đi làm, chở gia đình hay đi xa? ViVi sẽ giúp bạn chuẩn bị những nội dung nên trải nghiệm trong buổi lái thử.`
+  return `Chào ${name}, ViVi rất vui được hỗ trợ bạn chuẩn bị cho buổi lái thử ${vehicle} tại ${showroom}. Mình có thể giúp Anh/Chị chuẩn bị những nội dung nên ưu tiên trải nghiệm trên xe, các điểm cần trao đổi với tư vấn viên và checklist trước giờ hẹn. Anh/Chị có thể chia sẻ thêm về nhu cầu và cách mình dự định sử dụng xe trong thực tế; từ đó, ViVi sẽ gợi ý những tình huống và tiêu chí nên tập trung kiểm tra trong buổi lái thử để sát với nhu cầu của Anh/Chị hơn.`
 }
 
 const takeDriverInvitationToken = () => {
@@ -477,15 +477,15 @@ export function BookingPage() {
         emphasis: true,
       },
       {
-        id: `${Date.now()}-${current.length + 1}`,
-        role: 'assistant',
-        text: BOOKING_PREPARATION_GREETING,
-      },
-      {
         id: `${Date.now()}-${current.length + 2}-next-steps`,
         role: 'assistant',
         type: 'next_steps',
         text: '',
+      },
+      {
+        id: `${Date.now()}-${current.length + 1}`,
+        role: 'assistant',
+        text: BOOKING_PREPARATION_GREETING,
       },
     ])
   }
