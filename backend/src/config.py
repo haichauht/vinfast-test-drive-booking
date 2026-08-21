@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     media_root: str = "./data/media"
     media_base_url: str = "/media"
 
+    # Địa chỉ trang công khai, dùng để đặt link trong email gửi cho khách. Email
+    # không hiểu đường dẫn tương đối nên chỗ này bắt buộc phải là URL tuyệt đối.
+    public_site_url: str = "https://vinfast-mvp.pages.dev"
+
     # Vector Store
     chroma_persist_dir: str = "./data/chroma"
 
