@@ -250,15 +250,22 @@ def seed_db() -> None:
         ("var_vf9_plus", "model_vf9", "VF9-PLUS", "Plus", 123.0, 580.0, 300.0, 1, now_str, now_str),
     ]
 
+    # Ten va dia chi showroom PHAI co dau tieng Viet. Ban truoc go khong dau nen
+    # thu gui khach hien "VinFast Nguyen Van Cu" — doc ra nhu banh dich may.
+    # Khong co file eval/data/03_showrooms.csv thi seed roi ve danh sach nay, tuc
+    # la day chinh la thu khach nhin thay.
+    #
+    # CHUA SUA cap hanh chinh: dia chi van con cap quan/huyen (Long Bien, Cau Giay)
+    # trong khi cap do da bo. Sua dung phai biet ten phuong moi, khong doan duoc.
     showrooms = [
-        ("sr_hanoi", "SR-HANOI", "VinFast Nguyen Van Cu", "3-5 Nguyen Van Cu, Long Bien, Ha Noi", 21.045, 105.882, "024123456", "sr_hanoi@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
-        ("sr_hcm", "SR-HCM", "VinFast Landmark 81", "Vinhomes Central Park, Binh Thanh, TP. Ho Chi Minh", 10.795, 106.722, "028123456", "sr_hcm@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
-        ("sr_danang", "SR-DANANG", "VinFast Ngo Quyen", "910A Ngo Quyen, Son Tra, Da Nang", 16.071, 108.231, "0236123456", "sr_danang@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
-        ("sr_smart_city", "SR-SMARTCITY", "VinFast Smart City", "Vinhomes Smart City, Nam Tu Liem, Ha Noi", 21.004, 105.748, "024123457", "sr_smartcity@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
-        ("sr_royal_city", "SR-ROYAL", "VinFast Royal City", "72A Nguyen Trai, Thanh Xuan, Ha Noi", 21.003, 105.816, "024123458", "sr_royal@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
-        ("sr_mydinh", "SR-MYDINH", "VinFast My Dinh", "8 Pham Hung, Cau Giay, Ha Noi", 21.028, 105.782, "024123459", "sr_mydinh@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
-        ("sr_ocean_park", "SR-OCEANPARK", "VinFast Ocean Park", "Vinhomes Ocean Park, Gia Lam, Ha Noi", 20.989, 105.952, "024123460", "sr_oceanpark@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
-        ("sr_tayho", "SR-TAYHO", "VinFast Tay Ho", "Vo Chi Cong, Tay Ho, Ha Noi", 21.072, 105.803, "024123461", "sr_tayho@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
+        ("sr_hanoi", "SR-HANOI", "VinFast Nguyễn Văn Cừ", "3-5 Nguyễn Văn Cừ, Long Biên, Hà Nội", 21.045, 105.882, "024123456", "sr_hanoi@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
+        ("sr_hcm", "SR-HCM", "VinFast Landmark 81", "Vinhomes Central Park, Bình Thạnh, TP. Hồ Chí Minh", 10.795, 106.722, "028123456", "sr_hcm@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
+        ("sr_danang", "SR-DANANG", "VinFast Ngô Quyền", "910A Ngô Quyền, Sơn Trà, Đà Nẵng", 16.071, 108.231, "0236123456", "sr_danang@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
+        ("sr_smart_city", "SR-SMARTCITY", "VinFast Smart City", "Vinhomes Smart City, Nam Từ Liêm, Hà Nội", 21.004, 105.748, "024123457", "sr_smartcity@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
+        ("sr_royal_city", "SR-ROYAL", "VinFast Royal City", "72A Nguyễn Trãi, Thanh Xuân, Hà Nội", 21.003, 105.816, "024123458", "sr_royal@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
+        ("sr_mydinh", "SR-MYDINH", "VinFast Mỹ Đình", "8 Phạm Hùng, Cầu Giấy, Hà Nội", 21.028, 105.782, "024123459", "sr_mydinh@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
+        ("sr_ocean_park", "SR-OCEANPARK", "VinFast Ocean Park", "Vinhomes Ocean Park, Gia Lâm, Hà Nội", 20.989, 105.952, "024123460", "sr_oceanpark@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
+        ("sr_tayho", "SR-TAYHO", "VinFast Tây Hồ", "Võ Chí Công, Tây Hồ, Hà Nội", 21.072, 105.803, "024123461", "sr_tayho@vinfast.vn", "Asia/Ho_Chi_Minh", 1, now_str, now_str),
     ]
     showroom_csv = Path(settings.eval_data_dir) / "03_showrooms.csv"
     showrooms = _seed_showrooms_from_csv(showroom_csv, now_str) or showrooms

@@ -490,6 +490,23 @@ def _maps_url(row) -> str:
     return f"https://www.google.com/maps/search/?api=1&query={quote(query or 'VinFast')}"
 
 
+def _no_orphan(text: str) -> str:
+    """Dán hai chữ cuối lại với nhau bằng khoảng trắng không ngắt.
+
+    Ô nhãn trong card rộng 40% và canh giữa, nên tên dài tự xuống dòng và hay bỏ
+    lại đúng MỘT chữ ở hàng cuối: "VINFAST NGUYỄN VĂN" rồi "CỪ" đứng lẻ loi.
+
+    Không đặt cứng cho một tên nào: chỉ cần chữ cuối luôn đi cùng chữ áp cuối là
+    mọi tên đều hết rớt lẻ, dù dài ngắn ra sao. Tên chỉ có một chữ thì giữ nguyên.
+
+    Trả về HTML nên phải escape TRƯỚC khi nối, đừng escape kết quả của hàm này.
+    """
+    words = (text or "").split()
+    if len(words) < 2:
+        return escape(text or "")
+    return f'{escape(" ".join(words[:-1]))}&nbsp;{escape(words[-1])}'
+
+
 def _balanced_address(address: str) -> str:
     """Ngắt địa chỉ thành hai dòng dài gần bằng nhau.
 
@@ -1052,6 +1069,11 @@ class _DarkCopy:
     # Tiêu đề hai dòng của card. Thư huỷ phải nói "lịch đã huỷ", không thể dùng
     # chung chữ "thông tin lịch hẹn" như thư báo tin.
     card_title: tuple[str, str] = ("ViVi gửi bạn", "thông tin lịch hẹn")
+    # Dòng đầu chân thư, giải thích VÌ SAO người ta nhận được thư này. Mỗi loại
+    # một lý do khác nhau. Bản trước dùng chung một câu "Bạn đã đăng ký lái thử
+    # tại X" cho cả thư huỷ lịch — đọc lên vô lý, vừa báo huỷ xong lại nói vừa
+    # đăng ký. Có {showroom} để thay tên showroom.
+    footer_reason: str = "Bạn đã đăng ký lái thử tại {showroom}."
 
 
 _BOOKING_COPY: dict[str, _DarkCopy] = {
@@ -1072,6 +1094,7 @@ _BOOKING_COPY: dict[str, _DarkCopy] = {
         button_label="Đến trang đặt lịch VinFast",
         button_path="/",
         sms_lead="Lịch lái thử đã xác nhận.",
+        footer_reason="Bạn nhận được thư này vì vừa đặt lịch lái thử tại {showroom}.",
     ),
     # Thư nhắc lịch cố ý NGẮN và khác hẳn thư xác nhận: bỏ đoạn giới thiệu xe và
     # lưới ảnh, đoạn mở đầu tô vàng GIỜ HẸN vì đó mới là thứ người ta cần liếc.
@@ -1093,6 +1116,7 @@ _BOOKING_COPY: dict[str, _DarkCopy] = {
         button_label="Đến trang đặt lịch VinFast",
         button_path="/",
         sms_lead="Nhắc lịch lái thử VinFast.",
+        footer_reason="Bạn nhận được thư này vì đang có lịch lái thử tại {showroom}.",
         show_vehicle=False,
     ),
     # Thư đổi giờ: cái người ta cần thấy ngay là GIỜ MỚI, nên nó vào tiêu đề thư,
@@ -1113,6 +1137,7 @@ _BOOKING_COPY: dict[str, _DarkCopy] = {
         button_label="Đến trang đặt lịch VinFast",
         button_path="/",
         sms_lead="Lịch lái thử đã đổi giờ.",
+        footer_reason="Bạn nhận được thư này vì vừa đổi giờ lịch lái thử tại {showroom}.",
     ),
     "booking_update": _DarkCopy(
         headline=("Lịch hẹn", "vừa cập nhật"),
@@ -1128,6 +1153,7 @@ _BOOKING_COPY: dict[str, _DarkCopy] = {
         button_label="Đến trang đặt lịch VinFast",
         button_path="/",
         sms_lead="Lịch lái thử vừa được cập nhật.",
+        footer_reason="Bạn nhận được thư này vì lịch lái thử tại {showroom} vừa được cập nhật.",
     ),
     # Thư huỷ lịch là thư BÁO VIỆC, không phải thư mời. Vì vậy nó khác hẳn:
     #   - thanh trên đầu là XÁM chứ không phải mảng vàng. Đổ vàng rực lên đầu thư
@@ -1151,6 +1177,7 @@ _BOOKING_COPY: dict[str, _DarkCopy] = {
         button_label="Đặt lịch lái thử mới",
         button_path="/booking",
         sms_lead="Lịch lái thử đã huỷ.",
+        footer_reason="Bạn nhận được thư này vì vừa huỷ lịch lái thử tại {showroom}.",
         show_vehicle=False,
         bar_kind="muted",
         show_check_button=False,
@@ -1190,7 +1217,7 @@ def _booking_facts(row) -> dict:
     if not model_name.lower().startswith("vinfast"):
         model_name = f"VinFast {model_name}".strip()
 
-    contact = [escape(driver)]
+    contact = [_no_orphan(driver)]
     if row["driver_email"]:
         contact.append(escape(row["driver_email"]))
     if row["driver_phone"]:
@@ -1198,14 +1225,14 @@ def _booking_facts(row) -> dict:
     # Người đặt hộ thì phải hiện cả hai tên, nếu không khách mở thư ra thấy tên
     # người khác trên thanh vàng mà không hiểu vì sao.
     if booker != driver:
-        contact.append(f"Người đặt: {escape(booker)}")
+        contact.append(f"Người đặt: {_no_orphan(booker)}")
 
     # Lịch chưa phân công thì KHÔNG được ghép tên giả vào câu. Bản trước ghép
     # "liên hệ nhân viên VinFast sẽ liên hệ" — câu vỡ, đọc ra là lỗi hệ thống.
     staff_name = row["staff_name"] or ""
     staff_phone = row["staff_phone"] or ""
     if staff_name:
-        staff = [escape(staff_name)]
+        staff = [_no_orphan(staff_name)]
         if staff_phone:
             staff.append(escape(staff_phone))
         support = f"nhân viên {escape(staff_name)}"
@@ -1287,7 +1314,7 @@ def render_booking_dark_email(
                 escape(f["when"]),
                 first=False,
             ),
-            _gold_row(escape(f["showroom"]), address_html, first=False),
+            _gold_row(_no_orphan(f["showroom"]), address_html, first=False),
             _gold_row("Thông tin cá nhân", "<br>".join(f["contact_lines"]), first=False),
             # Ngắt dòng SẴN: để nhãn tự xuống dòng thì trên điện thoại chữ BẠN
             # rớt lại một mình một hàng.
@@ -1345,8 +1372,8 @@ def render_booking_dark_email(
         bar_kind=copy.bar_kind,
         blocks="\n\n".join(b for b in blocks if b),
         footer_lines=(
-            f"Bạn đã đăng ký lái thử tại {escape(f['showroom'])}.",
-            "Đây là thư gửi tự động, bạn vui lòng không trả lời mail này.",
+            copy.footer_reason.format(showroom=escape(f["showroom"])),
+            "Đây là thư gửi tự động, bạn vui lòng không trả lời thư này.",
             f"Nếu bạn cần hỗ trợ, bạn hãy liên hệ {f['support']}.",
         ),
         year=f["start"].year,
@@ -1375,7 +1402,7 @@ def render_booking_dark_email(
             _plain_staff_line(f),
             "",
             f"Trang đặt lịch VinFast: {site}/",
-            "Đây là thư gửi tự động, bạn vui lòng không trả lời mail này.",
+            "Đây là thư gửi tự động, bạn vui lòng không trả lời thư này.",
         )
     ) + invite_plain
     sms = (
@@ -1488,7 +1515,7 @@ def render_otp_email(*, code: str, expires_in_seconds: int) -> RenderedEmail:
         blocks=blocks,
         footer_lines=(
             "Bạn nhận được thư này vì có yêu cầu xác thực trên trang đặt lịch lái thử VinFast.",
-            "Đây là thư gửi tự động, bạn vui lòng không trả lời mail này.",
+            "Đây là thư gửi tự động, bạn vui lòng không trả lời thư này.",
             "Vui lòng không chia sẻ mã xác thực với bất kỳ ai.",
         ),
         year=datetime.now(VIETNAM_TZ).year,
@@ -1506,7 +1533,7 @@ def render_otp_email(*, code: str, expires_in_seconds: int) -> RenderedEmail:
             "Nếu bạn không phải người yêu cầu mã, bạn bỏ qua thư này, mã sẽ tự hết hiệu lực.",
             "",
             f"Trang đặt lịch VinFast: {site}/",
-            "Đây là thư gửi tự động, bạn vui lòng không trả lời mail này.",
+            "Đây là thư gửi tự động, bạn vui lòng không trả lời thư này.",
         )
     )
     return RenderedEmail(
