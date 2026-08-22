@@ -43,6 +43,14 @@ class LifecycleService(BookingBase):
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Khung giờ này không còn khả dụng.", retryable=True)
             if parse_utc(slot["start_at"]) <= parse_utc(self.now()):
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Slot đã bắt đầu hoặc đã qua.", retryable=True)
+            if parse_utc(slot["start_at"]) > parse_utc(
+                self.now() + timedelta(days=self.booking_advance_window_days)
+            ):
+                raise BookingError(
+                    "SLOT_NO_LONGER_AVAILABLE",
+                    f"Booking is limited to {self.booking_advance_window_days} days in advance.",
+                    retryable=True,
+                )
             if not slot["vehicle_active"] or slot["operational_status"] != "available":
                 raise BookingError("VEHICLE_NOT_READY", "Xe demo hiện không sẵn sàng.", retryable=True)
             if slot["battery_soc"] is None or slot["battery_soc"] < slot["minimum_booking_soc"]:

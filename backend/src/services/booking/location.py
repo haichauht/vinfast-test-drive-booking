@@ -119,6 +119,13 @@ PROVINCE_COORDINATES: dict[str, tuple[float, float]] = {
     "cà mau": (9.1769, 105.1500),
 }
 
+LOCALITY_COORDINATES: dict[str, tuple[float, float]] = {
+    # Deterministic fallback for common booking localities. This also keeps
+    # local/test behavior useful when the external geocoder is unavailable.
+    "quận 7": (10.7340, 106.7210),
+    "quan 7": (10.7340, 106.7210),
+}
+
 
 @functools.lru_cache(maxsize=512)
 def resolve_address_coordinates(address: str) -> Coordinates | None:
@@ -130,6 +137,9 @@ def resolve_address_coordinates(address: str) -> Coordinates | None:
     # 1. Nếu từ khóa tra cứu trùng khớp hoàn toàn tên Tỉnh / Thành phố chính (0ms L1 memory lookup)
     if normalized in PROVINCE_COORDINATES:
         lat, lon = PROVINCE_COORDINATES[normalized]
+        return Coordinates(latitude=lat, longitude=lon)
+    if normalized in LOCALITY_COORDINATES:
+        lat, lon = LOCALITY_COORDINATES[normalized]
         return Coordinates(latitude=lat, longitude=lon)
 
     # 2. Ưu tiên Dynamic Geocoding (OpenStreetMap API) cho Phường/Xã/Quận/Huyện/Tên đường cụ thể
@@ -154,4 +164,3 @@ def resolve_address_coordinates(address: str) -> Coordinates | None:
             return Coordinates(latitude=lat, longitude=lon)
 
     return None
-

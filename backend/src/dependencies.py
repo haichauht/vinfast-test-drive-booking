@@ -43,6 +43,7 @@ booking_service = BookingService(
     otp_request_per_contact_per_hour=settings.rate_limit_otp_request_per_contact_per_hour,
     otp_verify_per_challenge_per_minute=settings.rate_limit_otp_verify_per_challenge_per_minute,
     otp_secret=settings.booking_access_otp_secret or "development-secret",
+    booking_advance_window_days=settings.booking_advance_window_days,
 )
 internal_portal_service = InternalPortalService(
     database,

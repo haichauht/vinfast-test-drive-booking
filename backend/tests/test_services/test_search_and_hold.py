@@ -182,6 +182,48 @@ def test_search_slots_returns_future_visible_slots(booking_service, catalog):
     assert catalog["slot_past"] not in {slot["id"] for slot in result["slots"]}
 
 
+def _insert_far_future_slot(booking_db, slot_id: str):
+    start = FIXED_NOW + timedelta(days=31)
+    with booking_db.transaction(immediate=True) as connection:
+        connection.execute(
+            "INSERT INTO test_drive_slots(id,showroom_id,demo_vehicle_id,start_at,end_at,status,"
+            "created_at,updated_at) VALUES(?,?,?,?,?,'available',?,?)",
+            (
+                slot_id,
+                "showroom_q7",
+                "demo_second",
+                start.isoformat(),
+                (start + timedelta(minutes=30)).isoformat(),
+                FIXED_NOW.isoformat(),
+                FIXED_NOW.isoformat(),
+            ),
+        )
+    return start
+
+
+def test_search_slots_excludes_dates_beyond_booking_window(booking_service, booking_db, catalog):
+    start = _insert_far_future_slot(booking_db, "slot_beyond_window_search")
+
+    result = booking_service.search_options(
+        vehicle_model="VF6",
+        showroom_id=catalog["showroom_q7"],
+        preferred_date=start.date().isoformat(),
+        limit=30,
+    )
+
+    assert result["slots"] == []
+
+
+def test_hold_slot_rejects_dates_beyond_booking_window(booking_service, booking_db, catalog):
+    _insert_far_future_slot(booking_db, "slot_beyond_window_hold")
+
+    with pytest.raises(BookingError) as error:
+        booking_service.hold_slot("slot_beyond_window_hold", "hold:beyond-window")
+
+    assert error.value.code == "SLOT_NO_LONGER_AVAILABLE"
+    assert error.value.retryable is True
+
+
 def test_search_slots_excludes_past_slots_with_a_positive_utc_offset(booking_service, booking_db, catalog):
     """A +07:00 timestamp must be compared as an instant, not as text against UTC."""
     with booking_db.transaction(immediate=True) as connection:
