@@ -49,4 +49,3 @@ ADVISORY_KEYWORDS: list[str] = [
     "pin", "sạc", "range", "quãng đường", "adas", "camera", "an toàn", "gia đình",
     "ghế trẻ em", "đỗ xe", "đậu xe", "hầm", "chi phí sử dụng", "xe điện",
 ]
-

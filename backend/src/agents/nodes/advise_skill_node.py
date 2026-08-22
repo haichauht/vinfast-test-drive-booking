@@ -10,6 +10,7 @@ from src.agents.tools import search_knowledge
 from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.utils import get_system_prompt, window_messages
 from src.dependencies import usage_budget_service
+from src.guardrails.untrusted_content import protect_tool_result_messages
 from src.services.llm import get_llm
 from src.services.usage_budget import BudgetExceededError, LLMCallLimitExceededError, invoke_with_budget
 
@@ -47,7 +48,8 @@ async def advise_skill_node(state: AgentState) -> dict:
         if llm is None:
             raise RuntimeError("LLM is not configured")
         llm_with_tools = llm.bind_tools(tools)
-        llm_messages = [SystemMessage(content=prompt)] + window_messages(messages)
+        safe_history = protect_tool_result_messages(window_messages(messages))
+        llm_messages = [SystemMessage(content=prompt), *safe_history]
         trace_event(
             "llm.request",
             trace_id=trace_id,
@@ -82,7 +84,9 @@ async def advise_skill_node(state: AgentState) -> dict:
         logging.getLogger(__name__).exception("Error in advise_skill_node")
         from langchain_core.messages import AIMessage
 
-        safe_response = AIMessage(content="ViVi chưa xử lý được yêu cầu này lúc này. Bạn vui lòng thử lại hoặc chọn trực tiếp từ bảng hỗ trợ bên trái giúp ViVi nhé.")
+        safe_response = AIMessage(
+            content="ViVi chưa xử lý được yêu cầu này lúc này. Bạn vui lòng thử lại hoặc chọn trực tiếp từ bảng hỗ trợ bên trái giúp ViVi nhé."
+        )
         return {
             "messages": [safe_response],
             "response": safe_response.content,
