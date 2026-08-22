@@ -1,4 +1,4 @@
-import { Check, Funnel, IdentificationCard, SignIn, UserMinus, X } from '@phosphor-icons/react'
+import { Check, CircleNotch, Funnel, IdentificationCard, SignIn, Sparkle, UserMinus, X } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { PageState } from '../components/PageState.jsx'
@@ -7,6 +7,45 @@ import { useRemote } from '../hooks.js'
 import { formatDateTime } from '../utils.js'
 
 const statuses = ['', 'held', 'confirmed', 'checked_in', 'completed', 'no_show', 'cancelled', 'rescheduled']
+
+function ProfileSummary({ markdown }) {
+  const lines = markdown.split(/\r?\n/)
+  const blocks = []
+  let listItems = []
+
+  const flushList = () => {
+    if (!listItems.length) return
+    blocks.push(<ul key={`list-${blocks.length}`}>{listItems}</ul>)
+    listItems = []
+  }
+  const formatInline = (text) => text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => (
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={index}>{part.slice(2, -2)}</strong>
+      : part
+  ))
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      flushList()
+      return
+    }
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/)
+    const listItem = trimmed.match(/^[-*]\s+(.+)$/)
+    if (heading) {
+      flushList()
+      const Tag = `h${heading[1].length}`
+      blocks.push(<Tag key={`heading-${index}`}>{formatInline(heading[2])}</Tag>)
+    } else if (listItem) {
+      listItems.push(<li key={`item-${index}`}>{formatInline(listItem[1])}</li>)
+    } else {
+      flushList()
+      blocks.push(<p key={`text-${index}`}>{formatInline(trimmed)}</p>)
+    }
+  })
+  flushList()
+  return <div className="profile-summary__content">{blocks}</div>
+}
 
 export function BookingsPage({ token, user }) {
   const canManage = user.role !== 'staff'
@@ -20,6 +59,10 @@ export function BookingsPage({ token, user }) {
   const [notice, setNotice] = useState('')
   const [actionError, setActionError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [profileSummary, setProfileSummary] = useState('')
+  const [profileSummaryMeta, setProfileSummaryMeta] = useState(null)
+  const [profileSummaryError, setProfileSummaryError] = useState('')
+  const [profileSummaryLoading, setProfileSummaryLoading] = useState(false)
   const bookingState = useRemote(
     () => api.bookings(token, {
       status,
@@ -104,6 +147,21 @@ export function BookingsPage({ token, user }) {
     )
   }
 
+  const loadProfileSummary = async ({ refresh = false } = {}) => {
+    if (!selected || profileSummaryLoading) return
+    setProfileSummaryLoading(true)
+    setProfileSummaryError('')
+    try {
+      const result = await api.profileSummary(token, selected.id, { refresh })
+      setProfileSummary(result.text)
+      setProfileSummaryMeta(result)
+    } catch (error) {
+      setProfileSummaryError(error.message)
+    } finally {
+      setProfileSummaryLoading(false)
+    }
+  }
+
   const clearFilters = () => {
     setStatus('')
     setDate('')
@@ -154,7 +212,7 @@ export function BookingsPage({ token, user }) {
           <div className="data-table data-table--bookings">
             <div className="data-table__head"><span>Mã lịch</span><span>Khách hàng</span><span>Xe & showroom</span><span>Thời gian</span><span>Trạng thái</span></div>
             {(bookingState.data?.items || []).map((booking) => (
-              <button className="data-table__row" key={booking.id} onClick={() => { setSelected(booking); setAssignment(booking.assigned_staff_id || ''); setNotice(''); setActionError('') }}>
+              <button className="data-table__row" key={booking.id} onClick={() => { setSelected(booking); setAssignment(booking.assigned_staff_id || ''); setNotice(''); setActionError(''); setProfileSummary(''); setProfileSummaryMeta(null); setProfileSummaryError('') }}>
                 <span><strong>{booking.booking_code || 'Draft'}</strong><small>{booking.assigned_staff_name || 'Chưa phân công'}</small></span>
                 <span><strong>{booking.driver_name || 'Chưa cập nhật'}</strong><small>{booking.driver_phone || booking.booker_phone || '—'}</small></span>
                 <span><strong>{booking.vehicle_model} · {booking.vehicle_variant}</strong><small>{booking.showroom_name}</small></span>
@@ -181,6 +239,21 @@ export function BookingsPage({ token, user }) {
               <div><dt>GPLX</dt><dd>{selected.license_check_status || 'Chưa khai báo'}</dd></div>
               <div><dt>Ghi chú</dt><dd>{selected.customer_note || 'Không có ghi chú khách hàng'}<small>{selected.internal_note || 'Không có ghi chú nội bộ'}</small></dd></div>
             </dl>
+            <section className="profile-summary" aria-live="polite">
+              <div className="profile-summary__header">
+                <div>
+                  <span className="section-label">Hồ sơ khách hàng</span>
+                  <p>Tóm tắt nhu cầu và các điểm cần lưu ý trước buổi lái thử.</p>
+                </div>
+                <button className="secondary-button" disabled={profileSummaryLoading} onClick={() => loadProfileSummary({ refresh: Boolean(profileSummary) })}>
+                  {profileSummaryLoading ? <CircleNotch className="spin" size={18} /> : <Sparkle size={18} />}
+                  {profileSummaryLoading ? 'Đang tổng hợp…' : profileSummary ? 'Cập nhật tóm tắt' : 'Xem tóm tắt'}
+                </button>
+              </div>
+              {profileSummaryLoading && <div className="profile-summary__loading"><CircleNotch className="spin" size={18} />Yêu cầu đã được nhận, hệ thống đang tổng hợp hồ sơ khách hàng. Việc này có thể mất vài giây.</div>}
+              {profileSummaryError && <div className="form-error">{profileSummaryError}</div>}
+              {profileSummary && !profileSummaryLoading && <><div className="profile-summary__meta">{profileSummaryMeta?.source === 'cache' ? 'Đang hiển thị bản đã lưu' : 'Đã cập nhật bản tóm tắt mới nhất'}{profileSummaryMeta?.generatedAt ? ` · ${new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(profileSummaryMeta.generatedAt))}` : ''}</div><ProfileSummary markdown={profileSummary} /></>}
+            </section>
             {user.role === 'staff' && <div className="read-only-note">Tài khoản Staff chỉ có quyền xem. Mọi thay đổi do quản lý showroom thực hiện.</div>}
             {notice && <div className="form-success"><Check size={18} />{notice}</div>}
             {actionError && <div className="form-error">{actionError}</div>}

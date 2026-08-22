@@ -334,9 +334,16 @@ async def send_driver_invitation(booking_id: str) -> dict[str, Any]:
 
 
 @router.get("/bookings/{booking_id}/profile-summary.md", response_class=PlainTextResponse)
-async def booking_profile_summary(booking_id: str) -> PlainTextResponse:
-    """Return the booking's booker/driver profile summary as Markdown."""
+async def booking_profile_summary(booking_id: str, refresh: bool = False) -> PlainTextResponse:
+    """Return a stored booking sales brief, or generate and cache one when needed."""
     try:
+        cached = await asyncio.to_thread(profile_service.booking_profile_summary, booking_id)
+        if cached and not refresh:
+            return PlainTextResponse(
+                cached["summary"],
+                media_type="text/markdown; charset=utf-8",
+                headers={"X-Profile-Summary-Source": "cache", "X-Profile-Summary-Generated-At": cached["generated_at"]},
+            )
         source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
         markdown = await summarize_user_profile(source)
     except KeyError as exc:
@@ -345,7 +352,12 @@ async def booking_profile_summary(booking_id: str) -> PlainTextResponse:
         if str(exc) == "LLM_NOT_CONFIGURED":
             raise HTTPException(status_code=503, detail="Profile summary LLM is not configured") from exc
         raise
-    return PlainTextResponse(markdown, media_type="text/markdown; charset=utf-8")
+    stored = await asyncio.to_thread(profile_service.save_booking_profile_summary, booking_id, markdown)
+    return PlainTextResponse(
+        stored["summary"],
+        media_type="text/markdown; charset=utf-8",
+        headers={"X-Profile-Summary-Source": "generated", "X-Profile-Summary-Generated-At": stored["generated_at"]},
+    )
 
 
 @router.get("/status")
