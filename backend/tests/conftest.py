@@ -91,11 +91,13 @@ def catalog(booking_db):
         connection.executemany(
             """INSERT INTO vehicle_models(
                 id,code,name,vehicle_type,required_license_class,
-                license_requirement_note,is_active,created_at,updated_at
-            ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                license_requirement_note,is_active,created_at,updated_at,seat_count
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
             [
-                ("model_vf6", "VF6", "VinFast VF 6", "SUV", "B1", "GPLX B1", 1, created, created),
-                ("model_inactive", "VFX", "VinFast Inactive", "SUV", "B1", "GPLX B1", 0, created, created),
+                # Cot cuoi la seat_count. Thu xac nhan doc cot nay de noi "xe may cho";
+                # de trong thi menh de do bi bo im lang.
+                ("model_vf6", "VF6", "VinFast VF 6", "SUV", "B1", "GPLX B1", 1, created, created, 5),
+                ("model_inactive", "VFX", "VinFast Inactive", "SUV", "B1", "GPLX B1", 0, created, created, 5),
             ],
         )
         connection.execute(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 from datetime import UTC, timedelta
 
@@ -14,6 +15,7 @@ from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
 from src.services.booking.errors import BookingError
 
 _id = new_id
+logger = logging.getLogger(__name__)
 
 # Quyền cấp cho phiên truy cập, theo mục đích người dùng khai lúc xin OTP.
 #
@@ -186,7 +188,43 @@ class AccessService(BookingBase):
                 expires_in_seconds=self.otp_ttl_seconds,
             )
         except ValueError as err:
+            self._invalidate_failed_delivery(challenge_id, booking["id"], preferred_channel, "channel_unavailable")
             raise BookingError("OTP_CHANNEL_UNAVAILABLE", "Kênh OTP được chọn tạm thời chưa được cấu hình.") from err
+        except Exception:
+            logger.exception(
+                "otp.delivery_exception challenge_id=%s channel=%s",
+                challenge_id,
+                preferred_channel,
+            )
+            self._invalidate_failed_delivery(challenge_id, booking["id"], preferred_channel, "provider_exception")
+            raise BookingError(
+                "OTP_DELIVERY_FAILED",
+                "Không thể gửi mã OTP. Vui lòng thử lại sau.",
+                retryable=True,
+            )
+
+        delivered = bool(delivery) and (
+            getattr(delivery, "provider_status", None) in {"sent", "mocked"}
+            or bool(getattr(delivery, "is_mock", False))
+        )
+        if not delivered:
+            provider = getattr(delivery, "provider", "unknown")
+            provider_status = getattr(delivery, "provider_status", "unknown")
+            retryable = bool(getattr(delivery, "retryable", True))
+            logger.warning(
+                "otp.delivery_failed challenge_id=%s channel=%s provider=%s provider_status=%s retryable=%s",
+                challenge_id,
+                preferred_channel,
+                provider,
+                provider_status,
+                retryable,
+            )
+            self._invalidate_failed_delivery(challenge_id, booking["id"], preferred_channel, provider_status)
+            raise BookingError(
+                "OTP_DELIVERY_FAILED",
+                "Không thể gửi mã OTP. Vui lòng thử lại sau.",
+                retryable=retryable,
+            )
         result = {
             "challenge_id": challenge_id,
             "destination_masked": masked,
@@ -203,6 +241,20 @@ class AccessService(BookingBase):
         if expose_otp and result["is_mock"]:
             result["otp_code"] = code
         return result
+
+    def _invalidate_failed_delivery(
+        self, challenge_id: str, booking_id: str, channel: str, provider_status: str
+    ) -> None:
+        """OTP that was not delivered must never be usable for authentication."""
+        with self.db.transaction(immediate=True) as c:
+            c.execute("UPDATE otp_challenges SET status='superseded' WHERE id=? AND status='pending'", (challenge_id,))
+            self._event(
+                c,
+                booking_id,
+                "otp_delivery_failed",
+                "system",
+                {"challenge_id": challenge_id, "channel": channel, "provider_status": provider_status},
+            )
 
     def _hash(self, value, salt):
         return hmac.new(self.otp_secret, (salt + value).encode(), hashlib.sha256).hexdigest()

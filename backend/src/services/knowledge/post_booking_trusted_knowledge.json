@@ -1,7 +1,7 @@
 {
   "schema_version": "2.1",
   "dataset": "post_booking_trusted_knowledge_vinfast_only",
-  "generated_at": "2026-08-19",
+  "generated_at": "2026-08-22",
   "market_default": "VN",
   "publisher_policy": "Only official VinFast-owned web sources are allowed in this dataset.",
   "allowed_source_hosts": [
@@ -968,6 +968,430 @@
           "live-data"
         ],
         "live_data_required": true
+      }
+    },
+    {
+      "id": "vinfast.test_drive.registration.channels",
+      "topic": "test_drive.general_process",
+      "title": "Kênh đăng ký lái thử ô tô điện VinFast",
+      "content": "FAQ VinFast nêu khách hàng có thể đăng ký lái thử ô tô điện trực tuyến trên trang đăng ký lái thử của VinFast hoặc đến trực tiếp showroom VinFast gần nhất để được tư vấn và hỗ trợ.",
+      "source": "VinFast FAQ về đăng ký lái thử ô tô điện",
+      "updated_at": "2026-08-22",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-22",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "high",
+        "next_review_date": "2026-09-22",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "registration",
+          "showroom",
+          "online"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.home.service_definition",
+      "topic": "test_drive.general_process",
+      "title": "Dịch vụ lái thử xe tại nhà của VinFast",
+      "content": "FAQ VinFast mô tả lái thử xe tại nhà là trải nghiệm cá nhân hóa, trong đó xe được đưa đến địa điểm theo yêu cầu để khách hàng trải nghiệm khả năng vận hành và tiện nghi trong môi trường sử dụng thực tế.",
+      "source": "VinFast FAQ về lái thử xe tại nhà",
+      "updated_at": "2026-08-22",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-22",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-22",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "home-test-drive",
+          "personalized-experience"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.home.registration_fields",
+      "topic": "test_drive.general_process",
+      "title": "Thông tin cần cung cấp khi đăng ký lái thử tại nhà",
+      "content": "FAQ VinFast nêu khi đăng ký lái thử tại nhà, khách hàng chọn lịch và cung cấp họ tên, số điện thoại, email, một dòng xe muốn trải nghiệm, ngày giờ mong muốn và địa chỉ muốn lái thử. Các dữ liệu liên hệ này là yêu cầu của quy trình đăng ký, không phải dữ liệu nên lưu vào profile personalization.",
+      "source": "VinFast FAQ về đăng ký lái thử tại nhà",
+      "updated_at": "2026-08-22",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-22",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "high",
+        "next_review_date": "2026-09-22",
+        "notes": "Contains workflow-required contact fields; do not persist them as personalization knowledge."
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "home-test-drive",
+          "registration",
+          "required-fields"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.purchase_commitment.none",
+      "topic": "test_drive.general_process",
+      "title": "Lái thử không kèm cam kết mua xe",
+      "content": "FAQ VinFast nêu dịch vụ lái thử không kèm theo cam kết mua xe; mục đích là giúp khách hàng có thêm trải nghiệm để đưa ra quyết định mua xe một cách tự tin và thoải mái.",
+      "source": "VinFast FAQ về lái thử",
+      "updated_at": "2026-08-22",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/cau-hoi-thuong-gap/cau-hoi-xe-o-to",
+        "publisher": "VinFast",
+        "source_type": "official_faq",
+        "retrieved_at": "2026-08-22",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "medium",
+        "next_review_date": "2026-11-22",
+        "notes": null
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "purchase",
+          "commitment",
+          "decision-support"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.guidance.pre_drive_familiarization",
+      "topic": "test_drive.guidance",
+      "title": "Làm quen với xe trước khi bắt đầu lái thử",
+      "content": "VinFast khuyến nghị người lái dành thời gian làm quen với vô lăng, các nút và màn hình điều khiển; điều chỉnh ghế, vị trí ngồi, dây an toàn và gương để có tư thế thao tác thoải mái, tầm nhìn phù hợp trước khi bắt đầu lái thử.",
+      "source": "VinFast - 10 điều cần lưu ý khi lái thử xe điện để đảm bảo an toàn",
+      "updated_at": "2026-08-22",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/luu-y-khi-lai-thu-xe-dien",
+        "publisher": "VinFast",
+        "source_type": "official_article",
+        "retrieved_at": "2026-08-22",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "low",
+        "next_review_date": "2027-02-22",
+        "notes": "Bài VinFast xuất bản 15/06/2022; dùng làm guidance lái thử chung. Không dùng các thông tin model/policy cũ trong bài như fact hiện hành."
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "preparation",
+          "seat",
+          "mirror",
+          "controls",
+          "familiarization"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.guidance.follow_instructor",
+      "topic": "test_drive.guidance",
+      "title": "Tuân thủ hướng dẫn trong quá trình lái thử",
+      "content": "Trong quá trình lái thử, VinFast khuyến nghị người lái tham khảo và tuân thủ chỉ dẫn của người hướng dẫn để bảo đảm an toàn và trải nghiệm các chức năng của xe đúng cách.",
+      "source": "VinFast - 10 điều cần lưu ý khi lái thử xe điện để đảm bảo an toàn",
+      "updated_at": "2026-08-22",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/luu-y-khi-lai-thu-xe-dien",
+        "publisher": "VinFast",
+        "source_type": "official_article",
+        "retrieved_at": "2026-08-22",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "low",
+        "next_review_date": "2027-02-22",
+        "notes": "Bài VinFast xuất bản 15/06/2022; dùng làm guidance lái thử chung. Không dùng các thông tin model/policy cũ trong bài như fact hiện hành."
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "safety",
+          "instructor"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.guidance.ev_driving_focus",
+      "topic": "test_drive.guidance",
+      "title": "Tập trung cảm nhận cách vận hành của xe điện",
+      "content": "VinFast lưu ý xe điện vận hành êm và khác xe động cơ đốt trong; khi lái thử, người lái nên tập trung vào phản hồi vận hành và các dữ liệu lái xe hiển thị trên cụm đồng hồ hoặc màn hình thay vì chỉ dựa vào tiếng động cơ hay độ rung quen thuộc.",
+      "source": "VinFast - 10 điều cần lưu ý khi lái thử xe điện để đảm bảo an toàn",
+      "updated_at": "2026-08-22",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/luu-y-khi-lai-thu-xe-dien",
+        "publisher": "VinFast",
+        "source_type": "official_article",
+        "retrieved_at": "2026-08-22",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "low",
+        "next_review_date": "2027-02-22",
+        "notes": "Bài VinFast xuất bản 15/06/2022; dùng làm guidance lái thử chung. Không dùng các thông tin model/policy cũ trong bài như fact hiện hành."
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "ev-experience",
+          "driving-data",
+          "first-ev"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.guidance.regenerative_braking",
+      "topic": "test_drive.guidance",
+      "title": "Trải nghiệm phản ứng giảm tốc và phanh tái sinh",
+      "content": "VinFast khuyến nghị người lái thử làm quen và cảm nhận hệ thống phanh tái sinh của xe điện, đồng thời vẫn đánh giá thao tác phanh thông thường. Việc trải nghiệm phải tuân theo hướng dẫn và điều kiện an toàn của buổi lái thử.",
+      "source": "VinFast - 10 điều cần lưu ý khi lái thử xe điện để đảm bảo an toàn",
+      "updated_at": "2026-08-22",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/luu-y-khi-lai-thu-xe-dien",
+        "publisher": "VinFast",
+        "source_type": "official_article",
+        "retrieved_at": "2026-08-22",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "low",
+        "next_review_date": "2027-02-22",
+        "notes": "Bài VinFast xuất bản 15/06/2022; dùng làm guidance lái thử chung. Không dùng các thông tin model/policy cũ trong bài như fact hiện hành."
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "regenerative-braking",
+          "braking",
+          "ev-experience"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.guidance.relevant_road_conditions",
+      "topic": "test_drive.guidance",
+      "title": "Ưu tiên điều kiện đường sát với nhu cầu sử dụng thực tế",
+      "content": "VinFast khuyến nghị trải nghiệm xe trên các điều kiện đường phù hợp và đặc biệt ưu tiên loại địa hình hoặc tình huống di chuyển gần với nhu cầu đi lại thường ngày để đánh giá mức độ phù hợp của xe với cách sử dụng thực tế.",
+      "source": "VinFast - 10 điều cần lưu ý khi lái thử xe điện để đảm bảo an toàn",
+      "updated_at": "2026-08-22",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/luu-y-khi-lai-thu-xe-dien",
+        "publisher": "VinFast",
+        "source_type": "official_article",
+        "retrieved_at": "2026-08-22",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "low",
+        "next_review_date": "2027-02-22",
+        "notes": "Bài VinFast xuất bản 15/06/2022; dùng làm guidance lái thử chung. Không dùng các thông tin model/policy cũ trong bài như fact hiện hành."
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "road-condition",
+          "daily-usage",
+          "personalization",
+          "scenario"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.guidance.prioritize_relevant_features",
+      "topic": "test_drive.guidance",
+      "title": "Ưu tiên các tính năng thực sự liên quan đến nhu cầu",
+      "content": "Do thời gian lái thử có hạn, VinFast khuyến nghị không cố trải nghiệm mọi tính năng. Người lái nên ưu tiên các tính năng quan trọng và những chức năng dự kiến sử dụng thường xuyên để đánh giá mức độ phù hợp với nhu cầu và sở thích thực tế.",
+      "source": "VinFast - 10 điều cần lưu ý khi lái thử xe điện để đảm bảo an toàn",
+      "updated_at": "2026-08-22",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/luu-y-khi-lai-thu-xe-dien",
+        "publisher": "VinFast",
+        "source_type": "official_article",
+        "retrieved_at": "2026-08-22",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "low",
+        "next_review_date": "2027-02-22",
+        "notes": "Bài VinFast xuất bản 15/06/2022; dùng làm guidance lái thử chung. Không dùng các thông tin model/policy cũ trong bài như fact hiện hành."
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "features",
+          "prioritization",
+          "personalization",
+          "test-drive-goal"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.guidance.maneuverability_parking",
+      "topic": "test_drive.guidance",
+      "title": "Kiểm tra tính cơ động, lùi và đỗ xe",
+      "content": "VinFast gợi ý đánh giá tính cơ động bằng các tình huống có đường hẹp hoặc nhiều khúc cua khi điều kiện lái thử cho phép. Người lái cũng có thể thử lùi và đỗ xe để đánh giá góc quan sát và các hỗ trợ đỗ xe có trên chiếc xe đang trải nghiệm.",
+      "source": "VinFast - 10 điều cần lưu ý khi lái thử xe điện để đảm bảo an toàn",
+      "updated_at": "2026-08-22",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/luu-y-khi-lai-thu-xe-dien",
+        "publisher": "VinFast",
+        "source_type": "official_article",
+        "retrieved_at": "2026-08-22",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "low",
+        "next_review_date": "2027-02-22",
+        "notes": "Bài VinFast xuất bản 15/06/2022; dùng làm guidance lái thử chung. Không dùng các thông tin model/policy cũ trong bài như fact hiện hành."
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "maneuverability",
+          "parking",
+          "reverse",
+          "urban",
+          "visibility"
+        ],
+        "live_data_required": false
+      }
+    },
+    {
+      "id": "vinfast.test_drive.guidance.driver_composure",
+      "topic": "test_drive.guidance",
+      "title": "Giữ tâm lý ổn định khi trải nghiệm xe điện",
+      "content": "VinFast lưu ý người lái, đặc biệt người chưa có kinh nghiệm với ô tô điện, nên giữ tâm lý ổn định và làm quen từng bước để thao tác chính xác, an toàn và có đánh giá tốt hơn về trải nghiệm lái.",
+      "source": "VinFast - 10 điều cần lưu ý khi lái thử xe điện để đảm bảo an toàn",
+      "updated_at": "2026-08-22",
+      "provenance": {
+        "source_uri": "https://vinfastauto.com/vn_vi/luu-y-khi-lai-thu-xe-dien",
+        "publisher": "VinFast",
+        "source_type": "official_article",
+        "retrieved_at": "2026-08-22",
+        "source_revision": null,
+        "effective_date": null,
+        "market": "VN",
+        "models": [],
+        "trims": [],
+        "model_years": [],
+        "standard": null,
+        "verification_status": "source_verified",
+        "review_status": "pending_internal_review",
+        "time_sensitivity": "low",
+        "next_review_date": "2027-02-22",
+        "notes": "Bài VinFast xuất bản 15/06/2022; dùng làm guidance lái thử chung. Không dùng các thông tin model/policy cũ trong bài như fact hiện hành."
+      },
+      "retrieval": {
+        "tags": [
+          "test-drive",
+          "first-ev",
+          "confidence",
+          "safety"
+        ],
+        "live_data_required": false
       }
     }
   ]
