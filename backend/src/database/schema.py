@@ -799,6 +799,8 @@ CREATE INDEX IF NOT EXISTS idx_demo_lookup ON demo_vehicles(showroom_id,variant_
 CREATE INDEX IF NOT EXISTS idx_slots_search ON test_drive_slots(showroom_id,start_at,status);
 CREATE INDEX IF NOT EXISTS idx_slots_vehicle_time ON test_drive_slots(demo_vehicle_id,start_at,end_at);
 CREATE INDEX IF NOT EXISTS idx_sales_showroom ON sales_staff(showroom_id,status);
+CREATE INDEX IF NOT EXISTS idx_people_normalized_phone ON people(normalized_phone);
+CREATE INDEX IF NOT EXISTS idx_people_normalized_email ON people(normalized_email);
 CREATE INDEX IF NOT EXISTS idx_slot_sales_slot ON slot_sales_assignments(slot_id,status);
 CREATE INDEX IF NOT EXISTS idx_bookings_expiry ON bookings(status,hold_expires_at);
 CREATE INDEX IF NOT EXISTS idx_otp_active ON otp_challenges(booking_id,status,expires_at);

@@ -20,6 +20,7 @@ from src.agents.tools import (
 )
 from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.utils import get_system_prompt, window_messages
+from src.guardrails.untrusted_content import protect_tool_result_messages
 from src.services.llm import get_llm
 
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "booking_skill" / "SKILL.md"
@@ -43,6 +44,7 @@ def _safe_tool_input(payload: dict[str, Any]) -> dict[str, Any]:
         else:
             safe[key] = value
     return safe
+
 
 STRUCTURED_ACTION_TO_TOOL = {
     "search_options": search_test_drive_options,
@@ -178,11 +180,7 @@ async def booking_skill_node(state: AgentState) -> dict:
                 tool.name,
                 "error" if failed else "success",
             )
-            response_text = (
-                public_error
-                if failed
-                else STRUCTURED_ACTION_RESPONSES[requested_action]
-            )
+            response_text = public_error if failed else STRUCTURED_ACTION_RESPONSES[requested_action]
             tool_response = AIMessage(content=response_text)
             return {
                 "messages": [tool_response],
@@ -194,7 +192,9 @@ async def booking_skill_node(state: AgentState) -> dict:
             }
 
         action_payload = state.get("action_payload") or {}
-        tool_logger.info("tool_dispatched tool=%s mode=structured input=%s", tool.name, _safe_tool_input(action_payload))
+        tool_logger.info(
+            "tool_dispatched tool=%s mode=structured input=%s", tool.name, _safe_tool_input(action_payload)
+        )
         tool_call_message = AIMessage(
             content="",
             tool_calls=[
@@ -218,9 +218,7 @@ async def booking_skill_node(state: AgentState) -> dict:
         )
         return {"messages": [tool_call_message], "tool_call_count": 1}
 
-    prompt = (
-        f"{get_system_prompt()}\n\n--- ACTIVE SKILL GUIDELINES (BOOKING) ---\n{get_booking_prompt()}"
-    )
+    prompt = f"{get_system_prompt()}\n\n--- ACTIVE SKILL GUIDELINES (BOOKING) ---\n{get_booking_prompt()}"
 
     tools = [
         search_test_drive_options,
@@ -249,7 +247,8 @@ async def booking_skill_node(state: AgentState) -> dict:
                     )
                 )
             )
-        llm_messages = [SystemMessage(content=prompt), *context_messages, *window_messages(messages)]
+        safe_history = protect_tool_result_messages(window_messages(messages))
+        llm_messages = [SystemMessage(content=prompt), *context_messages, *safe_history]
         trace_event(
             "llm.request",
             trace_id=trace_id,
