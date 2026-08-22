@@ -107,8 +107,6 @@ def test_context_contract_temporarily_normalizes_legacy_frontend_fields():
         "stage": "choose_slot",
         "selectedVehicle": {"id": "vf8", "name": "VF 8"},
         "selectedShowroom": {"id": "showroom-1", "name": "VinFast Quận 7"},
-        "selectedSlot": {"slotId": "slot-1", "time": "09:00", "dateLabel": "26/08"},
-        "bookingId": "booking-1",
         "nearbyShowrooms": [{"id": "showroom-1", "name": "VinFast Quận 7"}],
     }
     assert "allowed_actions" not in decision.sanitized_context
@@ -120,6 +118,29 @@ def test_context_contract_allows_driver_invitation_channel():
 
     assert decision.allowed is True
     assert decision.sanitized_context == {"channel": "driver_invitation"}
+
+
+def test_context_contract_discards_booking_selection_that_conflicts_with_location_stage():
+    decision = _inspect(
+        _guard(max_nodes=64),
+        message="ngày 25 còn lịch không",
+        context={
+            "channel": "booking",
+            "stage": "need_address",
+            "selectedVehicle": {"id": "vf9", "name": "VF 9"},
+            "selectedShowroom": {"id": "206", "name": "VinFast Lợi Mận Yên Mỹ"},
+            "selectedSlot": {"slotId": "slot-old", "time": "15:00", "dateLabel": "23/08"},
+            "nearbyShowrooms": [{"id": "206", "name": "VinFast Lợi Mận Yên Mỹ"}],
+            "bookingId": "booking-old",
+        },
+    )
+
+    assert decision.allowed is True
+    assert decision.sanitized_context == {
+        "channel": "booking",
+        "stage": "need_address",
+        "selectedVehicle": {"id": "vf9", "name": "VF 9"},
+    }
 
 
 @pytest.mark.parametrize(

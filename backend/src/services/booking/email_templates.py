@@ -1393,9 +1393,6 @@ def render_booking_dark_email(
         year=f["start"].year,
     )
 
-    primary_plain_label = (
-        "Chuẩn bị lái thử cùng ViVi" if driver_invite_url else "Trang đặt lịch VinFast"
-    )
     plain = "\n".join(
         (
             f"{copy.headline[0]} {copy.headline[1]}".upper(),

@@ -82,6 +82,9 @@ _CONTEXT_STAGES = frozenset(
         "success",
     }
 )
+_SHOWROOM_CONTEXT_STAGES = frozenset({"choose_slot", "collect_info", "review", "success"})
+_SLOT_CONTEXT_STAGES = frozenset({"collect_info", "review", "success"})
+_NEARBY_SHOWROOM_CONTEXT_STAGES = frozenset({"choose_showroom", "choose_slot"})
 
 
 class InputGuard:
@@ -216,6 +219,19 @@ class InputGuard:
             if key == "recipient" and cleaned_value not in {"", "self", "other"}:
                 return self._invalid_context_value(key)
             sanitized[key] = cleaned_value
+
+        # UI state is advisory and may be restored from an older browser session.
+        # Keep only fields that are coherent with the current workflow stage so a
+        # stale confirmed booking cannot silently anchor a brand-new availability search.
+        stage = str(sanitized.get("stage") or "")
+        if stage not in _SHOWROOM_CONTEXT_STAGES:
+            sanitized.pop("selectedShowroom", None)
+        if stage not in _SLOT_CONTEXT_STAGES:
+            sanitized.pop("selectedSlot", None)
+            sanitized.pop("bookingId", None)
+        if stage not in _NEARBY_SHOWROOM_CONTEXT_STAGES:
+            sanitized.pop("nearbyShowrooms", None)
+            sanitized.pop("userLocation", None)
         return GuardrailDecision.allow(sanitized_context=sanitized)
 
     @staticmethod
