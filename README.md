@@ -18,7 +18,7 @@ MVP công khai cho phép người dùng xem catalogue VinFast, trò chuyện v�
 
 | Thành phần | Dịch vụ | Địa chỉ |
 | --- | --- | --- |
-| Frontend production | Cloudflare Pages | <https://vinfast-mvp.pages.dev> |
+| Frontend production | Cloudflare Pages | <https://c3-app-053.pages.dev> |
 | Backend API | Render Web Service, chạy Docker image | <https://vinfastbooking-api-latest.onrender.com> |
 | API health | FastAPI | <https://vinfastbooking-api-latest.onrender.com/health> |
 | PostgreSQL production | Neon | Cấu hình bằng `DATABASE_URL` trên Render |
@@ -522,7 +522,7 @@ APP_ENV=production
 DATABASE_URL=<Neon connection string>
 AUTO_LOAD_EVAL_DATA=false
 BOOKING_ACCESS_OTP_SECRET=<random secret tối thiểu 32 ký tự>
-CORS_ORIGINS=https://vinfast-mvp.pages.dev,https://vinfast-booking.vercel.app
+CORS_ORIGINS=https://c3-app-053.pages.dev,https://vinfast-booking.vercel.app
 MEDIA_BASE_URL=https://pub-216eea433b9e4529979ce534d5ce0ae1.r2.dev
 OPENAI_API_KEY=<server-side secret nếu dùng OpenAI>
 OPENROUTER_API_KEY=<server-side secret nếu dùng OpenRouter>
