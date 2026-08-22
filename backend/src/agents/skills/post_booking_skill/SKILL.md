@@ -145,7 +145,9 @@ Use it immediately after a successful booking confirmation to:
 - provide one useful preparation point;
 - introduce 2–3 concrete support directions such as preparation, what to test, showroom questions, or first-EV guidance.
 
-Do not use this skill for create, lookup, update, reschedule, or cancel booking actions. Route those requests to the Booking Skill.
+Do not use this skill for create, update, reschedule, or cancel booking actions. Route those requests to the Booking Skill.
+
+For an authenticated driver invitation only, a `booking_lookup` request about the confirmed invitation booking may be answered from the trusted booking context. Do not call a general booking lookup flow, expose private contact data, or use this exception to answer availability questions or retrieve a different booking.
 
 ## Context and decision order
 
