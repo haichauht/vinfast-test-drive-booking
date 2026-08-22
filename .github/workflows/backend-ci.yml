@@ -60,10 +60,29 @@ jobs:
           if-no-files-found: warn
 
       - name: Run tests with coverage
-        run: pytest backend/tests/ -v --tb=short --cov=backend/src/ --cov-report=term-missing
+        run: |
+          mkdir -p artifacts
+          pytest backend/tests/ -v --tb=short --cov=backend/src/ --cov-report=term-missing --cov-report=json:artifacts/backend-coverage.json
         env:
           APP_ENV: test
           OPENAI_API_KEY: test-key
+
+      - name: Build offline agent evaluation report
+        run: >
+          python backend/scripts/run_agent_evaluation.py
+          --coverage-json artifacts/backend-coverage.json
+          --json-output artifacts/agent-evaluation/report.json
+          --markdown-output artifacts/agent-evaluation/report.md
+
+      - name: Upload agent evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-evaluation-${{ github.sha }}
+          path: |
+            artifacts/agent-evaluation/
+            artifacts/backend-coverage.json
+          if-no-files-found: warn
 
       - name: Verify Docker build
         run: docker build -t backend-test ./backend

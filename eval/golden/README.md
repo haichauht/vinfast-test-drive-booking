@@ -14,9 +14,12 @@ PostgreSQL.
 | `CANCEL-001` và `RESCHEDULE-001` | **KNOWN_GAP** | Sẽ fail nếu chấm tool-call hiện tại vì agent chưa expose tool hủy và dời lịch. |
 | Human review | **REQUIRED** | 39 case agent là synthetic và chưa được domain reviewer phê duyệt. |
 
-Không có LLM API nào được gọi trong lần validation này. Kết luận chính xác là:
-**dataset validation đang pass; behavioral golden evaluation chưa chạy; hai
-known-gap chưa pass theo thiết kế hiện tại.**
+Không có LLM API nào được gọi trong baseline validation đã commit. Kết luận
+chính xác là: **dataset validation đang pass; behavioral golden baseline chưa
+chạy đủ (behavioral golden evaluation chưa chạy đủ); hai known-gap chưa pass
+theo thiết kế hiện tại.** Runner và scorer cho
+behavioral evaluation nằm tại `backend/scripts/run_agent_evaluation.py`; hướng
+dẫn và cách đọc metric nằm trong `eval/EVALUATION.md`.
 
 ## File
 
