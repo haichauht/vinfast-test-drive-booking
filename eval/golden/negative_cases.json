@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "dataset_name": "vinfast_booking_negative_cases",
+  "case_count": 12,
+  "human_review_required": true,
+  "provenance": {
+    "source_file": "eval/data/fixtures/negative_cases.csv",
+    "note": "Security and consistency regression cases; not operational seed data."
+  },
+  "cases": [
+    {
+      "case_id": "NEG-001",
+      "scenario": "Cross-customer booking access token",
+      "expected_outcome": "DENY",
+      "review_status": "MIGRATED_WITHOUT_REVIEW_STATUS"
+    },
+    {
+      "case_id": "NEG-002",
+      "scenario": "Expired access session",
+      "expected_outcome": "DENY",
+      "review_status": "MIGRATED_WITHOUT_REVIEW_STATUS"
+    },
+    {
+      "case_id": "NEG-003",
+      "scenario": "Revoked access session",
+      "expected_outcome": "DENY",
+      "review_status": "MIGRATED_WITHOUT_REVIEW_STATUS"
+    },
+    {
+      "case_id": "NEG-004",
+      "scenario": "OTP attempts exceed max_attempts",
+      "expected_outcome": "LOCK",
+      "review_status": "MIGRATED_WITHOUT_REVIEW_STATUS"
+    },
+    {
+      "case_id": "NEG-005",
+      "scenario": "Reuse consumed OTP challenge",
+      "expected_outcome": "DENY",
+      "review_status": "MIGRATED_WITHOUT_REVIEW_STATUS"
+    },
+    {
+      "case_id": "NEG-006",
+      "scenario": "Duplicate mutation with same idempotency action_id",
+      "expected_outcome": "REPLAY_SAME_RESULT",
+      "review_status": "MIGRATED_WITHOUT_REVIEW_STATUS"
+    },
+    {
+      "case_id": "NEG-007",
+      "scenario": "Staff reads booking not assigned to own slot",
+      "expected_outcome": "DENY",
+      "review_status": "MIGRATED_WITHOUT_REVIEW_STATUS"
+    },
+    {
+      "case_id": "NEG-008",
+      "scenario": "Manager modifies showroom outside scope",
+      "expected_outcome": "DENY",
+      "review_status": "MIGRATED_WITHOUT_REVIEW_STATUS"
+    },
+    {
+      "case_id": "NEG-009",
+      "scenario": "Non-admin requests vehicle transfer",
+      "expected_outcome": "DENY",
+      "review_status": "MIGRATED_WITHOUT_REVIEW_STATUS"
+    },
+    {
+      "case_id": "NEG-010",
+      "scenario": "Provider failure reaches max_attempts",
+      "expected_outcome": "TERMINAL_FAILED",
+      "review_status": "MIGRATED_WITHOUT_REVIEW_STATUS"
+    },
+    {
+      "case_id": "NEG-011",
+      "scenario": "Vehicle unavailability overlaps requested slot",
+      "expected_outcome": "NOT_AVAILABLE",
+      "review_status": "MIGRATED_WITHOUT_REVIEW_STATUS"
+    },
+    {
+      "case_id": "NEG-012",
+      "scenario": "Concurrent booking version mismatch",
+      "expected_outcome": "VERSION_CONFLICT",
+      "review_status": "MIGRATED_WITHOUT_REVIEW_STATUS"
+    }
+  ]
+}

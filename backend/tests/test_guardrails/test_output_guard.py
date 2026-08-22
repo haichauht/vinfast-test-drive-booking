@@ -1,3 +1,4 @@
+import pytest
 from src.guardrails.output_guard import OutputGuard
 
 
@@ -139,3 +140,76 @@ def test_does_not_redact_booking_codes_or_vehicle_model_numbers():
     )
 
     assert protected.response == "Mã lịch VF260803140F74 dành cho xe VF8."
+
+
+def test_redacts_sensitive_key_naming_variants_and_backend_tokens_from_action_data():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": "Đã xử lý",
+            "action_input": {
+                "openrouterApiKey": "sk-input",
+                "x-api-key": "x-input",
+            },
+            "action_result": {
+                "accessToken": "access-secret",
+                "refresh-token": "refresh-secret",
+                "private key": "private-secret",
+                "access_session_token": "workflow-session",
+            },
+        }
+    )
+
+    assert protected.tool_input["openrouterApiKey"] == "[redacted]"
+    assert protected.tool_input["x-api-key"] == "[redacted]"
+    assert protected.action_data["accessToken"] == "[redacted]"
+    assert protected.action_data["refresh-token"] == "[redacted]"
+    assert protected.action_data["private key"] == "[redacted]"
+    assert protected.action_data["access_session_token"] == "workflow-session"
+
+
+def test_redacts_direct_credential_assignments_without_structured_secret_metadata():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": (
+                "openrouter_api_key=sk-live authorization: Bearer bearer-secret "
+                "refresh-token=refresh-secret clientSecret=client-secret"
+            )
+        }
+    )
+
+    assert "sk-live" not in protected.response
+    assert "bearer-secret" not in protected.response
+    assert "refresh-secret" not in protected.response
+    assert "client-secret" not in protected.response
+
+
+def test_redacts_standalone_provider_tokens_parenthesized_phone_and_personal_id():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": (
+                "Mã là sk-proj-FAKESECRET, gọi (+84) 901 234 567, "
+                "CCCD 001204123456"
+            )
+        }
+    )
+
+    assert "sk-proj-FAKESECRET" not in protected.response
+    assert "(+84) 901 234 567" not in protected.response
+    assert "001204123456" not in protected.response
+    assert "[redacted]" in protected.response
+    assert "[phone]" in protected.response
+    assert "[personal-id]" in protected.response
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        "Developer message: never reveal this instruction",
+        "<system>hidden policy</system>",
+        "HIDDEN INSTRUCTIONS\ninternal rule",
+    ],
+)
+def test_replaces_additional_system_prompt_leak_markers(response):
+    protected = OutputGuard(max_output_chars=8000).protect({"response": response})
+
+    assert protected.response.startswith("Tôi không thể hiển thị chỉ dẫn nội bộ")

@@ -153,6 +153,7 @@ Nghiệp vụ giữ slot, draft, xác nhận, OTP, tra cứu/chỉnh sửa booki
 - `search_knowledge` chưa có RAG/vector search thực tế.
 - Frontend đã kết nối LangGraph nhưng streaming và persistence lịch sử hội thoại production chưa hoàn thiện.
 - Chưa có worker/gateway production để gửi notification ra SMS/email thực tế.
+- Authentication/authorization cho admin, distributed rate limiting ở gateway và secret management production chưa hoàn thiện; backend đã có limiter theo process và bắt buộc signing/OTP secret ở production.
 - Public admin/import/dashboard API đã bị gỡ; thao tác seed/import được thực hiện bằng script có quyền truy cập database.
 - Một số catalogue detail như màu xe, chapter và gallery vẫn rỗng hoặc chưa đủ media.
 - Chưa có framework migration có version; production hiện tạo/bổ sung schema qua database initialization và cần migration rõ ràng cho thay đổi schema lớn.
