@@ -233,6 +233,36 @@ async def test_advise_skill_increments_count_for_tool_call(monkeypatch):
     assert "response" not in result
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("module", "node", "state"),
+    [
+        (booking_module, booking_skill_node, {"messages": [HumanMessage(content="hi")]}),
+        (advise_module, advise_skill_node, {"messages": [HumanMessage(content="Tư vấn VF8")]}),
+    ],
+)
+async def test_skill_nodes_hide_internal_llm_limit_details(monkeypatch, module, node, state):
+    llm, _ = _mock_bound_llm(AIMessage(content="unused"))
+    monkeypatch.setattr(module, "get_llm", lambda: llm)
+    monkeypatch.setattr(
+        module,
+        "invoke_with_budget",
+        AsyncMock(side_effect=module.BudgetExceededError("GLOBAL_LLM_BUDGET_EXCEEDED")),
+    )
+    trace = MagicMock()
+    monkeypatch.setattr(module, "trace_event", trace)
+
+    result = await node(state)
+
+    assert result["action_error"] == "SERVICE_TEMPORARILY_UNAVAILABLE"
+    assert "AI" not in result["response"]
+    assert "chi phí" not in result["response"]
+    assert any(
+        call.kwargs.get("error_code") == "LLM_BUDGET_EXCEEDED"
+        for call in trace.call_args_list
+    )
+
+
 # test case of Chau + kiểm tra prompt loader của hai skill có fallback khi file không đọc được
 def test_skill_prompt_loaders_have_safe_fallback(monkeypatch, tmp_path):
     missing = tmp_path / "missing-skill.md"

@@ -1,8 +1,13 @@
 """Shared constants used across multiple agent nodes.
 
-Centralizing keyword lists here prevents duplication (DRY principle)
-between classifier_node.py and sensitive_policy_node.py.
+Centralizing public fallbacks and keyword lists here prevents agent nodes from
+drifting into different user-facing behavior.
 """
+
+PUBLIC_LLM_UNAVAILABLE_CODE = "SERVICE_TEMPORARILY_UNAVAILABLE"
+PUBLIC_LLM_UNAVAILABLE_MESSAGE = (
+    "ViVi đang tạm thời chưa thể xử lý yêu cầu này. Quý khách vui lòng thử lại sau."
+)
 
 # Keywords that bypass the LLM classifier and route directly to sensitive_policy_node
 SOVEREIGNTY_KEYWORDS: list[str] = [

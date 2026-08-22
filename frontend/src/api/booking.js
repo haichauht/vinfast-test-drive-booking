@@ -31,6 +31,7 @@ const PUBLIC_ACTION_ERROR_MESSAGES = {
   VEHICLE_NOT_READY: 'Xe demo hiện không sẵn sàng cho khung giờ này, vui lòng chọn lịch khác.',
   VERSION_CONFLICT: 'Thông tin đặt lịch đã thay đổi, vui lòng tải lại và thử lại.',
   INVALID_INPUT: 'Thông tin gửi lên chưa hợp lệ, vui lòng kiểm tra lại.',
+  SERVICE_TEMPORARILY_UNAVAILABLE: 'ViVi đang tạm thời chưa thể xử lý yêu cầu này. Quý khách vui lòng thử lại sau.',
   AGENT_ACTION_FAILED: 'Thao tác giữ chỗ chưa hoàn tất. Vui lòng chọn lại khung giờ.',
 }
 

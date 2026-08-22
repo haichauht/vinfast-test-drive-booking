@@ -8,6 +8,8 @@ from src.agents.constants import (
     BOOKING_MUTATION_KEYWORDS,
     LOOKUP_KEYWORDS,
     OUT_OF_SCOPE_KEYWORDS,
+    PUBLIC_LLM_UNAVAILABLE_CODE,
+    PUBLIC_LLM_UNAVAILABLE_MESSAGE,
     SOVEREIGNTY_KEYWORDS,
 )
 from src.agents.state import AgentState
@@ -56,7 +58,8 @@ class RouteSchema(BaseModel):
         description=(
             "Detailed classification. Must be one of: booking_new, booking_lookup, "
             "booking_availability, booking_reschedule, booking_cancel, booking_update_details, "
-            "booking_update_notifications, post_booking_advisory, vehicle_info, "
+            "booking_update_notifications, post_booking_advisory, vehicle_info, greeting, "
+            "assistant_identity, "
             "out_of_scope, others. If intent is sensitive, use others."
         )
     )
@@ -127,8 +130,6 @@ async def classifier_node(state: AgentState) -> dict:
 
     if not is_driver_invitation and any(kw in lower_query for kw in BOOKING_MUTATION_KEYWORDS):
         return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "booking"}, "tool_call_count": 0}
-    if any(phrase in lower_query for phrase in ("xin chào", "chào bạn", "hello", "hi ")):
-        return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "greeting"}, "tool_call_count": 0}
     if post_booking_active and previous_skill == "post_booking" and len(query.split()) <= 8:
         return {"intent": "domain", "active_skill": "post_booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "contextual_followup"}, "tool_call_count": 0}
 
@@ -152,6 +153,8 @@ async def classifier_node(state: AgentState) -> dict:
         "- A benign unrelated request is out_of_scope, not sensitive.\n"
         "- A request related to the user's test-drive journey is domain even when it is not a "
         "booking transaction.\n"
+        "- Greetings and questions about ViVi's identity, role, or supported capabilities are "
+        "domain. Never classify them as out_of_scope.\n"
         "- When a request is ambiguous but has a reasonable interpretation within the test-drive "
         "journey, prefer domain.\n"
         "\n"
@@ -165,6 +168,8 @@ async def classifier_node(state: AgentState) -> dict:
         "- booking_update_notifications\n"
         "- post_booking_advisory\n"
         "- vehicle_info\n"
+        "- greeting\n"
+        "- assistant_identity\n"
         "- others\n"
         "\n"
         "Domain sub-intent rules:\n"
@@ -179,6 +184,10 @@ async def classifier_node(state: AgentState) -> dict:
         "for, participate in, or evaluate the upcoming test drive.\n"
         "- vehicle_info: general VinFast vehicle/product questions not specifically tied to "
         "preparing for an already-confirmed test drive.\n"
+        "- greeting: a social opening or greeting directed at ViVi, for example 'hi', 'hello', "
+        "'xin chào', or 'alo'.\n"
+        "- assistant_identity: a question about who ViVi is, ViVi's role, or what ViVi can help "
+        "with, for example 'bạn là ai?' or 'ViVi hỗ trợ gì?'.\n"
         "- others: domain requests that do not fit another domain sub_intent.\n"
         "\n"
         "Use booking_lookup when the user wants to view, find, check, or retrieve an existing booking.\n"
@@ -195,6 +204,8 @@ async def classifier_node(state: AgentState) -> dict:
         "'mình ở miền tay'. Classify these as booking_new.\n"
         "A broad region such as miền Bắc/Trung/Nam/Tây still belongs to booking_new; "
         "the booking skill will ask for a province or city.\n"
+        "Classify 'hi' as domain/greeting. Classify 'bạn là ai?' and 'bạn hỗ trợ gì?' as "
+        "domain/assistant_identity.\n"
         "\n"
         "Use UI context as supporting evidence, not as a replacement for the user's request. "
         "A successful/confirmed booking makes post_booking_advisory more likely for subsequent "
@@ -237,7 +248,7 @@ async def classifier_node(state: AgentState) -> dict:
             return _driver_scope_block(state, query, sub_intent="driver_booking_scope")
         if intent == "domain" and not post_booking_active and sub_intent == "post_booking_advisory":
             intent = "out_of_scope"
-            sub_intent = "out_of_scope"
+            sub_intent = "post_booking_required"
         use_post_booking = intent == "domain" and post_booking_active and (
             sub_intent in {"post_booking_advisory", "vehicle_info"}
             or (is_driver_invitation and sub_intent == "booking_lookup")
@@ -261,19 +272,16 @@ async def classifier_node(state: AgentState) -> dict:
             "tool_call_count": 0,
         }
     except (BudgetExceededError, LLMCallLimitExceededError) as e:
-        error_code = "LLM_BUDGET_EXCEEDED" if isinstance(e, BudgetExceededError) else "LLM_CALL_LIMIT_EXCEEDED"
-        safe_response = (
-            "Hệ thống đã đạt giới hạn chi phí AI trong hôm nay. Vui lòng thử lại sau."
-            if isinstance(e, BudgetExceededError)
-            else "Yêu cầu này cần quá nhiều lượt xử lý AI. Vui lòng gửi lại yêu cầu ngắn gọn hơn."
+        internal_error_code = (
+            "LLM_BUDGET_EXCEEDED" if isinstance(e, BudgetExceededError) else "LLM_CALL_LIMIT_EXCEEDED"
         )
-        trace_event("llm.limit", trace_id=trace_id, node="classifier", error_code=error_code)
+        trace_event("llm.limit", trace_id=trace_id, node="classifier", error_code=internal_error_code)
         return {
             "intent": "sensitive",
             "messages": [HumanMessage(content=query)],
-            "response": safe_response,
-            "policy_response": safe_response,
-            "action_error": error_code,
+            "response": PUBLIC_LLM_UNAVAILABLE_MESSAGE,
+            "policy_response": PUBLIC_LLM_UNAVAILABLE_MESSAGE,
+            "action_error": PUBLIC_LLM_UNAVAILABLE_CODE,
             "metadata": {**metadata, "sub_intent": "llm_limit"},
             "tool_call_count": 0,
         }
