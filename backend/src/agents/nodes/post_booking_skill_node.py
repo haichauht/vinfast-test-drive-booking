@@ -58,6 +58,9 @@ async def post_booking_skill_node(state: AgentState) -> dict:
         f"\n\n--- USER PROFILE BRIEF ---\n{(state.get('profile_context') or {}).get('brief', 'Profile chưa có dữ liệu.')}"
         f"\n\n--- BOOKING CONTEXT ---\n{json.dumps(booking_context, ensure_ascii=False)}"
         f"\n\n--- CURRENT PARTICIPANT ---\n{json.dumps(participant_context, ensure_ascii=False)}"
+        "\n\nFor a driver invitation, you are speaking directly to the authenticated driver named in "
+        "BOOKING CONTEXT.participants.driver. Use that identity and the booking details when relevant; "
+        "never claim you do not know who the driver is."
     )
     last = messages[-1] if messages else None
     if isinstance(last, ToolMessage):

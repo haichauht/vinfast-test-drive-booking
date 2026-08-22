@@ -20,7 +20,7 @@
  *
  * conversation_id được giữ trong sessionStorage để ViVi nhớ mạch hội thoại trong cùng tab.
  */
-import { ApiError, apiPost } from './client'
+import { ApiError, apiGet, apiPost } from './client'
 import { actionId } from './ids'
 
 const CONVERSATION_KEY = 'vinfast:booking-conversation-id'
@@ -105,11 +105,16 @@ export const sendDriverChatMessage = (message, { conversationId, invitationToken
   invitationToken,
 })
 
+export const getDriverInvitationContext = (invitationToken) => apiGet(
+  `/driver-chat/${encodeURIComponent(invitationToken)}/context`,
+  { cacheKey: `driver-invitation:${invitationToken}`, fallbackToCache: false },
+)
+
 export const resetBookingConversation = () => {
   if (typeof window !== 'undefined') window.sessionStorage.removeItem(CONVERSATION_KEY)
 }
 
-export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, address, latitude, longitude, showroomLimit = 5, slotLimit }) => agentAction(
+export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, address, latitude, longitude, preferredDate, preferredDates, preferredDateFrom, preferredDateTo, preferredTime, showroomLimit = 5, slotLimit }) => agentAction(
   'search_options',
   showroomId
     ? `Kiểm tra lịch trống cho ${vehicleModel} tại showroom đã chọn.`
@@ -127,6 +132,11 @@ export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, 
     address,
     latitude,
     longitude,
+    preferred_date: preferredDate,
+    preferred_dates: preferredDates,
+    preferred_date_from: preferredDateFrom,
+    preferred_date_to: preferredDateTo,
+    preferred_time: preferredTime,
     showroom_limit: showroomLimit,
     ...(slotLimit === undefined ? {} : { slot_limit: slotLimit }),
   },

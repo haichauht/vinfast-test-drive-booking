@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from src.agents.state import AgentState
 from src.agents.tools import (
@@ -100,7 +100,10 @@ def _decode_tool_result(message: ToolMessage) -> object:
 def _public_tool_error(decoded: object) -> tuple[str, str]:
     code = ""
     if isinstance(decoded, dict):
+        nested_error = decoded.get("error")
         raw_code = decoded.get("code") or decoded.get("error_code")
+        if not raw_code and isinstance(nested_error, dict):
+            raw_code = nested_error.get("code")
         code = str(raw_code or "")
     else:
         text = str(decoded or "")
@@ -116,6 +119,10 @@ def _public_tool_error(decoded: object) -> tuple[str, str]:
             elif "Xe demo" in text or "Pin xe" in text:
                 code = "VEHICLE_NOT_READY"
 
+    if code == "INVALID_INPUT" and isinstance(decoded, dict):
+        nested_error = decoded.get("error")
+        if isinstance(nested_error, dict) and isinstance(nested_error.get("message"), str):
+            return code, nested_error["message"]
     if code in PUBLIC_TOOL_ERRORS:
         return code, PUBLIC_TOOL_ERRORS[code]
     return "AGENT_ACTION_FAILED", _tool_error_message(decoded)
@@ -200,11 +207,14 @@ async def booking_skill_node(state: AgentState) -> dict:
                 tool.name,
                 "error" if failed else "success",
             )
-            response_text = (
-                public_error
-                if failed
-                else STRUCTURED_ACTION_RESPONSES[requested_action]
-            )
+            response_text = public_error if failed else STRUCTURED_ACTION_RESPONSES[requested_action]
+            if (
+                not failed
+                and requested_action == "search_options"
+                and isinstance(decoded, dict)
+                and decoded.get("search_stage") == "location_clarification"
+            ):
+                response_text = str(decoded.get("clarification_message") or response_text)
             tool_response = AIMessage(content=response_text)
             return {
                 "messages": [tool_response],
@@ -240,6 +250,27 @@ async def booking_skill_node(state: AgentState) -> dict:
         )
         return {"messages": [tool_call_message], "tool_call_count": 1}
 
+    # Broad regions must not be geocoded to an arbitrary representative point.
+    # End the tool loop deterministically instead of asking the LLM to
+    # paraphrase the clarification.
+    if isinstance(last_message, ToolMessage):
+        decoded = _decode_tool_result(last_message)
+        if isinstance(decoded, dict) and decoded.get("search_stage") == "location_clarification":
+            response_text = str(
+                decoded.get("clarification_message")
+                or "Quý khách cho ViVi xin tỉnh hoặc thành phố cụ thể."
+            )
+            message = AIMessage(content=response_text)
+            return {
+                "messages": [message],
+                "response": response_text,
+                "action_tool": last_message.name or "",
+                "action_input": _tool_call_input(messages, last_message),
+                "action_result": decoded,
+                "action_error": "",
+                "metadata": metadata,
+            }
+
     now_vietnam = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%Y-%m-%d")
     context = json.dumps(state.get("context") or {}, ensure_ascii=False)
     prompt = (
@@ -264,7 +295,17 @@ async def booking_skill_node(state: AgentState) -> dict:
         llm = get_llm()
         if llm is None:
             raise RuntimeError("LLM is not configured")
-        llm_with_tools = llm.bind_tools(tools)
+        force_availability_search = (
+            metadata.get("sub_intent") == "booking_availability"
+            and isinstance(last_message, HumanMessage)
+            and bool((state.get("context") or {}).get("selected_vehicle_name"))
+            and bool((state.get("context") or {}).get("selected_showroom_id"))
+        )
+        llm_with_tools = (
+            llm.bind_tools(tools, tool_choice=search_test_drive_options.name)
+            if force_availability_search
+            else llm.bind_tools(tools)
+        )
         llm_messages = [SystemMessage(content=prompt)] + window_messages(messages)
         trace_event(
             "llm.request",
