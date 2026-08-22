@@ -56,6 +56,8 @@ def _availability_context_ready(context: object) -> bool:
     """Return whether canonical UI context can anchor an availability query."""
     if not isinstance(context, dict):
         return False
+    if context.get("stage") != "choose_slot":
+        return False
     vehicle = context.get("selectedVehicle")
     showroom = context.get("selectedShowroom")
     return (
@@ -84,13 +86,13 @@ STRUCTURED_ACTION_RESPONSES = {
     "verify_access": "Xác thực thành công.",
 }
 
-ACCESS_INTENT_PURPOSES = {
-    "booking_lookup": "lookup",
-    "booking_reschedule": "reschedule",
-    "booking_cancel": "cancel",
-    "booking_update_details": "update_details",
-    "booking_update_notifications": "update_notifications",
-}
+BOOKING_MANAGEMENT_INTENTS = frozenset({
+    "booking_lookup",
+    "booking_reschedule",
+    "booking_cancel",
+    "booking_update_details",
+    "booking_update_notifications",
+})
 
 PUBLIC_TOOL_ERRORS = {
     "SLOT_NO_LONGER_AVAILABLE": "Khung giờ này đã qua hoặc không còn khả dụng, vui lòng chọn giờ khác.",
@@ -278,6 +280,38 @@ async def booking_skill_node(state: AgentState) -> dict:
     # paraphrase the clarification.
     if isinstance(last_message, ToolMessage):
         decoded = _decode_tool_result(last_message)
+        if last_message.name == request_booking_access.name:
+            failed = getattr(last_message, "status", "success") == "error"
+            error_code, public_error = _public_tool_error(decoded)
+            if failed:
+                response_text = public_error
+            elif isinstance(decoded, dict) and decoded.get("requires_contact_value"):
+                response_text = "Quý khách vui lòng nhập email đã dùng để đặt lịch để ViVi gửi mã xác thực."
+            else:
+                response_text = "ViVi đã gửi mã xác thực qua email. Quý khách vui lòng nhập mã OTP để tiếp tục."
+            message = AIMessage(content=response_text)
+            trace_event(
+                "tool.result",
+                trace_id=trace_id,
+                node="booking_skill",
+                tool_message=message_to_log(last_message),
+                result=decoded,
+                failed=failed,
+            )
+            tool_logger.info(
+                "tool_completed tool=%s status=%s",
+                last_message.name,
+                "error" if failed else "success",
+            )
+            return {
+                "messages": [message],
+                "response": response_text,
+                "action_tool": last_message.name,
+                "action_input": _tool_call_input(messages, last_message),
+                "action_result": None if failed else decoded,
+                "action_error": error_code if failed else "",
+                "metadata": metadata,
+            }
         if isinstance(decoded, dict) and decoded.get("search_stage") == "location_clarification":
             response_text = str(
                 decoded.get("clarification_message") or "Quý khách cho ViVi xin tỉnh hoặc thành phố cụ thể."
@@ -292,6 +326,43 @@ async def booking_skill_node(state: AgentState) -> dict:
                 "action_error": "",
                 "metadata": metadata,
             }
+
+    sub_intent = str(metadata.get("sub_intent") or "")
+    if isinstance(last_message, HumanMessage) and sub_intent in BOOKING_MANAGEMENT_INTENTS:
+        entities = state.get("intent_entities") or {}
+        contact_value = str(entities.get("contact_value") or "").strip() if isinstance(entities, dict) else ""
+        access_payload = {"purpose": "manage", "contact_value": contact_value}
+        tool_call_message = AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": request_booking_access.name,
+                    "args": access_payload,
+                    "id": _structured_tool_call_id(f"intent:{sub_intent}", access_payload),
+                    "type": "tool_call",
+                }
+            ],
+        )
+        trace_event(
+            "tool.call",
+            trace_id=trace_id,
+            node="booking_skill",
+            source="classified_intent",
+            intent=sub_intent,
+            tool=request_booking_access.name,
+            args=_safe_tool_input(access_payload),
+            tool_call_id=tool_call_message.tool_calls[0].get("id"),
+        )
+        tool_logger.info(
+            "tool_dispatched tool=%s mode=classified_intent input=%s",
+            request_booking_access.name,
+            _safe_tool_input(access_payload),
+        )
+        return {
+            "messages": [tool_call_message],
+            "tool_call_count": (state.get("tool_call_count") or 0) + 1,
+            "metadata": metadata,
+        }
 
     now_vietnam = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%Y-%m-%d")
     safe_context = state.get("context") or {}
