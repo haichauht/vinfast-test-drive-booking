@@ -70,6 +70,9 @@ class InMemoryMessagingProvider:
                 "subject": subject,
                 "body": body,
                 "html_body": html_body,
+                # Ghi lại để test bắt được trường hợp thân thư trỏ vào cid:... mà
+                # không có ảnh nào đi kèm — lỗi này chỉ lộ ra khi mở thư thật.
+                "inline_images": list(inline_images),
                 "id": message_id,
             }
         )

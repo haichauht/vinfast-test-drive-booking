@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -9,7 +9,11 @@ from src.services.booking.base import BookingBase
 from src.services.booking.common import iso
 from src.services.booking.errors import BookingError
 from src.services.booking.location import Coordinates, HaversineMapProvider, resolve_address_coordinates
-from src.services.booking.location_normalizer import normalize_location_tokens
+from src.services.booking.location_normalizer import (
+    broad_region_clarification,
+    normalize_location_text,
+    normalize_location_tokens,
+)
 
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 _SHOWROOM_TOKEN_CACHE: dict[str, tuple[tuple[str, str, str], frozenset[str]]] = {}
@@ -73,6 +77,82 @@ def _normalize_preferred_date(date_str: str, now_dt: datetime) -> str:
     return date_str
 
 
+def _normalize_date_filters(
+    *,
+    preferred_date: str | None,
+    preferred_dates: list[str] | None,
+    preferred_date_from: str | None,
+    preferred_date_to: str | None,
+    now_dt: datetime,
+) -> dict[str, Any]:
+    """Normalize exactly one supported date-selection mode."""
+    has_single = preferred_date is not None
+    has_list = preferred_dates is not None
+    has_range = preferred_date_from is not None or preferred_date_to is not None
+    if sum((has_single, has_list, has_range)) > 1:
+        raise BookingError(
+            "INVALID_INPUT",
+            "Chỉ dùng một trong preferred_date, preferred_dates hoặc khoảng preferred_date_from/preferred_date_to.",
+        )
+    if has_range and not (preferred_date_from and preferred_date_to):
+        raise BookingError("INVALID_INPUT", "Khoảng ngày phải có cả ngày bắt đầu và ngày kết thúc.")
+
+    def normalize_one(raw: str) -> str:
+        normalized = _normalize_preferred_date(raw, now_dt)
+        try:
+            date.fromisoformat(normalized)
+        except (TypeError, ValueError):
+            raise BookingError("INVALID_INPUT", f"Ngày không hợp lệ: {raw}.") from None
+        return normalized
+
+    if has_single:
+        if not preferred_date:
+            raise BookingError("INVALID_INPUT", "preferred_date không được để trống.")
+        normalized = normalize_one(preferred_date)
+        return {"mode": "single", "dates": [normalized], "from": None, "to": None}
+
+    if has_list:
+        if not preferred_dates:
+            raise BookingError("INVALID_INPUT", "preferred_dates phải có ít nhất một ngày.")
+        if len(preferred_dates) > 31:
+            raise BookingError("INVALID_INPUT", "Chỉ được yêu cầu tối đa 31 ngày trong một lần tìm.")
+        normalized_dates = list(dict.fromkeys(normalize_one(item) for item in preferred_dates))
+        return {"mode": "list", "dates": normalized_dates, "from": None, "to": None}
+
+    if has_range and preferred_date_from and preferred_date_to:
+        normalized_from = normalize_one(preferred_date_from)
+        normalized_to = normalize_one(preferred_date_to)
+        start = date.fromisoformat(normalized_from)
+        end = date.fromisoformat(normalized_to)
+        if end < start:
+            raise BookingError("INVALID_INPUT", "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.")
+        if (end - start).days > 30:
+            raise BookingError("INVALID_INPUT", "Khoảng ngày không được dài quá 31 ngày.")
+        return {"mode": "range", "dates": [], "from": normalized_from, "to": normalized_to}
+
+    return {"mode": "none", "dates": [], "from": None, "to": None}
+
+
+def _date_filter_sql(filters: dict[str, Any], *, dialect: str) -> tuple[str, list[str]]:
+    # SQL expressions cannot be bound as query parameters. Select them from a
+    # closed internal allowlist so callers can never inject an arbitrary SQL
+    # fragment into this helper.
+    if dialect == "postgres":
+        slot_date_sql = "to_char(s.start_at::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD')"
+    elif dialect == "sqlite":
+        slot_date_sql = "strftime('%Y-%m-%d', datetime(s.start_at, '+7 hours'))"
+    else:
+        raise ValueError(f"Unsupported database dialect: {dialect}")
+
+    if filters["mode"] == "range":
+        return f" AND {slot_date_sql} BETWEEN ? AND ?", [filters["from"], filters["to"]]
+    dates = filters["dates"]
+    if dates:
+        marks = ",".join("?" * len(dates))
+        return f" AND {slot_date_sql} IN ({marks})", dates
+    return "", []
+
+
 class CatalogService(BookingBase):
     def list_active_vehicle_models(self) -> list[dict]:
         with self.db.connect() as c:
@@ -127,6 +207,9 @@ class CatalogService(BookingBase):
         latitude: float | None = None,
         longitude: float | None = None,
         preferred_date: str | None = None,
+        preferred_dates: list[str] | None = None,
+        preferred_date_from: str | None = None,
+        preferred_date_to: str | None = None,
         preferred_time: str | None = None,
         showroom_limit: int = 5,
         slot_limit: int | None = None,
@@ -135,6 +218,20 @@ class CatalogService(BookingBase):
         if (latitude is None) != (longitude is None):
             raise BookingError("INVALID_INPUT", "Latitude và longitude phải được cung cấp cùng nhau.")
         model = self.resolve_vehicle_model(vehicle_model)
+        clarification = (
+            broad_region_clarification(address) if address and not showroom_id and latitude is None else None
+        )
+        if clarification:
+            return {
+                "resolved_vehicle": model,
+                "license_requirement": model["required_license_class"],
+                "showrooms": [],
+                "slots": [],
+                "search_stage": "location_clarification",
+                "location_scope": "broad_region",
+                "clarification_message": clarification,
+                "missing_fields": ["province_or_city"],
+            }
         params: list[Any] = [model["id"]]
         variant_sql = ""
         if vehicle_variant:
@@ -160,85 +257,8 @@ class CatalogService(BookingBase):
                     "missing_fields": [],
                 }
             marks = ",".join("?" * len(variant_ids))
-            if not showroom_id and showroom_query:
-                showroom = c.execute(
-                    "SELECT id FROM showrooms WHERE is_active=1 AND (lower(code)=lower(?) OR lower(name)=lower(?) OR lower(name) LIKE lower(?) OR lower(address) LIKE lower(?)) ORDER BY CASE WHEN lower(name)=lower(?) THEN 0 ELSE 1 END,name LIMIT 1",
-                    (showroom_query, showroom_query, f"%{showroom_query}%", f"%{showroom_query}%", showroom_query),
-                ).fetchone()
-                if not showroom:
-                    candidates = [
-                        dict(row)
-                        for row in c.execute("SELECT * FROM showrooms WHERE is_active=1").fetchall()
-                    ]
-                    ranked = sorted(
-                        ((self._address_match_score(showroom_query, candidate), candidate) for candidate in candidates),
-                        key=lambda item: item[0],
-                        reverse=True,
-                    )
-                    showroom = next((candidate for score, candidate in ranked if score > 0), None)
-                if not showroom:
-                    raise BookingError(
-                        "SHOWROOM_NOT_FOUND", "Không tìm thấy showroom theo tên hoặc địa chỉ."
-                    )
-                showroom_id = showroom["id"]
-            if not showroom_id:
-                rows = c.execute(
-                    f"SELECT DISTINCT s.* FROM showrooms s JOIN demo_vehicles d ON d.showroom_id=s.id WHERE s.is_active=1 AND d.is_active=1 AND d.operational_status='available' AND d.battery_soc IS NOT NULL AND d.battery_soc>=d.minimum_booking_soc AND d.variant_id IN ({marks})",
-                    variant_ids,
-                ).fetchall()
-                showrooms = [dict(r) for r in rows]
-                target_coords: dict[str, float] | None = None
-                if latitude is not None and longitude is not None:
-                    target_coords = {"latitude": latitude, "longitude": longitude}
-                elif address:
-                    resolved_coords = resolve_address_coordinates(address)
-                    if resolved_coords:
-                        target_coords = {"latitude": resolved_coords.latitude, "longitude": resolved_coords.longitude}
-
-                if address:
-                    ranked = sorted(
-                        ((self._address_match_score(address, showroom), showroom) for showroom in showrooms),
-                        key=lambda item: item[0],
-                        reverse=True,
-                    )
-                    matched = [(score, showroom) for score, showroom in ranked if score > 0]
-                    # Nếu địa điểm không có showroom trực thuộc (vd: Bắc Giang),
-                    # giữ nguyên toàn bộ showrooms để trả về các showroom lân cận gần nhất
-                    if matched:
-                        showrooms = [showroom for _, showroom in matched]
-
-                origin_coords = (
-                    Coordinates(target_coords["latitude"], target_coords["longitude"])
-                    if target_coords
-                    else None
-                )
-                if origin_coords:
-                    destinations = [Coordinates(s["latitude"], s["longitude"]) for s in showrooms]
-                    for s, distance in zip(
-                        showrooms, self.map_provider.distances_km(origin_coords, destinations), strict=True
-                    ):
-                        s["distance_km"] = round(distance, 2)
-                    showrooms.sort(key=lambda x: x["distance_km"])
-
-                return {
-                    "resolved_vehicle": {**model, "variants": variants},
-                    "license_requirement": model["required_license_class"],
-                    "showrooms": showrooms[:min(max(showroom_limit, 1), 30)],
-                    "target_coordinates": target_coords,
-                    "slots": [],
-                    "search_stage": "showroom_selection",
-                    "missing_fields": [],
-                }
-            selected = self._row(
-                c.execute("SELECT * FROM showrooms WHERE id=? AND is_active=1", (showroom_id,)).fetchone()
-            )
-            if not selected:
-                raise BookingError("SHOWROOM_NOT_FOUND", "Showroom not found.")
             now = iso(self.now())
-            # Slot timestamps in the dataset may carry a local UTC offset (for
-            # example +07:00) while `now` is stored as UTC. Comparing those ISO
-            # strings lexicographically can make an already-past local slot look
-            # newer than the UTC value. Normalize both operands in SQL instead.
+            horizon = iso(self.now() + timedelta(days=self.booking_advance_window_days))
             future_slot_sql = (
                 "s.start_at::timestamptz > ?::timestamptz"
                 if c.dialect == "postgres"
@@ -249,16 +269,119 @@ class CatalogService(BookingBase):
                 if c.dialect == "postgres"
                 else "datetime(s.start_at) <= datetime(?)"
             )
-            horizon = iso(self.now() + timedelta(days=30))
+            date_filters = _normalize_date_filters(
+                preferred_date=preferred_date,
+                preferred_dates=preferred_dates,
+                preferred_date_from=preferred_date_from,
+                preferred_date_to=preferred_date_to,
+                now_dt=self.now().astimezone(VIETNAM_TZ),
+            )
+            date_sql, date_values = _date_filter_sql(date_filters, dialect=c.dialect)
+
+            if not showroom_id:
+                # A location belongs to the customer, not to a showroom. Do not
+                # hard-filter candidates by address tokens: a nearby showroom in
+                # another province (for example Da Nang for Que Son) must remain
+                # eligible. The aggregate also ensures every returned showroom
+                # already has at least one genuinely bookable slot.
+                candidate_values: list[Any] = [*variant_ids, now, now, horizon, *date_values]
+                rows = c.execute(
+                    f"SELECT sr.*, COUNT(s.id) AS available_slot_count, MIN(s.start_at) AS nearest_slot_at "
+                    f"FROM showrooms sr "
+                    f"JOIN test_drive_slots s ON s.showroom_id=sr.id "
+                    f"JOIN demo_vehicles d ON d.id=s.demo_vehicle_id "
+                    f"WHERE sr.is_active=1 AND d.variant_id IN ({marks}) "
+                    f"AND s.status='available' AND (s.held_until IS NULL OR s.held_until<=?) "
+                    f"AND {future_slot_sql} AND {horizon_slot_sql} "
+                    f"AND d.is_active=1 AND d.operational_status='available' "
+                    f"AND d.battery_soc IS NOT NULL AND d.battery_soc>=d.minimum_booking_soc"
+                    f"{date_sql} GROUP BY sr.id",
+                    candidate_values,
+                ).fetchall()
+                showrooms = [dict(row) for row in rows]
+                target_coords: dict[str, float] | None = None
+                if latitude is not None and longitude is not None:
+                    target_coords = {"latitude": latitude, "longitude": longitude}
+                elif address:
+                    resolved_coords = resolve_address_coordinates(address)
+                    if resolved_coords:
+                        target_coords = {"latitude": resolved_coords.latitude, "longitude": resolved_coords.longitude}
+
+                if showroom_query:
+                    scored = [
+                        (self._showroom_query_score(showroom_query, showroom), showroom) for showroom in showrooms
+                    ]
+                    showrooms = [showroom for score, showroom in scored if score > 0]
+                    if not showrooms:
+                        raise BookingError("SHOWROOM_NOT_FOUND", "Không tìm thấy showroom theo tên hoặc mã.")
+                    for score, showroom in scored:
+                        if score > 0:
+                            showroom["text_match_score"] = score
+
+                origin_coords = (
+                    Coordinates(target_coords["latitude"], target_coords["longitude"]) if target_coords else None
+                )
+                if origin_coords:
+                    destinations = [Coordinates(s["latitude"], s["longitude"]) for s in showrooms]
+                    for s, distance in zip(
+                        showrooms, self.map_provider.distances_km(origin_coords, destinations), strict=True
+                    ):
+                        s["distance_km"] = round(distance, 2)
+                for showroom in showrooms:
+                    reasons: list[str] = []
+                    if showroom.get("distance_km") is not None:
+                        reasons.append("Gần vị trí của bạn")
+                    if showroom.get("available_slot_count"):
+                        reasons.append(f"Còn {showroom['available_slot_count']} lịch trống")
+                    if showroom_query and showroom.get("text_match_score"):
+                        reasons.append("Khớp tên showroom")
+                    showroom["match_reasons"] = reasons
+
+                if showroom_query:
+                    showrooms.sort(
+                        key=lambda item: (
+                            -int(item.get("text_match_score") or 0),
+                            item.get("distance_km", float("inf")),
+                            -int(item.get("available_slot_count") or 0),
+                            item["name"],
+                        )
+                    )
+                elif origin_coords:
+                    showrooms.sort(
+                        key=lambda item: (
+                            item.get("distance_km", float("inf")),
+                            -int(item.get("available_slot_count") or 0),
+                            item["name"],
+                        )
+                    )
+                else:
+                    showrooms.sort(key=lambda item: (-int(item.get("available_slot_count") or 0), item["name"]))
+
+                return {
+                    "resolved_vehicle": {**model, "variants": variants},
+                    "license_requirement": model["required_license_class"],
+                    "showrooms": showrooms[: min(max(showroom_limit, 1), 30)],
+                    "target_coordinates": target_coords,
+                    "slots": [],
+                    "search_stage": "showroom_selection",
+                    "missing_fields": [],
+                }
+            selected = self._row(
+                c.execute("SELECT * FROM showrooms WHERE id=? AND is_active=1", (showroom_id,)).fetchone()
+            )
+            if not selected:
+                raise BookingError("SHOWROOM_NOT_FOUND", "Showroom not found.")
+            # Slot timestamps in the dataset may carry a local UTC offset (for
+            # example +07:00) while `now` is stored as UTC. Comparing those ISO
+            # strings lexicographically can make an already-past local slot look
+            # newer than the UTC value. Normalize both operands in SQL instead.
             values: list[Any] = [showroom_id, *variant_ids, now, now, horizon]
-            date_sql, order_sql = "", "s.start_at"
-            norm_date = None
-            if preferred_date:
-                norm_date = _normalize_preferred_date(preferred_date, self.now().astimezone(VIETNAM_TZ))
-                date_sql = " AND substr(s.start_at,1,10)=?"
-                values.append(norm_date)
+            order_sql = "s.start_at"
+            values.extend(date_values)
             if preferred_time:
-                if not isinstance(preferred_time, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", preferred_time):
+                if not isinstance(preferred_time, str) or not re.fullmatch(
+                    r"(?:[01]\d|2[0-3]):[0-5]\d", preferred_time
+                ):
                     raise BookingError("INVALID_INPUT", "Preferred time must be a valid HH:MM value.")
                 hour, minute = (int(x) for x in preferred_time.split(":"))
                 target = hour * 60 + minute
@@ -282,15 +405,7 @@ class CatalogService(BookingBase):
                     slot_query_values,
                 )
             ]
-            weekdays_vi = {
-                0: "Thứ 2",
-                1: "Thứ 3",
-                2: "Thứ 4",
-                3: "Thứ 5",
-                4: "Thứ 6",
-                5: "Thứ 7",
-                6: "Chủ nhật"
-            }
+            weekdays_vi = {0: "Thứ 2", 1: "Thứ 3", 2: "Thứ 4", 3: "Thứ 5", 4: "Thứ 6", 5: "Thứ 7", 6: "Chủ nhật"}
             for s in slots:
                 dt_start = _to_vietnam_time(s["start_at"])
                 dt_end = _to_vietnam_time(s["end_at"])
@@ -301,8 +416,15 @@ class CatalogService(BookingBase):
                 time_str = dt_start.strftime("%H:%M")
                 s["formatted_schedule"] = f"{day_label}, {date_str} {time_str}"
 
-        focused_date = norm_date if preferred_date else None
-        highlighted_dates = [focused_date[5:]] if focused_date and len(focused_date) >= 10 else []
+        focused_date = date_filters["dates"][0] if date_filters["mode"] == "single" else None
+        requested_dates = date_filters["dates"] if date_filters["mode"] == "list" else []
+        requested_date_range = (
+            {"from": date_filters["from"], "to": date_filters["to"]} if date_filters["mode"] == "range" else None
+        )
+        available_dates = sorted({slot["start_at"][:10] for slot in slots})
+        highlighted_dates = (
+            [available_date[5:] for available_date in available_dates] if date_filters["mode"] != "none" else []
+        )
 
         return {
             "resolved_vehicle": {**model, "variants": variants},
@@ -312,6 +434,9 @@ class CatalogService(BookingBase):
             "slots": slots,
             "search_stage": "slot_selection",
             "focused_date": focused_date,
+            "requested_dates": requested_dates,
+            "requested_date_range": requested_date_range,
+            "available_dates": available_dates,
             "highlighted_dates": highlighted_dates,
             "missing_fields": [],
         }
@@ -327,3 +452,24 @@ class CatalogService(BookingBase):
         requested = normalize_location_tokens(address)
         candidate = _showroom_location_tokens(showroom)
         return len(requested & candidate)
+
+    @staticmethod
+    def _showroom_query_score(query: str, showroom: dict) -> int:
+        """Score a showroom-name query without selecting a showroom implicitly."""
+
+        normalized_query = normalize_location_text(query)
+        normalized_code = normalize_location_text(str(showroom.get("code", "")))
+        normalized_name = normalize_location_text(str(showroom.get("name", "")))
+        normalized_address = normalize_location_text(str(showroom.get("address", "")))
+        if normalized_query and normalized_query == normalized_code:
+            return 100
+        if normalized_query and normalized_query == normalized_name:
+            return 90
+        if normalized_query and normalized_query in normalized_name:
+            return 70
+        if normalized_query and normalized_query in normalized_address:
+            return 50
+
+        query_tokens = set(normalized_query.split())
+        candidate_tokens = set(f"{normalized_code} {normalized_name} {normalized_address}".split())
+        return 10 * len(query_tokens & candidate_tokens)
