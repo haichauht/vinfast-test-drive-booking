@@ -28,7 +28,7 @@ DRIVER_BOOKING_SCOPE_MESSAGE = (
     "người đặt lịch qua luồng xác thực booking."
 )
 _DRIVER_BLOCKED_SUB_INTENTS = frozenset({
-    "booking_new", "booking_lookup", "booking_availability", "booking_reschedule", "booking_cancel",
+    "booking_new", "booking_availability", "booking_reschedule", "booking_cancel",
     "booking_update_details", "booking_update_notifications",
 })
 
@@ -125,23 +125,7 @@ async def classifier_node(state: AgentState) -> dict:
         trace_event("classifier.keyword_route", trace_id=trace_id, intent="sensitive", sub_intent="out_of_scope_code")
         return {"intent": "sensitive", "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "out_of_scope_code"}, "tool_call_count": 0}
 
-    # A driver invitation is authenticated for one confirmed booking.  Never let
-    # its requests enter the general booking skill (which owns OTP and mutation
-    # tools): booking changes are rejected here, while all other questions are
-    # answered by the advisory skill with the invitation's trusted context.
-    if is_driver_invitation:
-        if any(kw in lower_query for kw in BOOKING_MUTATION_KEYWORDS):
-            return _driver_scope_block(state, query, sub_intent="driver_booking_scope")
-        return {
-            "intent": "domain",
-            "active_skill": "post_booking",
-            "previous_active_skill": previous_skill,
-            "messages": [HumanMessage(content=query)],
-            "metadata": {**metadata, "sub_intent": "driver_advisory"},
-            "tool_call_count": 0,
-        }
-
-    if any(kw in lower_query for kw in BOOKING_MUTATION_KEYWORDS):
+    if not is_driver_invitation and any(kw in lower_query for kw in BOOKING_MUTATION_KEYWORDS):
         return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "booking"}, "tool_call_count": 0}
     if any(phrase in lower_query for phrase in ("xin chào", "chào bạn", "hello", "hi ")):
         return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "greeting"}, "tool_call_count": 0}
@@ -254,15 +238,11 @@ async def classifier_node(state: AgentState) -> dict:
         if intent == "domain" and not post_booking_active and sub_intent == "post_booking_advisory":
             intent = "out_of_scope"
             sub_intent = "out_of_scope"
-        active_skill = (
-            "post_booking"
-            if (
-                intent == "domain"
-                and post_booking_active
-                and sub_intent in {"post_booking_advisory", "vehicle_info"}
-            )
-            else "booking"
+        use_post_booking = intent == "domain" and post_booking_active and (
+            sub_intent in {"post_booking_advisory", "vehicle_info"}
+            or (is_driver_invitation and sub_intent == "booking_lookup")
         )
+        active_skill = "post_booking" if use_post_booking else "booking"
         trace_event(
             "llm.response",
             trace_id=trace_id,
@@ -301,13 +281,17 @@ async def classifier_node(state: AgentState) -> dict:
         trace_event("llm.error", trace_id=trace_id, node="classifier", error=str(e))
         # Log the specific error for debugging before falling back to keyword classifier
         logger.warning("Classifier LLM call failed (%s: %s), falling back to keyword matching.", type(e).__name__, e)
-        active_skill = (
-            "post_booking"
-            if post_booking_active and any(phrase in lower_query for phrase in ADVISORY_KEYWORDS)
-            else "booking"
-        )
         fallback_sub_intent = (
             "booking_lookup" if any(phrase in lower_query for phrase in LOOKUP_KEYWORDS) else "fallback_domain"
+        )
+        active_skill = (
+            "post_booking"
+            if post_booking_active
+            and (
+                any(phrase in lower_query for phrase in ADVISORY_KEYWORDS)
+                or (is_driver_invitation and fallback_sub_intent == "booking_lookup")
+            )
+            else "booking"
         )
         if is_driver_invitation and fallback_sub_intent in _DRIVER_BLOCKED_SUB_INTENTS:
             return _driver_scope_block(state, query, sub_intent="driver_booking_scope")
