@@ -1,4 +1,5 @@
 import importlib
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -75,6 +76,23 @@ async def test_chat_replaces_tampered_conversation_token_with_an_isolated_thread
     assert replacement.public_token != tampered
     assert replacement.thread_id != original.thread_id
     assert mocked.ainvoke.await_args.kwargs["config"]["configurable"]["thread_id"] == replacement.thread_id
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_reuses_guarded_chat_conversation_binding(client, monkeypatch):
+    mocked = _mock_agent(monkeypatch, {"response": "Streamed safely", "analysis": "hidden"})
+
+    response = await client.post("/api/v1/chat/stream", json={"message": "VF8 range"})
+
+    assert response.status_code == 200
+    events = [
+        json.loads(line.removeprefix("data: ")) for line in response.text.splitlines() if line.startswith("data: ")
+    ]
+    final = next(event["response"] for event in events if event["type"] == "done")
+    identity = get_conversation_token_manager().verify(final["conversation_id"])
+    assert identity is not None
+    assert final["analysis"] == ""
+    assert mocked.ainvoke.await_args.kwargs["config"] == {"configurable": {"thread_id": identity.thread_id}}
 
 
 # test case of Chau + kiểm tra message trắng bị từ chối thay vì tốn một lượt gọi agent

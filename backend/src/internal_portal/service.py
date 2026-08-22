@@ -1017,7 +1017,7 @@ class InternalPortalService(InternalNotificationMixin, InternalOperationsMixin, 
             sql, params = "SELECT * FROM sales_staff WHERE id=?", [principal.staff_id]
         else:
             where = ["is_active=1"]
-            params: list[Any] = []
+            params = []
             if showroom_id:
                 if not principal.can_access_showroom(showroom_id):
                     raise InternalPortalError("ACCESS_DENIED", "Showroom nằm ngoài phạm vi của bạn.", status_code=403)

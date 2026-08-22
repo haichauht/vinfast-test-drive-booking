@@ -25,7 +25,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.callbacks import BaseCallbackHandler
 from pydantic import BaseModel, Field
@@ -805,9 +805,12 @@ async def _judge_prediction(
         "forbidden_behavior_labels": forbidden,
     }
     structured = llm.with_structured_output(_BehavioralJudgeResult)
-    result = await structured.ainvoke(
-        json.dumps(prompt, ensure_ascii=False, sort_keys=True),
-        config={"callbacks": [usage]},
+    result = cast(
+        _BehavioralJudgeResult,
+        await structured.ainvoke(
+            json.dumps(prompt, ensure_ascii=False, sort_keys=True),
+            config={"callbacks": [usage]},
+        ),
     )
     judged = result.model_dump()
     detected = set(judged["forbidden_behaviors_detected"])

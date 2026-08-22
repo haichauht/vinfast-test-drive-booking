@@ -3,10 +3,11 @@ from __future__ import annotations
 from src.services.booking.common import iso
 
 from .auth import InternalPrincipal
+from .base import InternalPortalMixin
 from .errors import InternalPortalError
 
 
-class InternalNotificationMixin:
+class InternalNotificationMixin(InternalPortalMixin):
     def list_notifications(
         self,
         principal: InternalPrincipal,

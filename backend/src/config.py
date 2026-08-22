@@ -34,11 +34,17 @@ class Settings(BaseSettings):
     auto_load_eval_data: bool = True
     eval_data_dir: str = "eval/data"
     booking_advance_window_days: int = Field(default=30, ge=1, le=365)
+    redis_enabled: bool = True
+    redis_url: str = "redis://localhost:6379/0"
 
     # Media: local development serves MEDIA_ROOT at /media. Production can set
     # MEDIA_BASE_URL to an absolute CDN origin without changing API DTOs.
     media_root: str = "./data/media"
     media_base_url: str = "/media"
+
+    # Địa chỉ trang công khai, dùng để đặt link trong email gửi cho khách. Email
+    # không hiểu đường dẫn tương đối nên chỗ này bắt buộc phải là URL tuyệt đối.
+    public_site_url: str = "https://vinfast-mvp.pages.dev"
 
     # Vector Store
     chroma_persist_dir: str = "./data/chroma"
@@ -55,11 +61,28 @@ class Settings(BaseSettings):
     booking_access_otp_max_attempts: int = Field(default=2, ge=1, le=10)
     # A server-only pepper used in addition to each OTP's per-record salt.
     booking_access_otp_secret: str = ""
+    # Local-only escape hatch for deterministic UI testing. Production ignores it.
+    booking_access_expose_mock_otp: bool = False
 
     # Internal portal sessions are opaque, revocable bearer tokens stored as
     # hashes in the database. Staff/manager/admin accounts are provisioned via
     # scripts/manage_internal_user.py; no default credential is created.
     internal_session_ttl_seconds: int = Field(default=28_800, ge=900, le=86_400)
+
+    # Gmail notification provider. Gmail is opt-in so local development keeps
+    # the deterministic in-memory sender unless the operator enables it.
+    gmail_enabled: bool = False
+    gmail_client_id: str = ""
+    gmail_client_secret: str = ""
+    gmail_refresh_token: str = ""
+    gmail_sender_email: str = ""
+    gmail_sender_name: str = "VinFast"
+    gmail_timeout_seconds: int = Field(default=15, ge=1, le=60)
+    notification_poll_interval_seconds: int = Field(default=60, ge=5, le=300)
+    notification_batch_size: int = Field(default=100, ge=1, le=500)
+    notification_processing_timeout_seconds: int = Field(default=300, ge=30, le=3600)
+    driver_chat_base_url: str = "http://localhost:3000/booking#driver-invitation="
+    driver_chat_invitation_ttl_seconds: int = Field(default=604_800, ge=900, le=2_592_000)
 
     # Deterministic AI guardrails. These checks run before the agent, before
     # tool execution, and before a chat response crosses the public API.
@@ -89,6 +112,33 @@ class Settings(BaseSettings):
     booking_confirm_rate_limit_requests: int = Field(default=10, ge=1, le=1_000)
     booking_otp_rate_limit_requests: int = Field(default=10, ge=1, le=1_000)
 
+    # Public endpoint rate limits. Anonymous users are identified by a
+    # server-issued cookie plus an IP fallback.
+    rate_limit_enabled: bool = True
+    rate_limit_trust_proxy_headers: bool = False
+    rate_limit_anon_cookie_name: str = "anon_session_id"
+    rate_limit_anon_cookie_ttl_seconds: int = Field(default=2_592_000, ge=60, le=31_536_000)
+    rate_limit_chat_per_session_per_minute: int = Field(default=30, ge=1, le=10_000)
+    rate_limit_chat_per_session_per_hour: int = Field(default=120, ge=1, le=100_000)
+    rate_limit_chat_per_ip_per_minute: int = Field(default=60, ge=1, le=100_000)
+    rate_limit_chat_per_ip_per_hour: int = Field(default=600, ge=1, le=1_000_000)
+    rate_limit_demo_action_per_session_per_minute: int = Field(default=30, ge=1, le=10_000)
+    rate_limit_demo_action_per_session_per_hour: int = Field(default=300, ge=1, le=100_000)
+    rate_limit_demo_action_per_ip_per_minute: int = Field(default=120, ge=1, le=100_000)
+    rate_limit_demo_action_per_ip_per_hour: int = Field(default=1_200, ge=1, le=1_000_000)
+    rate_limit_otp_request_per_contact_per_hour: int = Field(default=10, ge=1, le=1_000)
+    rate_limit_otp_verify_per_challenge_per_minute: int = Field(default=5, ge=1, le=1_000)
+
+    # LLM money budget. The app estimates cost before calling the provider and
+    # records actual usage when provider metadata is available.
+    llm_daily_budget_enabled: bool = True
+    llm_daily_max_cost_usd: float = Field(default=20.0, ge=0.0)
+    llm_session_max_cost_usd_per_day: float = Field(default=1.0, ge=0.0)
+    llm_max_calls_per_turn: int = Field(default=16, ge=1, le=32)
+    llm_estimated_input_token_price_per_1m: float = Field(default=0.15, ge=0.0)
+    llm_estimated_output_token_price_per_1m: float = Field(default=0.60, ge=0.0)
+    llm_estimated_output_tokens_per_call: int = Field(default=700, ge=1, le=100_000)
+
     @model_validator(mode="after")
     def require_production_otp_secret(self):
         if self.app_env == "production" and len(self.booking_access_otp_secret) < 32:
@@ -99,6 +149,19 @@ class Settings(BaseSettings):
             raise ValueError("CONVERSATION_SIGNING_SECRET must be at least 32 characters in production.")
         if self.app_env == "production" and not self.rate_limits_enabled:
             raise ValueError("RATE_LIMITS_ENABLED cannot be false in production.")
+        if self.gmail_enabled:
+            missing = [
+                name
+                for name, value in (
+                    ("GMAIL_CLIENT_ID", self.gmail_client_id),
+                    ("GMAIL_CLIENT_SECRET", self.gmail_client_secret),
+                    ("GMAIL_REFRESH_TOKEN", self.gmail_refresh_token),
+                    ("GMAIL_SENDER_EMAIL", self.gmail_sender_email),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError(f"Missing Gmail settings: {', '.join(missing)}")
         return self
 
 

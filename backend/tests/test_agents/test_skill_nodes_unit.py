@@ -2,16 +2,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from src.agents.nodes import advise_skill_node as advise_module
+from src.agents.nodes import booking_skill_node as booking_module
 from src.agents.nodes.advise_skill_node import advise_skill_node
 from src.agents.nodes.booking_skill_node import booking_skill_node
 from src.agents.utils import window_messages
 
-from src.agents.nodes import advise_skill_node as advise_module
-from src.agents.nodes import booking_skill_node as booking_module
-
 
 def _mock_bound_llm(response):
     llm = MagicMock()
+    llm.model_name = "test-chat-model"
     bound = MagicMock()
     bound.ainvoke = AsyncMock(return_value=response)
     llm.bind_tools.return_value = bound
@@ -37,6 +37,7 @@ async def test_booking_skill_binds_only_booking_tools_and_returns_text(monkeypat
         "get_booking_draft",
         "update_booking_draft",
         "request_booking_access",
+        "request_user_location",
         "verify_booking_access",
         "get_booking_details",
     ]
@@ -94,6 +95,102 @@ async def test_booking_skill_increments_count_for_tool_call(monkeypatch):
     assert result["messages"] == [response]
     assert result["tool_call_count"] == 4
     assert "response" not in result
+
+
+@pytest.mark.asyncio
+async def test_booking_availability_forces_search_tool_when_ui_context_is_ready(monkeypatch):
+    response = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "availability-call-1",
+                "name": "search_test_drive_options",
+                "args": {
+                    "vehicle_model": "VF 9",
+                    "showroom_id": "753",
+                    "preferred_dates": ["2026-08-25", "2026-08-26"],
+                },
+            }
+        ],
+    )
+    llm, _ = _mock_bound_llm(response)
+    monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+
+    result = await booking_skill_node(
+        {
+            "messages": [HumanMessage(content="tui rảnh ngày 25-26")],
+            "metadata": {"sub_intent": "booking_availability"},
+            "context": {
+                "selected_vehicle_name": "VF 9",
+                "selected_showroom_id": "753",
+            },
+        }
+    )
+
+    assert llm.bind_tools.call_args.kwargs["tool_choice"] == "search_test_drive_options"
+    assert result["messages"][0].tool_calls[0]["name"] == "search_test_drive_options"
+
+
+@pytest.mark.asyncio
+async def test_booking_availability_can_ask_for_missing_context_without_forcing_tool(monkeypatch):
+    llm, _ = _mock_bound_llm(AIMessage(content="Quý khách muốn xem lịch của mẫu xe nào?"))
+    monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+
+    result = await booking_skill_node(
+        {
+            "messages": [HumanMessage(content="tuần sau có giờ nào?")],
+            "metadata": {"sub_intent": "booking_availability"},
+            "context": {},
+        }
+    )
+
+    assert "tool_choice" not in llm.bind_tools.call_args.kwargs
+    assert result["response"] == "Quý khách muốn xem lịch của mẫu xe nào?"
+
+
+@pytest.mark.asyncio
+async def test_booking_skill_lets_vivi_explain_invalid_date_range(monkeypatch):
+    tool_request = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "availability-error-1",
+                "name": "search_test_drive_options",
+                "args": {
+                    "vehicle_model": "VF 9",
+                    "showroom_id": "753",
+                    "preferred_date_from": "2026-08-26",
+                    "preferred_date_to": "2026-08-21",
+                },
+            }
+        ],
+    )
+    tool_result = ToolMessage(
+        content=(
+            '{"error":{"code":"INVALID_INPUT",'
+            '"message":"Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.",'
+            '"retryable":false}}'
+        ),
+        tool_call_id="availability-error-1",
+        name="search_test_drive_options",
+        status="error",
+    )
+    llm, _ = _mock_bound_llm(
+        AIMessage(content="Ngày kết thúc đang trước ngày bắt đầu. Quý khách vui lòng xác nhận lại khoảng ngày.")
+    )
+    monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+
+    result = await booking_skill_node(
+        {
+            "messages": [tool_request, tool_result],
+            "metadata": {"sub_intent": "booking_availability"},
+        }
+    )
+
+    assert result["action_error"] == "INVALID_INPUT"
+    assert result["action_result"] is None
+    assert "Quý khách vui lòng xác nhận lại" in result["response"]
+    assert "tool_choice" not in llm.bind_tools.call_args.kwargs
 
 
 @pytest.mark.asyncio

@@ -10,11 +10,17 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from src.database import Database
+from src.dependencies import database as app_database
 from src.main import app
 from src.services.booking import BookingService
 
 FIXED_NOW = datetime(2026, 8, 3, 2, 0, tzinfo=UTC)
 BOOKER_PHONE = "0901234567"
+
+# ASGITransport does not run FastAPI's lifespan by default.  Initialise the
+# same global SQLite database used by the imported app so middleware and LLM
+# budget services see the current schema during API and node tests.
+app_database.initialize()
 
 
 @pytest_asyncio.fixture
@@ -38,6 +44,7 @@ def mock_llm():
     from langchain_core.messages import AIMessage
 
     mock_instance = MagicMock()
+    mock_instance.model_name = "test-chat-model"
     mock_response = AIMessage(content="Mocked LLM response")
 
     # Mock basic invoke/ainvoke
@@ -91,11 +98,13 @@ def catalog(booking_db):
         connection.executemany(
             """INSERT INTO vehicle_models(
                 id,code,name,vehicle_type,required_license_class,
-                license_requirement_note,is_active,created_at,updated_at
-            ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                license_requirement_note,is_active,created_at,updated_at,seat_count
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
             [
-                ("model_vf6", "VF6", "VinFast VF 6", "SUV", "B1", "GPLX B1", 1, created, created),
-                ("model_inactive", "VFX", "VinFast Inactive", "SUV", "B1", "GPLX B1", 0, created, created),
+                # Cot cuoi la seat_count. Thu xac nhan doc cot nay de noi "xe may cho";
+                # de trong thi menh de do bi bo im lang.
+                ("model_vf6", "VF6", "VinFast VF 6", "SUV", "B1", "GPLX B1", 1, created, created, 5),
+                ("model_inactive", "VFX", "VinFast Inactive", "SUV", "B1", "GPLX B1", 0, created, created, 5),
             ],
         )
         connection.execute(
@@ -361,6 +370,7 @@ def ready_draft_factory(booking_service, catalog):
             booker_patch={
                 "full_name": "Huynh Thi Hai Chau",
                 "phone": BOOKER_PHONE,
+                "email": "chau@example.test",
                 "preferred_channel": "sms",
             },
             driver_same_as_booker=True,

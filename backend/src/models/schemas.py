@@ -2,7 +2,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-CHAT_MESSAGE_MAX_LENGTH = 5000
+CHAT_MESSAGE_MAX_LENGTH = 150
 
 
 class ChatRequest(BaseModel):
@@ -16,6 +16,9 @@ class ChatRequest(BaseModel):
     )
     action_payload: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
+    # Private bearer token used only by the backend to load a driver's trusted
+    # booking context.  Never place it in ``context`` (which reaches the agent).
+    driver_invitation_token: str = Field(default="", max_length=512)
 
     @field_validator("message")
     @classmethod
@@ -23,6 +26,12 @@ class ChatRequest(BaseModel):
         if not v.strip():
             raise ValueError("Tin nhắn không được chỉ chứa khoảng trắng.")
         return v
+
+
+class UiDirective(BaseModel):
+    event: str = ""
+    phase: str = ""
+    allowed_actions: list[str] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
@@ -33,11 +42,14 @@ class ChatResponse(BaseModel):
     tool_input: dict[str, Any] = Field(default_factory=dict)
     action_data: Any | None = None
     action_error: str = ""
+    intent: str = ""
+    ui: UiDirective | None = None
 
 
 class DemoActionRequest(BaseModel):
     action: str = Field(..., min_length=1)
     payload: dict[str, Any] = Field(default_factory=dict)
+    conversation_id: str = Field(default="", max_length=100)
 
 
 class CsvImportRequest(BaseModel):

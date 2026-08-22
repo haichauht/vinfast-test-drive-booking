@@ -4,20 +4,9 @@
  * Dữ liệu: useVehicleDetail(carId) cho mẫu xe đang xem, useVehicleCatalog() để tìm "xe tiếp theo".
  * ID không có trong catalogue → hiện màn "Không tìm thấy mẫu xe" thay vì trang lỗi.
  *
- * Thứ tự các mục trên trang:
- *  1. Hero — tên xe cỡ lớn, ảnh xe chạy vào từ trái          (.detail-hero)
- *  2. Video nội thất (CHỈ mẫu limo-green)                     (.detail-film)
- *  3. Popup gợi ý đặt lịch, tự hiện sau 2,2 giây              (.test-drive-nudge)
- *  4. Câu tuyên ngôn — chữ sáng dần từng từ khi cuộn          (.car-manifesto)
- *  5. Model GLB tương tác cho mẫu có asset web hợp lệ          (Vehicle3DExperience)
- *  6. Thước phim giới thiệu, nếu backend có video             (ModelFilm, ~dòng 68)
- *  7. Thông số nổi bật                                        (.detail-specs, id="specifications")
- *  8. Các chương ảnh: ngoại thất → khoang lái → chi tiết      (.detail-story)
- *  9. Lưới ảnh đầy đủ, chỉ hiện khi có hơn 3 ảnh              (.detail-media)
- * 10. Bảng màu bấm đổi được, cần ít nhất 2 màu                (ColorExplorer, ~dòng 16)
- * 11. Nguồn dữ liệu + link brochure PDF                       (.brochure-note)
- * 12. CTA cuối + link sang xe tiếp theo                       (.detail-action)
- * 13. Thanh nổi dưới đáy: tên xe, giá, nút đặt lịch           (.detail-booking-dock)
+ * Thứ tự nội dung: Hero → tổng quan → màu → ngoại thất → nội thất → công nghệ
+ * → thư viện bổ sung → thông số chi tiết → CTA. Booking dock (góc dưới phải) là lớp
+ * nổi, không tham gia vào thứ tự đọc của nội dung chính.
  *
  * ANIMATION (khối useGSAP ~dòng 127) — phần tinh vi nhất dự án:
  * - Xe chạy vào màn hình. Lần đầu xem mẫu này chạy dài (-132%, 1,7 giây), các lần sau
@@ -27,16 +16,15 @@
  * - Mẫu có GLB hợp lệ: model chạy xuyên trái → phải khi sân khấu đã hiện rõ,
  *   sau đó popup thành model xoay/zoom.
  *
- * sessionStorage lưu 3 khoá (chỉ ID và cờ giao diện, KHÔNG lưu thông tin cá nhân):
- * last-viewed-car · test-drive-nudge:<id> · vinfast-intro-seen:<id>.
- * Muốn xem lại animation lần đầu hoặc popup gợi ý: mở tab ẩn danh, hoặc xoá sessionStorage.
+ * sessionStorage chỉ còn 1 khoá (cờ giao diện, KHÔNG lưu thông tin cá nhân):
+ * vinfast-intro-seen:<id>. Muốn xem lại animation lần đầu: mở tab ẩn danh hoặc xoá khoá này.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { ArrowLeft, ArrowRight, FileText, X } from '@phosphor-icons/react'
+import { ArrowLeft } from '@phosphor-icons/react'
 import { AppShell } from '../components/AppShell'
 import { IslandButton } from '../components/IslandButton'
 import { Reveal } from '../components/Reveal'
@@ -45,12 +33,37 @@ import { SiteFooter } from '../components/SiteFooter'
 import { Vehicle3DExperience } from '../components/Vehicle3DExperience'
 import { VehicleColorConfigurator } from '../components/VehicleColorConfigurator'
 import { useVehicleCatalog, useVehicleDetail } from '../hooks/useSiteData'
+import { getVehicle3dModel } from '../data/vehicle3d'
+import { vehicleGallery } from '../data/vehicle-gallery'
 import { limoInteriorFilm } from '../data/media'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
-function ModelFilm({ car }) {
+/**
+ * Thước phim nền, tự chạy và lặp — giống cách vinfast.vn nhúng video sản phẩm.
+ *
+ * KHÔNG có nút phát/tạm dừng: video không tiếng, tự lặp, chỉ đóng vai trò hình nền chuyển
+ * động nên nút điều khiển chỉ làm rối mặt. Máy bật prefers-reduced-motion thì không tự chạy.
+ */
+function FilmVideo({ className, src, poster, label }) {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  return (
+    <video
+      className={className}
+      src={src}
+      poster={poster}
+      autoPlay={!reducedMotion}
+      muted
+      loop
+      playsInline
+      preload="metadata"
+      aria-label={label}
+    />
+  )
+}
+
+function ModelFilm({ car }) {
   const film = car.presentationFilm
 
   if (!film) return null
@@ -58,16 +71,11 @@ function ModelFilm({ car }) {
   return (
     <section id="model-film" className="model-film" aria-labelledby={`model-film-${car.id}`}>
       <div className="model-film__stage">
-        <video
+        <FilmVideo
           className="model-film__video"
           src={film.src}
           poster={film.poster || car.hero}
-          autoPlay={!reducedMotion}
-          muted
-          loop
-          playsInline
-          preload="metadata"
-          aria-label={`Thước phim giới thiệu ${car.name}`}
+          label={`Thước phim giới thiệu ${car.name}`}
         />
         <div className="model-film__veil" aria-hidden="true" />
         <div className="model-film__copy" data-film-layer>
@@ -80,31 +88,123 @@ function ModelFilm({ car }) {
   )
 }
 
+const DETAIL_CHAPTER_KEYS = {
+  exterior: new Set(['exterior', 'profile', 'rear', 'drive']),
+  interior: new Set(['cockpit', 'cabin', 'rearSeats', 'cargo']),
+  technology: new Set(['technology', 'charging']),
+}
+
+const normalizeDetailLabel = (value = '') => String(value)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/đ/g, 'd')
+
+const findDetailFact = (facts, expression) => (facts || []).find((fact) => (
+  fact?.label && expression.test(normalizeDetailLabel(fact.label))
+))
+
+function DetailChapter({ car, chapter }) {
+  const title = chapter.title || 'Chi tiết sản phẩm'
+  return (
+    <article className="detail-chapter">
+      <div className={`double-bezel detail-chapter__media ${chapter.tone === 'dark' ? 'double-bezel--dark' : ''}`}>
+        <div className={`double-bezel__core detail-chapter__frame is-${chapter.tone || 'dark'}`}>
+          <SmartImage
+            src={chapter.src}
+            alt={`${car.name} — ${chapter.alt || title}`}
+            focalPoint={chapter.focalPoint}
+            aspectRatio={chapter.aspectRatio}
+            fit={chapter.fit}
+          />
+        </div>
+      </div>
+      <div className="detail-chapter__copy">
+        <h3>{title}</h3>
+        {chapter.copy && <p>{chapter.copy}</p>}
+      </div>
+    </article>
+  )
+}
+
+/**
+ * Một chương nội dung (Ngoại thất / Nội thất / Công nghệ).
+ *
+ * `hasFeature` = mục này còn nội dung KHÁC ngoài chapters (bộ xem 3D, thước phim…).
+ * Không có chapter mà cũng không có feature thì KHÔNG render gì cả.
+ *
+ * Trước đây mục rỗng vẫn hiện tiêu đề kèm dòng "Chưa có chương hình ảnh… cho <xe>".
+ * Đo trên dữ liệu thật 16/08/2026: 13/14 mẫu rơi vào ít nhất một mục rỗng (đa số thiếu
+ * "Công nghệ", riêng VF 9 thiếu "Ngoại thất", Nerio Green thiếu cả nội thất lẫn công nghệ)
+ * → trang chi tiết nào cũng có ô báo thiếu ảnh, làm cả site trông như hỏng.
+ *
+ * TODO [BACKEND/CATALOGUE]: gốc rễ là taxonomy chapter của backend lệch. GET /vehicles/{id}
+ * chỉ trả 2–3 chapter với `key` không phủ đủ ba nhóm (vd VF 9: charging/cockpit/rearSeats),
+ * trong khi `gallery` trả về `sectionKey: null` nên frontend không có căn cứ xếp ảnh vào mục
+ * nào. Cần backend trả `sectionKey` cho gallery HOẶC bổ sung chapter cho đủ nhóm. Chừng nào
+ * chưa có, các ảnh chưa phân loại vẫn nằm ở mục "Góc nhìn bổ sung" — đúng dữ liệu, không suy đoán.
+ */
+/**
+ * Ảnh sản phẩm bổ sung — trình bày theo đúng cách vinfast.vn làm.
+ *
+ * Đã đọc CSS bản crawl: toàn bộ quy tắc của họ chỉ là `img { width: 100% }`. Không
+ * aspect-ratio, không object-fit, không khung, không đế màu. Ảnh nhận bề rộng của cột và
+ * cao tự do theo tỉ lệ gốc, nên người xem thấy TRỌN tấm ảnh, chỉ là nhỏ lại.
+ *
+ * Hai bản trước em đều sai vì cùng một thói quen: nhét ảnh vào khung có kích thước định sẵn
+ * rồi cắt/phóng cho vừa, và bôi đế sáng cho ảnh tách nền. Nay bỏ hết, chỉ còn ảnh.
+ * Chiều cao chênh nhau thì để CSS columns xếp khít (xem .detail-gallery trong index.css).
+ */
+function DetailGalleryStrip({ items, carName }) {
+  if (!items.length) return null
+
+  return (
+    <div className="detail-gallery" data-count={items.length} aria-label={`Ảnh bổ sung ${carName}`}>
+      {items.map((item) => (
+        <figure className="detail-gallery__item" key={item.key} data-gallery-item>
+          <SmartImage src={item.src} alt={`${carName} — ${item.label}`} />
+          <figcaption>{item.label}</figcaption>
+        </figure>
+      ))}
+    </div>
+  )
+}
+
+function DetailStorySection({ id, eyebrow, title, copy, car, chapters, extraImages = [], hasFeature = false, children }) {
+  if (!chapters.length && !extraImages.length && !hasFeature) return null
+
+  return (
+    <section
+      id={id}
+      className={`detail-story-group detail-story-group--${id} ${chapters.length ? '' : 'is-empty'}`.trim()}
+      aria-labelledby={`${id}-title`}
+    >
+      <div className="section-frame detail-story__grid">
+        <header className="detail-story__aside">
+          <p className="eyebrow">{eyebrow}</p>
+          <h2 id={`${id}-title`}>{title}</h2>
+          <p>{copy}</p>
+        </header>
+
+        {(chapters.length > 0 || extraImages.length > 0) && (
+          <div className="detail-story__chapters">
+            {chapters.map((chapter, index) => (
+              <DetailChapter car={car} chapter={chapter} key={`${chapter.key || id}-${chapter.src}-${index}`} />
+            ))}
+            <DetailGalleryStrip items={extraImages} carName={car.name} />
+          </div>
+        )}
+      </div>
+      <div className="detail-story-group__feature">{children}</div>
+    </section>
+  )
+}
+
 export function CarDetailPage() {
   const { carId } = useParams()
-  const { car } = useVehicleDetail(carId)
+  const { car, loading, error, retry } = useVehicleDetail(carId)
   const { cars } = useVehicleCatalog()
   const root = useRef(null)
-  const [showTestDriveNudge, setShowTestDriveNudge] = useState(false)
-  const [exploring3d, setExploring3d] = useState(false)
-
-  useEffect(() => {
-    if (!car) return undefined
-    setExploring3d(false)
-    setShowTestDriveNudge(false)
-    const dismissed = window.sessionStorage.getItem(`vinfast:test-drive-nudge:${car.id}`)
-    if (dismissed) return undefined
-
-    const timer = window.setTimeout(() => setShowTestDriveNudge(true), 2200)
-    return () => window.clearTimeout(timer)
-  }, [car])
-
-  const dismissNudge = () => {
-    // TODO [BACKEND/ANALYTICS]: Emit test_drive_nudge_dismissed with vehicleId and
-    // placement only. Do not send a name, phone, email or free-text value.
-    if (car) window.sessionStorage.setItem(`vinfast:test-drive-nudge:${car.id}`, 'dismissed')
-    setShowTestDriveNudge(false)
-  }
 
   useGSAP(
     () => {
@@ -126,20 +226,26 @@ export function CarDetailPage() {
           y: 0,
           scale: 1,
         })
-      } else {
-        const intro = gsap.timeline({ defaults: { ease: 'power4.out' } })
-        const carFrom = car.motionImage
-          ? { xPercent: firstVisit ? -132 : -34, opacity: 0, rotate: firstVisit ? -1.2 : 0 }
-          : { xPercent: 0, scale: 0.92, opacity: 0 }
-        intro
-          .fromTo('.detail-hero__car', carFrom, { xPercent: 0, x: 0, scale: 1, opacity: 1, rotate: 0, duration: firstVisit ? 1.7 : 0.95 })
-          .fromTo(
-            '[data-detail-copy]',
-            { y: 48, opacity: 0, filter: 'blur(8px)' },
-            { y: 0, opacity: 1, filter: 'blur(0px)', duration: 0.9, stagger: 0.1 },
-            '-=0.72',
-          )
+        gsap.set('.manifesto-word, .detail-chapter__media, .detail-media-grid__item, [data-gallery-item]', {
+          opacity: 1,
+          scale: 1,
+          clearProps: 'transform,filter',
+        })
+        return
       }
+
+      const intro = gsap.timeline({ defaults: { ease: 'power4.out' } })
+      const carFrom = car.motionImage
+        ? { xPercent: firstVisit ? -132 : -34, opacity: 0, rotate: firstVisit ? -1.2 : 0 }
+        : { xPercent: 0, scale: 0.92, opacity: 0 }
+      intro
+        .fromTo('.detail-hero__car', carFrom, { xPercent: 0, x: 0, scale: 1, opacity: 1, rotate: 0, duration: firstVisit ? 1.7 : 0.95 })
+        .fromTo(
+          '[data-detail-copy]',
+          { y: 48, opacity: 0, filter: 'blur(8px)' },
+          { y: 0, opacity: 1, filter: 'blur(0px)', duration: 0.9, stagger: 0.1 },
+          '-=0.72',
+        )
 
       gsap.to('.detail-hero__car', {
         x: car.motionImage ? 72 : 0,
@@ -201,6 +307,19 @@ export function CarDetailPage() {
         )
       })
 
+      // Ảnh bổ sung: hiện lên theo hàng, so le nhẹ theo cột để mắt đi ngang chứ không
+      // giật cục từng ô. Dùng batch nên mỗi hàng chỉ tạo MỘT ScrollTrigger thay vì một
+      // trigger cho mỗi ảnh — trang chi tiết đã có khá nhiều trigger rồi.
+      ScrollTrigger.batch('[data-gallery-item]', {
+        start: 'top 92%',
+        once: true,
+        onEnter: (batch) => gsap.fromTo(
+          batch,
+          { y: 34, opacity: 0, scale: 0.965 },
+          { y: 0, opacity: 1, scale: 1, duration: 0.85, stagger: 0.07, ease: 'power3.out', overwrite: true },
+        ),
+      })
+
       gsap.utils.toArray('.detail-media-grid__item').forEach((mediaEl) => {
         gsap.fromTo(mediaEl, { scale: 0.9, opacity: 0.35 }, {
           scale: 1,
@@ -213,6 +332,35 @@ export function CarDetailPage() {
     },
     { scope: root, dependencies: [carId, car] },
   )
+
+  if (loading) {
+    return (
+      <AppShell>
+        <main id="main-content" className="detail-state" aria-live="polite" aria-busy="true">
+          <div className="detail-state__inner">
+            <p className="eyebrow">Catalogue VinFast</p>
+            <h1>Đang tải thông tin mẫu xe.</h1>
+            <p>Dữ liệu, hình ảnh và bảng màu sẽ xuất hiện ngay khi kết nối hoàn tất.</p>
+          </div>
+        </main>
+      </AppShell>
+    )
+  }
+
+  if (error && error.status !== 404) {
+    return (
+      <AppShell>
+        <main id="main-content" className="detail-state" role="alert">
+          <div className="detail-state__inner">
+            <p className="eyebrow">Không thể tải dữ liệu</p>
+            <h1>Trang chi tiết đang tạm gián đoạn.</h1>
+            <p>Không có thông số hay hình ảnh thay thế được tạo ra trong lúc kết nối lỗi.</p>
+            <button type="button" onClick={retry}>Thử tải lại</button>
+          </div>
+        </main>
+      </AppShell>
+    )
+  }
 
   if (!car) {
     return (
@@ -236,23 +384,77 @@ export function CarDetailPage() {
   const nextCar = cars.length
     ? cars[(cars.findIndex((item) => item.id === car.id) + 1) % cars.length]
     : null
-  const manifesto = `${car.tagline} ${car.description}`.split(' ')
+  const manifestoText = [car.tagline, car.description].filter(Boolean).join(' ')
+  const manifesto = manifestoText.split(' ').filter(Boolean)
+  const overviewFacts = [...(car.highlights || []), ...(car.specs || [])]
+  const rangeFact = car.range || findDetailFact(overviewFacts, /quang duong|tam hoat dong/)
+  const chargingFact = car.charging || findDetailFact(overviewFacts, /sac|thoi gian nap/)
+  const overviewItems = [
+    { label: 'Giá', value: car.price },
+    { label: 'Sức chứa', value: car.seats },
+    { label: rangeFact?.label || 'Tầm hoạt động', value: rangeFact?.value },
+    { label: chargingFact?.label || 'Thông tin sạc', value: chargingFact?.value },
+  ]
+  const chapters = car.chapters || []
+  const exteriorChapters = chapters.filter((chapter) => DETAIL_CHAPTER_KEYS.exterior.has(chapter.key || chapter.kind))
+  const interiorChapters = chapters.filter((chapter) => DETAIL_CHAPTER_KEYS.interior.has(chapter.key || chapter.kind))
+  const technologyChapters = chapters.filter((chapter) => DETAIL_CHAPTER_KEYS.technology.has(chapter.key || chapter.kind))
+  const supplementalChapters = chapters.filter((chapter) => !Object.values(DETAIL_CHAPTER_KEYS)
+    .some((keys) => keys.has(chapter.key || chapter.kind)))
+  const filmSection = ['exterior', 'interior', 'technology'].includes(car.presentationFilm?.sectionKey)
+    ? car.presentationFilm.sectionKey
+    : null
+  // Chỉ vf3 và vf9 có file .glb (xem data/vehicle3d.js) — Vehicle3DExperience trả null cho
+  // các mẫu còn lại, nên mục "Ngoại thất" của chúng không được tính là có nội dung.
+  const has3dExperience = Boolean(getVehicle3dModel(car.id))
+  // Ảnh bổ sung theo mã xe; mẫu nào chưa có thư mục ảnh thì trả về ba mảng rỗng.
+  const extraImages = vehicleGallery(car.id)
+  // Thanh "đi nhanh tới" chỉ liệt kê mục THỰC SỰ được render, tránh anchor trỏ vào hư không.
+  const detailAnchors = [
+    { id: 'colors', label: 'Màu sắc', shown: true },
+    { id: 'exterior', label: 'Ngoại thất', shown: exteriorChapters.length > 0 || extraImages.exterior.length > 0 || has3dExperience || filmSection === 'exterior' },
+    { id: 'interior', label: 'Nội thất', shown: interiorChapters.length > 0 || extraImages.interior.length > 0 || car.id === 'limo-green' || filmSection === 'interior' },
+    { id: 'technology', label: 'Công nghệ', shown: technologyChapters.length > 0 || extraImages.technology.length > 0 || filmSection === 'technology' },
+    { id: 'specifications', label: 'Thông số', shown: true },
+  ].filter((anchor) => anchor.shown)
+  const knownMedia = new Set([
+    ...chapters.map((chapter) => chapter.src),
+    ...(car.colors || []).map((color) => color.image),
+  ].filter(Boolean))
+  const seenGalleryMedia = new Set()
   const carMedia = (car.media || car.gallery || [])
     .map((asset, index) => {
       const fallbackLabel = `Góc nhìn ${String(index + 1).padStart(2, '0')}`
-      if (typeof asset === 'string') return { src: asset, alt: '', label: fallbackLabel }
+      if (typeof asset === 'string') return { src: asset, alt: '', label: fallbackLabel, sortOrder: index }
       return {
         src: asset.src || '',
         alt: asset.alt || asset.label || '',
         label: asset.label || fallbackLabel,
+        focalPoint: asset.focalPoint,
+        aspectRatio: asset.aspectRatio,
+        fit: asset.fit,
+        sectionKey: asset.sectionKey || null,
+        sortOrder: asset.sortOrder ?? index,
       }
     })
-    .filter((asset) => asset.src)
-
+    .sort((left, right) => left.sortOrder - right.sortOrder)
+    .filter((asset) => {
+      if (!asset.src || knownMedia.has(asset.src) || seenGalleryMedia.has(asset.src)) return false
+      seenGalleryMedia.add(asset.src)
+      return true
+    })
+  const specificationGroups = car.specificationGroups?.length
+    ? car.specificationGroups
+    : car.specs?.length
+      ? [{ title: 'Thông số chính', items: car.specs }]
+      : []
+  const brochureTitle = car.brochure && typeof car.brochure === 'object'
+    ? car.brochure.title
+    : car.brochure
   return (
     <AppShell>
       <main ref={root} id="main-content" className="page page--detail">
-        <section className="detail-hero" aria-labelledby="detail-title">
+        <section className={`detail-hero ${car.name.length > 12 ? 'is-long-name' : ''}`.trim()} aria-labelledby="detail-title">
           <div className="detail-hero__wash" aria-hidden="true" />
           <div className="detail-hero__model-word" aria-hidden="true">{car.name}</div>
           <div className="detail-hero__road" aria-hidden="true"><span /></div>
@@ -279,109 +481,137 @@ export function CarDetailPage() {
           </div>
         </section>
 
-        {car.id === 'limo-green' && (
-          <section className="detail-film" aria-labelledby="detail-film-title">
-            <video src={limoInteriorFilm} autoPlay muted loop playsInline preload="metadata" />
-            <div className="detail-film__veil" aria-hidden="true" />
-            <div className="section-frame detail-film__copy">
-              <p className="eyebrow">Không gian Limo Green</p>
-              <h2 id="detail-film-title">Ba hàng ghế được nhìn trong chuyển động thật.</h2>
-            </div>
-          </section>
-        )}
+        {/* Popup gợi ý đặt lịch (.test-drive-nudge) đã gỡ trong đợt dọn CTA: nó hiện ra sau
+            2,2 giây ở bottom:94px, tức nằm đè ngay trên .detail-booking-dock ở bottom:22px —
+            hai nút xanh cùng chữ "Đặt lịch lái thử", cùng /booking?car=<id>, cách nhau 72px.
+            Dock giữ lại vì luôn hiển thị, có kèm tên xe + giá và không cắt ngang người đọc.
+            Style .test-drive-nudge trong index.css được giữ nguyên, chưa dùng tới. */}
 
-        {showTestDriveNudge && !exploring3d && (
-          <aside className="test-drive-nudge" aria-live="polite">
-            <button type="button" onClick={dismissNudge} aria-label="Đóng gợi ý đặt lịch">
-              <X size={16} weight="light" />
-            </button>
-            <span>ViVi đã ghi nhớ mẫu xe bạn đang xem</span>
-            <strong>Bạn muốn lái thử {car.name}?</strong>
-            <p>Tiếp tục với đúng mẫu xe này trong không gian đặt lịch cùng ViVi.</p>
-            <Link to={`/booking?car=${car.id}`}>Đặt lịch lái thử</Link>
-          </aside>
-        )}
-
-        <section className="car-manifesto">
-          <div className="section-frame">
-            <p aria-label={`${car.tagline} ${car.description}`}>
-              {manifesto.map((word, index) => (
-                <span className="manifesto-word" key={`${word}-${index}`} aria-hidden="true">
-                  {word}{' '}
-                </span>
-              ))}
-            </p>
-          </div>
-        </section>
-
-        <Vehicle3DExperience car={car} onEnter={() => {
-          setExploring3d(true)
-          setShowTestDriveNudge(false)
-        }} />
-
-        <ModelFilm car={car} />
-
-        <section className="detail-specs" id="specifications">
-          <div className="section-frame">
-            <Reveal className="detail-specs__heading">
-              <p className="eyebrow">Thông số nổi bật</p>
-              <h2>Dữ liệu quan trọng, không làm bạn phân tâm.</h2>
-              <p>{typeof car.brochure === 'object' ? car.brochure?.title : car.brochure}</p>
+        <section id="overview" className="detail-overview" aria-labelledby="detail-overview-title">
+          <div className="section-frame detail-overview__intro">
+            <Reveal className="detail-overview__heading">
+              <p className="eyebrow">Tổng quan {car.name}</p>
+              <h2 id="detail-overview-title">Những điều cần biết trước khi đi sâu vào từng chi tiết.</h2>
+              <p>{car.description || car.tagline}</p>
             </Reveal>
-            <div className="spec-strip">
-              {car.specs.map((spec, index) => (
-                <Reveal className="spec-strip__item" delay={index * 0.06} key={spec.label}>
-                  <strong>{spec.value}</strong>
-                  <span>{spec.label}</span>
-                </Reveal>
-              ))}
-            </div>
-          </div>
-        </section>
 
-        <section className="detail-story">
-          <div className="section-frame detail-story__grid">
-            <aside className="detail-story__aside">
-              <p className="eyebrow">Nhìn gần hơn</p>
-              <h2>Thiết kế được kể bằng từng góc nhìn.</h2>
-              <p>
-                Các góc nhìn được sắp theo đúng thứ tự bạn thường quan sát một chiếc xe: dáng ngoài trước, rồi tới chỗ ngồi và những chi tiết bên trong.
+            <dl className="detail-overview__facts" aria-label={`Thông tin tổng quan ${car.name}`}>
+              {overviewItems.map((item) => (
+                <div className={!item.value ? 'is-missing' : ''} key={item.label}>
+                  <dt>{item.label}</dt>
+                  <dd>{item.value || 'Đang cập nhật'}</dd>
+                </div>
+              ))}
+            </dl>
+
+            <nav className="detail-overview__anchors" aria-label={`Đi nhanh tới nội dung ${car.name}`}>
+              {detailAnchors.map((anchor) => (
+                <a href={`#${anchor.id}`} key={anchor.id}>{anchor.label}</a>
+              ))}
+            </nav>
+          </div>
+
+          <div className="car-manifesto">
+            <div className="section-frame">
+              <p aria-label={manifestoText}>
+                {manifesto.map((word, index) => (
+                  <span className="manifesto-word" key={`${word}-${index}`} aria-hidden="true">
+                    {word}{' '}
+                  </span>
+                ))}
               </p>
-            </aside>
-
-            <div className="detail-story__chapters">
-              {/* Tiêu đề và ảnh đi theo cặp từ backend media payload, không gán theo
-                  thứ tự, nên ảnh nội thất không còn bị chú thích là "hình khối". */}
-              {car.chapters.map((chapter) => (
-                <article className="detail-chapter" key={chapter.src}>
-                  <div className={`double-bezel detail-chapter__media ${chapter.tone === 'dark' ? 'double-bezel--dark' : ''}`}>
-                    <div className={`double-bezel__core detail-chapter__frame is-${chapter.tone}`}>
-                      <SmartImage src={chapter.src} alt={`${car.name} — ${chapter.title.toLowerCase()}`} />
-                    </div>
-                  </div>
-                  <div className="detail-chapter__copy">
-                    <h3>{chapter.title}</h3>
-                    <p>{chapter.copy}</p>
-                  </div>
-                </article>
-              ))}
             </div>
           </div>
         </section>
 
-        {carMedia.length > 3 && (
+        <VehicleColorConfigurator key={car.id} vehicle={car} />
+
+        <div className="detail-story detail-story--structured" aria-label={`Khám phá ${car.name}`}>
+          <DetailStorySection
+            id="exterior"
+            eyebrow="Ngoại thất"
+            title="Nhìn chiếc xe từ hình khối đến chuyển động."
+            copy="Tỷ lệ, đường nét và các góc nhìn bên ngoài được gom thành một chương rõ ràng."
+            car={car}
+            chapters={exteriorChapters}
+            extraImages={extraImages.exterior}
+            hasFeature={has3dExperience || filmSection === 'exterior'}
+          >
+            <Vehicle3DExperience car={car} />
+            {filmSection === 'exterior' && <ModelFilm car={car} />}
+          </DetailStorySection>
+
+          <DetailStorySection
+            id="interior"
+            eyebrow="Nội thất & không gian"
+            title="Từ vị trí người lái đến chỗ ngồi phía sau."
+            copy="Khoang lái, không gian hành khách và khả năng sử dụng được đặt cạnh đúng ngữ cảnh của chúng."
+            car={car}
+            chapters={interiorChapters}
+            extraImages={extraImages.interior}
+            hasFeature={car.id === 'limo-green' || filmSection === 'interior'}
+          >
+            {car.id === 'limo-green' && (
+              <section className="detail-film" aria-labelledby="detail-film-title">
+                <FilmVideo
+                  src={limoInteriorFilm}
+                  label="Thước phim không gian nội thất Limo Green"
+                />
+                <div className="detail-film__veil" aria-hidden="true" />
+                <div className="section-frame detail-film__copy">
+                  <p className="eyebrow">Không gian Limo Green</p>
+                  <h2 id="detail-film-title">Ba hàng ghế được nhìn trong chuyển động thật.</h2>
+                </div>
+              </section>
+            )}
+            {filmSection === 'interior' && <ModelFilm car={car} />}
+          </DetailStorySection>
+
+          <DetailStorySection
+            id="technology"
+            eyebrow="Công nghệ & vận hành"
+            title="Thông tin kỹ thuật ở đúng nơi cần tìm."
+            copy="Nội dung về cấu trúc, vận hành và sạc chỉ xuất hiện khi có dữ liệu được công bố cho mẫu xe."
+            car={car}
+            chapters={technologyChapters}
+            extraImages={extraImages.technology}
+            hasFeature={filmSection === 'technology'}
+          >
+            {filmSection === 'technology' && <ModelFilm car={car} />}
+          </DetailStorySection>
+
+          {supplementalChapters.length > 0 && (
+            <DetailStorySection
+              id="additional-details"
+              eyebrow="Thông tin bổ sung"
+              title="Những nội dung chưa được gắn vào một chương cụ thể."
+              copy="Phần này giữ nguyên nội dung do nguồn dữ liệu cung cấp, thay vì suy đoán sai ngữ cảnh."
+              car={car}
+              chapters={supplementalChapters}
+            />
+          )}
+        </div>
+
+        {!filmSection && <ModelFilm car={car} />}
+
+        {carMedia.length > 0 && (
           <section className="detail-media" aria-labelledby="detail-media-title">
             <div className="section-frame">
               <Reveal className="detail-media__heading">
-                <p className="eyebrow">Toàn bộ góc nhìn</p>
-                <h2 id="detail-media-title">Ngoại thất, khoang lái và công nghệ của {car.name}.</h2>
-                <p>{carMedia.length} góc nhìn của {car.name}, từ ngoại thất đến khoang lái và chi tiết vận hành.</p>
+                <p className="eyebrow">Góc nhìn bổ sung</p>
+                <h2 id="detail-media-title">Thư viện hình ảnh của {car.name}.</h2>
+                <p>{carMedia.length} hình ảnh bổ sung chưa trùng với các chương ở trên.</p>
               </Reveal>
               <div className="detail-media-grid">
-                {carMedia.slice(3).map((asset, index) => (
+                {carMedia.map((asset, index) => (
                   <figure className="detail-media-grid__item" key={`${asset.src}-${index}`}>
-                    <SmartImage src={asset.src} alt={asset.alt || `${car.name} · ${asset.label}`} />
-                    <figcaption>{asset.label}</figcaption>
+                    <SmartImage
+                      src={asset.src}
+                      alt={asset.alt || `${car.name} · ${asset.label}`}
+                      focalPoint={asset.focalPoint}
+                      aspectRatio={asset.aspectRatio}
+                      fit={asset.fit}
+                    />
                   </figure>
                 ))}
               </div>
@@ -389,26 +619,35 @@ export function CarDetailPage() {
           </section>
         )}
 
-        <VehicleColorConfigurator key={car.id} vehicle={car} />
+        <section className="detail-specs" id="specifications" aria-labelledby="detail-specifications-title">
+          <div className="section-frame">
+            <Reveal className="detail-specs__heading">
+              <p className="eyebrow">Thông số chi tiết</p>
+              <h2 id="detail-specifications-title">Dữ liệu quan trọng, không làm bạn phân tâm.</h2>
+              <p>{brochureTitle || 'Nguồn brochure đang được cập nhật'}</p>
+            </Reveal>
 
-        <section className="brochure-note">
-          <div className="section-frame brochure-note__inner">
-            <FileText size={28} weight="light" />
-            <div>
-              <p className="eyebrow">Nguồn dữ liệu sản phẩm</p>
-              {typeof car.brochure === 'object' ? (
-                <h2>
-                  <a href={car.brochure.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: 'inherit' }}>
-                    {car.brochure.title}
-                  </a>
-                </h2>
-              ) : (
-                <h2>{car.brochure}</h2>
-              )}
-              <p>
-                Thông số được lấy từ brochure chính thức của mẫu xe. Quãng đường thực tế còn phụ thuộc phiên bản, nhiệt độ, địa hình và thói quen lái.
-              </p>
-            </div>
+            {specificationGroups.length > 0 ? (
+              <div className="detail-specs__groups">
+                {specificationGroups.map((group, groupIndex) => (
+                  <div className="detail-specs__group" key={`${group.title}-${groupIndex}`}>
+                    <h3>{group.title}</h3>
+                    <dl className="spec-strip">
+                      {group.items.map((spec, index) => (
+                        <Reveal className="spec-strip__item" delay={index * 0.05} key={`${spec.label}-${index}`}>
+                          <dt>{spec.label}</dt>
+                          <dd>{spec.value}</dd>
+                        </Reveal>
+                      ))}
+                    </dl>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="detail-specs__empty" role="status">
+                <p>Thông số chi tiết của mẫu xe này đang được cập nhật.</p>
+              </div>
+            )}
           </div>
         </section>
 
@@ -436,16 +675,10 @@ export function CarDetailPage() {
 
         <SiteFooter />
 
-        <div className="detail-booking-dock">
-          <div>
-            <strong>{car.name}</strong>
-            <span>{car.price}</span>
-          </div>
-          <Link to={`/booking?car=${car.id}`}>
-            Đặt lịch lái thử
-            <span aria-hidden="true"><ArrowRight size={16} weight="light" /></span>
-          </Link>
-        </div>
+        {/* Dock đặt lịch (.detail-booking-dock, góc dưới phải, position:fixed) đã gỡ theo yêu cầu
+            16/08/2026: trang này còn 3 lối vào /booking?car=<id> — nút xanh trên header (luôn
+            hiển thị, đã mang sẵn mã xe), nút ở hero và CTA cuối trang — nên dock chỉ làm màn hình
+            thêm chật. Style .detail-booking-dock trong index.css giữ nguyên, chưa dùng tới. */}
       </main>
     </AppShell>
   )
