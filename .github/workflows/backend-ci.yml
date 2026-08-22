@@ -4,11 +4,15 @@ on:
   push:
     paths:
       - 'backend/**'
+      - 'eval/benchmarks/**'
+      - 'eval/golden/**'
       - '.github/workflows/backend-ci.yml'
     branches: [main]
   pull_request:
     paths:
       - 'backend/**'
+      - 'eval/benchmarks/**'
+      - 'eval/golden/**'
       - '.github/workflows/backend-ci.yml'
     branches: [testing, develop, main]
 
@@ -44,11 +48,48 @@ jobs:
       - name: Security scanning with bandit
         run: bandit -r backend/src/ -ll --skip B104,B608
 
+      - name: Run deterministic guardrail benchmark
+        run: >
+          python backend/scripts/run_guardrail_benchmark.py
+          --fail-under 1.0
+          --verify-baseline eval/benchmarks/results/baseline.json
+          --json-output artifacts/guardrail-benchmark/report.json
+          --markdown-output artifacts/guardrail-benchmark/report.md
+        env:
+          APP_ENV: test
+
+      - name: Upload guardrail benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardrail-benchmark-${{ github.sha }}
+          path: artifacts/guardrail-benchmark/
+          if-no-files-found: warn
+
       - name: Run tests with coverage
-        run: pytest backend/tests/ -v --tb=short --cov=backend/src/ --cov-report=term-missing
+        run: |
+          mkdir -p artifacts
+          pytest backend/tests/ -v --tb=short --cov=backend/src/ --cov-report=term-missing --cov-report=json:artifacts/backend-coverage.json
         env:
           APP_ENV: test
           OPENAI_API_KEY: test-key
+
+      - name: Build offline agent evaluation report
+        run: >
+          python backend/scripts/run_agent_evaluation.py
+          --coverage-json artifacts/backend-coverage.json
+          --json-output artifacts/agent-evaluation/report.json
+          --markdown-output artifacts/agent-evaluation/report.md
+
+      - name: Upload agent evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-evaluation-${{ github.sha }}
+          path: |
+            artifacts/agent-evaluation/
+            artifacts/backend-coverage.json
+          if-no-files-found: warn
 
       - name: Verify Docker build
         run: docker build -t backend-test ./backend

@@ -178,22 +178,78 @@ async def test_classifier_fallback_routes_without_network(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("query", "expected_sub_intent"),
+    ("query", "llm_sub_intent"),
     [
-        ("Xin chào bạn", "greeting"),
-        ("Tôi muốn đặt lịch lái thử VF6", "booking"),
+        ("hi", "greeting"),
+        ("HI!!!", "greeting"),
+        ("bạn là ai", "assistant_identity"),
+        ("ViVi hỗ trợ gì?", "assistant_identity"),
     ],
 )
-async def test_classifier_keyword_routes_without_network(monkeypatch, query, expected_sub_intent):
-    get_llm = MagicMock(side_effect=AssertionError("LLM must not be called"))
-    monkeypatch.setattr(classifier_module, "get_classifier_llm", get_llm)
+async def test_classifier_uses_llm_for_greeting_and_identity(monkeypatch, query, llm_sub_intent):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        return_value=RouteSchema(intent="domain", sub_intent=llm_sub_intent)
+    )
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
 
     result = await classifier_node({"query": query})
 
     assert result["intent"] == "domain"
     assert result["active_skill"] == "booking"
-    assert result["metadata"]["sub_intent"] == expected_sub_intent
+    assert result["metadata"]["sub_intent"] == llm_sub_intent
+    prompt = structured.ainvoke.await_args.args[0]
+    assert "Never classify them as out_of_scope" in prompt
+    assert "assistant_identity" in prompt
+
+
+@pytest.mark.asyncio
+async def test_classifier_booking_keyword_still_bypasses_llm(monkeypatch):
+    get_llm = MagicMock(side_effect=AssertionError("LLM must not be called"))
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", get_llm)
+
+    result = await classifier_node({"query": "Tôi muốn đặt lịch lái thử VF6"})
+
+    assert result["intent"] == "domain"
+    assert result["active_skill"] == "booking"
+    assert result["metadata"]["sub_intent"] == "booking"
     get_llm.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("exception", "internal_code"),
+    [
+        (classifier_module.BudgetExceededError("budget"), "LLM_BUDGET_EXCEEDED"),
+        (classifier_module.LLMCallLimitExceededError("calls"), "LLM_CALL_LIMIT_EXCEEDED"),
+    ],
+)
+async def test_classifier_returns_safe_response_when_llm_limit_is_exceeded(
+    monkeypatch, exception, internal_code
+):
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = MagicMock()
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+    trace = MagicMock()
+    monkeypatch.setattr(classifier_module, "trace_event", trace)
+    monkeypatch.setattr(
+        classifier_module,
+        "invoke_with_budget",
+        AsyncMock(side_effect=exception),
+    )
+
+    result = await classifier_node({"query": "hi"})
+
+    assert result["intent"] == "sensitive"
+    assert result["action_error"] == "SERVICE_TEMPORARILY_UNAVAILABLE"
+    assert result["policy_response"] == result["response"]
+    assert "AI" not in result["response"]
+    assert "chi phí" not in result["response"]
+    assert any(call.kwargs.get("error_code") == internal_code for call in trace.call_args_list)
 
 
 @pytest.mark.asyncio
@@ -229,6 +285,8 @@ async def test_classifier_rejects_unknown_llm_intent(monkeypatch):
         ("sovereignty", "Việt Nam"),
         ("out_of_scope_code", "không hỗ trợ viết mã"),
         ("out_of_scope_math", "giải các bài toán"),
+        ("out_of_scope", "tìm showroom"),
+        ("post_booking_required", "đã có lịch lái thử"),
         ("unknown", "Việt Nam"),
     ],
 )

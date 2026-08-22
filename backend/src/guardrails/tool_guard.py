@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import json
-import re
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from typing import Any
 
 from langchain_core.messages import AIMessage, ToolMessage
@@ -10,15 +9,27 @@ from langgraph.prebuilt import ToolNode
 
 from src.config import Settings, get_settings
 from src.guardrails.models import GuardrailDecision
-from src.guardrails.policies import CONFIRMATION_TOOL_NAMES, MUTATING_TOOL_NAMES
+from src.guardrails.policies import (
+    CONFIRMATION_ACTION_BY_TOOL,
+    CONFIRMATION_BOUND_FIELDS_BY_TOOL,
+    CONFIRMATION_TOOL_NAMES,
+    MUTATING_TOOL_NAMES,
+)
 from src.guardrails.structure import PayloadLimits, validate_payload
 from src.services.booking.errors import BookingError
 
-_CONFIRMATION_RE = re.compile(
-    r"\b(?:confirm|book\s+now|xác\s+nhận|xac\s+nhan|chốt|chot|đồng\s+ý|dong\s+y)\b",
-    re.IGNORECASE,
-)
 _TOOL_BLOCKED_MESSAGE = "Thao tác này đã bị chặn bởi chính sách an toàn. Vui lòng kiểm tra và thử lại."
+
+
+def _has_bound_structured_confirmation(state: dict[str, Any], tool_name: str, arguments: Mapping[str, Any]) -> bool:
+    expected_action = CONFIRMATION_ACTION_BY_TOOL.get(tool_name)
+    bound_fields = CONFIRMATION_BOUND_FIELDS_BY_TOOL.get(tool_name, frozenset())
+    payload = state.get("action_payload")
+    if state.get("requested_action") != expected_action or not isinstance(payload, Mapping):
+        return False
+    if not bound_fields.issubset(payload) or not bound_fields.issubset(arguments):
+        return False
+    return all(payload[field] == arguments[field] for field in bound_fields)
 
 
 def serialize_tool_error(error: Exception) -> str:
@@ -115,14 +126,13 @@ def inspect_tool_calls(
         fingerprints.add(canonical)
         mutating_calls += int(name in MUTATING_TOOL_NAMES)
 
-        if name in CONFIRMATION_TOOL_NAMES and not state.get("requested_action"):
-            if not _CONFIRMATION_RE.search(str(state.get("query") or "")):
-                return GuardrailDecision.block(
-                    "EXPLICIT_CONFIRMATION_REQUIRED",
-                    "a booking confirmation tool requires explicit user confirmation",
-                    "Vui lòng xác nhận rõ rằng bạn muốn chốt lịch lái thử trước khi tiếp tục.",
-                    details={"tool": name},
-                )
+        if name in CONFIRMATION_TOOL_NAMES and not _has_bound_structured_confirmation(state, name, arguments):
+            return GuardrailDecision.block(
+                "EXPLICIT_CONFIRMATION_REQUIRED",
+                "confirmation tool call is not bound to the matching structured action and payload",
+                "Vui lòng dùng nút xác nhận để chốt đúng lịch lái thử đang hiển thị.",
+                details={"tool": name},
+            )
 
     if mutating_calls > 1 or (mutating_calls and len(calls) > 1):
         return GuardrailDecision.block(

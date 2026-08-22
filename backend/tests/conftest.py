@@ -26,9 +26,16 @@ app_database.initialize()
 @pytest_asyncio.fixture
 async def client():
     """Async HTTP client for testing API endpoints."""
+    from src.guardrails.abuse import get_abuse_tracker
+
+    abuse_tracker = get_abuse_tracker()
+    abuse_tracker.clear()
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        abuse_tracker.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -56,8 +63,10 @@ def mock_llm():
         # Remove punctuation to ensure clean word splitting
         query_clean = "".join(c if c.isalnum() or c.isspace() else " " for c in query_part)
         words = query_clean.split()
-        if any(kw in words for kw in ["chào", "hello", "hi"]):
-            return RouteSchema(intent="domain", sub_intent="vehicle_info")
+        if any(phrase in query_part for phrase in ["bạn là ai", "vivi là ai", "hỗ trợ gì", "làm được gì"]):
+            return RouteSchema(intent="domain", sub_intent="assistant_identity")
+        if any(kw in words for kw in ["chào", "hello", "hi", "alo"]):
+            return RouteSchema(intent="domain", sub_intent="greeting")
         elif any(kw in words or kw in query_part for kw in ["vf8", "sạc", "km", "thông số", "giá"]):
             return RouteSchema(intent="domain", sub_intent="vehicle_info")
         return RouteSchema(intent="domain", sub_intent="booking")
@@ -65,7 +74,15 @@ def mock_llm():
     mock_structured.ainvoke = AsyncMock(side_effect=mock_classify)
     mock_instance.with_structured_output = MagicMock(return_value=mock_structured)
 
-    with patch("src.services.llm.ChatOpenAI", return_value=mock_instance):
+    # Patch the node-level dependencies as well as the provider constructor.
+    # get_llm()/get_classifier_llm() intentionally return None when no API key
+    # is configured, which is the normal state inside the test container.
+    with (
+        patch("src.services.llm.ChatOpenAI", return_value=mock_instance),
+        patch("src.agents.nodes.classifier_node.get_classifier_llm", return_value=mock_instance),
+        patch("src.agents.nodes.booking_skill_node.get_llm", return_value=mock_instance),
+        patch("src.agents.nodes.post_booking_skill_node.get_llm", return_value=mock_instance),
+    ):
         yield mock_instance
 
 

@@ -1,4 +1,4 @@
-import { Check, Funnel, IdentificationCard, SignIn, UserMinus, X } from '@phosphor-icons/react'
+import { CaretDown, Check, ClockCounterClockwise, EnvelopeSimple, Funnel, IdentificationCard, Phone, SignIn, UserFocus, UserMinus, X } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { PageState } from '../components/PageState.jsx'
@@ -7,6 +7,56 @@ import { useRemote } from '../hooks.js'
 import { formatDateTime } from '../utils.js'
 
 const statuses = ['', 'held', 'confirmed', 'checked_in', 'completed', 'no_show', 'cancelled', 'rescheduled']
+const channelLabels = { zalo: 'Zalo', sms: 'SMS', email: 'Email' }
+
+function CustomerProfile({ profile, customerNote }) {
+  if (!profile) return <div className="customer-profile__empty">Booking này chưa có đủ thông tin để tạo hồ sơ khách hàng.</div>
+  const summary = profile.summary || {}
+  const license = profile.license || {}
+  const preferredChannel = channelLabels[profile.preferred_channel] || profile.preferred_channel || 'Chưa chọn'
+  const initials = (profile.full_name || '?').split(/\s+/).filter(Boolean).slice(-2).map((part) => part[0]).join('').toUpperCase()
+
+  return (
+    <section className="customer-profile" aria-label="Hồ sơ khách hàng">
+      <div className="customer-profile__identity">
+        <span className="customer-profile__avatar">{initials}</span>
+        <div>
+          <strong>{profile.full_name || 'Khách hàng chưa cập nhật tên'}</strong>
+          <small>{summary.total_bookings > 1 ? 'Khách quay lại' : 'Hồ sơ khách mới'} · Ưu tiên {preferredChannel}</small>
+        </div>
+      </div>
+      <div className="customer-profile__contacts">
+        <a href={profile.phone ? `tel:${profile.phone}` : undefined} aria-disabled={!profile.phone}><Phone size={16} />{profile.phone || 'Chưa có số điện thoại'}</a>
+        <a href={profile.email ? `mailto:${profile.email}` : undefined} aria-disabled={!profile.email}><EnvelopeSimple size={16} />{profile.email || 'Chưa có email'}</a>
+      </div>
+      <div className="customer-profile__metrics">
+        <div><strong>{summary.total_bookings || 0}</strong><span>Tổng booking</span></div>
+        <div><strong>{summary.completed_bookings || 0}</strong><span>Đã hoàn tất</span></div>
+        <div><strong>{(summary.cancelled_bookings || 0) + (summary.no_show_bookings || 0)}</strong><span>Hủy / no-show</span></div>
+      </div>
+      <div className="customer-profile__context">
+        <span className="section-label">Thông tin giúp sale chuẩn bị</span>
+        <ul>
+          <li>Kênh liên hệ khách ưu tiên: <strong>{preferredChannel}</strong>.</li>
+          <li>Mẫu xe từng quan tâm: <strong>{profile.vehicle_interests?.map((item) => item.model).join(', ') || 'Chưa có dữ liệu'}</strong>.</li>
+          <li>GPLX đã khai báo: <strong>{license.declared_license_class || 'Chưa khai báo'}</strong> · trạng thái <strong>{license.check_status || 'Chưa kiểm tra'}</strong>.</li>
+          {customerNote && <li>Ghi chú khách hàng: <strong>{customerNote}</strong>.</li>}
+          {!profile.booker_is_driver && profile.booker && <li>Người đặt hộ: <strong>{profile.booker.full_name || 'Chưa cập nhật'}</strong>{profile.booker.phone ? ` · ${profile.booker.phone}` : ''}.</li>}
+        </ul>
+      </div>
+      <div className="customer-profile__history">
+        <div className="customer-profile__history-title"><span className="section-label">Lịch sử booking được phép xem</span><ClockCounterClockwise size={17} /></div>
+        {(profile.history || []).map((item) => (
+          <div className="customer-profile__history-row" key={item.id}>
+            <div><strong>{item.vehicle_model} · {item.vehicle_variant}</strong><small>{item.showroom_name} · {formatDateTime(item.start_at)}</small></div>
+            <StatusBadge status={item.status} />
+          </div>
+        ))}
+        {!profile.history?.length && <p>Chưa có booking đã xác nhận trong phạm vi của bạn.</p>}
+      </div>
+    </section>
+  )
+}
 
 export function BookingsPage({ token, user }) {
   const canManage = user.role !== 'staff'
@@ -20,6 +70,9 @@ export function BookingsPage({ token, user }) {
   const [notice, setNotice] = useState('')
   const [actionError, setActionError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [profileError, setProfileError] = useState('')
   const bookingState = useRemote(
     () => api.bookings(token, {
       status,
@@ -44,10 +97,43 @@ export function BookingsPage({ token, user }) {
   useEffect(() => {
     if (selected && bookingState.data?.items) {
       const refreshed = bookingState.data.items.find((item) => item.id === selected.id) || null
-      setSelected(refreshed)
+      setSelected((current) => refreshed ? { ...current, ...refreshed } : null)
       setAssignment(refreshed?.assigned_staff_id || '')
     }
   }, [bookingState.data])
+
+  const openBooking = (booking) => {
+    setSelected(booking)
+    setAssignment(booking.assigned_staff_id || '')
+    setNotice('')
+    setActionError('')
+    setProfileOpen(false)
+    setProfileLoading(false)
+    setProfileError('')
+  }
+
+  const toggleCustomerProfile = async () => {
+    if (profileOpen) {
+      setProfileOpen(false)
+      return
+    }
+    if (selected.customer_profile !== undefined) {
+      setProfileOpen(true)
+      return
+    }
+    const bookingId = selected.id
+    setProfileLoading(true)
+    setProfileError('')
+    try {
+      const detail = await api.booking(token, bookingId)
+      setSelected((current) => current?.id === bookingId ? { ...current, ...detail } : current)
+      setProfileOpen(true)
+    } catch (error) {
+      setProfileError(error.message)
+    } finally {
+      setProfileLoading(false)
+    }
+  }
 
   const run = async (operation, successMessage) => {
     setActionError('')
@@ -154,7 +240,7 @@ export function BookingsPage({ token, user }) {
           <div className="data-table data-table--bookings">
             <div className="data-table__head"><span>Mã lịch</span><span>Khách hàng</span><span>Xe & showroom</span><span>Thời gian</span><span>Trạng thái</span></div>
             {(bookingState.data?.items || []).map((booking) => (
-              <button className="data-table__row" key={booking.id} onClick={() => { setSelected(booking); setAssignment(booking.assigned_staff_id || ''); setNotice(''); setActionError('') }}>
+              <button className="data-table__row" key={booking.id} onClick={() => openBooking(booking)}>
                 <span><strong>{booking.booking_code || 'Draft'}</strong><small>{booking.assigned_staff_name || 'Chưa phân công'}</small></span>
                 <span><strong>{booking.driver_name || 'Chưa cập nhật'}</strong><small>{booking.driver_phone || booking.booker_phone || '—'}</small></span>
                 <span><strong>{booking.vehicle_model} · {booking.vehicle_variant}</strong><small>{booking.showroom_name}</small></span>
@@ -172,6 +258,13 @@ export function BookingsPage({ token, user }) {
           <aside className="drawer">
             <div className="drawer__header"><div><span className="eyebrow">Chi tiết booking</span><h3>{selected.booking_code || 'Booking draft'}</h3></div><button className="icon-button" onClick={() => setSelected(null)}><X size={20} /></button></div>
             <div className="drawer__status"><StatusBadge status={selected.status} /><span>Version {selected.version}</span></div>
+            <button className={`customer-profile-trigger ${profileOpen ? 'customer-profile-trigger--open' : ''}`} onClick={toggleCustomerProfile} disabled={profileLoading} aria-expanded={profileOpen}>
+              <span className="customer-profile-trigger__icon"><UserFocus size={21} /></span>
+              <span><strong>{profileLoading ? 'Đang tải hồ sơ...' : 'Xem hồ sơ khách hàng'}</strong><small>Thông tin liên hệ, lịch sử và sở thích xe</small></span>
+              <CaretDown className="customer-profile-trigger__caret" size={18} />
+            </button>
+            {profileError && <div className="form-error customer-profile-error">{profileError}</div>}
+            {profileOpen && <CustomerProfile profile={selected.customer_profile} customerNote={selected.customer_note} />}
             <dl className="detail-list">
               <div><dt>Người lái</dt><dd>{selected.driver_name || 'Chưa cập nhật'}<small>{selected.driver_phone || selected.booker_phone || 'Không có số liên hệ'} · {selected.driver_email || selected.booker_email || 'Không có email'}</small></dd></div>
               <div><dt>Xe demo</dt><dd>{selected.vehicle_model} · {selected.vehicle_variant}<small>{selected.asset_code} · {selected.plate_number || 'Chưa có biển số'} · {selected.vehicle_operational_status} · pin {selected.vehicle_battery_soc ?? '—'}%</small></dd></div>
