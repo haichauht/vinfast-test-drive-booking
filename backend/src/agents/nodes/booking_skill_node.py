@@ -52,6 +52,20 @@ def _safe_tool_input(payload: dict[str, Any]) -> dict[str, Any]:
     return safe
 
 
+def _availability_context_ready(context: object) -> bool:
+    """Return whether canonical UI context can anchor an availability query."""
+    if not isinstance(context, dict):
+        return False
+    vehicle = context.get("selectedVehicle")
+    showroom = context.get("selectedShowroom")
+    return (
+        isinstance(vehicle, dict)
+        and isinstance(showroom, dict)
+        and bool(vehicle.get("name"))
+        and bool(showroom.get("id"))
+    )
+
+
 STRUCTURED_ACTION_TO_TOOL = {
     "search_options": search_test_drive_options,
     "hold_slot": hold_test_drive_slot,
@@ -305,8 +319,7 @@ async def booking_skill_node(state: AgentState) -> dict:
         force_availability_search = (
             metadata.get("sub_intent") == "booking_availability"
             and isinstance(last_message, HumanMessage)
-            and bool((state.get("context") or {}).get("selected_vehicle_name"))
-            and bool((state.get("context") or {}).get("selected_showroom_id"))
+            and _availability_context_ready(safe_context)
         )
         llm_with_tools = (
             llm.bind_tools(tools, tool_choice=search_test_drive_options.name)

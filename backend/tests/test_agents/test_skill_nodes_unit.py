@@ -97,8 +97,23 @@ async def test_booking_skill_increments_count_for_tool_call(monkeypatch):
     assert "response" not in result
 
 
+@pytest.mark.parametrize(
+    ("message", "date_arguments"),
+    [
+        ("tui rảnh ngày 26", {"preferred_date": "2026-08-26"}),
+        ("tui rảnh ngày 26 27", {"preferred_dates": ["2026-08-26", "2026-08-27"]}),
+        (
+            "tui rảnh từ ngày 25 đến 30",
+            {"preferred_date_from": "2026-08-25", "preferred_date_to": "2026-08-30"},
+        ),
+    ],
+)
 @pytest.mark.asyncio
-async def test_booking_availability_forces_search_tool_when_ui_context_is_ready(monkeypatch):
+async def test_booking_availability_forces_search_tool_when_ui_context_is_ready(
+    monkeypatch,
+    message,
+    date_arguments,
+):
     response = AIMessage(
         content="",
         tool_calls=[
@@ -108,7 +123,7 @@ async def test_booking_availability_forces_search_tool_when_ui_context_is_ready(
                 "args": {
                     "vehicle_model": "VF 9",
                     "showroom_id": "753",
-                    "preferred_dates": ["2026-08-25", "2026-08-26"],
+                    **date_arguments,
                 },
             }
         ],
@@ -118,11 +133,11 @@ async def test_booking_availability_forces_search_tool_when_ui_context_is_ready(
 
     result = await booking_skill_node(
         {
-            "messages": [HumanMessage(content="tui rảnh ngày 25-26")],
+            "messages": [HumanMessage(content=message)],
             "metadata": {"sub_intent": "booking_availability"},
             "context": {
-                "selected_vehicle_name": "VF 9",
-                "selected_showroom_id": "753",
+                "selectedVehicle": {"id": "vf9", "name": "VF 9"},
+                "selectedShowroom": {"id": "753", "name": "VinFast New City Bình Dương"},
             },
         }
     )

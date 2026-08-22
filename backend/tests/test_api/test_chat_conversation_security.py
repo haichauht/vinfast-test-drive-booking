@@ -120,36 +120,6 @@ async def test_chat_rejects_oversized_conversation_id(client, monkeypatch):
     mocked.ainvoke.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_chat_rate_limit_returns_retry_after_without_calling_agent(client, monkeypatch):
-    from types import SimpleNamespace
-
-    from src.guardrails.rate_limit import get_rate_limiter
-
-    mocked = _mock_agent(monkeypatch)
-    limiter = get_rate_limiter()
-    limiter.clear()
-    monkeypatch.setattr(
-        routes_module,
-        "get_settings",
-        lambda: SimpleNamespace(
-            rate_limits_enabled=True,
-            rate_limit_window_seconds=60,
-            chat_rate_limit_requests=1,
-        ),
-    )
-
-    first = await client.post("/api/v1/chat", json={"message": "VF8 range"})
-    second = await client.post("/api/v1/chat", json={"message": "VF9 range"})
-    limiter.clear()
-
-    assert first.status_code == 200
-    assert second.status_code == 429
-    assert second.headers["retry-after"] == "60"
-    assert second.json()["detail"]["code"] == "RATE_LIMIT_EXCEEDED"
-    assert mocked.ainvoke.await_count == 1
-
-
 # test case of Chau + kiểm tra lỗi nội bộ agent không làm lộ secret hoặc chi tiết hạ tầng
 @pytest.mark.asyncio
 async def test_chat_does_not_expose_internal_exception_details(client, monkeypatch):

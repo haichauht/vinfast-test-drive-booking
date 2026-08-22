@@ -173,7 +173,7 @@ response đi qua `trace.redact()` trước khi ghi structured event.
 | Mức độ | High |
 | Trạng thái | Fixed trong single process; distributed control vẫn open |
 | Vấn đề | Chat, hold, confirm và OTP chỉ dựa vào domain cooldown hoặc hạ tầng chưa kiểm chứng. |
-| Remediation | Sliding-window limit theo IP và conversation/slot/booking/contact/challenge; subject được SHA-256; production không thể tắt. |
+| Remediation | Public API middleware dùng database counter theo anonymous session và IP ngắn hạn; OTP có domain limit riêng. Không còn limiter runtime thứ hai. |
 | Unit/API test | `test_rate_limit.py`, `test_chat_rate_limit_returns_retry_after_without_calling_agent`, `test_demo_*_rate_limit*` |
 | Benchmark | `RATE-LIMIT-001` |
 
@@ -184,7 +184,7 @@ response đi qua `trace.redact()` trước khi ghi structured event.
 | Mức độ | High |
 | Trạng thái | Fixed |
 | Vấn đề | Input guard từng chặn từng request độc lập nhưng không tích lũy vi phạm, nên cùng client có thể thử payload độc hại liên tục. |
-| Remediation | Nhận diện thêm paraphrase và abusive language; lưu SHA-256 subject trong database; strike thứ 3 trong một giờ tạo ban 24 giờ theo IP + conversation. |
+| Remediation | Nhận diện thêm paraphrase và abusive language; lưu SHA-256 subject trong database; strike thứ 3 trong một giờ tạo ban 24 giờ theo signed conversation + anonymous session. |
 | Unit/API test | `test_abuse.py`, `test_chat_bans_ip_and_conversation_after_three_mixed_abuse_violations` |
 | Benchmark | `INPUT-ATTACK-015/016`, `INPUT-ABUSE-001..003`, `ABUSE-BAN-001` |
 
@@ -201,7 +201,7 @@ response đi qua `trace.redact()` trước khi ghi structured event.
 | Cross-booking access | Access-session scope in service | Service negative tests | OTP limits, token TTL/revocation, database constraints |
 | Conversation takeover | Signed bearer capability + TTL | Unit/API/benchmark | Session storage, HTTPS, no token logging |
 | Burst abuse | Process-local IP/resource sliding window | Unit/API/benchmark | Distributed gateway/WAF limit |
-| Repeated hostile input | Persistent 3-strike ban by hashed IP + conversation | Unit/API/benchmark + mutation test | Authenticated account subject và admin unban flow |
+| Repeated hostile input | Persistent 3-strike ban by hashed session + conversation | Unit/API/benchmark + mutation test | Authenticated account subject và admin unban flow |
 
 ## 6. Residual risks và open actions
 
@@ -235,7 +235,7 @@ response đi qua `trace.redact()` trước khi ghi structured event.
 ### RR-004 — Distributed rate limiting/gateway controls nằm ngoài process
 
 - Mức độ: High nếu endpoint public Internet không có gateway protection.
-- App đã có process-local per-IP/subject limit cho chat, hold, confirm và OTP.
+- App dùng public API middleware với database counters; IP chỉ là tín hiệu rate-limit ngắn hạn, không phải subject của abuse ban 24 giờ.
   Cần kiểm chứng deployment: distributed limit dùng chung giữa instance;
   request body limit; trusted client-IP handling và alert burst/anomaly.
 

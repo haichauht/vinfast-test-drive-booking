@@ -46,25 +46,57 @@ const rememberConversationId = (conversationId) => {
   }
 }
 
-const normalizeAgentContext = (context = {}) => ({
-  channel: 'booking',
-  mode: String(context.mode || ''),
-  phase: String(context.phase || context.stage || ''),
-  stage: String(context.stage || ''),
-  allowed_actions: Array.isArray(context.allowedActions) ? context.allowedActions : [],
-  selected_vehicle_id: context.selectedVehicle?.id || '',
-  selected_vehicle_name: context.selectedVehicle?.name || '',
-  selected_showroom_id: context.selectedShowroom?.id || '',
-  selected_showroom_name: context.selectedShowroom?.name || '',
-  selected_slot_id: context.selectedSlot?.slotId || '',
-  selected_slot_time: context.selectedSlot?.time || '',
-  selected_slot_date: context.selectedSlot?.dateLabel || '',
-  booking_id: context.bookingId || '',
-  recipient: context.recipient || '',
-  nearby_showrooms: Array.isArray(context.nearbyShowrooms)
-    ? context.nearbyShowrooms.map(({ id, name }) => ({ id, name })).slice(0, 10)
-    : [],
-})
+const compactObject = (value) => Object.fromEntries(
+  Object.entries(value).filter(([, item]) => item !== '' && item !== null && item !== undefined),
+)
+
+const normalizeAgentContext = (context = {}) => {
+  const normalized = { channel: 'booking' }
+  const stage = String(context.stage || '').trim()
+  const recipient = String(context.recipient || '').trim()
+
+  if (stage) normalized.stage = stage
+  if (recipient) normalized.recipient = recipient
+
+  if (context.selectedVehicle) {
+    normalized.selectedVehicle = compactObject({
+      id: context.selectedVehicle.id,
+      name: context.selectedVehicle.name,
+    })
+  }
+  if (context.selectedShowroom) {
+    normalized.selectedShowroom = compactObject({
+      id: context.selectedShowroom.id,
+      name: context.selectedShowroom.name,
+    })
+  }
+  if (context.selectedSlot) {
+    normalized.selectedSlot = compactObject({
+      slotId: context.selectedSlot.slotId,
+      time: context.selectedSlot.time,
+      dateLabel: context.selectedSlot.dateLabel,
+      isAvailable: context.selectedSlot.isAvailable,
+      unavailableLabel: context.selectedSlot.unavailableLabel,
+    })
+  }
+  if (Array.isArray(context.nearbyShowrooms) && context.nearbyShowrooms.length) {
+    normalized.nearbyShowrooms = context.nearbyShowrooms.slice(0, 10).map((showroom) => compactObject({
+      id: showroom.id,
+      name: showroom.name,
+      address: showroom.address,
+      distance: showroom.distance,
+    }))
+  }
+  if (context.userLocation) {
+    normalized.userLocation = compactObject({
+      latitude: context.userLocation.latitude,
+      longitude: context.userLocation.longitude,
+    })
+  }
+  if (context.bookingId) normalized.bookingId = String(context.bookingId)
+
+  return normalized
+}
 
 const agentRequest = async ({ message, action, actionPayload = {}, context = {} }) => {
   const result = await apiPost('/chat', {
