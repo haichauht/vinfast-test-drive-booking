@@ -7,7 +7,7 @@ from src.config import Settings, get_settings
 from src.guardrails.input_guard import InputGuard
 from src.guardrails.models import GuardrailDecision, ProtectedOutput
 from src.guardrails.output_guard import OutputGuard
-from src.guardrails.policies import DEMO_ACTION_ALLOWED_FIELDS
+from src.guardrails.policies import DEMO_ACTION_ALLOWED_FIELDS, DEMO_ACTION_NESTED_ALLOWED_FIELDS
 from src.guardrails.structure import PayloadLimits
 
 
@@ -39,7 +39,7 @@ class Guardrails:
         action_payload: dict[str, Any],
     ) -> GuardrailDecision:
         if not self.enabled:
-            return GuardrailDecision.allow(sanitized_text=message)
+            return GuardrailDecision.allow(sanitized_text=message, sanitized_context=context)
         return self.input.inspect(
             message=message,
             conversation_id=conversation_id,
@@ -66,6 +66,7 @@ class Guardrails:
             action=action,
             payload=payload,
             contracts=DEMO_ACTION_ALLOWED_FIELDS,
+            nested_contracts=DEMO_ACTION_NESTED_ALLOWED_FIELDS,
         )
 
 
