@@ -119,6 +119,7 @@ async def test_staff_api_is_strictly_read_only_and_booking_is_assignment_scoped(
 
         assert own.status_code == 200
         assert own.json()["assigned_staff_id"] == "staff_q7"
+        assert own.json()["customer_profile"]["summary"]["total_bookings"] == 1
         assert other.status_code == 404
         assert mutation.status_code == 403
         assert assignment.status_code == 403
@@ -190,6 +191,7 @@ async def test_manager_api_manages_only_its_showroom_and_cannot_use_admin_comman
         )
 
         assert own.status_code == 200
+        assert own.json()["customer_profile"]["summary"]["total_bookings"] == 1
         assert foreign.status_code == 404
         assert assigned.status_code == 200
         assert assigned.json()["assigned_staff_id"] == "staff_q7"

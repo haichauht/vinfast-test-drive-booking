@@ -88,12 +88,13 @@ def _load_demo_scope(data_dir: Path) -> list[dict[str, str]]:
     result = []
     for row in hanoi_rows:
         reference_id = row["id"]
-        manager_username = manager_by_reference_id.get(reference_id)
+        current_id = _current_showroom_id(row["public_source_id"])
+        manager_username = manager_by_reference_id.get(current_id) or manager_by_reference_id.get(reference_id)
         if not manager_username or not manager_username.endswith(".check"):
             raise SystemExit(f"Manager username is missing for {reference_id}.")
         result.append(
             {
-                "id": _current_showroom_id(row["public_source_id"]),
+                "id": current_id,
                 "name": row["name"],
                 "manager_username": manager_username,
                 "account_stem": manager_username.removesuffix(".check"),

@@ -97,6 +97,7 @@ import {
   releaseBookingHold,
   holdVerifiedReschedule,
   getVerifiedBooking,
+  getDriverInvitationContext,
   listVerifiedBookings,
   requestBookingAccess,
   resetBookingConversation,
@@ -138,7 +139,14 @@ const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
 const BOOKING_UI_STATE_KEY = 'vinfast:booking-ui-state'
 const DRIVER_INVITATION_HISTORY_KEY = 'vinfastDriverInvitationToken'
-const DRIVER_GREETING = 'ViVi sẽ đồng hành cùng bạn chuẩn bị cho buổi lái thử. ViVi có thể giúp chọn những điều nên thử trên xe, các câu hỏi nên trao đổi với tư vấn viên và checklist trước giờ hẹn. Chia sẻ tình huống sử dụng xe chính—đi làm, chở gia đình hay đi xa—để ViVi ưu tiên các bài test sát nhu cầu.'
+const BOOKING_PREPARATION_GREETING = 'ViVi sẽ đồng hành cùng bạn chuẩn bị cho buổi lái thử. Mình có thể giúp Anh/Chị chuẩn bị những nội dung nên ưu tiên trải nghiệm trên xe, các điểm cần trao đổi với tư vấn viên và checklist trước giờ hẹn. Anh/Chị có thể chia sẻ thêm về nhu cầu và cách mình dự định sử dụng xe trong thực tế; từ đó, ViVi sẽ gợi ý những tình huống và tiêu chí nên tập trung kiểm tra trong buổi lái thử để sát với nhu cầu của Anh/Chị hơn.'
+
+const driverGreeting = ({ driver, booking }) => {
+  const name = driver?.name || 'bạn'
+  const vehicle = booking?.vehicle_model || 'xe VinFast'
+  const showroom = booking?.showroom_name || 'showroom VinFast'
+  return `Chào ${name}, ViVi rất vui được hỗ trợ bạn chuẩn bị cho buổi lái thử ${vehicle} tại ${showroom}. Mình có thể giúp Anh/Chị chuẩn bị những nội dung nên ưu tiên trải nghiệm trên xe, các điểm cần trao đổi với tư vấn viên và checklist trước giờ hẹn. Anh/Chị có thể chia sẻ thêm về nhu cầu và cách mình dự định sử dụng xe trong thực tế; từ đó, ViVi sẽ gợi ý những tình huống và tiêu chí nên tập trung kiểm tra trong buổi lái thử để sát với nhu cầu của Anh/Chị hơn.`
+}
 
 const takeDriverInvitationToken = () => {
   const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
@@ -338,8 +346,20 @@ export function BookingPage() {
     dispatchInteraction({ type: InteractionEvent.SET_ACTIVE_VIEW, activeView: nextView })
   }, [])
   const [messages, setMessages] = useState(isDriverChat
-    ? [{ id: 'driver-invitation-greeting', role: 'assistant', text: DRIVER_GREETING }]
+    ? [{ id: 'driver-invitation-greeting', role: 'assistant', text: driverGreeting({}) }]
     : (shouldOfferResume && Array.isArray(restoredUi.messages) ? restoredUi.messages : []))
+  useEffect(() => {
+    if (!driverInvitationToken) return undefined
+    let cancelled = false
+    getDriverInvitationContext(driverInvitationToken)
+      .then((context) => {
+        if (!cancelled) {
+          setMessages([{ id: 'driver-invitation-greeting', role: 'assistant', text: driverGreeting(context) }])
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [driverInvitationToken])
   const [draft, setDraft] = useState('')
   const [agentTyping, setAgentTyping] = useState(false)
   const [checkingVehicleName, setCheckingVehicleName] = useState('')
@@ -457,15 +477,15 @@ export function BookingPage() {
         emphasis: true,
       },
       {
-        id: `${Date.now()}-${current.length + 1}`,
-        role: 'assistant',
-        text: DRIVER_GREETING,
-      },
-      {
         id: `${Date.now()}-${current.length + 2}-next-steps`,
         role: 'assistant',
         type: 'next_steps',
         text: '',
+      },
+      {
+        id: `${Date.now()}-${current.length + 1}`,
+        role: 'assistant',
+        text: BOOKING_PREPARATION_GREETING,
       },
     ])
   }
