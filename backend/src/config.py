@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # Địa chỉ trang công khai, dùng để đặt link trong email gửi cho khách. Email
     # không hiểu đường dẫn tương đối nên chỗ này bắt buộc phải là URL tuyệt đối.
-    public_site_url: str = "https://vinfast-mvp.pages.dev"
+    public_site_url: str = "https://c3-app-053.pages.dev"
 
     # Vector Store
     chroma_persist_dir: str = "./data/chroma"
