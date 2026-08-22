@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from langchain_core.messages import SystemMessage, ToolMessage
 
+from src.agents.constants import PUBLIC_LLM_UNAVAILABLE_CODE, PUBLIC_LLM_UNAVAILABLE_MESSAGE
 from src.agents.state import AgentState
 from src.agents.tools import search_knowledge
 from src.agents.trace import message_to_log, messages_to_log, trace_event
@@ -65,18 +66,15 @@ async def advise_skill_node(state: AgentState) -> dict:
     except (BudgetExceededError, LLMCallLimitExceededError) as e:
         from langchain_core.messages import AIMessage
 
-        budget_exceeded = isinstance(e, BudgetExceededError)
-        error_code = "LLM_BUDGET_EXCEEDED" if budget_exceeded else "LLM_CALL_LIMIT_EXCEEDED"
-        message = (
-            "Hệ thống đã đạt giới hạn chi phí AI trong hôm nay. Vui lòng thử lại sau."
-            if budget_exceeded
-            else "Yêu cầu này cần quá nhiều lượt xử lý AI. Vui lòng gửi lại yêu cầu ngắn gọn hơn."
+        internal_error_code = (
+            "LLM_BUDGET_EXCEEDED" if isinstance(e, BudgetExceededError) else "LLM_CALL_LIMIT_EXCEEDED"
         )
-        safe_response = AIMessage(content=message)
+        trace_event("llm.limit", trace_id=trace_id, node="advise_skill", error_code=internal_error_code)
+        safe_response = AIMessage(content=PUBLIC_LLM_UNAVAILABLE_MESSAGE)
         return {
             "messages": [safe_response],
             "response": safe_response.content,
-            "action_error": error_code,
+            "action_error": PUBLIC_LLM_UNAVAILABLE_CODE,
             "metadata": metadata,
         }
     except Exception as e:
