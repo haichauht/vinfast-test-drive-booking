@@ -4,7 +4,7 @@
  * Dùng ở: HomePage, CarDetailPage, AfterSalesPage, ChargingPage.
  * KHÔNG dùng ở BookingPage — trang đặt lịch cố ý không có chân trang để không cắt mạch thao tác.
  *
- * Chứa gì: tên thương hiệu, 6 link điều hướng và một dòng miễn trừ về thông số.
+ * Chứa gì: tên thương hiệu, 5 link điều hướng và một dòng miễn trừ về thông số.
  * Hai link đầu là thẻ <a> dẫn tới anchor trên trang chủ (`/#models`, `/#technology`);
  * bốn link sau là <Link> của router. Đừng đổi <a> thành <Link> cho hai cái đầu — anchor
  * cần tải lại vị trí cuộn qua RouteEffects trong App.jsx.
@@ -30,8 +30,12 @@ export function SiteFooter() {
           <a href="/#technology">Công nghệ</a>
           <Link to="/after-sales">Hậu mãi</Link>
           <Link to="/charging">Pin & trạm sạc</Link>
+          {/* "Trợ lý ViVi" (/agent) đã bỏ: App.jsx chuyển hướng /agent → /booking, nên nó
+              trùng đúng đích với "Đặt lịch" ngay bên cạnh.
+              "Tra cứu lịch" thì KHÁC đích thật (?lookup=1 mở bước xác thực để xem/đổi/huỷ),
+              nên không phải link trùng. */}
           <Link to="/booking">Đặt lịch</Link>
-          <Link to="/agent">Trợ lý ViVi</Link>
+          <Link to="/booking?lookup=1">Tra cứu lịch</Link>
         </nav>
         <p className="site-footer__legal">
           Thông số được tổng hợp từ brochure chính thức và có thể thay đổi theo phiên bản, điều kiện vận hành hoặc chính sách của nhà sản xuất.

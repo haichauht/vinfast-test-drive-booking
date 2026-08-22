@@ -25,6 +25,19 @@ async def test_agent_status(client):
 
 
 @pytest.mark.asyncio
-async def test_dashboard_is_not_publicly_exposed(client):
+async def test_legacy_dashboard_is_not_exposed(client):
     response = await client.get("/api/v1/dashboard")
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/admin/import/showrooms",
+        "/api/v1/admin/import/eval-dataset",
+    ],
+)
+async def test_admin_import_routes_require_internal_authentication(client, path):
+    response = await client.post(path, json={})
+    assert response.status_code == 401

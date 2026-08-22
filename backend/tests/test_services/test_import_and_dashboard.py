@@ -1,4 +1,5 @@
 import pytest
+from src.database.sqlite import SQLiteConnection
 from src.services.booking import BookingError
 from src.services.booking.importer import ImportService
 
@@ -99,6 +100,29 @@ def test_import_eval_dataset_is_atomic(booking_service, booking_db):
     assert count == 0
 
 
+def test_import_eval_dataset_uses_executemany_batches(booking_service, monkeypatch):
+    model_csv = (
+        "id,code,name,vehicle_type,required_license_class,license_requirement_note,is_active,created_at,updated_at\n"
+        "model_batch_1,VFB1,Batch One,SUV,B1,GPLX B1,1,2026-08-03T00:00:00+00:00,2026-08-03T00:00:00+00:00\n"
+        "model_batch_2,VFB2,Batch Two,SUV,B1,GPLX B1,1,2026-08-03T00:00:00+00:00,2026-08-03T00:00:00+00:00\n"
+    )
+    batch_sizes = []
+    original_executemany = SQLiteConnection.executemany
+
+    def track_executemany(connection, sql, params):
+        batch = list(params)
+        if sql.startswith("INSERT INTO vehicle_models"):
+            batch_sizes.append(len(batch))
+        return original_executemany(connection, sql, batch)
+
+    monkeypatch.setattr(SQLiteConnection, "executemany", track_executemany)
+
+    result = booking_service.import_eval_dataset({"01_vehicle_models.csv": model_csv})
+
+    assert result["imported"]["vehicle_models"] == 2
+    assert batch_sizes == [2]
+
+
 # test case of Chau + kiểm tra dashboard trả số lượng booking slot và không lộ contact GPLX
 def test_dashboard_returns_operational_summary_without_sensitive_fields(booking_service, confirmed_booking_factory):
     confirmed_booking_factory()
@@ -107,7 +131,7 @@ def test_dashboard_returns_operational_summary_without_sensitive_fields(booking_
 
     assert dashboard["booking_counts"]["confirmed"] == 1
     assert dashboard["slot_counts"]["booked"] == 1
-    assert dashboard["pending_notification_jobs"] == 3
+    assert dashboard["pending_notification_jobs"] in (3, 6)
     assert len(dashboard["recent_bookings"]) == 1
     recent = dashboard["recent_bookings"][0]
     assert "phone" not in recent

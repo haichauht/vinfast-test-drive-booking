@@ -2,13 +2,14 @@ import logging
 from contextlib import AbstractAsyncContextManager
 from typing import Any
 
+from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from src.agents.nodes.advise_skill_node import advise_skill_node
 from src.agents.nodes.booking_skill_node import booking_skill_node
 from src.agents.nodes.classifier_node import classifier_node
+from src.agents.nodes.post_booking_skill_node import post_booking_skill_node
 from src.agents.nodes.sensitive_policy_node import sensitive_policy_node
 from src.agents.state import AgentState
 from src.agents.tools import (
@@ -17,9 +18,11 @@ from src.agents.tools import (
     get_booking_draft,
     hold_test_drive_slot,
     request_booking_access,
+    request_user_location,
     search_knowledge,
     search_test_drive_options,
     update_booking_draft,
+    update_user_profile,
     verify_booking_access,
 )
 from src.guardrails.tool_guard import build_guarded_tool_node
@@ -31,45 +34,59 @@ MAX_TOOL_CALLS = 8
 def route_intent(state: AgentState) -> str:
     """Điều hướng dựa trên intent được phân loại."""
     intent = state.get("intent", "domain")
-    if intent == "sensitive":
+    if intent in {"sensitive", "out_of_scope"}:
         return "sensitive_policy"
-    # All non-sensitive requests use one of the two domain skills.
-    active_skill = state.get("active_skill", "advise")
-    if active_skill == "booking":
-        return "booking_skill"
-    return "advise_skill"
+    post_booking_active = bool((state.get("post_booking_context") or {}).get("active"))
+    if state.get("active_skill") == "post_booking" and post_booking_active:
+        return "post_booking_skill"
+    return "booking_skill"
 
 
 def should_continue_booking(state: AgentState) -> str:
     """Quyết định booking_skill có tiếp tục gọi tool hay kết thúc."""
-    # Kiểm tra giới hạn số vòng tool
-    if (state.get("tool_call_count") or 0) >= MAX_TOOL_CALLS:
-        return "end"
-
     messages = state.get("messages") or []
     if not messages:
         return "end"
 
     last_message = messages[-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        if (state.get("tool_call_count") or 0) >= MAX_TOOL_CALLS:
+            return "max_tool_limit"
         return "continue"
     return "end"
 
 
-def should_continue_advise(state: AgentState) -> str:
-    """Quyết định advise_skill có tiếp tục gọi tool hay kết thúc."""
-    # Kiểm tra giới hạn số vòng tool
-    if (state.get("tool_call_count") or 0) >= MAX_TOOL_CALLS:
-        return "end"
-
+async def max_tool_limit_node(state: AgentState) -> dict:
+    """Xử lý an toàn khi số lần gọi tool vượt quá MAX_TOOL_CALLS."""
     messages = state.get("messages") or []
-    if not messages:
-        return "end"
+    last_message = messages[-1] if messages else None
 
-    last_message = messages[-1]
-    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-        return "continue"
-    return "end"
+    blocked_messages: list[ToolMessage] = []
+    if isinstance(last_message, AIMessage) and hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        for call in last_message.tool_calls:
+            blocked_messages.append(
+                ToolMessage(
+                    content='{"error": {"code": "MAX_TOOL_CALLS_EXCEEDED", "message": "Đã đạt giới hạn số lần xử lý tool cho câu hỏi này."}}',
+                    tool_call_id=str(call.get("id") or "max-tools-exceeded"),
+                    name=str(call.get("name") or "unknown"),
+                    status="error",
+                )
+            )
+
+    response_text = "ViVi đã ghi nhận yêu cầu. Bạn có thể chọn trực tiếp từ bảng hỗ trợ bên trái hoặc gửi câu hỏi ngắn hơn giúp ViVi nhé."
+    ai_msg = AIMessage(content=response_text)
+
+    return {
+        "messages": blocked_messages + [ai_msg],
+        "response": response_text,
+        "action_error": "MAX_TOOL_CALLS_EXCEEDED",
+    }
+
+
+def should_continue_post_booking(state: AgentState) -> str:
+    messages = state.get("messages") or []
+    last = messages[-1] if messages else None
+    return "continue" if isinstance(last, AIMessage) and last.tool_calls else "end"
 
 
 def build_graph(checkpointer: Any | None = None) -> CompiledStateGraph:
@@ -78,33 +95,31 @@ def build_graph(checkpointer: Any | None = None) -> CompiledStateGraph:
     # Nodes phân loại và chính sách
     graph.add_node("classifier", classifier_node)
     graph.add_node("sensitive_policy", sensitive_policy_node)
+    graph.add_node("max_tool_limit", max_tool_limit_node)
 
-    # Nodes xử lý Skill
+    # Public MVP skill
     graph.add_node("booking_skill", booking_skill_node)
-    graph.add_node("advise_skill", advise_skill_node)
+    graph.add_node("post_booking_skill", post_booking_skill_node)
 
     # Tách ToolNode theo từng skill để kiểm soát quyền gọi tool
-    # booking_skill chỉ được gọi 6 booking tools
     booking_tools_list = [
         search_test_drive_options,
         hold_test_drive_slot,
         get_booking_draft,
         update_booking_draft,
         request_booking_access,
+        request_user_location,
         verify_booking_access,
         get_booking_details,
         confirm_test_drive_booking,
     ]
-    # advise_skill chỉ được gọi search_knowledge
-    advise_tools_list = [search_knowledge]
-
     graph.add_node(
         "booking_tools",
         build_guarded_tool_node(booking_tools_list, skill_name="booking"),
     )
     graph.add_node(
-        "advise_tools",
-        build_guarded_tool_node(advise_tools_list, skill_name="advise"),
+        "post_booking_tools",
+        build_guarded_tool_node([search_knowledge, update_user_profile], skill_name="post_booking"),
     )
 
     # Entry point
@@ -117,37 +132,31 @@ def build_graph(checkpointer: Any | None = None) -> CompiledStateGraph:
         {
             "sensitive_policy": "sensitive_policy",
             "booking_skill": "booking_skill",
-            "advise_skill": "advise_skill",
+            "post_booking_skill": "post_booking_skill",
         },
     )
 
-    # Booking skill loop: booking_skill → booking_tools → booking_skill → END
+    # Booking skill loop: booking_skill → booking_tools → booking_skill → END / max_tool_limit
     graph.add_conditional_edges(
         "booking_skill",
         should_continue_booking,
         {
             "continue": "booking_tools",
+            "max_tool_limit": "max_tool_limit",
             "end": END,
         },
     )
     graph.add_edge("booking_tools", "booking_skill")
-
-    # Advise skill loop: advise_skill → advise_tools → advise_skill → END
-    graph.add_conditional_edges(
-        "advise_skill",
-        should_continue_advise,
-        {
-            "continue": "advise_tools",
-            "end": END,
-        },
-    )
-    graph.add_edge("advise_tools", "advise_skill")
+    graph.add_conditional_edges("post_booking_skill", should_continue_post_booking, {"continue": "post_booking_tools", "end": END})
+    graph.add_edge("post_booking_tools", "post_booking_skill")
 
     # Các luồng kết thúc trực tiếp
     graph.add_edge("sensitive_policy", END)
+    graph.add_edge("max_tool_limit", END)
 
     # Unit tests and local SQLite development keep an in-memory checkpointer.
     return graph.compile(checkpointer=checkpointer or MemorySaver())
+
 
 
 # Default graph for unit tests and non-PostgreSQL local environments.

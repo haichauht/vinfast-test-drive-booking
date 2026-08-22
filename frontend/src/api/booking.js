@@ -10,27 +10,28 @@
  * - sendBookingMessage(): người dùng gõ tin nhắn tự do cho ViVi.
  * - searchBookingOptions(): tìm showroom có đúng mẫu xe + khung giờ trống (theo địa chỉ hoặc GPS).
  * - holdBookingSlot(): giữ chỗ một khung giờ (backend trả hạn giữ, UI đếm ngược).
- * - saveBookingCustomer(): lưu tên/điện thoại/email người đặt và người lái.
+ * - saveBookingCustomer(): lưu tên/email bắt buộc và số điện thoại nếu có.
  * - confirmHeldBooking(): chốt đặt lịch, trả về mã lịch.
  *
  * Nhóm 2 — tra cứu/sửa/huỷ lịch đã đặt (qua POST /api/v1/demo/action):
- * - requestBookingAccess() → verifyBookingAccess(): xin và xác thực OTP gửi qua Zalo.
+ * - requestBookingAccess() → verifyBookingAccess(): xin và xác thực OTP gửi qua email.
  * - getVerifiedBooking() · updateVerifiedBooking() · cancelVerifiedBooking().
  * - holdVerifiedReschedule() → confirmVerifiedReschedule(): đổi sang khung giờ khác.
  *
  * conversation_id được giữ trong sessionStorage để ViVi nhớ mạch hội thoại trong cùng tab.
  */
-import { ApiError, apiPost } from './client'
+import { ApiError, apiGet, apiPost } from './client'
 import { actionId } from './ids'
 
 const CONVERSATION_KEY = 'vinfast:booking-conversation-id'
 const PUBLIC_ACTION_ERROR_MESSAGES = {
   SLOT_NO_LONGER_AVAILABLE: 'Khung giờ này đã qua hoặc không còn khả dụng, vui lòng chọn giờ khác.',
+  SLOT_UNAVAILABLE: 'Khung giờ này không còn khả dụng, vui lòng chọn giờ khác.',
   HOLD_EXPIRED: 'Thời gian giữ chỗ đã hết hạn, vui lòng chọn lại khung giờ.',
   VEHICLE_NOT_READY: 'Xe demo hiện không sẵn sàng cho khung giờ này, vui lòng chọn lịch khác.',
   VERSION_CONFLICT: 'Thông tin đặt lịch đã thay đổi, vui lòng tải lại và thử lại.',
   INVALID_INPUT: 'Thông tin gửi lên chưa hợp lệ, vui lòng kiểm tra lại.',
-  AGENT_ACTION_FAILED: 'Agent không hoàn tất được thao tác đặt lịch.',
+  AGENT_ACTION_FAILED: 'Thao tác giữ chỗ chưa hoàn tất. Vui lòng chọn lại khung giờ.',
 }
 
 const readConversationId = () => {
@@ -44,13 +45,33 @@ const rememberConversationId = (conversationId) => {
   }
 }
 
+const normalizeAgentContext = (context = {}) => ({
+  channel: 'booking',
+  mode: String(context.mode || ''),
+  phase: String(context.phase || context.stage || ''),
+  stage: String(context.stage || ''),
+  allowed_actions: Array.isArray(context.allowedActions) ? context.allowedActions : [],
+  selected_vehicle_id: context.selectedVehicle?.id || '',
+  selected_vehicle_name: context.selectedVehicle?.name || '',
+  selected_showroom_id: context.selectedShowroom?.id || '',
+  selected_showroom_name: context.selectedShowroom?.name || '',
+  selected_slot_id: context.selectedSlot?.slotId || '',
+  selected_slot_time: context.selectedSlot?.time || '',
+  selected_slot_date: context.selectedSlot?.dateLabel || '',
+  booking_id: context.bookingId || '',
+  recipient: context.recipient || '',
+  nearby_showrooms: Array.isArray(context.nearbyShowrooms)
+    ? context.nearbyShowrooms.map(({ id, name }) => ({ id, name })).slice(0, 10)
+    : [],
+})
+
 const agentRequest = async ({ message, action, actionPayload = {}, context = {} }) => {
   const result = await apiPost('/chat', {
     message,
     conversation_id: readConversationId(),
     ...(action ? { action } : {}),
     action_payload: actionPayload,
-    context: { channel: 'booking', ...context },
+    context: normalizeAgentContext(context),
   })
   rememberConversationId(result.conversation_id)
   return result
@@ -70,7 +91,30 @@ const agentAction = async (action, message, actionPayload) => {
 
 export const sendBookingMessage = (message, context = {}) => agentRequest({ message, context })
 
-export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, address, latitude, longitude }) => agentAction(
+// Uses the existing /chat endpoint. The invitation stays outside agent context.
+const driverChatRequest = ({ message, conversationId = '', invitationToken }) => apiPost('/chat', {
+  message,
+  conversation_id: conversationId,
+  driver_invitation_token: invitationToken,
+  context: { channel: 'driver_invitation' },
+})
+
+export const sendDriverChatMessage = (message, { conversationId, invitationToken }) => driverChatRequest({
+  message,
+  conversationId,
+  invitationToken,
+})
+
+export const getDriverInvitationContext = (invitationToken) => apiGet(
+  `/driver-chat/${encodeURIComponent(invitationToken)}/context`,
+  { cacheKey: `driver-invitation:${invitationToken}`, fallbackToCache: false },
+)
+
+export const resetBookingConversation = () => {
+  if (typeof window !== 'undefined') window.sessionStorage.removeItem(CONVERSATION_KEY)
+}
+
+export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, address, latitude, longitude, preferredDate, preferredDates, preferredDateFrom, preferredDateTo, preferredTime, showroomLimit = 5, slotLimit }) => agentAction(
   'search_options',
   showroomId
     ? `Kiểm tra lịch trống cho ${vehicleModel} tại showroom đã chọn.`
@@ -88,9 +132,13 @@ export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, 
     address,
     latitude,
     longitude,
-    // The weekly calendar needs enough inventory to expose the following week
-    // without inventing client-side availability. Backend currently caps this at 30.
-    limit: 30,
+    preferred_date: preferredDate,
+    preferred_dates: preferredDates,
+    preferred_date_from: preferredDateFrom,
+    preferred_date_to: preferredDateTo,
+    preferred_time: preferredTime,
+    showroom_limit: showroomLimit,
+    ...(slotLimit === undefined ? {} : { slot_limit: slotLimit }),
   },
 )
 
@@ -103,28 +151,46 @@ export const holdBookingSlot = (slotId, uiActionId = actionId('hold')) => agentA
   },
 )
 
-export const saveBookingCustomer = ({ bookingId, version, recipient, person }) => agentAction(
-  'update_draft',
-  'Tôi đã hoàn tất thông tin người đặt và người lái.',
-  {
-    booking_id: bookingId,
-    expected_version: version,
-    booker_patch: {
-      full_name: person.bookingName,
-      phone: person.phone,
-      ...(person.email ? { email: person.email } : {}),
+
+
+/**
+ * Lưu thông tin người đặt và người lái vào draft.
+ *
+ * Người lái có thể có ĐẦU MỐI LIÊN HỆ RIÊNG. Trước đây `driver_patch` bị gán lại đúng
+ * `person.phone` / `person.email` của người đặt, nên đặt hộ thì showroom chỉ có số của
+ * người đặt — gọi nhầm người, và người thật sự cầm lái không nhận được thông báo nào.
+ * Đã kiểm chứng 16/08/2026: backend nhận email/SĐT khác nhau và tạo HAI bản ghi person.
+ *
+ * `person.driverSameContact` = true nghĩa là người lái dùng chung liên hệ với người đặt —
+ * khi đó vẫn gửi liên hệ của người đặt, nhưng là do người dùng CHỌN thế, không phải do
+ * frontend tự áp đặt.
+ */
+export const saveBookingCustomer = ({ bookingId, version, recipient, person }) => {
+  const shareContact = recipient === 'self' || person.driverSameContact !== false
+
+  return agentAction(
+    'update_draft',
+    'Tôi đã hoàn tất thông tin người đặt và người lái.',
+    {
+      booking_id: bookingId,
+      expected_version: version,
+      booker_patch: {
+        full_name: person.bookingName,
+        phone: person.phone,
+        email: person.email,
+      },
+      driver_same_as_booker: recipient === 'self',
+      driver_patch: recipient === 'other'
+        ? {
+            full_name: person.driverName,
+            phone: shareContact ? person.phone : person.driverPhone,
+            email: shareContact ? person.email : person.driverEmail,
+          }
+        : null,
+      has_valid_license_commitment: person.hasLicense,
     },
-    driver_same_as_booker: recipient === 'self',
-    driver_patch: recipient === 'other'
-      ? {
-          full_name: person.driverName,
-          phone: person.phone,
-          ...(person.email ? { email: person.email } : {}),
-        }
-      : null,
-    has_valid_license_commitment: person.hasLicense,
-  },
-)
+  )
+}
 
 export const confirmHeldBooking = ({ bookingId, version, uiActionId = actionId('confirm') }) => agentAction(
   'confirm_booking',
@@ -137,15 +203,22 @@ export const confirmHeldBooking = ({ bookingId, version, uiActionId = actionId('
 )
 
 const bookingManagementAction = async (action, payload) => {
-  const result = await apiPost('/demo/action', { action, payload })
+  const result = await apiPost('/test-drive/actions', { action, payload })
   return result
 }
 
-export const requestBookingAccess = ({ bookingCode, phone, purpose = 'lookup' }) => bookingManagementAction('request_access', {
-  booking_code: bookingCode,
-  contact_value: phone,
+export const releaseBookingHold = (bookingId) => bookingManagementAction(
+  'release_hold',
+  { booking_id: bookingId },
+)
+
+
+
+export const requestBookingAccess = ({ bookingCode = '', email = '', contactValue = '', purpose = 'lookup' }) => bookingManagementAction('request_access', {
+  ...((bookingCode || '').trim() ? { booking_code: (bookingCode || '').trim() } : {}),
+  contact_value: email || contactValue || '',
   purpose,
-  preferred_channel: 'zalo',
+  preferred_channel: 'email',
 })
 
 export const verifyBookingAccess = ({ challengeId, otpCode }) => bookingManagementAction('verify_access', {

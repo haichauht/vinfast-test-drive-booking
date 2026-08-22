@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
+from src.database.redis_client import redis_client
 from src.services.booking.base import BookingBase
 from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
 from src.services.booking.errors import BookingError
@@ -68,6 +70,7 @@ class LifecycleService(BookingBase):
                 "UPDATE test_drive_slots SET status='held',held_until=?,current_booking_id=?,updated_at=? WHERE id=?",
                 (iso(expires), booking_id, iso(now), slot_id),
             )
+            redis_client.hold_slot(slot_id, booking_id, ttl_seconds=ttl_seconds)
             c.execute(
                 "INSERT INTO booking_driver_details(booking_id,required_license_class,created_at,updated_at) VALUES(?,?,?,?)",
                 (booking_id, slot["required_license_class"], iso(now), iso(now)),
@@ -79,6 +82,12 @@ class LifecycleService(BookingBase):
             self._event(c, booking_id, "slot_held", "user", {"slot_id": slot_id})
             showroom_row = c.execute("SELECT * FROM showrooms WHERE id=?", (slot["showroom_id"],)).fetchone()
             showroom = dict(showroom_row) if showroom_row else None
+            dt = parse_utc(slot["start_at"]).astimezone(VIETNAM_TZ)
+            weekdays_vi = {
+                0: "Thứ 2", 1: "Thứ 3", 2: "Thứ 4", 3: "Thứ 5", 4: "Thứ 6", 5: "Thứ 7", 6: "Chủ nhật"
+            }
+            slot_date = f"{weekdays_vi[dt.weekday()]}, {dt.strftime('%d/%m')}"
+            slot_time = dt.strftime("%H:%M")
             result = {
                 "booking_id": booking_id,
                 "status": "held",
@@ -86,9 +95,30 @@ class LifecycleService(BookingBase):
                 "hold_expires_at": iso(expires),
                 "remaining_seconds": ttl_seconds,
                 "showroom": showroom,
+                "slot_id": slot_id,
+                "slot_date": slot_date,
+                "slot_time": slot_time,
+                "start_at": slot["start_at"],
+                "end_at": slot["end_at"],
             }
             self._save_idempotency(c, ui_action_id, _operation, request_payload, result, iso(now))
             return result
+
+    def release_hold(self, booking_id: str) -> dict:
+        with self.db.transaction(immediate=True) as c:
+            b = c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone()
+            if b and b["status"] == "held":
+                now = iso(self.now())
+                c.execute("UPDATE bookings SET status='cancelled', updated_at=? WHERE id=?", (now, booking_id))
+                slot_id = b["slot_id"]
+                c.execute(
+                    "UPDATE test_drive_slots SET status='available', current_booking_id=NULL, held_until=NULL, updated_at=? WHERE id=? OR current_booking_id=?",
+                    (now, slot_id, booking_id),
+                )
+                if slot_id:
+                    redis_client.delete_slot_hold(slot_id)
+                self._event(c, booking_id, "hold_released", "user", {})
+            return {"booking_id": booking_id, "status": "released"}
 
     def _draft(self, c, booking_id: str, *, require_held: bool = True) -> dict:
         booking = self._row(c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone())
@@ -118,8 +148,11 @@ class LifecycleService(BookingBase):
         for role in ("booker", "driver"):
             if not booking[role]:
                 missing.append(role)
-            elif not booking[role]["phone"] and not booking[role]["email"]:
-                missing.append(f"{role}.contact")
+            else:
+                if not booking[role]["full_name"]:
+                    missing.append(f"{role}.full_name")
+                if not booking[role]["email"]:
+                    missing.append(f"{role}.email")
         lic = booking["license_declaration"] or {}
         if "has_driving_license" in lic and lic["has_driving_license"] is not None:
             lic["has_driving_license"] = bool(lic["has_driving_license"])
@@ -245,6 +278,8 @@ class LifecycleService(BookingBase):
                                 ((allowed["email"] or "").lower() or None, pid),
                             )
                     else:
+                        if not allowed.get("email"):
+                            raise BookingError("INVALID_INPUT", f"{role}.email la bat buoc.")
                         c.execute(
                             "INSERT INTO people(id,full_name,phone,email,preferred_channel,normalized_phone,normalized_email,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
                             (
@@ -252,7 +287,7 @@ class LifecycleService(BookingBase):
                                 allowed["full_name"],
                                 allowed.get("phone"),
                                 allowed.get("email"),
-                                allowed.get("preferred_channel", "sms"),
+                                allowed.get("preferred_channel", "email"),
                                 normalize_phone(allowed.get("phone")),
                                 (allowed.get("email") or "").lower() or None,
                                 now,
@@ -320,6 +355,7 @@ class LifecycleService(BookingBase):
                         "email_enabled",
                         "reminder_24h_enabled",
                         "reminder_2h_enabled",
+                        "custom_plan_json",
                     )
                 }
                 if allowed:
@@ -485,10 +521,11 @@ class LifecycleService(BookingBase):
         now = iso(self.now())
         recipient_channels, plan = self._notification_recipient_channels(c, bid)
         schedule = [(confirmation_type, self.now())]
-        if plan["reminder_24h_enabled"] and start_dt - timedelta(hours=24) > parse_utc(self.now()):
-            schedule.append(("reminder_24h", start_dt - timedelta(hours=24)))
-        if plan["reminder_2h_enabled"] and start_dt - timedelta(hours=2) > parse_utc(self.now()):
-            schedule.append(("reminder_2h", start_dt - timedelta(hours=2)))
+        for offset in self._reminder_offsets_minutes(plan):
+            scheduled_at = start_dt - timedelta(minutes=offset)
+            if scheduled_at > parse_utc(self.now()):
+                typ = "reminder_24h" if offset == 1440 else "reminder_2h" if offset == 120 else "reminder"
+                schedule.append((typ, scheduled_at))
         for recipient, channels in recipient_channels:
             for typ, when in schedule:
                 for channel in channels:
@@ -511,7 +548,7 @@ class LifecycleService(BookingBase):
         booking = c.execute("SELECT booker_person_id,driver_person_id FROM bookings WHERE id=?", (bid,)).fetchone()
         plan = c.execute("SELECT * FROM notification_plans WHERE booking_id=?", (bid,)).fetchone()
         recipients = [booking["driver_person_id"]]
-        if plan["copy_booker"] and booking["booker_person_id"] != booking["driver_person_id"]:
+        if (plan["copy_booker"] or booking["booker_person_id"] != booking["driver_person_id"]) and booking["booker_person_id"] not in recipients:
             recipients.append(booking["booker_person_id"])
         result = []
         for recipient in recipients:
@@ -527,6 +564,29 @@ class LifecycleService(BookingBase):
                 channels = ["email" if person["email"] else "sms"]
             result.append((recipient, channels))
         return result, plan
+
+    @staticmethod
+    def _reminder_offsets_minutes(plan) -> list[int]:
+        offsets: list[int] = []
+        try:
+            custom = json.loads(plan["custom_plan_json"] or "{}")
+        except (TypeError, ValueError):
+            custom = {}
+        custom_offsets = custom.get("reminder_offsets_minutes") if isinstance(custom, dict) else None
+        if isinstance(custom_offsets, list):
+            for value in custom_offsets:
+                try:
+                    minutes = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if 0 < minutes <= 30 * 24 * 60:
+                    offsets.append(minutes)
+        else:
+            if plan["reminder_24h_enabled"]:
+                offsets.append(1440)
+            if plan["reminder_2h_enabled"]:
+                offsets.append(120)
+        return sorted(set(offsets), reverse=True)[:5]
 
     def expire_held_bookings(self) -> int:
         count = 0

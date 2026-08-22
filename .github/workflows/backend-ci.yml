@@ -7,20 +7,27 @@ on:
       - 'eval/benchmarks/**'
       - 'eval/golden/**'
       - '.github/workflows/backend-ci.yml'
-    branches: [testing, main, develop]
+    branches: [main]
   pull_request:
     paths:
       - 'backend/**'
       - 'eval/benchmarks/**'
       - 'eval/golden/**'
       - '.github/workflows/backend-ci.yml'
-    branches: [testing, main, develop]
+    branches: [testing, develop, main]
 
 jobs:
   test:
     runs-on: self-hosted
     steps:
+      - name: Configure Git Buffer
+        run: |
+          git config --global http.postBuffer 524288000
+          git config --global http.version HTTP/1.1
+
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -30,7 +37,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r backend/requirements.txt
+        run: pip install --retries 5 --default-timeout 100 -r backend/requirements.txt
 
       - name: Lint with ruff
         run: ruff check backend/src/ backend/tests/
@@ -128,4 +135,3 @@ jobs:
             if (!response.ok) {
               core.setFailed(`Render deploy hook failed: ${response.status} ${await response.text()}`);
             }
-

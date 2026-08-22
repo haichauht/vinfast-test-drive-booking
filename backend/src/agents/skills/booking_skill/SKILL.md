@@ -1,6 +1,6 @@
 # Booking Skill: Process for Test Drive Appointments & Booking Management
 
-This skill details how to interact with the backend booking services using 8 unified MCP tools (`search_test_drive_options`, `hold_test_drive_slot`, `get_booking_draft`, `update_booking_draft`, `request_booking_access`, `verify_booking_access`, `get_booking_details`, `confirm_test_drive_booking`).
+This skill details how to interact with the backend booking services using 9 unified MCP tools (`search_test_drive_options`, `hold_test_drive_slot`, `get_booking_draft`, `update_booking_draft`, `request_booking_access`, `verify_booking_access`, `get_booking_details`, `confirm_test_drive_booking`, `request_user_location`).
 
 ---
 
@@ -11,29 +11,43 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 ### Key Input Fields:
 - `vehicle_model`: The model of the vehicle (e.g., VF3, VF5, VF7, VF8, VF9).
 - `vehicle_variant` (optional): The specific variant (e.g., Plus, Eco).
-- `address` (optional): A textual area/address used to filter matching showrooms; it does not produce a distance.
+- `address` (optional): A textual customer location. The tool geocodes it and ranks eligible showrooms by distance. Do not use it for broad regions such as “miền Trung”; ask for a province/city instead.
 - `latitude`, `longitude` (optional): Current device coordinates. Use only when the user explicitly chooses current location; this is the only mode that ranks and displays distance.
 - `showroom_id` (optional): The ID of a specific showroom.
-- `preferred_date`, `preferred_time` (optional): Desired schedule preferences.
+- `preferred_date` (optional): One exact date in `YYYY-MM-DD`.
+- `preferred_dates` (optional): Several specific, possibly non-contiguous dates in `YYYY-MM-DD`.
+- `preferred_date_from`, `preferred_date_to` (optional): An inclusive continuous date range. Both fields are required together; the range is limited to 31 days.
+- Use exactly one date mode. Examples: `ngày 26` → `preferred_date`; `ngày 26, 28 và 30` → `preferred_dates`; `từ 25 đến 30` → `preferred_date_from` + `preferred_date_to`.
+- `preferred_time` (optional): Desired time in `HH:MM`.
 
 ### Execution Stages:
 
-### UI synchronization rules
+### UI synchronization rules & Tool Calling Mandate
+- **MANDATORY TOOL CALLING**:
+  - Whenever the user mentions any VinFast vehicle model (e.g. "VF3", "VF5", "VF6", "VF7", "VF8", "VF9", "VF 9", "xe VF5", etc.) or asks to view/change/switch vehicle, you MUST IMMEDIATELY call `search_test_drive_options` with `vehicle_model="<model>"` in your tool_calls. NEVER reply with text asking for location without first invoking `search_test_drive_options`. Calling the tool is required to sync the frontend side tab and vehicle selector UI.
+  - **MANDATORY TOOL CALL FOR DATE/SCHEDULE INQUIRIES**: Whenever the user asks about available slots, dates, or schedule for a specific day, list of days, range, or week (e.g., "ngày 26", "ngày 26 27", "từ 25 đến 30", "t4 tuần sau", "tuần sau rảnh không"), you MUST IMMEDIATELY call `search_test_drive_options` with exactly one of `preferred_date`, `preferred_dates`, or `preferred_date_from` + `preferred_date_to`, plus the currently selected `vehicle_model` and `showroom_id`. Use `preferred_time` additionally when applicable. NEVER claim that a date or time is available before the tool returns data.
 - The booking UI context is authoritative for the currently selected vehicle and step.
-- When the user asks to view, choose, or switch to another vehicle, call `search_test_drive_options` with `vehicle_model` even if no address is known yet. Confirm the switch and ask for a location; do not ask them to choose the vehicle again.
-- When the user gives a location, call `search_test_drive_options` with that `address` and the vehicle from the current UI context. Only ask for a vehicle if the context does not contain one.
-- A vehicle-only search updates the vehicle panel and provides location suggestions. A search containing an address updates the showroom map. State that transition clearly in the answer.
-- Do not invent vehicle, showroom, distance, or availability data. UI cards are populated from the completed tool result.
+- When the user asks to view, choose, or switch to another vehicle, call `search_test_drive_options` with `vehicle_model` even if no address is known yet.
+- Treat colloquial location statements as booking input, including missing accents: `t ở hcm`, `tôi đang ở Đà Nẵng`, `ở Quế Sơn`, `mình ở miền tay`. Do not treat them as out of scope.
+- When the user gives a specific location, call `search_test_drive_options` with that `address` and the vehicle from the current UI context. Only ask for a vehicle if the context does not contain one.
+- If the location is only a broad region (`miền Bắc`, `miền Trung`, `miền Nam`, `miền Tây`), ask for a province/city or GPS first, even when a vehicle has not been chosen. Do not claim the map changed.
+- When the user asks to use their current location (for example "gần tôi", "định vị tôi", or "vị trí hiện tại"), call `request_user_location`. The browser client will ask for GPS permission and then call `search_test_drive_options` with latitude/longitude.
+- A vehicle-only search updates the vehicle panel (`'car'`). Prompt the user to enter their location/address to find nearby showrooms. NEVER claim that the showroom map or showroom list has been updated when the user has not provided a location yet.
+- A search containing a specific address or location updates the showroom map (`'map'`). If the tool returns `location_clarification`, ask the customer for a province/city and do not claim that the map was updated.
 
 #### Stage 1: Showroom Selection (`search_stage = "showroom_selection"`)
-- **Condition**: User provided an address/location, but no specific showroom is selected.
-- **Behavior**: Returns matching showrooms. Distances are included only for an explicit current-location coordinate search.
-- **Agent Action**: Inform the user that the showroom map and list have been loaded on the right panel. To avoid visual redundancy and keep the chat clean, DO NOT write tables or lists of all showrooms in the chat text. Simply direct the user to click on the map marker or select from the list in the right-hand workspace.
+- **Condition**: Vehicle model is selected.
+- **Behavior**: Returns available showrooms.
+- **Agent Action**:
+  - If the user ONLY requested to view or switch vehicle models (no address/location specified yet): Inform the user that ViVi has updated the vehicle specification panel to the selected model (e.g. VF 9) on the interface, and ask them to provide their city/district/address to find nearby showrooms.
+  - If the user provided an address/location (including any Vietnamese ward, commune, district, or province like "phường Thảo Điền", "phường Bình Hưng Hòa", "Quận 1", "Quế Sơn"): Whenever `search_test_drive_options` completes with `status = success`, ViVi MUST inform the user that the nearby showrooms have been updated on the map/list and invite them to select a showroom. NEVER output an out-of-scope fallback message when `search_test_drive_options` returns showrooms successfully. If a searched location has no direct showroom, explain politely that ViVi is displaying the nearest surrounding showrooms for them to choose.
 
 #### Stage 2: Slot Selection (`search_stage = "slot_selection"`)
 - **Condition**: A specific showroom is selected (`showroom_id` is supplied).
 - **Behavior**: Returns a list of open timeslots (`slots[]`) at the showroom.
-- **Agent Action**: Show available slots and guide the user to select their preferred time. **If the user specifies a timeslot in their message (e.g. "21 giờ 8/8 đi", "tôi chọn 22:30 ngày 7/8", etc.), you MUST verify it matches the available slots. If the user's request is contradictory (e.g. choosing "Thứ 6 ngày 8/8" while August 8th is Saturday), you must clarify the correct date with them instead of guessing. Otherwise, immediately call `hold_test_drive_slot` to hold the slot for them.** Do not tell them to click the UI if they have already told you their choice in text chat!
+- **Date UI contract**: Use `highlighted_dates` from the tool result as the only source for calendar highlights. It contains only requested dates that actually have available slots. `focused_date` represents a single-date request; `requested_dates` represents separate dates; `requested_date_range` represents a continuous range.
+- **Agent Action**: Show available slots and guide the user to select their preferred time. **STRICT LIMIT**: When listing available timeslots in text response, you MUST list **at most 5 slots** per date (e.g. top 5 earliest or most convenient slots). NEVER list more than 5 slots in plain text. **If the user specifies a timeslot in their message (e.g. "21 giờ 8/8 đi", "tôi chọn 22:30 ngày 7/8", etc.), you MUST verify it matches the available slots. If the user's request is contradictory (e.g. choosing "Thứ 6 ngày 8/8" while August 8th is Saturday), you must clarify the correct date with them instead of guessing. Otherwise, immediately call `hold_test_drive_slot` to hold the slot for them.** Do not tell them to click the UI if they have already told you their choice in text chat!
+- **Weekly Boundary Rule**: A calendar week runs strictly from Monday to Sunday. When listing dates for "tuần sau" (next week), only list dates from Monday to Sunday of next week (e.g., Aug 24 to Aug 30). Do NOT group Monday of the week after next (e.g., Aug 31) into "tuần sau".
 
 ---
 
@@ -85,7 +99,10 @@ sequenceDiagram
     participant Tool as MCP Tools
 
     User->>Agent: Request lookup/edit/cancel booking
-    Agent->>Tool: request_booking_access(booking_code, contact_value, purpose)
+    Agent->>Tool: request_booking_access(purpose) when email is missing
+    Tool-->>Agent: Directs browser to show the email form
+    User->>Agent: Submit registered email through the form
+    Agent->>Tool: request_booking_access(contact_value=email, purpose, preferred_channel="email")
     Tool-->>Agent: Returns challenge_id & destination_masked
     Agent->>User: Notify that OTP has been sent to destination_masked. Prompt for OTP.
     User->>Agent: Provide OTP code
@@ -95,11 +112,15 @@ sequenceDiagram
 
 ### Step 3.1: Request OTP Access Challenge (`request_booking_access`)
 - **Inputs**:
-  - `booking_code`: The existing booking identifier.
-  - `contact_value`: Registered phone number or email address.
-  - `purpose`: Reason for lookup (`lookup`, `reschedule`, `cancel`, `update_details`, `update_notifications`).
+  - `contact_value`: Registered email address. Use this as the primary identifier for lookup.
+  - `booking_code` (optional): Only include this if the user voluntarily provides a booking code.
+  - `purpose`: Reason for lookup. **ALWAYS use `"manage"` for all booking management inquiries (lookup, reschedule, cancel, view)** to grant the user a unified session with full permissions (both reschedule and cancellation buttons enabled).
 - **Security Rule**:
   - NEVER output the raw `contact_value` in the response. Always use `destination_masked` returned from the tool.
+  - `booking_code` is not an authentication secret. Always return and display its complete value exactly as provided by the tool; never mask or truncate it in chat messages or workspace data.
+- **Missing email behavior**:
+  - When the user requests lookup, reschedule, cancellation, detail updates, or notification updates without an email, call this tool immediately with `purpose="manage"` and omit `contact_value`.
+  - The tool returns `requires_contact_value=true`; the browser renders the email form. Do not respond with only a chat request for the email.
 
 ### Step 3.2: Verify OTP Challenge (`verify_booking_access`)
 - **Inputs**:
@@ -119,6 +140,7 @@ sequenceDiagram
   - `access_session_token` (mandatory).
 - **Rules**:
   - Always enforce token check. Show only permissions allowed under the token's scope (`permissions[]`).
+  - After access is verified, show the full `booking_code`; continue protecting OTP codes, access tokens, and contact details.
 
 ---
 

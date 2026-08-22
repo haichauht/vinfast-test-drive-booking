@@ -156,7 +156,7 @@ def _settings(case: Mapping[str, Any]) -> Settings:
     if not isinstance(overrides, Mapping):
         raise ValueError(f"{case.get('case_id')}: settings must be an object")
     values = {**BENCHMARK_SETTING_DEFAULTS, **dict(overrides)}
-    return Settings(_env_file=None, **values)
+    return Settings(**{"_env_file": None, **values})
 
 
 def _run_input_case(case: Mapping[str, Any]) -> dict[str, Any]:

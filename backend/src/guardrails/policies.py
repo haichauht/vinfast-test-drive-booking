@@ -108,10 +108,14 @@ ACTION_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
             "showroom_query",
             "address",
             "preferred_date",
+            "preferred_dates",
+            "preferred_date_from",
+            "preferred_date_to",
             "preferred_time",
             "latitude",
             "longitude",
-            "limit",
+            "showroom_limit",
+            "slot_limit",
         }
     ),
     "hold_slot": frozenset({"slot_id", "ui_action_id"}),
@@ -218,6 +222,7 @@ DEMO_ACTION_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
         {"current_booking_id", "new_booking_id", "access_session_token", "ui_action_id"}
     ),
     "cancel_booking": frozenset({"booking_id", "access_session_token", "ui_action_id", "reason"}),
+    "release_hold": frozenset({"booking_id"}),
 }
 
 DEMO_ACTION_NESTED_ALLOWED_FIELDS: dict[str, dict[str, frozenset[str]]] = {

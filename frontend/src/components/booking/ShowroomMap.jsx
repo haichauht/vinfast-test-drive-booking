@@ -23,14 +23,15 @@ import { commonMedia } from '../../media/assets'
 
 const vinfastLogo = commonMedia.vinfastLogo
 
-export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, userLocation }) {
+export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, userLocation, searchedLocation }) {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
   const markersRef = useRef([])
   const userMarkerRef = useRef(null)
+  const searchedMarkerRef = useRef(null)
   const [leafletLoaded, setLeafletLoaded] = useState(false)
   const selected = showrooms.find((showroom) => showroom.id === selectedId) || null
-  const hasLocation = !!userLocation
+  const hasLocation = Boolean(userLocation || searchedLocation)
 
   useEffect(() => {
     if (window.L) { setLeafletLoaded(true); return }
@@ -47,7 +48,13 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
 
   useEffect(() => {
     if (!leafletLoaded || !mapContainerRef.current) return
-    const initialCenter = selected ? [selected.latitude, selected.longitude] : userLocation ? [userLocation.latitude, userLocation.longitude] : [21.028511, 105.804817]
+    const initialCenter = selected
+      ? [selected.latitude, selected.longitude]
+      : searchedLocation
+        ? [searchedLocation.latitude, searchedLocation.longitude]
+        : userLocation
+          ? [userLocation.latitude, userLocation.longitude]
+          : [21.028511, 105.804817]
     const map = window.L.map(mapContainerRef.current, { zoomControl: false }).setView(initialCenter, selected ? 14 : 11)
     window.L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { attribution: '&copy; Google Maps' }).addTo(map)
     mapRef.current = map
@@ -78,17 +85,47 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !leafletLoaded || selected) return
-    const points = showrooms
-      .filter((showroom) => Number.isFinite(showroom.latitude) && Number.isFinite(showroom.longitude))
-      .map((showroom) => [showroom.latitude, showroom.longitude])
-    if (userLocation) points.push([userLocation.latitude, userLocation.longitude])
-    if (points.length === 1) {
-      map.setView(points[0], 14, { animate: true })
-    } else if (points.length > 1) {
-      map.fitBounds(points, { padding: [42, 42], maxZoom: 14, animate: true })
+    if (!map || !leafletLoaded) return
+    if (!searchedLocation) {
+      searchedMarkerRef.current?.remove()
+      searchedMarkerRef.current = null
+      return
     }
-  }, [showrooms, userLocation, selected, leafletLoaded])
+    searchedMarkerRef.current?.remove()
+    const icon = window.L.divIcon({
+      html: '<div class="leaflet-searched-marker" style="background:#0C64E6;width:18px;height:18px;border-radius:50%;border:2px solid #ffffff;box-shadow:0 0 12px rgba(12,100,230,0.95), 0 0 20px rgba(12,100,230,0.5);"></div>',
+      className: '',
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    })
+    searchedMarkerRef.current = window.L.marker([searchedLocation.latitude, searchedLocation.longitude], { icon }).bindPopup('<strong>Vị trí tìm kiếm</strong>').addTo(map)
+  }, [searchedLocation, leafletLoaded])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !leafletLoaded || selected) return
+
+    const targetPoints = []
+    if (userLocation && Number.isFinite(userLocation.latitude) && Number.isFinite(userLocation.longitude)) {
+      targetPoints.push([userLocation.latitude, userLocation.longitude])
+    }
+    if (searchedLocation && Number.isFinite(searchedLocation.latitude) && Number.isFinite(searchedLocation.longitude)) {
+      targetPoints.push([searchedLocation.latitude, searchedLocation.longitude])
+    }
+
+    const nearbyShowroomPoints = showrooms
+      .filter((showroom) => Number.isFinite(showroom.latitude) && Number.isFinite(showroom.longitude))
+      .slice(0, 5)
+      .map((showroom) => [showroom.latitude, showroom.longitude])
+
+    const points = [...targetPoints, ...nearbyShowroomPoints]
+
+    if (points.length === 1) {
+      map.setView(points[0], 13, { animate: true })
+    } else if (points.length > 1) {
+      map.fitBounds(points, { padding: [50, 50], maxZoom: 13, animate: true })
+    }
+  }, [showrooms, userLocation, searchedLocation, selected, leafletLoaded])
 
   useEffect(() => {
     if (mapRef.current && selected && leafletLoaded) mapRef.current.setView([selected.latitude, selected.longitude], 14, { animate: true, duration: 1 })
@@ -99,10 +136,10 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
   return (
     <section className="studio-map studio-map--familiar" aria-label="Bản đồ showroom phù hợp">
       <aside className="studio-map__list">
-        <div className="studio-map__intro"><span>{showrooms.length} showroom có {car.name}</span><small>{hasLocation ? 'Sắp xếp theo khoảng cách từ vị trí hiện tại.' : 'Đang hiển thị theo khu vực bạn đã nhập.'}</small></div>
+        <div className="studio-map__intro"><span>{showrooms.length} showroom còn lịch cho {car.name}</span><small>{hasLocation ? 'Sắp xếp theo khoảng cách từ vị trí bạn cung cấp.' : 'Đang hiển thị theo lịch trống phù hợp.'}</small></div>
         {showrooms.map((showroom, index) => (
           <button type="button" key={showroom.id} className={selectedId === showroom.id ? 'is-active' : ''} onClick={() => onSelect(showroom.id)}>
-            <span>{index + 1}</span><span><strong>{showroom.name}</strong><small>{showroom.address}</small></span>{hasLocation && <em>{String(showroom.distance).replace('.', ',')} km</em>}
+            <span>{index + 1}</span><span><strong>{showroom.name}</strong><small>{showroom.address}</small>{showroom.available_slot_count ? <small>Còn {showroom.available_slot_count} lịch trống</small> : null}</span>{hasLocation && <em>{String(showroom.distance).replace('.', ',')} km</em>}
           </button>
         ))}
       </aside>

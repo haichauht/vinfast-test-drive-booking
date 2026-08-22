@@ -7,11 +7,11 @@
  *
  * Thứ tự các mục trên trang (tìm nhanh bằng cách gõ tên class trong ngoặc):
  *  1. Hero + tiêu đề lớn                                  (.home-hero)
- *  2. Xe trên đường — ảnh parallax                        (.road-chapter)
- *  3. Video dây chuyền nhà máy                            (.factory-film)
- *  4. Toàn cảnh nhà máy                                   (.factory-origin)
- *  5. Dải chữ chạy tên các dòng xe                        (.model-marquee)
- *  6. DẢI THẺ XE — 2 tab Động cơ điện / Dòng xe dịch vụ   (.models-section, id="models")
+ *  2. DẢI THẺ XE — 2 tab Động cơ điện / Dòng xe dịch vụ   (.models-section, id="models")
+ *  3. Dải chữ chạy tên các dòng xe                        (.model-marquee)
+ *  4. Xe trên đường — ảnh parallax                        (.road-chapter)
+ *  5. Video dây chuyền nhà máy                            (.factory-film)
+ *  6. Toàn cảnh nhà máy                                   (.factory-origin)
  *  7. CHƯƠNG THƯƠNG HIỆU LẠC HỒNG + góc nhìn canvas      (.lachong-passage)
  *     → code ở components/home/LacHongPassage.jsx, thay khối VF 8 · VF 9 cũ
  *  8. Giới thiệu trợ lý ViVi                              (.vivi-intro)
@@ -22,9 +22,9 @@
  * 13. CTA cuối trang + footer                             (.home-action, .site-footer)
  *
  * Component phụ trong file: VehicleRail (~dòng 30) — dải thẻ xe cuộn ngang, có 2 nút mũi tên,
- * rê chuột vào thẻ là prefetch dữ liệu xe cho mượt. Bấm vào thẻ đi thẳng tới /booking?car=…
+ * dữ liệu so sánh gọn và 2 lối đi rõ ràng: xem chi tiết hoặc đặt lịch đúng mẫu xe.
  *
- * ẢNH XE LỚN trên trang này là Lạc Hồng — xe trưng bày, CHƯA mở lái thử. Dải thẻ xe ở mục 6
+ * ẢNH XE LỚN trên trang này là Lạc Hồng — xe trưng bày, CHƯA mở lái thử. Dải thẻ xe ở mục 2
  * vẫn là xe thương mại VF 3–VF 9 và vẫn là cửa vào /booking. Đừng gộp Lạc Hồng vào dải đó.
  *
  * ANIMATION (khối useGSAP ~dòng 124): hero Lạc Hồng đi từ phải sang trái;
@@ -57,7 +57,7 @@ import { prefetchVehicle } from '../api/vehicles'
 import { carGroups, carImage } from '../data/cars'
 import { LacHongPassage } from '../components/home/LacHongPassage'
 import { lacHongEmerge, lacHongHero } from '../data/lachong'
-import { usePageContent, useVehicleCatalog } from '../hooks/useSiteData'
+import { usePageContent, useVehicleCatalog, useVehicleColorOptions } from '../hooks/useSiteData'
 import {
   factoryAerial,
   factoryFilm,
@@ -68,14 +68,160 @@ import {
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
-function VehicleRail({ vehicles }) {
+const normalizeVehicleFactLabel = (label = '') => String(label)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/đ/g, 'd')
+  .toLowerCase()
+
+const findVehicleFact = (specs = [], pattern) => specs.find(
+  ({ label }) => pattern.test(normalizeVehicleFactLabel(label)),
+)
+
+// Gợi ý "dải này kéo ngang được": im 2,5 giây không ai đụng thì thẻ xe tự trôi sang trái
+// rồi quay về. Chỉ là gợi ý về thao tác, KHÔNG phải carousel tự chạy — nên nó dừng hẳn
+// ngay khi người dùng chạm vào, và tối đa 3 lượt.
+const RAIL_HINT_IDLE_MS = 2500
+const RAIL_HINT_DURATION = 1.2 // đi 1,2s + về 1,2s ≈ 2,4s mỗi lượt
+const RAIL_HINT_MAX_PLAYS = 3
+const RAIL_HINT_GAP_MS = 4000
+
+function VehicleRail({ items, loading, error, onRetry, colorsById }) {
   const rail = useRef(null)
+  // Người dùng đã tự thao tác thì thôi gợi ý vĩnh viễn (giữ trong ref để listener đọc được
+  // giá trị mới nhất mà không phải đăng ký lại effect).
+  const userTookOver = useRef(false)
 
   const move = (direction) => {
+    userTookOver.current = true
     rail.current?.scrollBy({ left: direction * rail.current.clientWidth * 0.72, behavior: 'smooth' })
   }
 
-  if (!vehicles.length) {
+  useEffect(() => {
+    const el = rail.current
+    if (!el || !items.length) return undefined
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined
+
+    let timer
+    let tween
+    let plays = 0
+    let visible = false
+
+    // Dải vừa đủ chỗ, không kéo được thì gợi ý là nói dối.
+    const canScroll = () => el.scrollWidth - el.clientWidth > 24
+
+    const schedule = (delay) => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(play, delay)
+    }
+
+    const play = () => {
+      if (userTookOver.current || !visible || plays >= RAIL_HINT_MAX_PLAYS || !canScroll()) return
+      plays += 1
+      // scroll-behavior: smooth của .vehicle-rail sẽ đánh nhau với tween nếu để nguyên.
+      el.style.scrollBehavior = 'auto'
+      // Tween một object trung gian rồi tự gán scrollLeft: với target là DOM element,
+      // GSAP đẩy prop lạ sang CSSPlugin và scrollLeft KHÔNG phải thuộc tính CSS.
+      const position = { value: el.scrollLeft }
+      tween = gsap.to(position, {
+        value: el.scrollLeft + Math.min(el.clientWidth * 0.3, 190),
+        duration: RAIL_HINT_DURATION,
+        ease: 'power2.inOut',
+        yoyo: true,
+        repeat: 1,
+        onUpdate: () => {
+          el.scrollLeft = position.value
+        },
+        onComplete: () => {
+          el.style.scrollBehavior = ''
+          schedule(RAIL_HINT_GAP_MS)
+        },
+      })
+    }
+
+    // Rê chuột vào = đang xem: TẠM dừng gợi ý. Rời chuột ra thì hẹn lại.
+    // Trước đây hàm này set userTookOver = true (tắt vĩnh viễn) nên chỉ cần con trỏ lướt
+    // ngang qua dải xe một lần là gợi ý chết luôn, không bao giờ chạy nữa.
+    const pause = () => {
+      window.clearTimeout(timer)
+    }
+
+    const resume = () => {
+      if (userTookOver.current) return
+      schedule(RAIL_HINT_IDLE_MS)
+    }
+
+    // Chạm/kéo/cuộn NGANG = người dùng thật sự cầm lái: tắt gợi ý vĩnh viễn.
+    const takeOver = () => {
+      userTookOver.current = true
+      window.clearTimeout(timer)
+      tween?.kill()
+      el.style.scrollBehavior = ''
+    }
+
+    // Cuộn DỌC trang trong khi con trỏ nằm trên dải xe KHÔNG phải là thao tác với dải xe.
+    // Bản trước bắt mọi sự kiện wheel nên chỉ cần cuộn trang xuống tới mục này là gợi ý
+    // bị tắt trước cả khi kịp chạy — đây là lý do anh Minh không bao giờ thấy nó.
+    const onWheel = (event) => {
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) takeOver()
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting
+      if (visible) schedule(RAIL_HINT_IDLE_MS)
+      else window.clearTimeout(timer)
+    }, { threshold: 0.35 })
+    observer.observe(el)
+
+    el.addEventListener('pointerenter', pause)
+    el.addEventListener('pointerleave', resume)
+    el.addEventListener('focusin', pause)
+    el.addEventListener('pointerdown', takeOver)
+    el.addEventListener('touchstart', takeOver, { passive: true })
+    el.addEventListener('wheel', onWheel, { passive: true })
+
+    return () => {
+      window.clearTimeout(timer)
+      tween?.kill()
+      observer.disconnect()
+      el.style.scrollBehavior = ''
+      el.removeEventListener('pointerenter', pause)
+      el.removeEventListener('pointerleave', resume)
+      el.removeEventListener('focusin', pause)
+      el.removeEventListener('pointerdown', takeOver)
+      el.removeEventListener('touchstart', takeOver)
+      el.removeEventListener('wheel', onWheel)
+    }
+  }, [items.length])
+
+  if (loading) {
+    return (
+      <div className="vehicle-rail vehicle-rail--loading" role="status" aria-live="polite" aria-label="Đang tải danh mục xe">
+        {[0, 1].map((index) => (
+          <article className="vehicle-tile vehicle-tile--skeleton" key={index} aria-hidden="true">
+            <span className="vehicle-skeleton vehicle-skeleton--meta" />
+            <span className="vehicle-skeleton vehicle-skeleton--image" />
+            <span className="vehicle-skeleton vehicle-skeleton--title" />
+            <span className="vehicle-skeleton vehicle-skeleton--facts" />
+            <span className="vehicle-skeleton vehicle-skeleton--actions" />
+          </article>
+        ))}
+        <span className="vehicle-loading-label">Đang tải danh mục xe…</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="vehicle-empty vehicle-empty--error" role="alert">
+        <p>Chưa thể tải danh mục xe.</p>
+        <span>Dữ liệu sản phẩm hiện chưa sẵn sàng. Vui lòng thử lại.</span>
+        <button type="button" onClick={onRetry}>Thử tải lại</button>
+      </div>
+    )
+  }
+
+  if (!items.length) {
     return (
       <div className="vehicle-empty">
         <p>Chưa có mẫu xe trong nhóm này.</p>
@@ -87,43 +233,111 @@ function VehicleRail({ vehicles }) {
   return (
     <>
       <div className="vehicle-rail" ref={rail}>
-        {vehicles.map((car, index) => (
-          <Link
-            className="vehicle-tile"
-            to={`/models/${car.id}`}
-            key={car.id}
-            onMouseEnter={() => prefetchVehicle(car.id)}
-            onFocus={() => prefetchVehicle(car.id)}
-          >
-            <span className="vehicle-tile__shell">
-              <span className="vehicle-tile__core">
-                <span className="vehicle-tile__meta">
-                  <span>{car.body}</span>
-                  <span>{car.seats}</span>
-                </span>
-                {/* Luôn dùng ảnh studio của mẫu xe để cả dải sản phẩm cùng một ngôn ngữ hình ảnh. */}
+        {items.map((car, index) => {
+          const range = car.range || findVehicleFact(car.specs, /quang duong|tam hoat dong|range/)
+          const charging = car.charging || findVehicleFact(car.specs, /sac|thoi gian nap|charging/)
+          // car.colorOptions về từ GET /vehicles (hiện luôn rỗng); colorsById là phần vá tạm
+          // lấy từ GET /vehicles/{id}. Xem TODO trong hooks/useSiteData.js.
+          const colors = (car.colorOptions?.length ? car.colorOptions : colorsById[car.id]) || []
+          const detailPath = `/models/${encodeURIComponent(car.id)}`
+          const categoryLabel = car.category === 'fleet' ? 'Dòng xe dịch vụ' : 'Xe cá nhân'
+
+          return (
+            <article
+              className="vehicle-tile"
+              key={car.id}
+              aria-labelledby={`vehicle-title-${car.id}`}
+              onMouseEnter={() => prefetchVehicle(car.id)}
+            >
+              {/* CẢ THẺ là một <Link> duy nhất, thay cho mẹo lớp phủ ::after trước đây.
+                  Mẹo cũ KHÔNG chạy: ::after nằm trên thẻ <a> trong .vehicle-tile__actions, mà
+                  block đó lại `position: relative` — nên `inset: 0` chỉ trùm đúng hàng "Xem chi
+                  tiết" cao 48px, bấm vào tên xe hay ảnh xe đều không đi đâu (đã đo bằng
+                  document.elementFromPoint). Bọc thẳng thế này thì mọi điểm trong thẻ đều mở
+                  trang xe, mà cây accessibility vẫn chỉ có ĐÚNG MỘT link. */}
+              <Link
+                className="vehicle-tile__core"
+                to={detailPath}
+                aria-label={`Xem chi tiết ${car.name}`}
+                onFocus={() => prefetchVehicle(car.id)}
+              >
+                <div className="vehicle-tile__meta">
+                  <span>{categoryLabel}</span>
+                  <span>{car.body || 'Phân khúc đang cập nhật'}</span>
+                </div>
+
+                {/* Luôn dùng ảnh studio thật của mẫu xe để dải sản phẩm giữ cùng ngôn ngữ hình ảnh. */}
                 <SmartImage
                   className={`vehicle-tile__image vehicle-shot vehicle-shot--${car.studioShot.mode}`}
                   src={car.studioShot.src}
-                  alt={`${car.name} - ${car.body}`}
+                  alt={`${car.name} - ${car.body || categoryLabel}`}
                   fit={car.studioShot.fit}
                   focalPoint={car.studioShot.focalPoint}
                   aspectRatio={car.studioShot.aspectRatio}
                 />
-                <span className="vehicle-tile__copy">
-                  <span>
-                    <strong>{car.name}</strong>
-                    <small>{car.price}</small>
+
+                <div className="vehicle-tile__copy">
+                  <h3 id={`vehicle-title-${car.id}`}>{car.name}</h3>
+                  <p>{car.price || 'Giá đang cập nhật'}</p>
+                  {car.tagline && <span>{car.tagline}</span>}
+                </div>
+
+                <dl className="vehicle-tile__facts">
+                  <div>
+                    <dt>Chỗ ngồi</dt>
+                    <dd>{car.seats || 'Đang cập nhật'}</dd>
+                  </div>
+                  <div className={!range ? 'is-missing' : ''}>
+                    <dt>{range?.label || 'Tầm hoạt động'}</dt>
+                    <dd>{range?.value || 'Đang cập nhật'}</dd>
+                  </div>
+                  <div className={!charging ? 'is-missing' : ''}>
+                    <dt>{charging?.label || 'Thông tin sạc'}</dt>
+                    <dd>{charging?.value || 'Đang cập nhật'}</dd>
+                  </div>
+                </dl>
+
+                <div className="vehicle-tile__palette">
+                  <span>Màu ngoại thất</span>
+                  {colors.length ? (
+                    <div className="vehicle-tile__swatches" role="list" aria-label={`Màu ngoại thất ${car.name}`}>
+                      {/* Màu backend trả kèm hex thì tô nền; màu lấy từ bảng bổ sung mang ảnh
+                          chip chính hãng (sơn kim loại không quy về một hex phẳng được). */}
+                      {colors.slice(0, 6).map((color) => (
+                        <span
+                          className="vehicle-tile__swatch"
+                          role="listitem"
+                          aria-label={color.name}
+                          title={color.name}
+                          key={`${car.id}-${color.name}`}
+                          style={color.swatch ? undefined : {
+                            background: color.secondaryHex
+                              ? `linear-gradient(135deg, ${color.hex} 50%, ${color.secondaryHex} 50%)`
+                              : color.hex,
+                          }}
+                        >
+                          {color.swatch && <img src={color.swatch} alt="" loading="lazy" />}
+                        </span>
+                      ))}
+                      <small>{colors.length} màu</small>
+                    </div>
+                  ) : (
+                    <small>Đang cập nhật</small>
+                  )}
+                </div>
+
+                {/* Không còn là <Link> nữa (link đã nằm ở vỏ ngoài) — chỉ là chỉ dấu thị giác,
+                    giữ nguyên chữ và mũi tên như cũ để không đổi giao diện. */}
+                <div className="vehicle-tile__actions">
+                  <span className="vehicle-tile__detail-link">
+                    Xem chi tiết <ArrowRight size={17} weight="light" />
                   </span>
-                  <span className="vehicle-tile__arrow" aria-hidden="true">
-                    <ArrowRight size={18} weight="light" />
-                  </span>
-                </span>
-              </span>
-            </span>
-            <span className="vehicle-tile__index">{String(index + 1).padStart(2, '0')}</span>
-          </Link>
-        ))}
+                </div>
+              </Link>
+              <span className="vehicle-tile__index">{String(index + 1).padStart(2, '0')}</span>
+            </article>
+          )
+        })}
       </div>
       <div className="rail-controls" aria-label="Điều khiển danh sách xe">
         <button type="button" onClick={() => move(-1)} aria-label="Xem xe phía trước">
@@ -142,7 +356,12 @@ export function HomePage() {
   const location = useLocation()
   const [activeGroup, setActiveGroup] = useState('personal')
   const [storyIndex, setStoryIndex] = useState(0)
-  const { cars } = useVehicleCatalog()
+  const {
+    cars,
+    loading: carsLoading,
+    error: carsError,
+    retry: retryCars,
+  } = useVehicleCatalog()
   const { data: homeContent } = usePageContent('home')
   const stories = homeContent?.testimonials || []
 
@@ -150,6 +369,9 @@ export function HomePage() {
     () => cars.filter((car) => car.category === activeGroup),
     [cars, activeGroup],
   )
+  // Chỉ hỏi màu cho các xe thuộc tab đang mở, không hỏi cả 14 mẫu.
+  const visibleVehicleIds = useMemo(() => vehicles.map((car) => car.id), [vehicles])
+  const colorsById = useVehicleColorOptions(visibleVehicleIds)
 
   useEffect(() => {
     if (location.hash === '#models-service') setActiveGroup('fleet')
@@ -344,6 +566,24 @@ export function HomePage() {
     setStoryIndex((current) => (current + direction + stories.length) % stories.length)
   }
 
+  const selectGroupFromKeyboard = (event, currentIndex) => {
+    const lastIndex = carGroups.length - 1
+    let nextIndex = currentIndex
+
+    if (event.key === 'ArrowRight') nextIndex = currentIndex === lastIndex ? 0 : currentIndex + 1
+    else if (event.key === 'ArrowLeft') nextIndex = currentIndex === 0 ? lastIndex : currentIndex - 1
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = lastIndex
+    else return
+
+    event.preventDefault()
+    const nextGroup = carGroups[nextIndex]
+    setActiveGroup(nextGroup.id)
+    window.requestAnimationFrame(() => {
+      document.getElementById(nextGroup.id === 'personal' ? 'models-electric' : 'models-service')?.focus()
+    })
+  }
+
   return (
     <AppShell>
       <main ref={root} id="main-content" className="page page--home">
@@ -364,12 +604,12 @@ export function HomePage() {
               VinFast phát triển ô tô điện, công nghệ và hạ tầng sạc tại Việt Nam,
               hướng đến trải nghiệm di chuyển xanh thuận tiện hơn mỗi ngày.
             </p>
+            {/* Một hành động chính duy nhất ở hero: xem xe. Nút "Đặt lịch lái thử" từng
+                đứng cạnh đây đã bỏ vì header (position:fixed) luôn hiển thị đúng nút đó,
+                cùng chữ cùng đích, ngay trong cùng một khung nhìn. */}
             <div className="home-hero__actions" data-hero-reveal>
               <IslandButton to="/#models" variant="dark">
                 Khám phá ô tô
-              </IslandButton>
-              <IslandButton to="/booking" variant="light">
-                Đặt lịch lái thử
               </IslandButton>
             </div>
           </div>
@@ -392,6 +632,65 @@ export function HomePage() {
             <span>Cuộn để khám phá</span>
             <span className="home-hero__scroll-line" />
           </a>
+        </section>
+
+        <section className="models-section" id="models">
+          <div className="section-frame">
+            <Reveal className="section-heading section-heading--wide">
+              <p className="eyebrow">Ô tô</p>
+              <h2>
+                Tìm chiếc VinFast{' '}
+                <span
+                  className="inline-image inline-image--road"
+                  style={{ '--inline-image-url': `url(${carImage('VF8/banner.webp')})` }}
+                  aria-hidden="true"
+                />{' '}
+                phù hợp với nhu cầu của bạn.
+              </h2>
+            </Reveal>
+
+            <div className="model-tabs" role="tablist" aria-label="Nhóm sản phẩm">
+              {carGroups.map((group, index) => (
+                <button
+                  key={group.id}
+                  id={group.id === 'personal' ? 'models-electric' : 'models-service'}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeGroup === group.id}
+                  aria-controls="models-panel"
+                  tabIndex={activeGroup === group.id ? 0 : -1}
+                  onClick={() => setActiveGroup(group.id)}
+                  onKeyDown={(event) => selectGroupFromKeyboard(event, index)}
+                >
+                  <span>{group.label}</span>
+                  <small>{group.description}</small>
+                </button>
+              ))}
+            </div>
+
+            <div
+              id="models-panel"
+              role="tabpanel"
+              aria-labelledby={activeGroup === 'personal' ? 'models-electric' : 'models-service'}
+              aria-busy={carsLoading}
+            >
+              <VehicleRail
+                items={vehicles}
+                loading={carsLoading}
+                error={carsError}
+                onRetry={retryCars}
+                colorsById={colorsById}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="model-marquee" aria-label="Danh sách dòng xe">
+          <div className="model-marquee__track">
+            {[...cars, ...cars].map((car, index) => (
+              <span key={`${car.id}-${index}`}>{car.navName}</span>
+            ))}
+          </div>
         </section>
 
         <section className="road-chapter" aria-labelledby="road-chapter-title">
@@ -434,49 +733,6 @@ export function HomePage() {
               <SmartImage src={factoryAerial} alt="Toàn cảnh tổ hợp sản xuất VinFast tại Hải Phòng" />
               <figcaption><span>01</span>Tổ hợp sản xuất VinFast · Hải Phòng</figcaption>
             </figure>
-          </div>
-        </section>
-
-        <section className="model-marquee" aria-label="Danh sách dòng xe">
-          <div className="model-marquee__track">
-            {[...cars, ...cars].map((car, index) => (
-              <span key={`${car.id}-${index}`}>{car.navName}</span>
-            ))}
-          </div>
-        </section>
-
-        <section className="models-section" id="models">
-          <div className="section-frame">
-            <Reveal className="section-heading section-heading--wide">
-              <p className="eyebrow">Ô tô</p>
-              <h2>
-                Tìm chiếc VinFast{' '}
-                <span
-                  className="inline-image inline-image--road"
-                  style={{ '--inline-image-url': `url(${carImage('VF8/banner.webp')})` }}
-                  aria-hidden="true"
-                />{' '}
-                phù hợp với nhu cầu của bạn.
-              </h2>
-            </Reveal>
-
-            <div className="model-tabs" role="tablist" aria-label="Nhóm sản phẩm">
-              {carGroups.map((group) => (
-                <button
-                  key={group.id}
-                  id={group.id === 'personal' ? 'models-electric' : 'models-service'}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeGroup === group.id}
-                  onClick={() => setActiveGroup(group.id)}
-                >
-                  <span>{group.label}</span>
-                  <small>{group.description}</small>
-                </button>
-              ))}
-            </div>
-
-            <VehicleRail vehicles={vehicles} />
           </div>
         </section>
 
@@ -693,14 +949,20 @@ export function HomePage() {
               <p className="eyebrow">Bắt đầu từ cảm giác sau tay lái</p>
               <h2>Chọn xe. Chọn nơi. Chọn giờ.</h2>
               <p>ViVi sẽ giữ lại toàn bộ lựa chọn để bạn hoàn tất lịch thử xe trong một luồng duy nhất.</p>
+              {/* Nút "Hỏi ViVi trước" (to="/agent") đã bỏ: /agent chỉ là Navigate tới
+                  /booking trong App.jsx, nên nó bày ra một lựa chọn giả — hai nút cạnh nhau
+                  mở ra đúng cùng một trang. Xem lại App.jsx trước khi thêm CTA /agent mới. */}
               <div className="home-action__buttons">
                 <IslandButton to="/booking" variant="light">
                   Đặt lịch ngay
                 </IslandButton>
-                <IslandButton to="/agent" variant="ghost-light">
-                  Hỏi ViVi trước
-                </IslandButton>
               </div>
+              {/* Lối vào cho khách QUAY LẠI. Cố ý là link chữ, không phải nút: đặt lịch mới
+                  vẫn là hành động chính duy nhất của khối này (xem quy tắc ở Batch 4).
+                  `?lookup=1` mở thẳng bước tra cứu, xem BookingPage.jsx. */}
+              <p className="home-action__manage">
+                Đã đặt lịch rồi? <Link to="/booking?lookup=1">Tra cứu, đổi hoặc huỷ lịch</Link>
+              </p>
             </Reveal>
           </div>
         </section>
