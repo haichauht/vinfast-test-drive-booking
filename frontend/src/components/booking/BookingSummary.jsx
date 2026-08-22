@@ -240,7 +240,12 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDa
                   <div className={`schedule-calendar__day ${isToday ? 'is-today' : ''} ${day.isPast ? 'is-past' : ''} ${day.isHighlighted ? 'is-highlighted' : ''}`.trim()} role="columnheader" key={day.key}>
                     <span>{WEEKDAY_LABELS[day.weekdayIndex]}</span>
                     <strong>{day.dayNumber}</strong>
-                    <small>{day.isPast ? 'Đã qua' : day.availableCount ? `${day.availableCount} lịch` : `${day.monthNumber}/${day.date.getFullYear()}`}</small>
+                    {/* Bỏ dòng đếm "N lịch" và dòng tháng: số lịch đã hiện ngay
+                        trong lưới khung giờ bên dưới, nhắc lại ở đây chỉ làm ô
+                        ngày rối và đẩy thứ với số ngày xa nhau.
+                        Giữ lại đúng "Đã qua": đó là lý do ô bị khoá, không nói
+                        thì người dùng bấm mãi không hiểu vì sao không được. */}
+                    {day.isPast && <small>Đã qua</small>}
                   </div>
                 )
               })}
