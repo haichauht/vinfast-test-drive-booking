@@ -37,6 +37,7 @@ services:
     environment:
       DATABASE_URL: postgresql://vinfast:vinfast@postgres:5432/vinfast_booking
       EVAL_DATA_DIR: /app/eval/data
+      BOOKING_ADVANCE_WINDOW_DAYS: ${BOOKING_ADVANCE_WINDOW_DAYS:-30}
     command: ["python", "scripts/seed_dev_db.py"]
     volumes:
       - ./eval/data:/app/eval/data:ro
@@ -59,6 +60,7 @@ services:
       REDIS_ENABLED: "true"
       REDIS_URL: redis://redis:6379/0
       EVAL_DATA_DIR: /app/eval/data
+      BOOKING_ADVANCE_WINDOW_DAYS: ${BOOKING_ADVANCE_WINDOW_DAYS:-30}
     volumes:
       - ./backend/logs:/app/logs
       - ./eval/data:/app/eval/data:ro
