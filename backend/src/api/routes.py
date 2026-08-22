@@ -299,6 +299,24 @@ async def driver_chat(token: str, request: Request, body: ChatRequest) -> ChatRe
     return await chat(request, body.model_copy(update={"conversation_id": conversation_id[:100]}))
 
 
+@router.get("/driver-chat/{token}/context")
+async def driver_chat_context(token: str) -> dict[str, Any]:
+    """Return the minimal trusted context needed to personalise a driver-link greeting."""
+    try:
+        invitation = await asyncio.to_thread(driver_invitation_service.resolve, token)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Driver invitation is invalid or expired") from exc
+
+    booking = await asyncio.to_thread(profile_service.booking_context, invitation.booking_id)
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return {
+        "driver": {"name": invitation.driver_name},
+        "booking": booking,
+        "expires_at": invitation.expires_at,
+    }
+
+
 @router.post("/bookings/{booking_id}/driver-invitation")
 async def send_driver_invitation(booking_id: str) -> dict[str, Any]:
     """Create and email a private chat invitation to a booking's separate driver."""
