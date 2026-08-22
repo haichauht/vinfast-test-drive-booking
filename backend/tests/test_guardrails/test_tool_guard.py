@@ -6,7 +6,8 @@ from langchain_core.tools import tool
 from langgraph.graph import END, StateGraph
 from src.agents.state import AgentState
 from src.config import Settings
-from src.guardrails.tool_guard import build_guarded_tool_node, inspect_tool_calls
+from src.guardrails.tool_guard import build_guarded_tool_node, inspect_tool_calls, serialize_tool_error
+from src.services.booking.errors import BookingError
 
 
 def _state(tool_calls, **overrides):
@@ -20,6 +21,49 @@ def _state(tool_calls, **overrides):
 
 def _call(name, args=None, call_id="call-1"):
     return {"name": name, "args": args or {}, "id": call_id, "type": "tool_call"}
+
+
+def test_booking_error_is_serialized_for_agent_clarification():
+    content = serialize_tool_error(
+        BookingError("INVALID_INPUT", "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.")
+    )
+
+    assert '"code": "INVALID_INPUT"' in content
+    assert "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." in content
+
+
+@pytest.mark.asyncio
+async def test_guarded_tool_node_returns_structured_booking_error():
+    @tool("search_test_drive_options")
+    def failing_search(preferred_date_from: str, preferred_date_to: str) -> dict:
+        """Fake search that rejects a reversed date range."""
+        raise BookingError("INVALID_INPUT", "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.")
+
+    node = build_guarded_tool_node([failing_search], skill_name="booking")
+    graph = StateGraph(AgentState)
+    graph.add_node("tools", node)
+    graph.set_entry_point("tools")
+    graph.add_edge("tools", END)
+    agent = graph.compile()
+    result = await agent.ainvoke(
+        _state(
+            [
+                _call(
+                    "search_test_drive_options",
+                    {
+                        "preferred_date_from": "2026-08-26",
+                        "preferred_date_to": "2026-08-21",
+                    },
+                )
+            ]
+        )
+    )
+
+    message = next(message for message in result["messages"] if isinstance(message, ToolMessage))
+    assert isinstance(message, ToolMessage)
+    assert message.status == "error"
+    assert '"code": "INVALID_INPUT"' in message.content
+    assert "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." in message.content
 
 
 def test_allows_tool_inside_active_skill_allowlist():
@@ -73,18 +117,52 @@ def test_blocks_booking_confirmation_without_explicit_user_confirmation():
     assert decision.code == "EXPLICIT_CONFIRMATION_REQUIRED"
 
 
-def test_allows_booking_confirmation_after_explicit_user_confirmation():
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Tôi xác nhận chốt lịch này",
+        "Tôi đồng ý nhận tư vấn về VF8",
+        "Can you explain what confirm means?",
+    ],
+)
+def test_natural_language_alone_never_authorizes_booking_confirmation(query):
     call = _call(
         "confirm_test_drive_booking",
         {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
     )
     decision = inspect_tool_calls(
-        _state([call], query="Tôi xác nhận chốt lịch này"),
+        _state([call], query=query),
         allowed_tool_names={"confirm_test_drive_booking"},
         settings=Settings(),
     )
 
-    assert decision.allowed is True
+    assert decision.allowed is False
+    assert decision.code == "EXPLICIT_CONFIRMATION_REQUIRED"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Tôi không xác nhận lịch này",
+        "Chưa chốt lịch nhé",
+        "Đừng đồng ý đặt lịch",
+        "Do not confirm this booking",
+        "I don't want to book now",
+    ],
+)
+def test_blocks_confirmation_when_user_phrase_is_explicitly_negated(query):
+    call = _call(
+        "confirm_test_drive_booking",
+        {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
+    )
+    decision = inspect_tool_calls(
+        _state([call], query=query),
+        allowed_tool_names={"confirm_test_drive_booking"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "EXPLICIT_CONFIRMATION_REQUIRED"
 
 
 def test_blocks_batch_containing_a_mutating_tool():
@@ -181,12 +259,57 @@ def test_allows_structured_confirmation_without_natural_language_confirmation():
         {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
     )
     decision = inspect_tool_calls(
-        _state([call], query="Cho tôi xem lại", requested_action="confirm_booking"),
+        _state(
+            [call],
+            query="Cho tôi xem lại",
+            requested_action="confirm_booking",
+            action_payload={"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
+        ),
         allowed_tool_names={"confirm_test_drive_booking"},
         settings=Settings(),
     )
 
     assert decision.allowed is True
+
+
+@pytest.mark.parametrize(
+    ("requested_action", "action_payload"),
+    [
+        (
+            "search_options",
+            {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
+        ),
+        (
+            "confirm_booking",
+            {"booking_id": "other", "expected_version": 1, "ui_action_id": "ui-1"},
+        ),
+        (
+            "confirm_booking",
+            {"booking_id": "b1", "expected_version": 2, "ui_action_id": "ui-1"},
+        ),
+        (
+            "confirm_booking",
+            {"booking_id": "b1", "expected_version": 1, "ui_action_id": "confirm:other"},
+        ),
+    ],
+)
+def test_blocks_confirmation_not_bound_to_exact_structured_payload(requested_action, action_payload):
+    call = _call(
+        "confirm_test_drive_booking",
+        {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
+    )
+    decision = inspect_tool_calls(
+        _state(
+            [call],
+            requested_action=requested_action,
+            action_payload=action_payload,
+        ),
+        allowed_tool_names={"confirm_test_drive_booking"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "EXPLICIT_CONFIRMATION_REQUIRED"
 
 
 def test_blocks_two_mutating_tools_in_one_message():

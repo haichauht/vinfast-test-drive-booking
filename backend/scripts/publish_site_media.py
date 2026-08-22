@@ -36,6 +36,11 @@ CONTENT = {
     "content/charging/150kw.png": "src/media/local/vehicle-media/Trạm sạc/charger-150-cutout-v2.png",
     "content/charging/60kw.png": "src/media/local/vehicle-media/Trạm sạc/charger-60-cutout-v2.png",
     "content/charging/30kw.png": "src/media/local/vehicle-media/Trạm sạc/charger-30-cutout-v2.png",
+    # Ảnh chìm của thư mã xác thực. Nó KHÔNG nằm dưới vehicle-media vì không gắn
+    # với mẫu xe nào, mà lệnh copytree bên dưới chỉ chép vehicle-media, nên phải
+    # khai riêng ở đây. Thiếu dòng này thì máy nào cài mới cũng mất ảnh chìm thư
+    # mã xác thực, và mất im lặng: thư vẫn gửi, chỉ là card trơ nền tối.
+    "email/lac-hong-watermark.jpg": "src/media/local/email/lac-hong-watermark.jpg",
 }
 
 COMMON_TO_VEHICLE_MEDIA = {

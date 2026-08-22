@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import uuid
@@ -6,8 +7,7 @@ from collections.abc import Callable
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
@@ -18,8 +18,18 @@ from src.agents.tools import (
 from src.agents.trace import redact, trace_event
 from src.config import get_settings
 from src.database.redis_client import redis_client
-from src.dependencies import booking_service, internal_portal_service
+from src.dependencies import (
+    booking_service,
+    driver_invitation_service,
+    internal_portal_service,
+    profile_service,
+    profile_update_queue,
+)
 from src.guardrails import get_guardrails
+from src.guardrails.abuse import AbuseStatus, get_abuse_tracker
+from src.guardrails.conversation import get_conversation_token_manager
+from src.guardrails.policies import ABUSE_VIOLATION_CODES
+from src.guardrails.rate_limit import get_rate_limiter
 from src.internal_portal import InternalPrincipal, InternalRole
 from src.internal_portal.routes import current_principal
 from src.models.schemas import (
@@ -32,6 +42,8 @@ from src.models.schemas import (
     UiDirective,
 )
 from src.services.booking import BookingError
+from src.services.llm import summarize_user_profile
+from src.services.profile.context import build_profile_context
 
 router = APIRouter()
 _default_agent = agent
@@ -49,6 +61,112 @@ SECURITY_STATE_DATASET_FILES = {
     "14_booking_access_sessions.csv",
     "15_zalo_identity_links.csv",
 }
+
+
+def _client_subject(request: Request) -> str:
+    return request.client.host if request.client else "unknown-client"
+
+
+def _enforce_rate_limit(
+    request: Request,
+    *,
+    bucket: str,
+    limit: int,
+    subject: str | None = None,
+    include_ip: bool = True,
+) -> None:
+    settings = get_settings()
+    if not getattr(settings, "rate_limits_enabled", True):
+        return
+    window_seconds = int(getattr(settings, "rate_limit_window_seconds", 60))
+    limiter = get_rate_limiter()
+    subjects = [(f"{bucket}.ip", _client_subject(request))] if include_ip else []
+    if subject:
+        subjects.append((f"{bucket}.subject", subject))
+    for scoped_bucket, scoped_subject in subjects:
+        decision = limiter.check(
+            scoped_bucket,
+            scoped_subject,
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+        if decision.allowed:
+            continue
+        trace_event(
+            "rate_limit.blocked",
+            bucket=bucket,
+            scope=scoped_bucket.rsplit(".", 1)[-1],
+            retry_after_seconds=decision.retry_after_seconds,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "RATE_LIMIT_EXCEEDED",
+                "message": "Bạn thao tác quá nhanh. Vui lòng chờ một chút rồi thử lại.",
+                "retryable": True,
+            },
+            headers={"Retry-After": str(decision.retry_after_seconds)},
+        )
+
+
+def _enforce_action_rate_limit(request: Request, action: str | None, payload: dict[str, Any]) -> None:
+    if not action:
+        return
+    settings = get_settings()
+    if action in {"hold_slot", "hold_reschedule"}:
+        subject = str(payload.get("slot_id") or payload.get("new_slot_id") or "")
+        _enforce_rate_limit(
+            request,
+            bucket="booking_hold",
+            limit=int(getattr(settings, "booking_hold_rate_limit_requests", 20)),
+            subject=subject,
+        )
+    elif action in {"confirm_booking", "confirm_reschedule"}:
+        subject = str(payload.get("booking_id") or payload.get("current_booking_id") or "")
+        _enforce_rate_limit(
+            request,
+            bucket="booking_confirm",
+            limit=int(getattr(settings, "booking_confirm_rate_limit_requests", 10)),
+            subject=subject,
+        )
+    elif action in {"request_access", "verify_access"}:
+        subject = str(payload.get("contact_value") or payload.get("challenge_id") or "")
+        _enforce_rate_limit(
+            request,
+            bucket="booking_otp",
+            limit=int(getattr(settings, "booking_otp_rate_limit_requests", 10)),
+            subject=subject,
+        )
+
+
+def _abuse_subjects(request: Request, thread_id: str) -> tuple[str, ...]:
+    subjects = [f"thread:{thread_id}"]
+    if request.client and request.client.host:
+        subjects.append(f"ip:{request.client.host}")
+    return tuple(subjects)
+
+
+def _raise_abuse_ban(status: AbuseStatus) -> None:
+    retry_after = max(1, status.retry_after_seconds)
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "code": "ABUSE_BANNED",
+            "message": "Phiên truy cập đã bị khóa do vi phạm chính sách nhiều lần.",
+            "retryable": True,
+        },
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+@router.on_event("startup")
+async def start_profile_update_worker() -> None:
+    profile_update_queue.start()
+
+
+@router.on_event("shutdown")
+async def stop_profile_update_worker() -> None:
+    await profile_update_queue.stop()
 
 
 def _chat_ui_directive(result: dict[str, Any]) -> UiDirective | None:
@@ -100,19 +218,106 @@ def require_operations_admin(
 async def chat(request: Request, body: ChatRequest) -> ChatResponse:
     """Chat với AI agent."""
     try:
-        # Tạo conversation_id mới nếu client không truyền
-        conversation_id = body.conversation_id or str(uuid.uuid4())
+        settings = get_settings()
+        _enforce_rate_limit(
+            request,
+            bucket="chat",
+            limit=int(getattr(settings, "chat_rate_limit_requests", 120)),
+        )
         trace_id = str(uuid.uuid4())
-        identity = getattr(request.state, "client_identity", None)
+        token_manager = get_conversation_token_manager()
+        conversation_identity = token_manager.verify(body.conversation_id) if body.conversation_id else None
+        if conversation_identity is None:
+            conversation_identity = token_manager.issue()
+            if body.conversation_id:
+                trace_event(
+                    "guardrail.conversation_reset",
+                    trace_id=trace_id,
+                    reason="invalid_or_expired_conversation_token",
+                )
+        conversation_id = conversation_identity.public_token
+        client_identity = getattr(request.state, "client_identity", None)
+        abuse_tracker = get_abuse_tracker()
+        abuse_subjects = _abuse_subjects(request, conversation_identity.thread_id)
+        existing_abuse_status = abuse_tracker.check(abuse_subjects)
+        if existing_abuse_status.banned:
+            trace_event(
+                "guardrail.abuse_ban_enforced",
+                trace_id=trace_id,
+                retry_after_seconds=existing_abuse_status.retry_after_seconds,
+            )
+            _raise_abuse_ban(existing_abuse_status)
+
+        profile = None
+        profile_context: dict[str, Any] = {}
+        stored_booking_context: dict[str, Any] = {"active": False}
+        participant_context: dict[str, Any] = {"role": "user"}
+        try:
+            driver_invitation = getattr(request.state, "driver_invitation", None)
+            if not driver_invitation and body.driver_invitation_token:
+                driver_invitation = await asyncio.to_thread(
+                    driver_invitation_service.resolve, body.driver_invitation_token
+                )
+            if driver_invitation:
+                profile = profile_service.bind_person_conversation(
+                    conversation_id,
+                    person_id=driver_invitation.driver_person_id,
+                    email=driver_invitation.email,
+                    phone=driver_invitation.phone,
+                    source="driver_invitation",
+                    trace_id=trace_id,
+                )
+                stored_booking_context = {
+                    "active": True,
+                    **profile_service.booking_context(driver_invitation.booking_id),
+                    "participants": profile_service.booking_participants_context(driver_invitation.booking_id),
+                }
+                participant_context = {"role": "driver", "booking_id": driver_invitation.booking_id}
+            else:
+                profile = profile_service.resolve_or_create(
+                    conversation_id,
+                    getattr(client_identity, "session_id", ""),
+                )
+                stored_booking_context = profile_service.latest_booking_context(profile.id)
+                if stored_booking_context.get("active"):
+                    participant_context = {"role": "booker", "booking_id": stored_booking_context.get("id")}
+            profile_context = build_profile_context(profile, body.message)
+        except KeyError as exc:
+            if body.driver_invitation_token:
+                raise HTTPException(status_code=404, detail="Driver invitation is invalid or expired") from exc
+            logging.getLogger("profile.lifecycle").exception(
+                "profile.lookup_failed trace_id=%s conversation_id=%s", trace_id, conversation_id
+            )
+        except Exception:
+            logging.getLogger("profile.lifecycle").exception(
+                "profile.lookup_failed trace_id=%s conversation_id=%s", trace_id, conversation_id
+            )
         guardrails = get_guardrails()
         input_decision = guardrails.inspect_input(
             message=body.message,
-            conversation_id=conversation_id,
+            conversation_id=body.conversation_id,
             context=body.context,
             action=body.action,
             action_payload=body.action_payload,
         )
         if not input_decision.allowed:
+            if input_decision.code in ABUSE_VIOLATION_CODES:
+                abuse_status = abuse_tracker.record_violation(
+                    abuse_subjects,
+                    violation_code=input_decision.code,
+                    max_strikes=settings.guardrails_abuse_max_strikes,
+                    strike_window_seconds=settings.guardrails_abuse_strike_window_seconds,
+                    ban_seconds=settings.guardrails_abuse_ban_seconds,
+                )
+                trace_event(
+                    "guardrail.abuse_strike",
+                    trace_id=trace_id,
+                    code=input_decision.code,
+                    strike_count=abuse_status.strike_count,
+                    banned=abuse_status.banned,
+                )
+                if abuse_status.banned:
+                    _raise_abuse_ban(abuse_status)
             trace_event(
                 "guardrail.input_blocked",
                 trace_id=trace_id,
@@ -121,25 +326,44 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                 reason=input_decision.reason,
                 details=input_decision.details,
             )
+            warning = ""
+            if input_decision.code in ABUSE_VIOLATION_CODES:
+                warning = (
+                    f" Cảnh báo vi phạm {abuse_status.strike_count}/"
+                    f"{settings.guardrails_abuse_max_strikes}; lần thứ "
+                    f"{settings.guardrails_abuse_max_strikes} sẽ bị khóa."
+                )
             return ChatResponse(
-                response=input_decision.user_message,
+                response=input_decision.user_message + warning,
                 conversation_id=conversation_id,
                 action_error=input_decision.code,
             )
 
         safe_message = input_decision.sanitized_text or body.message
+        safe_context = input_decision.sanitized_context or {}
+        _enforce_rate_limit(
+            request,
+            bucket="chat",
+            limit=int(getattr(settings, "chat_rate_limit_requests", 120)),
+            subject=conversation_identity.thread_id,
+            include_ip=False,
+        )
+        _enforce_action_rate_limit(request, body.action, body.action_payload)
         trace_event(
             "chat.request",
             trace_id=trace_id,
             conversation_id=conversation_id,
             message=safe_message,
-            context=body.context,
+            context=safe_context,
             action=body.action,
             action_payload=body.action_payload,
         )
-        config = {"configurable": {"thread_id": conversation_id}}
+        config = {"configurable": {"thread_id": conversation_identity.thread_id}}
         logging.getLogger("agent.requests").info(
-            "chat_started conversation_id=%s requested_action=%s", conversation_id, body.action or "llm"
+            "chat_started trace_id=%s conversation_id=%s requested_action=%s",
+            trace_id,
+            conversation_id,
+            body.action or "llm",
         )
         # Keep the module-level `agent` overrideable by existing tests, while
         # production resolves the graph initialized with the Postgres saver.
@@ -147,7 +371,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
         result = await cast(Any, active_agent).ainvoke(
             {
                 "query": safe_message,
-                "context": body.context,
+                "context": safe_context,
                 "requested_action": body.action,
                 "action_payload": body.action_payload,
                 "action_result": None,
@@ -160,19 +384,53 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                 "metadata": {
                     "trace_id": trace_id,
                     "conversation_id": conversation_id,
-                    "anon_session_id": getattr(identity, "session_id", "unknown"),
-                    "client_ip": getattr(identity, "client_ip", "unknown"),
+                    "anon_session_id": getattr(client_identity, "session_id", "unknown"),
+                    "client_ip": getattr(client_identity, "client_ip", "unknown"),
                     "llm_call_count": 0,
                 },
+                "profile_id": profile.id if profile else "",
+                "profile_context": profile_context,
+                "post_booking_context": (
+                    {"active": True, **stored_booking_context}
+                    if stored_booking_context.get("active")
+                    else {"active": False}
+                ),
+                "participant_context": participant_context,
             },
             config=config,
         )
         logging.getLogger("agent.requests").info(
-            "chat_finished conversation_id=%s tool=%s status=%s",
-            conversation_id,
+            "chat_finished trace_id=%s tool=%s status=%s",
+            trace_id,
             result.get("action_tool") or "none",
             "error" if result.get("action_error") else "success",
         )
+        action_data = result.get("action_result")
+        if (
+            result.get("action_tool") == "confirm_test_drive_booking"
+            and isinstance(action_data, dict)
+            and action_data.get("status") == "confirmed"
+        ):
+            try:
+                promoted = profile_service.promote_from_booking(
+                    profile.id if profile else None,
+                    str(action_data["booking_id"]),
+                    source="booking_confirmed",
+                    trace_id=trace_id,
+                )
+                if promoted:
+                    result["profile_id"] = promoted.id
+                    result["profile_context"] = build_profile_context(promoted, safe_message)
+                    result["post_booking_context"] = {
+                        "active": True,
+                        **profile_service.booking_context(str(action_data["booking_id"])),
+                    }
+            except Exception:
+                logging.getLogger("profile.lifecycle").exception(
+                    "profile.confirm_promotion_failed trace_id=%s booking_id=%s",
+                    trace_id,
+                    action_data.get("booking_id"),
+                )
         protected = guardrails.protect_output(result)
         response = ChatResponse(
             response=protected.response,
@@ -196,6 +454,8 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             llm_call_count=(result.get("metadata") or {}).get("llm_call_count"),
         )
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         trace_event(
             "chat.error",
@@ -205,6 +465,71 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
         )
         logging.getLogger(__name__).error("Internal error in chat endpoint: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.")
+
+
+@router.post("/driver-chat/{token}/chat", response_model=ChatResponse)
+async def driver_chat(token: str, request: Request, body: ChatRequest) -> ChatResponse:
+    """Chat as the driver identified by a private, expiring invitation link."""
+    try:
+        request.state.driver_invitation = await asyncio.to_thread(driver_invitation_service.resolve, token)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Driver invitation is invalid or expired") from exc
+    namespace = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+    prefix = f"driver:{namespace}:"
+    supplied = body.conversation_id
+    conversation_id = supplied if supplied.startswith(prefix) else f"{prefix}{supplied or uuid.uuid4().hex}"
+    return await chat(request, body.model_copy(update={"conversation_id": conversation_id[:100]}))
+
+
+@router.get("/driver-chat/{token}/context")
+async def driver_chat_context(token: str) -> dict[str, Any]:
+    """Return the minimal trusted context needed to personalise a driver-link greeting."""
+    try:
+        invitation = await asyncio.to_thread(driver_invitation_service.resolve, token)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Driver invitation is invalid or expired") from exc
+
+    booking = await asyncio.to_thread(profile_service.booking_context, invitation.booking_id)
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return {
+        "driver": {"name": invitation.driver_name},
+        "booking": booking,
+        "expires_at": invitation.expires_at,
+    }
+
+
+@router.post("/bookings/{booking_id}/driver-invitation")
+async def send_driver_invitation(booking_id: str) -> dict[str, Any]:
+    """Create and email a private chat invitation to a booking's separate driver."""
+    try:
+        return await asyncio.to_thread(driver_invitation_service.issue_and_send, booking_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Booking not found") from exc
+    except ValueError as exc:
+        code = str(exc)
+        messages = {
+            "DRIVER_IS_BOOKER": "Driver and booker are the same person; no separate invitation is needed.",
+            "DRIVER_EMAIL_REQUIRED": "The driver does not have an email address.",
+        }
+        raise HTTPException(
+            status_code=400, detail={"code": code, "message": messages.get(code, "Unable to create driver invitation")}
+        ) from exc
+
+
+@router.get("/bookings/{booking_id}/profile-summary.md", response_class=PlainTextResponse)
+async def booking_profile_summary(booking_id: str) -> PlainTextResponse:
+    """Return the booking's booker/driver profile summary as Markdown."""
+    try:
+        source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
+        markdown = await summarize_user_profile(source)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Booking not found") from exc
+    except RuntimeError as exc:
+        if str(exc) == "LLM_NOT_CONFIGURED":
+            raise HTTPException(status_code=503, detail="Profile summary LLM is not configured") from exc
+        raise
+    return PlainTextResponse(markdown, media_type="text/markdown; charset=utf-8")
 
 
 @router.get("/status")
@@ -218,6 +543,45 @@ async def redis_health():
     """Kiểm tra kết nối Redis."""
     connected = redis_client.is_connected()
     return {"status": "connected" if connected else "disconnected", "enabled": redis_client.enabled}
+
+
+@router.get("/user-profiles/{user_id}/summary")
+async def user_profile_summary(user_id: str) -> dict[str, Any]:
+    """Return an LLM-generated, sales-facing customer summary."""
+    try:
+        snapshot = await asyncio.to_thread(profile_service.load_for_user, user_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="User profile not found") from exc
+    source = build_profile_context(snapshot)
+    source["latest_booking"] = await asyncio.to_thread(profile_service.latest_booking_context, snapshot.id)
+    try:
+        summary = await summarize_user_profile(source)
+    except RuntimeError as exc:
+        if str(exc) == "LLM_NOT_CONFIGURED":
+            raise HTTPException(status_code=503, detail="Profile summary LLM is not configured") from exc
+        raise
+    except Exception as exc:
+        logging.getLogger("profile.summary").exception(
+            "profile.summary.failed user_id=%s profile_id=%s", user_id, snapshot.id
+        )
+        raise HTTPException(status_code=502, detail="Unable to generate profile summary") from exc
+    logging.getLogger("profile.summary").info(
+        "profile.summary.generated user_id=%s profile_id=%s version=%s",
+        user_id,
+        snapshot.id,
+        snapshot.version,
+    )
+    return {"user_id": user_id, "profile_id": snapshot.id, "version": snapshot.version, "summary": summary}
+
+
+@router.get("/user-profiles/{user_id}/")
+async def user_profile_detail(user_id: str) -> dict[str, Any]:
+    """Return deterministic Markdown and structured JSON profile views."""
+    try:
+        snapshot = await asyncio.to_thread(profile_service.load_for_user, user_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="User profile not found") from exc
+    return {"user_id": user_id, **build_profile_context(snapshot)}
 
 
 @router.get("/booking/health")
@@ -239,9 +603,7 @@ AGENT_TOOLS = {"get_draft", "request_access", "verify_access", "get_details"}
 
 def _request_demo_access(**kwargs: Any) -> dict:
     settings = get_settings()
-    expose_mock_otp = settings.app_env != "production" and getattr(
-        settings, "booking_access_expose_mock_otp", True
-    )
+    expose_mock_otp = settings.app_env != "production" and getattr(settings, "booking_access_expose_mock_otp", True)
     kwargs.setdefault("booking_code", None)
     if expose_mock_otp and not settings.zalo_bot_enabled and kwargs.get("preferred_channel") == "zalo":
         kwargs["preferred_channel"] = "sms"
@@ -251,85 +613,35 @@ def _request_demo_access(**kwargs: Any) -> dict:
 @router.post("/chat/stream")
 @router.post("/booking-agent/stream")
 async def chat_stream(body: ChatRequest, request: Request):
-    """Stream ViVi responses using Server-Sent Events (Streamable HTTP).
+    """Stream a fully guarded ViVi response using Server-Sent Events.
 
-    Streams real-time LLM token chunks via astream_events when supported,
-    with seamless fallback to full chat response payload.
+    The canonical chat handler owns conversation verification, abuse/rate
+    limits, profile context, input inspection and output protection. Reusing it
+    here prevents the streaming alias from becoming a guardrail bypass.
     """
+
     async def event_generator():
-        try:
-            active_agent = get_agent()
-            guardrails = get_guardrails()
-            conversation_id = body.conversation_id or str(uuid.uuid4())
-            identity = getattr(request.state, "identity", None)
-            trace_id = getattr(request.state, "trace_id", "") or str(uuid.uuid4())
-            config = {"configurable": {"thread_id": conversation_id}}
-            inputs = {
-                "messages": [HumanMessage(content=body.message)],
-                "requested_action": body.action,
-                "action_payload": body.action_payload,
-                "tool_call_count": 0,
-                "metadata": {
-                    "trace_id": trace_id,
-                    "conversation_id": conversation_id,
-                    "anon_session_id": getattr(identity, "session_id", "unknown"),
-                    "client_ip": getattr(identity, "client_ip", "unknown"),
-                    "llm_call_count": 0,
-                },
-            }
-
-            token_streamed = False
-            async for event in active_agent.astream_events(inputs, config=config, version="v2"):
-                if event.get("event") == "on_chat_model_stream":
-                    chunk = (event.get("data") or {}).get("chunk")
-                    if hasattr(chunk, "content") and chunk.content and isinstance(chunk.content, str):
-                        token_streamed = True
-                        payload = json.dumps({"type": "token", "content": chunk.content}, ensure_ascii=False)
-                        yield f"data: {payload}\n\n"
-
-            if not token_streamed:
-                response_data = await chat(request, body)
-                content = response_data.response or ""
-                words = content.split(" ")
-                for i, word in enumerate(words):
-                    chunk = word + (" " if i < len(words) - 1 else "")
-                    payload = json.dumps({"type": "token", "content": chunk}, ensure_ascii=False)
-                    yield f"data: {payload}\n\n"
-                    await asyncio.sleep(0.01)
-                final_payload = json.dumps({"type": "done", "response": response_data.model_dump()}, ensure_ascii=False)
-                yield f"data: {final_payload}\n\n"
-                return
-
-            final_state = await active_agent.aget_state(config)
-            state_values = final_state.values if final_state else {}
-            protected = guardrails.protect_output(state_values)
-            final_response = ChatResponse(
-                response=protected.response,
-                analysis=protected.analysis,
-                conversation_id=conversation_id,
-                tool_name=state_values.get("action_tool", ""),
-                tool_input=protected.tool_input,
-                action_data=protected.action_data,
-                action_error=protected.action_error,
-                intent=str(state_values.get("intent") or ""),
-                ui=_chat_ui_directive(state_values),
-            )
-            final_payload = json.dumps({"type": "done", "response": final_response.model_dump()}, ensure_ascii=False)
-            yield f"data: {final_payload}\n\n"
-        except Exception as exc:
-            logging.getLogger(__name__).warning("astream_events fallback: %s", exc)
-            response_data = await chat(request, body)
-            final_payload = json.dumps({"type": "done", "response": response_data.model_dump()}, ensure_ascii=False)
-            yield f"data: {final_payload}\n\n"
+        response_data = await chat(request, body)
+        words = (response_data.response or "").split(" ")
+        for index, word in enumerate(words):
+            chunk = word + (" " if index < len(words) - 1 else "")
+            payload = json.dumps({"type": "token", "content": chunk}, ensure_ascii=False)
+            yield f"data: {payload}\n\n"
+            await asyncio.sleep(0.01)
+        final_payload = json.dumps(
+            {"type": "done", "response": response_data.model_dump()},
+            ensure_ascii=False,
+        )
+        yield f"data: {final_payload}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.post("/demo/action")
 @router.post("/test-drive/actions")
-async def demo_action(request: DemoActionRequest):
+async def demo_action(body: DemoActionRequest, request: Request):
     """Deterministic UI simulator: one button maps to one tool/command."""
-    p = request.payload
+    p = body.payload
     actions: dict[str, tuple[str, Callable[..., Any]]] = {
         "search_options": ("SearchOptionsQuery", booking_service.search_options),
         "hold_slot": ("HoldSlotCommand", booking_service.hold_slot),
@@ -349,9 +661,9 @@ async def demo_action(request: DemoActionRequest):
         "confirm_reschedule": ("ConfirmRescheduleCommand", booking_service.confirm_reschedule),
         "cancel_booking": ("CancelBookingCommand", booking_service.cancel_booking),
     }
-    if request.action not in actions:
+    if body.action not in actions:
         raise HTTPException(status_code=400, detail="Unknown demo action")
-    action_decision = get_guardrails().inspect_demo_action(action=request.action, payload=p)
+    action_decision = get_guardrails().inspect_demo_action(action=body.action, payload=p)
     if not action_decision.allowed:
         trace_event(
             "guardrail.demo_action_blocked",
@@ -363,9 +675,36 @@ async def demo_action(request: DemoActionRequest):
             status_code=400,
             detail={"code": action_decision.code, "message": action_decision.user_message},
         )
-    name, handler = actions[request.action]
+    _enforce_action_rate_limit(request, body.action, p)
+    name, handler = actions[body.action]
     try:
         data = handler(**p)
+        if body.action == "verify_access" and isinstance(data, dict) and data.get("booking_id"):
+            try:
+                identity = getattr(request.state, "client_identity", None)
+                current_profile = None
+                if body.conversation_id:
+                    current_profile = profile_service.resolve_or_create(
+                        body.conversation_id, getattr(identity, "session_id", "")
+                    )
+                verified = booking_service.verified_identity(str(p.get("challenge_id") or ""))
+                verified_email = (verified or {}).get("normalized_email") or (verified or {}).get("email")
+                verified_phone = (verified or {}).get("normalized_phone") or (verified or {}).get("phone") or ""
+                if verified and verified_email:
+                    profile_service.promote_identity(
+                        current_profile.id if current_profile else None,
+                        person_id=str(verified["id"]),
+                        email=str(verified_email),
+                        phone=str(verified_phone),
+                        source="access_verified",
+                        trace_id=str(uuid.uuid4()),
+                    )
+            except Exception:
+                logging.getLogger("profile.lifecycle").exception(
+                    "profile.otp_promotion_failed conversation_id=%s booking_id=%s",
+                    body.conversation_id,
+                    data.get("booking_id"),
+                )
         protected = get_guardrails().protect_output(
             {
                 "response": "",
@@ -381,19 +720,17 @@ async def demo_action(request: DemoActionRequest):
         if response_data is None:
             response_data = {}
         settings = get_settings()
-        expose_mock_otp = settings.app_env != "production" and getattr(
-            settings, "booking_access_expose_mock_otp", True
-        )
-        if request.action == "request_access" and expose_mock_otp and data.get("is_mock") is True:
+        expose_mock_otp = settings.app_env != "production" and getattr(settings, "booking_access_expose_mock_otp", True)
+        if body.action == "request_access" and expose_mock_otp and data.get("is_mock") is True:
             response_data = dict(response_data)
             response_data["otp_code"] = data.get("otp_code")
-        elif request.action == "request_access":
+        elif body.action == "request_access":
             # Output redaction may replace the code with "[redacted]". Do not
             # expose that field at all in production because it advertises a
             # mock credential in the public response.
             response_data = dict(response_data)
             response_data.pop("otp_code", None)
-        kind = "Agent gọi tool" if request.action in AGENT_TOOLS else "Backend chạy UI command"
+        kind = "Agent gọi tool" if body.action in AGENT_TOOLS else "Backend chạy UI command"
         return {"success": True, "message": f"{kind}: {name}", "tool": name, "data": response_data}
     except BookingError as exc:
         return {

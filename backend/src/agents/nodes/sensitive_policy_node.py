@@ -33,6 +33,12 @@ async def sensitive_policy_node(state: AgentState) -> dict:
             "ViVi không hỗ trợ giải các bài toán học. "
             "ViVi có thể giúp gì cho bạn về đặt lịch lái thử xe điện VinFast không?"
         )
+    elif sub_intent == "out_of_scope":
+        response = (
+            "ViVi hiện chỉ hỗ trợ đặt lịch lái thử xe điện VinFast. "
+            "Tính năng tư vấn thông tin xe và hướng dẫn sau khi đặt lịch chỉ khả dụng "
+            "khi bạn đã có lịch lái thử được xác nhận."
+        )
     else:
         # Default fallback for foreign locations or general out-of-scope queries
         response = (
@@ -45,4 +51,3 @@ async def sensitive_policy_node(state: AgentState) -> dict:
         "policy_response": response,
         "messages": [AIMessage(content=response)],
     }
-

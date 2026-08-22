@@ -7,6 +7,7 @@ from src.agents.tools.request_user_location.tool import request_user_location
 from src.agents.tools.search_knowledge.tool import search_knowledge
 from src.agents.tools.search_test_drive_options.tool import search_test_drive_options
 from src.agents.tools.update_booking_draft.tool import update_booking_draft
+from src.agents.tools.update_user_profile.tool import update_user_profile
 from src.agents.tools.verify_booking_access.tool import verify_booking_access
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "request_user_location",
     "verify_booking_access",
     "get_booking_details",
+    "update_user_profile",
 ]
