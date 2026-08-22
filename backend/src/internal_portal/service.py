@@ -860,7 +860,114 @@ class InternalPortalService(InternalNotificationMixin, InternalOperationsMixin, 
                 "Không tìm thấy booking trong phạm vi được phép.",
                 status_code=404,
             )
-        return result["items"][0]
+        booking = result["items"][0]
+        booking["customer_profile"] = self._customer_profile(principal, booking_id)
+        return booking
+
+    def _customer_profile(self, principal: InternalPrincipal, booking_id: str) -> dict | None:
+        """Return factual customer context visible inside the principal's booking scope.
+
+        A new ``people`` row can be created for each booking, so history is matched by
+        the current driver's normalized phone/email as well as by person id. The
+        booking scope is applied again to the history query to prevent customer data
+        from another showroom or another staff assignment leaking through the
+        profile view.
+        """
+        scope, scope_params = self._scope_clause(principal)
+        with self.db.connect() as connection:
+            current = connection.execute(
+                "SELECT b.booker_person_id,b.driver_person_id,"
+                "bp.full_name booker_name,bp.phone booker_phone,bp.email booker_email,"
+                "bp.preferred_channel booker_preferred_channel,bp.created_at booker_created_at,"
+                "bp.normalized_phone booker_normalized_phone,bp.normalized_email booker_normalized_email,"
+                "dp.full_name driver_name,dp.phone driver_phone,dp.email driver_email,"
+                "dp.preferred_channel driver_preferred_channel,dp.created_at driver_created_at,"
+                "dp.normalized_phone driver_normalized_phone,dp.normalized_email driver_normalized_email,"
+                "bd.has_driving_license,bd.declared_license_class,bd.required_license_class,"
+                "bd.validity_acknowledged,bd.license_check_status,bd.checked_at,bd.rejection_reason "
+                "FROM bookings b LEFT JOIN people bp ON bp.id=b.booker_person_id "
+                "LEFT JOIN people dp ON dp.id=b.driver_person_id "
+                "LEFT JOIN booking_driver_details bd ON bd.booking_id=b.id WHERE b.id=?",
+                (booking_id,),
+            ).fetchone()
+            if not current:
+                return None
+
+            customer_person_id = current["driver_person_id"] or current["booker_person_id"]
+            if not customer_person_id:
+                return None
+            normalized_phone = current["driver_normalized_phone"] or current["booker_normalized_phone"]
+            normalized_email = current["driver_normalized_email"] or current["booker_normalized_email"]
+            identity_clauses = ["b.driver_person_id=?", "b.booker_person_id=?"]
+            identity_params: list[Any] = [customer_person_id, customer_person_id]
+            if normalized_phone:
+                identity_clauses.append("(dp.normalized_phone=? OR bp.normalized_phone=?)")
+                identity_params.extend([normalized_phone, normalized_phone])
+            if normalized_email:
+                identity_clauses.append("(dp.normalized_email=? OR bp.normalized_email=?)")
+                identity_params.extend([normalized_email, normalized_email])
+
+            history_rows = connection.execute(
+                f"""SELECT b.id,b.booking_code,b.status,b.customer_note,b.created_at,
+                s.start_at,s.end_at,sh.name showroom_name,m.code vehicle_model,v.name vehicle_variant
+                FROM bookings b JOIN test_drive_slots s ON s.id=b.slot_id
+                JOIN showrooms sh ON sh.id=s.showroom_id JOIN demo_vehicles d ON d.id=s.demo_vehicle_id
+                JOIN vehicle_variants v ON v.id=d.variant_id JOIN vehicle_models m ON m.id=v.model_id
+                LEFT JOIN people bp ON bp.id=b.booker_person_id LEFT JOIN people dp ON dp.id=b.driver_person_id
+                WHERE {scope} AND ({' OR '.join(identity_clauses)})
+                AND b.status IN ('confirmed','checked_in','completed','no_show','cancelled','rescheduled')
+                ORDER BY s.start_at DESC,b.updated_at DESC""",
+                (*scope_params, *identity_params),
+            ).fetchall()
+
+        history = [dict(row) for row in history_rows]
+        model_counts: dict[str, int] = {}
+        for item in history:
+            model_counts[item["vehicle_model"]] = model_counts.get(item["vehicle_model"], 0) + 1
+        vehicle_interests = [
+            {"model": model, "booking_count": count}
+            for model, count in sorted(model_counts.items(), key=lambda pair: (-pair[1], pair[0]))
+        ]
+        booker_is_driver = current["booker_person_id"] == current["driver_person_id"]
+        return {
+            "person_id": customer_person_id,
+            "full_name": current["driver_name"] or current["booker_name"],
+            "phone": current["driver_phone"] or current["booker_phone"],
+            "email": current["driver_email"] or current["booker_email"],
+            "preferred_channel": current["driver_preferred_channel"] or current["booker_preferred_channel"],
+            "customer_since": current["driver_created_at"] or current["booker_created_at"],
+            "booker_is_driver": booker_is_driver,
+            "booker": {
+                "person_id": current["booker_person_id"],
+                "full_name": current["booker_name"],
+                "phone": current["booker_phone"],
+                "email": current["booker_email"],
+                "preferred_channel": current["booker_preferred_channel"],
+            },
+            "license": {
+                "has_driving_license": (
+                    bool(current["has_driving_license"])
+                    if current["has_driving_license"] is not None
+                    else None
+                ),
+                "declared_license_class": current["declared_license_class"],
+                "required_license_class": current["required_license_class"],
+                "validity_acknowledged": bool(current["validity_acknowledged"]),
+                "check_status": current["license_check_status"],
+                "checked_at": current["checked_at"],
+                "rejection_reason": current["rejection_reason"],
+            },
+            "summary": {
+                "total_bookings": len(history),
+                "completed_bookings": sum(item["status"] == "completed" for item in history),
+                "cancelled_bookings": sum(item["status"] == "cancelled" for item in history),
+                "no_show_bookings": sum(item["status"] == "no_show" for item in history),
+                "first_booking_at": min((item["start_at"] for item in history), default=None),
+                "latest_booking_at": max((item["start_at"] for item in history), default=None),
+            },
+            "vehicle_interests": vehicle_interests,
+            "history": history[:10],
+        }
 
     def assert_staff_booking_access(self, principal: InternalPrincipal, booking_id: str) -> None:
         self.require_roles(principal, InternalRole.STAFF)

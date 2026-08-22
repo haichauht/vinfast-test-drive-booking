@@ -4,14 +4,15 @@
 Agent. Suite chạy hoàn toàn offline, không gọi LLM, không truy cập mạng và không
 ghi dữ liệu booking. Runner pin `APP_ENV=test` cùng toàn bộ guardrail limits nên
 không kế thừa `.env`/production toggle của máy chạy. Mục tiêu là đo regression ổn
-định tại sáu enforcement boundary: input, public output, tool execution,
-conversation capability, application rate limit và persistent abuse ban.
+định tại bảy enforcement boundary: input, public output, tool execution,
+untrusted tool/RAG content, conversation capability, application rate limit và
+persistent abuse ban.
 
 ## 1. Thành phần
 
 | File | Vai trò |
 |---|---|
-| `guardrails_cases.json` | 70 case version-controlled, có expected decision/output rõ ràng. |
+| `guardrails_cases.json` | 82 case version-controlled, có expected decision/output và coverage floor rõ ràng. |
 | `backend/src/evaluation/guardrail_benchmark.py` | Loader, schema validation, executor, scorer và report renderer. |
 | `backend/scripts/run_guardrail_benchmark.py` | CLI chạy từ root repo. |
 | `results/baseline.json` | Baseline máy đọc được, gồm metric và kết quả từng case. |
@@ -26,6 +27,7 @@ conversation capability, application rate limit và persistent abuse ban.
 - prompt override, secret exfiltration và role injection;
 - zero-width, full-width và bidi-control obfuscation;
 - injection trong UI context;
+- indirect injection nằm trong context/nội dung không tin cậy;
 - conversation ID và payload resource limits;
 - top-level và nested structured-action contracts.
 
@@ -38,6 +40,13 @@ conversation capability, application rate limit và persistent abuse ban.
 - phân biệt workflow credential được phép trả cho frontend với backend secret;
 - internal analysis, system/developer prompt marker và output truncation;
 - benign output để đo over-redaction.
+
+### Untrusted tool/RAG content
+
+- tool result vẫn giữ đúng `ToolMessage` role và `tool_call_id`;
+- benign result được đóng gói, đánh dấu rõ là untrusted reference data;
+- instruction-like content bị thay toàn bộ bằng safe error trước khi đi vào model;
+- raw malicious instruction không còn trong LLM-facing message.
 
 ### Tool
 
@@ -55,6 +64,11 @@ conversation capability, application rate limit và persistent abuse ban.
 - sliding-window burst blocking và recovery sau khi hết cửa sổ.
 - chuỗi ba vi phạm hỗn hợp, ban ở strike cuối, persistence qua tracker instance mới và chỉ lưu hashed subjects.
 
+Mỗi category trong schema `1.2` phải được khai báo ở
+`coverage_policy.minimum_cases_by_category` và hiện có floor tối thiểu là hai
+case. Loader và CLI fail trước khi chấm điểm nếu category mới chưa khai báo hoặc
+số case của một category tụt dưới floor.
+
 ## 3. Chạy benchmark
 
 Từ root repo trên PowerShell:
@@ -69,6 +83,15 @@ Ghi cả JSON và Markdown report:
 .\.venv\Scripts\python.exe backend\scripts\run_guardrail_benchmark.py `
   --json-output eval\benchmarks\results\latest.json `
   --markdown-output eval\benchmarks\results\latest.md
+```
+
+Kiểm tra baseline đã commit và ghi CI report:
+
+```powershell
+.\.venv\Scripts\python.exe backend\scripts\run_guardrail_benchmark.py `
+  --verify-baseline eval\benchmarks\results\baseline.json `
+  --json-output artifacts\guardrail-benchmark\report.json `
+  --markdown-output artifacts\guardrail-benchmark\report.md
 ```
 
 Chạy một lát cắt:
@@ -98,6 +121,23 @@ code `1`. Latency phụ thuộc máy chạy nên `--max-p95-ms` không bật m�
 
 ## 4. Dataset schema
 
+Dataset dùng schema `1.2`. Ngoài `cases`, root object bắt buộc có coverage gate:
+
+```json
+{
+  "schema_version": "1.2",
+  "coverage_policy": {
+    "minimum_cases_by_category": {
+      "prompt_injection": 2,
+      "benign_allow": 2
+    }
+  }
+}
+```
+
+Đoạn trên chỉ minh họa cấu trúc; dataset thật phải khai báo mọi category đang
+có case.
+
 Ví dụ input decision case:
 
 ```json
@@ -121,6 +161,8 @@ Ví dụ input decision case:
 - `input`: chạy `Guardrails.inspect_input()`;
 - `output`: chạy `Guardrails.protect_output()`;
 - `tool`: tạo `AIMessage.tool_calls` rồi chạy `inspect_tool_calls()`.
+- `untrusted_content`: tạo `ToolMessage`, chạy protection boundary dùng trước
+  LLM và kiểm tra role/linkage, block code cùng nội dung đã thay thế.
 - `conversation`: phát/xác minh HMAC capability với clock cố định;
 - `rate_limit`: chạy limiter bằng clock giả lập để kiểm tra block/recovery.
 - `abuse`: chạy three-strike policy trên SQLite tạm và xác minh ban đã persist.
@@ -165,6 +207,10 @@ merge policy change. Reviewer nên so sánh:
 Không dùng timestamp hay latency tuyệt đối trong baseline làm snapshot test vì
 chúng thay đổi theo môi trường.
 
+`--verify-baseline` chỉ so sánh các field ổn định: benchmark/schema name,
+dataset SHA-256, tổng case, case IDs, trạng thái 100% pass và coverage gate. CI
+ghi JSON/Markdown report mới rồi upload thành artifact theo commit SHA.
+
 ## 7. Thêm case đúng cách
 
 1. Tái hiện một risk, bug hoặc benign false-positive cụ thể.
@@ -173,7 +219,8 @@ chúng thay đổi theo môi trường.
 3. Ghi expected tối thiểu nhưng đủ chứng minh behavior; với secret leakage phải
    assert cả marker redacted và raw secret không còn.
 4. Dùng credential giả rõ ràng, không copy log/token thật vào dataset.
-5. Cập nhật `case_count`.
+5. Cập nhật `case_count`; nếu tạo category mới, thêm coverage floor tối thiểu
+   hai case và không hạ floor hiện hữu để lách regression.
 6. Chạy benchmark và `backend/tests/test_guardrail_benchmark.py`.
 7. Cập nhật audit traceability nếu case xử lý finding bảo mật.
 
@@ -188,7 +235,12 @@ giải thích policy decision và tác động false-positive/false-negative.
 ```
 
 Pytest hiện cũng chạy toàn bộ dataset, vì vậy CLI gate là lớp hiển thị report rõ
-hơn chứ không thay thế unit/integration tests.
+hơn chứ không thay thế unit/integration tests. Nhóm mutation test cố ý làm yếu
+input detection, output sanitization, untrusted-content protection,
+confirmation binding, conversation token verification, rate limiter và abuse
+implementation threshold; test chỉ pass khi benchmark phát hiện được các mutant
+đó. Mutation assertions pin các case đại diện thay vì pin tổng failure, nên vẫn
+ổn định khi dataset được mở rộng.
 
 ## 9. Giới hạn
 
@@ -199,6 +251,10 @@ hơn chứ không thay thế unit/integration tests.
   boundary case đã mô hình hóa.
 - Suite không chạy live provider, Redis/PostgreSQL, email/Zalo hoặc concurrency
   thực tế.
+- Hai case `indirect_injection` chứng minh deterministic boundary loại bỏ raw
+  instruction trước khi tool/RAG result đi vào model. Chúng không chứng minh mọi
+  cách diễn đạt độc hại đều được regex nhận diện và không thay thế live behavioral
+  evaluation cho khả năng model tuân thủ ranh giới dữ liệu/instruction.
 
 Behavioral agent benchmark dùng `eval/golden/` là tầng riêng. Tầng đó phải chạy
 trên database cô lập, pin model/prompt/config, theo dõi cost/latency và đánh dấu

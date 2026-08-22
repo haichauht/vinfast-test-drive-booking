@@ -8,6 +8,7 @@ from src.agents.state import AgentState
 from src.agents.tools import search_knowledge
 from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.utils import get_system_prompt, window_messages
+from src.guardrails.untrusted_content import protect_tool_result_messages
 from src.services.llm import get_llm
 
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "advise_skill" / "SKILL.md"
@@ -44,7 +45,8 @@ async def advise_skill_node(state: AgentState) -> dict:
         if llm is None:
             raise RuntimeError("LLM is not configured")
         llm_with_tools = llm.bind_tools(tools)
-        llm_messages = [SystemMessage(content=prompt)] + window_messages(messages)
+        safe_history = protect_tool_result_messages(window_messages(messages))
+        llm_messages = [SystemMessage(content=prompt), *safe_history]
         trace_event(
             "llm.request",
             trace_id=trace_id,

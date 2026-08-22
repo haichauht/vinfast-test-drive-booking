@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 
 from src.config import Settings
 from src.database import Database
@@ -25,10 +25,11 @@ from src.guardrails.conversation import ConversationTokenManager
 from src.guardrails.pipeline import Guardrails
 from src.guardrails.rate_limit import SlidingWindowRateLimiter
 from src.guardrails.tool_guard import inspect_tool_calls
+from src.guardrails.untrusted_content import protect_tool_result_messages
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_DATASET_PATH = PROJECT_ROOT / "eval" / "benchmarks" / "guardrails_cases.json"
-SUPPORTED_KINDS = frozenset({"abuse", "conversation", "input", "output", "rate_limit", "tool"})
+SUPPORTED_KINDS = frozenset({"abuse", "conversation", "input", "output", "rate_limit", "tool", "untrusted_content"})
 BENCHMARK_SETTING_DEFAULTS: dict[str, Any] = {
     "app_env": "test",
     "guardrails_enabled": True,
@@ -68,7 +69,7 @@ def load_dataset(path: Path = DEFAULT_DATASET_PATH) -> dict[str, Any]:
 
     if not isinstance(dataset, dict):
         raise ValueError("Benchmark dataset root must be an object")
-    if dataset.get("schema_version") != "1.0":
+    if dataset.get("schema_version") != "1.2":
         raise ValueError("Unsupported benchmark schema_version")
     cases = dataset.get("cases")
     if not isinstance(cases, list) or not cases:
@@ -97,7 +98,7 @@ def load_dataset(path: Path = DEFAULT_DATASET_PATH) -> dict[str, Any]:
         tags = case.get("tags", [])
         if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
             raise ValueError(f"{case_id}: tags must be a string list")
-        if case["kind"] in {"input", "tool"}:
+        if case["kind"] in {"input", "tool", "untrusted_content"}:
             if not isinstance(case["expected"].get("allowed"), bool):
                 raise ValueError(f"{case_id}: decision cases require expected.allowed")
             if not isinstance(case["expected"].get("code"), str):
@@ -105,11 +106,49 @@ def load_dataset(path: Path = DEFAULT_DATASET_PATH) -> dict[str, Any]:
         else:
             assertion_names = ("equals", "contains", "not_contains", "ends_with")
             if not any(
-                isinstance(case["expected"].get(name), Mapping) and case["expected"][name]
-                for name in assertion_names
+                isinstance(case["expected"].get(name), Mapping) and case["expected"][name] for name in assertion_names
             ):
                 raise ValueError(f"{case_id}: non-decision cases require at least one output assertion")
+    _validate_category_coverage(dataset)
     return dataset
+
+
+def _validate_category_coverage(dataset: Mapping[str, Any]) -> dict[str, Any]:
+    """Fail closed when a benchmark category falls below its declared floor."""
+    policy = dataset.get("coverage_policy")
+    if not isinstance(policy, Mapping):
+        raise ValueError("Benchmark dataset must define coverage_policy")
+    raw_minimums = policy.get("minimum_cases_by_category")
+    if not isinstance(raw_minimums, Mapping) or not raw_minimums:
+        raise ValueError("coverage_policy.minimum_cases_by_category must be a non-empty object")
+
+    minimums: dict[str, int] = {}
+    for category, minimum in raw_minimums.items():
+        if not isinstance(category, str) or not category:
+            raise ValueError("Coverage categories must be non-empty strings")
+        if isinstance(minimum, bool) or not isinstance(minimum, int) or minimum < 1:
+            raise ValueError(f"Coverage minimum for {category!r} must be a positive integer")
+        minimums[category] = minimum
+
+    counts = Counter(str(case["category"]) for case in dataset["cases"])
+    undeclared = sorted(set(counts) - set(minimums))
+    if undeclared:
+        raise ValueError(f"Coverage policy is missing categories: {', '.join(undeclared)}")
+
+    shortfalls = [
+        f"{category} requires {minimum}, found {counts.get(category, 0)}"
+        for category, minimum in sorted(minimums.items())
+        if counts.get(category, 0) < minimum
+    ]
+    if shortfalls:
+        raise ValueError(f"Category coverage below minimum: {'; '.join(shortfalls)}")
+
+    return {
+        "passed": True,
+        "category_count": len(minimums),
+        "minimum_cases_by_category": dict(sorted(minimums.items())),
+        "actual_cases_by_category": dict(sorted(counts.items())),
+    }
 
 
 def _settings(case: Mapping[str, Any]) -> Settings:
@@ -169,6 +208,25 @@ def _run_tool_case(case: Mapping[str, Any]) -> dict[str, Any]:
     return asdict(decision)
 
 
+def _run_untrusted_content_case(case: Mapping[str, Any]) -> dict[str, Any]:
+    case_input = case["input"]
+    message = ToolMessage(
+        content=case_input.get("content", ""),
+        tool_call_id=str(case_input.get("tool_call_id", "benchmark-tool-call")),
+        name=str(case_input.get("tool_name", "search_knowledge")),
+    )
+    protected = protect_tool_result_messages([message])[0]
+    blocked = isinstance(protected, ToolMessage) and protected.status == "error"
+    return {
+        "allowed": not blocked,
+        "code": "UNTRUSTED_INSTRUCTION_DETECTED" if blocked else "ALLOW",
+        "message_type": type(protected).__name__,
+        "content": str(protected.content),
+        "status": protected.status if isinstance(protected, ToolMessage) else "error",
+        "tool_call_id": protected.tool_call_id if isinstance(protected, ToolMessage) else "",
+    }
+
+
 def _run_conversation_case(case: Mapping[str, Any]) -> dict[str, Any]:
     case_input = case["input"]
     operation = case_input.get("operation")
@@ -195,10 +253,7 @@ def _run_rate_limit_case(case: Mapping[str, Any]) -> dict[str, Any]:
     limiter = SlidingWindowRateLimiter(now=lambda: current[0])
     limit = int(case_input.get("limit", 2))
     attempts = int(case_input.get("attempts", 3))
-    decisions = [
-        limiter.check("benchmark", "same-subject", limit=limit, window_seconds=60)
-        for _ in range(attempts)
-    ]
+    decisions = [limiter.check("benchmark", "same-subject", limit=limit, window_seconds=60) for _ in range(attempts)]
     current[0] = 161.0
     recovered = limiter.check("benchmark", "same-subject", limit=limit, window_seconds=60)
     return {
@@ -237,9 +292,7 @@ def _run_abuse_case(case: Mapping[str, Any]) -> dict[str, Any]:
         ]
         persisted = AbuseTracker(database, now=lambda: current).check(subjects)
         with database.connect() as connection:
-            stored_subject_rows = connection.execute(
-                "SELECT count(*) FROM guardrail_abuse_subjects"
-            ).fetchone()[0]
+            stored_subject_rows = connection.execute("SELECT count(*) FROM guardrail_abuse_subjects").fetchone()[0]
     return {
         "strike_counts": [status.strike_count for status in statuses],
         "banned": [status.banned for status in statuses],
@@ -308,6 +361,8 @@ def run_case(case: Mapping[str, Any]) -> CaseResult:
             actual = _run_output_case(case)
         elif kind == "tool":
             actual = _run_tool_case(case)
+        elif kind == "untrusted_content":
+            actual = _run_untrusted_content_case(case)
         elif kind == "conversation":
             actual = _run_conversation_case(case)
         elif kind == "rate_limit":
@@ -369,6 +424,7 @@ def run_benchmark(
     tags: set[str] | None = None,
 ) -> dict[str, Any]:
     """Execute selected deterministic cases and return a machine-readable report."""
+    coverage_gate = _validate_category_coverage(dataset)
     selected: list[dict[str, Any]] = []
     for case in dataset["cases"]:
         if kinds and case["kind"] not in kinds:
@@ -386,15 +442,12 @@ def run_benchmark(
     results = [run_case(case) for case in selected]
     elapsed_ms = round((time.perf_counter() - started) * 1000, 4)
     passed = sum(result.passed for result in results)
+    decision_kinds = {"input", "tool", "untrusted_content"}
     attack_results = [
-        result
-        for result in results
-        if result.kind in {"input", "tool"} and result.expected.get("allowed") is False
+        result for result in results if result.kind in decision_kinds and result.expected.get("allowed") is False
     ]
     benign_results = [
-        result
-        for result in results
-        if result.kind in {"input", "tool"} and result.expected.get("allowed") is True
+        result for result in results if result.kind in decision_kinds and result.expected.get("allowed") is True
     ]
     output_results = [result for result in results if result.kind == "output"]
     durations = [result.duration_ms for result in results]
@@ -415,6 +468,7 @@ def run_benchmark(
             "categories": sorted(categories or []),
             "tags": sorted(tags or []),
         },
+        "coverage_gate": coverage_gate,
         "summary": {
             "total": len(results),
             "passed": passed,
@@ -446,6 +500,8 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"- Dataset SHA-256: `{report['dataset_sha256']}`",
         f"- Result: **{summary['passed']}/{summary['total']} PASS** ({summary['pass_rate']:.2%})",
         f"- Runtime: `{summary['elapsed_ms']:.4f} ms`",
+        f"- Category coverage gate: **{'PASS' if report['coverage_gate']['passed'] else 'FAIL'}** "
+        f"({report['coverage_gate']['category_count']} categories)",
         "",
         "## Quality Metrics",
         "",
@@ -504,6 +560,51 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8", newline="\n")
 
 
+def verify_baseline(report: Mapping[str, Any], path: Path) -> list[str]:
+    """Return stable baseline mismatches while ignoring runtime-only fields."""
+    try:
+        baseline = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return [f"baseline does not exist: {path}"]
+    except json.JSONDecodeError as exc:
+        return [f"baseline is not valid JSON: {exc}"]
+    if not isinstance(baseline, Mapping):
+        return ["baseline root must be an object"]
+
+    failures: list[str] = []
+    for field in ("benchmark_name", "dataset_schema_version", "dataset_sha256"):
+        if baseline.get(field) != report.get(field):
+            failures.append(f"{field} does not match the current benchmark")
+
+    baseline_summary = baseline.get("summary")
+    report_summary = report.get("summary")
+    if not isinstance(baseline_summary, Mapping) or not isinstance(report_summary, Mapping):
+        failures.append("baseline and current report must contain summary objects")
+    else:
+        if baseline_summary.get("total") != report_summary.get("total"):
+            failures.append("baseline case total does not match the current benchmark")
+        if baseline_summary.get("failed") != 0 or baseline_summary.get("pass_rate") != 1.0:
+            failures.append("baseline must record a 100% passing run")
+
+    baseline_case_ids = {
+        str(case.get("case_id"))
+        for case in baseline.get("cases", [])
+        if isinstance(case, Mapping) and case.get("case_id")
+    }
+    report_case_ids = {
+        str(case.get("case_id"))
+        for case in report.get("cases", [])
+        if isinstance(case, Mapping) and case.get("case_id")
+    }
+    if baseline_case_ids != report_case_ids:
+        failures.append("baseline case IDs do not match the current benchmark")
+
+    baseline_coverage = baseline.get("coverage_gate")
+    if not isinstance(baseline_coverage, Mapping) or baseline_coverage.get("passed") is not True:
+        failures.append("baseline must contain a passing category coverage gate")
+    return failures
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the deterministic VinFast guardrail benchmark.")
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
@@ -512,6 +613,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tag", action="append")
     parser.add_argument("--json-output", type=Path)
     parser.add_argument("--markdown-output", type=Path)
+    parser.add_argument("--verify-baseline", type=Path)
     parser.add_argument("--fail-under", type=float, default=1.0)
     parser.add_argument("--max-p95-ms", type=float)
     return parser
@@ -533,11 +635,14 @@ def main(argv: list[str] | None = None) -> int:
         _write(args.json_output, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     if args.markdown_output:
         _write(args.markdown_output, markdown)
+    baseline_failures = verify_baseline(report, args.verify_baseline) if args.verify_baseline else []
+    for failure in baseline_failures:
+        print(f"baseline: {failure}", file=sys.stderr)
     print(
         f"guardrails: {report['summary']['passed']}/{report['summary']['total']} passed "
         f"({report['summary']['pass_rate']:.2%}); p95={report['quality_metrics']['latency_p95_ms']:.4f}ms"
     )
-    failed = report["summary"]["pass_rate"] < args.fail_under
+    failed = report["summary"]["pass_rate"] < args.fail_under or bool(baseline_failures)
     if args.max_p95_ms is not None:
         failed = failed or report["quality_metrics"]["latency_p95_ms"] > args.max_p95_ms
     return 1 if failed else 0

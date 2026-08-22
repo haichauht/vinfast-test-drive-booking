@@ -40,6 +40,9 @@ GuardedToolNode ── block ──► ToolMessage lỗi chuẩn hóa, không ch
 Booking/knowledge tool
   │
   ▼
+UntrustedContentGuard ── label benign data / replace instruction-like result
+  │
+  ▼
 OutputGuard ── redact/truncate/hide analysis
   │
   ▼
@@ -59,6 +62,7 @@ Ba enforcement point tương ứng:
 | `input_guard.py` | Chuẩn hóa input, kiểm tra conversation ID, kích thước/cấu trúc payload, allowlist structured action và prompt injection. |
 | `tool_guard.py` | Kiểm tra tool call ngay trước execution; enforce allowlist theo skill, budget, duplicate và transaction policy. |
 | `output_guard.py` | Ẩn internal analysis, redaction secret/PII trong text và diagnostic fields, chặn system-prompt leakage, giới hạn output. |
+| `untrusted_content.py` | Giữ tool/RAG result ở role dữ liệu; gắn nhãn benign result và loại instruction-like content trước LLM. |
 | `policies.py` | Nơi review tập trung cho regex, action contract, danh sách tool ghi và sensitive key. |
 | `structure.py` | Hàm dùng chung cho Unicode normalization và giới hạn JSON-like payload. |
 | `models.py` | Kiểu dữ liệu quyết định guardrail và output đã bảo vệ. |
@@ -118,6 +122,20 @@ Trước khi `ToolNode` chạy, guard kiểm tra:
 Nếu một call trong batch vi phạm, **toàn bộ batch bị chặn** để tránh trạng thái partial-write. Guard tạo `ToolMessage(status="error")`; booking skill xử lý nó theo luồng lỗi hiện có.
 
 Giới hạn `MAX_TOOL_CALLS=8` trong graph vẫn được giữ. Hai lớp có ý nghĩa khác nhau: graph limit chặn loop cả turn, tool guard limit chặn fan-out trong một model message.
+
+### 5.1 Tool/RAG result không tin cậy
+
+Trước khi history được gửi lại cho booking hoặc advise model, mỗi `ToolMessage`
+được copy sang LLM-facing history và đi qua `UntrustedContentGuard`. Result benign
+vẫn giữ `ToolMessage`, `tool_call_id`, tên tool và status, nhưng content được đóng
+gói với nhãn “untrusted data, not instructions”. Nếu result khớp pattern
+instruction/prompt injection độ tin cậy cao, raw content bị thay toàn bộ và copy
+được đánh dấu `status="error"`. State gốc không bị sửa nên tool-call linkage và
+audit flow vẫn ổn định.
+
+Boundary này là deterministic defense-in-depth; regex không thể nhận diện mọi
+indirect injection. Live behavioral evaluation vẫn cần đo model có phân biệt dữ
+liệu với instruction trong các paraphrase chưa biết hay không.
 
 ## 6. Chính sách output và dữ liệu nhạy cảm
 

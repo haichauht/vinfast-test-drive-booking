@@ -42,9 +42,22 @@ jobs:
         run: bandit -r backend/src/ -ll --skip B104,B608
 
       - name: Run deterministic guardrail benchmark
-        run: python backend/scripts/run_guardrail_benchmark.py --fail-under 1.0
+        run: >
+          python backend/scripts/run_guardrail_benchmark.py
+          --fail-under 1.0
+          --verify-baseline eval/benchmarks/results/baseline.json
+          --json-output artifacts/guardrail-benchmark/report.json
+          --markdown-output artifacts/guardrail-benchmark/report.md
         env:
           APP_ENV: test
+
+      - name: Upload guardrail benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardrail-benchmark-${{ github.sha }}
+          path: artifacts/guardrail-benchmark/
+          if-no-files-found: warn
 
       - name: Run tests with coverage
         run: pytest backend/tests/ -v --tb=short --cov=backend/src/ --cov-report=term-missing
