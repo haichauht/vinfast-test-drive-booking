@@ -323,6 +323,30 @@ class ProfileService:
             result["driver"] = participant(row["driver_person_id"], str(row["driver_name"] or ""), "driver")
         return result
 
+    def booking_profile_summary(self, booking_id: str) -> dict[str, str] | None:
+        """Return the latest stored sales brief for a booking, if one exists."""
+        with self.db.connect() as c:
+            row = c.execute(
+                "SELECT summary_markdown,generated_at FROM booking_profile_summaries WHERE booking_id=?",
+                (booking_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return {"summary": str(row["summary_markdown"]), "generated_at": str(row["generated_at"])}
+
+    def save_booking_profile_summary(self, booking_id: str, summary: str) -> dict[str, str]:
+        """Persist the newest generated sales brief for a booking."""
+        now = _now()
+        with self.db.transaction(immediate=True) as c:
+            c.execute(
+                """INSERT INTO booking_profile_summaries(booking_id,summary_markdown,generated_at,updated_at)
+                VALUES(?,?,?,?)
+                ON CONFLICT(booking_id) DO UPDATE SET summary_markdown=excluded.summary_markdown,
+                generated_at=excluded.generated_at,updated_at=excluded.updated_at""",
+                (booking_id, summary, now, now),
+            )
+        return {"summary": summary, "generated_at": now}
+
     def mock_debug_view(self, profile_id: str) -> dict[str, Any]:
         """Return a non-production diagnostic view of one profile and its history."""
         with self.db.connect() as c:
