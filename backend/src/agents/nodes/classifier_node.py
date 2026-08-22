@@ -5,7 +5,9 @@ from pydantic import BaseModel, Field
 
 from src.agents.constants import (
     ADVISORY_KEYWORDS,
+    BOOKING_CANCEL_KEYWORDS,
     BOOKING_MUTATION_KEYWORDS,
+    BOOKING_RESCHEDULE_KEYWORDS,
     LOOKUP_KEYWORDS,
     OUT_OF_SCOPE_KEYWORDS,
     PUBLIC_LLM_UNAVAILABLE_CODE,
@@ -66,6 +68,12 @@ class RouteSchema(BaseModel):
     contact_value: str | None = Field(
         default=None,
         description="Email copied exactly from the user query, or null when no email was provided.",
+    )
+    has_schedule_preference: bool = Field(
+        description=(
+            "True when the user states, changes, or asks about a preferred test-drive date, "
+            "date range, day, or time, including shorthand such as '28 t mới rảnh'."
+        ),
     )
 
 
@@ -128,11 +136,6 @@ async def classifier_node(state: AgentState) -> dict:
         trace_event("classifier.keyword_route", trace_id=trace_id, intent="sensitive", sub_intent="out_of_scope_code")
         return {"intent": "sensitive", "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "out_of_scope_code"}, "tool_call_count": 0}
 
-    if not is_driver_invitation and any(kw in lower_query for kw in BOOKING_MUTATION_KEYWORDS):
-        return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "booking"}, "tool_call_count": 0}
-    if post_booking_active and previous_skill == "post_booking" and len(query.split()) <= 8:
-        return {"intent": "domain", "active_skill": "post_booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "contextual_followup"}, "tool_call_count": 0}
-
     # Construct prompt for the LLM classifier dynamically based on system_prompt.md
     prompt = (
         "You classify requests for a VinFast test-drive assistant.\n"
@@ -194,11 +197,19 @@ async def classifier_node(state: AgentState) -> dict:
         "IMPORTANT: When the user mentions changing/switching a vehicle model (e.g. 'đổi VF8', 'đổi xe VF5', "
         "'chuyển sang VF7', 'xem xe VF3'), classify as booking_new (NOT booking_reschedule). Only use "
         "booking_reschedule when the user explicitly asks to change an existing appointment time/date "
-        "('đổi lịch', 'đổi giờ hẹn').\n"
+        "('đổi lịch', 'đổi giờ hẹn', 'dời sang buổi chiều', 'chuyển sang ngày mai', "
+        "'cho tôi hẹn trễ hơn').\n"
         "\n"
         "Use booking_availability whenever the user asks which dates/times are free or available, "
         "including informal forms such as 'rảnh ngày 25-26', 'ngày 26 27 có lịch không', "
         "'từ 25 đến 30', or 'tuần sau có giờ nào'.\n"
+        "CRITICAL AVAILABILITY PRECEDENCE: a statement of when the user is free is an availability "
+        "request even when it is not phrased as a question and omits words such as 'ngày' or 'giờ'. "
+        "Examples: 'thôi 28 t mới rảnh', 'chắc 27 được á', 'tầm 3 giờ chiều nha', and "
+        "'cuối tuần tôi mới đi được' are booking_availability. When UI stage=choose_slot, prefer "
+        "booking_availability for any date/time preference refinement; use booking_new only when "
+        "the user explicitly starts another booking or changes the vehicle/location. Set "
+        "has_schedule_preference=true for these date/time refinements.\n"
         "A user stating a location is a booking request, including casual or missing-accent "
         "Vietnamese such as 't ở hcm', 'tôi đang ở Đà Nẵng', 'ở Quế Sơn', and "
         "'mình ở miền tay'. Classify these as booking_new.\n"
@@ -218,6 +229,8 @@ async def classifier_node(state: AgentState) -> dict:
         "\n"
         f"UI context: channel={context.get('channel', '')}, "
         f"stage={context.get('stage', '')}.\n"
+        f"Confirmed post-booking context active: {post_booking_active}.\n"
+        f"Previous active skill: {previous_skill or '(none)'}.\n"
         f"Previous ViVi message: {previous_assistant_message or '(none)'}\n"
         f"User query: {query}"
     )
@@ -244,6 +257,21 @@ async def classifier_node(state: AgentState) -> dict:
             intent = "domain"
 
         sub_intent = route_result.sub_intent
+        if (
+            intent == "domain"
+            and context.get("stage") == "choose_slot"
+            and not post_booking_active
+            and route_result.has_schedule_preference
+            and sub_intent in {"booking_new", "booking_reschedule", "others"}
+        ):
+            trace_event(
+                "classifier.route_correction",
+                trace_id=trace_id,
+                from_sub_intent=sub_intent,
+                to_sub_intent="booking_availability",
+                reason="schedule_preference_while_choosing_slot",
+            )
+            sub_intent = "booking_availability"
         if is_driver_invitation and sub_intent in _DRIVER_BLOCKED_SUB_INTENTS:
             return _driver_scope_block(state, query, sub_intent="driver_booking_scope")
         if intent == "domain" and not post_booking_active and sub_intent == "post_booking_advisory":
@@ -289,9 +317,16 @@ async def classifier_node(state: AgentState) -> dict:
         trace_event("llm.error", trace_id=trace_id, node="classifier", error=str(e))
         # Log the specific error for debugging before falling back to keyword classifier
         logger.warning("Classifier LLM call failed (%s: %s), falling back to keyword matching.", type(e).__name__, e)
-        fallback_sub_intent = (
-            "booking_lookup" if any(phrase in lower_query for phrase in LOOKUP_KEYWORDS) else "fallback_domain"
-        )
+        if any(phrase in lower_query for phrase in LOOKUP_KEYWORDS):
+            fallback_sub_intent = "booking_lookup"
+        elif any(phrase in lower_query for phrase in BOOKING_RESCHEDULE_KEYWORDS):
+            fallback_sub_intent = "booking_reschedule"
+        elif any(phrase in lower_query for phrase in BOOKING_CANCEL_KEYWORDS):
+            fallback_sub_intent = "booking_cancel"
+        elif any(phrase in lower_query for phrase in BOOKING_MUTATION_KEYWORDS):
+            fallback_sub_intent = "booking_new"
+        else:
+            fallback_sub_intent = "fallback_domain"
         active_skill = (
             "post_booking"
             if post_booking_active

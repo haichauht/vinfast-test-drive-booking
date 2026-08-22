@@ -50,6 +50,13 @@ const compactObject = (value) => Object.fromEntries(
   Object.entries(value).filter(([, item]) => item !== '' && item !== null && item !== undefined),
 )
 
+const VEHICLE_CONTEXT_STAGES = new Set([
+  'need_address', 'need_ward', 'choose_showroom', 'choose_slot', 'collect_info', 'review', 'success',
+])
+const SHOWROOM_CONTEXT_STAGES = new Set(['choose_slot', 'collect_info', 'review', 'success'])
+const SLOT_CONTEXT_STAGES = new Set(['collect_info', 'review', 'success'])
+const NEARBY_SHOWROOM_CONTEXT_STAGES = new Set(['choose_showroom', 'choose_slot'])
+
 const normalizeAgentContext = (context = {}) => {
   const normalized = { channel: 'booking' }
   const stage = String(context.stage || '').trim()
@@ -58,19 +65,19 @@ const normalizeAgentContext = (context = {}) => {
   if (stage) normalized.stage = stage
   if (recipient) normalized.recipient = recipient
 
-  if (context.selectedVehicle) {
+  if (context.selectedVehicle && VEHICLE_CONTEXT_STAGES.has(stage)) {
     normalized.selectedVehicle = compactObject({
       id: context.selectedVehicle.id,
       name: context.selectedVehicle.name,
     })
   }
-  if (context.selectedShowroom) {
+  if (context.selectedShowroom && SHOWROOM_CONTEXT_STAGES.has(stage)) {
     normalized.selectedShowroom = compactObject({
       id: context.selectedShowroom.id,
       name: context.selectedShowroom.name,
     })
   }
-  if (context.selectedSlot) {
+  if (context.selectedSlot && SLOT_CONTEXT_STAGES.has(stage)) {
     normalized.selectedSlot = compactObject({
       slotId: context.selectedSlot.slotId,
       time: context.selectedSlot.time,
@@ -79,7 +86,11 @@ const normalizeAgentContext = (context = {}) => {
       unavailableLabel: context.selectedSlot.unavailableLabel,
     })
   }
-  if (Array.isArray(context.nearbyShowrooms) && context.nearbyShowrooms.length) {
+  if (
+    NEARBY_SHOWROOM_CONTEXT_STAGES.has(stage)
+    && Array.isArray(context.nearbyShowrooms)
+    && context.nearbyShowrooms.length
+  ) {
     normalized.nearbyShowrooms = context.nearbyShowrooms.slice(0, 10).map((showroom) => compactObject({
       id: showroom.id,
       name: showroom.name,
@@ -87,13 +98,13 @@ const normalizeAgentContext = (context = {}) => {
       distance: showroom.distance,
     }))
   }
-  if (context.userLocation) {
+  if (context.userLocation && NEARBY_SHOWROOM_CONTEXT_STAGES.has(stage)) {
     normalized.userLocation = compactObject({
       latitude: context.userLocation.latitude,
       longitude: context.userLocation.longitude,
     })
   }
-  if (context.bookingId) normalized.bookingId = String(context.bookingId)
+  if (context.bookingId && SLOT_CONTEXT_STAGES.has(stage)) normalized.bookingId = String(context.bookingId)
 
   return normalized
 }
