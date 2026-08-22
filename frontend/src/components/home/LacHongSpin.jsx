@@ -124,7 +124,9 @@ export function LacHongSpin({ frames, name }) {
       const visibleCenterX = bounds.x + bounds.width / 2
       const visibleCenterY = bounds.y + bounds.height / 2
       const x = width * 0.5 - visibleCenterX * commonScale
-      const y = height * 0.49 - visibleCenterY * commonScale
+      // Canh ĐÚNG giữa khung theo chiều dọc. Trước để 0.49 nên xe nhích lên trên
+      // khoảng 1% chiều cao khung, đủ để nhìn ra là lệch khi đặt cạnh vòng elip.
+      const y = height * 0.5 - visibleCenterY * commonScale
       context.save()
       context.globalAlpha = alpha
       context.drawImage(image, x, y, image.naturalWidth * commonScale, image.naturalHeight * commonScale)
