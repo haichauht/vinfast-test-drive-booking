@@ -1,12 +1,25 @@
 import json
 import math
+import os
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Protocol
+
+
+def _get_geo_user_agent() -> str:
+    """Return compliant User-Agent for OSM/Photon, configurable via environment."""
+    explicit_agent = os.environ.get("GEOLOCATION_USER_AGENT", "").strip()
+    if explicit_agent:
+        return explicit_agent
+    contact = os.environ.get("GEOLOCATION_CONTACT_EMAIL", "").strip()
+    if contact:
+        return f"VinFast-Booking-Agent/1.0 (contact: {contact})"
+    return "VinFast-Booking-Agent/1.0 (https://github.com/AI20K-Build-Phase-Cohort-3/P-053)"
 
 
 class _CircuitBreaker:
@@ -55,12 +68,14 @@ class HaversineMapProvider:
 
 
 def _fetch_nominatim_coordinates(query_str: str) -> Coordinates | None:
+    user_agent = _get_geo_user_agent()
+
     # 1. Thử qua Photon Geocoder (với 429 rate-limiting check và thread-safe Circuit Breaker cooldown)
     if _photon_breaker.is_available():
         photon_url = f"https://photon.komoot.io/api/?q={urllib.parse.quote(query_str)}&limit=1"
         req_photon = urllib.request.Request(
             photon_url,
-            headers={"User-Agent": "VinFast-Booking-Agent/1.0 (contact: contact@example.com)"},
+            headers={"User-Agent": user_agent},
         )
         try:
             with urllib.request.urlopen(req_photon, timeout=6) as resp:  # nosec B310
@@ -80,7 +95,7 @@ def _fetch_nominatim_coordinates(query_str: str) -> Coordinates | None:
     url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query_str)}&countrycodes=vn&format=json&limit=1"
     req = urllib.request.Request(
         url,
-        headers={"User-Agent": "VinFast-Booking-Agent/1.0 (contact: contact@example.com)"},
+        headers={"User-Agent": user_agent},
     )
     try:
         with urllib.request.urlopen(req, timeout=6) as resp:  # nosec B310
@@ -175,21 +190,26 @@ LOCALITY_COORDINATES: dict[str, tuple[float, float]] = {
 
 
 class _GeocodeCache:
-    """Thread-safe cache that stores only successful (non-None) geocoding results."""
+    """Thread-safe LRU cache that stores only successful (non-None) geocoding results."""
 
     def __init__(self, maxsize: int = 1024) -> None:
         self._maxsize = maxsize
-        self._cache: dict[str, Coordinates] = {}
+        self._cache: OrderedDict[str, Coordinates] = OrderedDict()
         self._lock = threading.Lock()
 
     def get(self, key: str) -> Coordinates | None:
         with self._lock:
-            return self._cache.get(key)
+            if key not in self._cache:
+                return None
+            self._cache.move_to_end(key)
+            return self._cache[key]
 
     def set(self, key: str, coords: Coordinates) -> None:
         with self._lock:
-            if len(self._cache) >= self._maxsize:
-                self._cache.pop(next(iter(self._cache)))
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            elif len(self._cache) >= self._maxsize:
+                self._cache.popitem(last=False)
             self._cache[key] = coords
 
 
