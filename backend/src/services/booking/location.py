@@ -22,11 +22,23 @@ def _get_geo_user_agent() -> str:
     return "VinFast-Booking-Agent/1.0 (https://github.com/AI20K-Build-Phase-Cohort-3/P-053)"
 
 
-class _CircuitBreaker:
-    """Thread-safe circuit breaker with synchronized cooldown tracking."""
+def _parse_retry_after(error: urllib.error.HTTPError, default_seconds: float = 60.0) -> float:
+    """Extract Retry-After header duration in seconds if present."""
+    try:
+        if error.headers:
+            header_val = error.headers.get("Retry-After")
+            if header_val:
+                return max(1.0, float(header_val))
+    except (ValueError, TypeError):
+        pass
+    return default_seconds
 
-    def __init__(self, cooldown_seconds: float = 60.0) -> None:
-        self._cooldown_seconds = cooldown_seconds
+
+class _CircuitBreaker:
+    """Thread-safe circuit breaker with synchronized cooldown tracking and Retry-After support."""
+
+    def __init__(self, default_cooldown_seconds: float = 60.0) -> None:
+        self._default_cooldown = default_cooldown_seconds
         self._cooldown_until: float = 0.0
         self._lock = threading.Lock()
 
@@ -34,12 +46,14 @@ class _CircuitBreaker:
         with self._lock:
             return time.time() >= self._cooldown_until
 
-    def trip(self) -> None:
+    def trip(self, cooldown_seconds: float | None = None) -> None:
+        cooldown = cooldown_seconds if cooldown_seconds is not None else self._default_cooldown
         with self._lock:
-            self._cooldown_until = time.time() + self._cooldown_seconds
+            self._cooldown_until = time.time() + cooldown
 
 
-_photon_breaker = _CircuitBreaker(cooldown_seconds=60.0)
+_photon_breaker = _CircuitBreaker(default_cooldown_seconds=60.0)
+_nominatim_breaker = _CircuitBreaker(default_cooldown_seconds=60.0)
 
 
 @dataclass(frozen=True)
@@ -86,24 +100,27 @@ def _fetch_nominatim_coordinates(query_str: str) -> Coordinates | None:
                     return Coordinates(latitude=float(coords[1]), longitude=float(coords[0]))
         except urllib.error.HTTPError as e:
             if e.code == 429:
-                # Kích hoạt Circuit Breaker cooldown 60s để tránh bị ban IP khi gặp rate-limit
-                _photon_breaker.trip()
+                _photon_breaker.trip(_parse_retry_after(e, 60.0))
         except Exception:
             pass
 
-    # 2. Dự phòng qua Nominatim OSM server
-    url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query_str)}&countrycodes=vn&format=json&limit=1"
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": user_agent},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=6) as resp:  # nosec B310
-            data = json.loads(resp.read().decode("utf-8"))
-            if data and len(data) > 0:
-                return Coordinates(latitude=float(data[0]["lat"]), longitude=float(data[0]["lon"]))
-    except Exception:
-        pass
+    # 2. Dự phòng qua Nominatim OSM server (với 429 rate-limiting check và thread-safe Circuit Breaker cooldown)
+    if _nominatim_breaker.is_available():
+        url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query_str)}&countrycodes=vn&format=json&limit=1"
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": user_agent},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=6) as resp:  # nosec B310
+                data = json.loads(resp.read().decode("utf-8"))
+                if data and len(data) > 0:
+                    return Coordinates(latitude=float(data[0]["lat"]), longitude=float(data[0]["lon"]))
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                _nominatim_breaker.trip(_parse_retry_after(e, 60.0))
+        except Exception:
+            pass
     return None
 
 
@@ -222,8 +239,8 @@ def resolve_address_coordinates(address: str) -> Coordinates | None:
     clean_addr = address.strip()
     normalized = clean_addr.lower()
 
-    # 0. Tra cứu từ bộ nhớ đệm trước (chỉ lưu kết quả thành công, không cache None)
-    cached = _geocode_cache.get(clean_addr)
+    # 0. Tra cứu từ bộ nhớ đệm trước (dùng normalized key để tránh duplicate do chữ hoa/thường)
+    cached = _geocode_cache.get(normalized)
     if cached is not None:
         return cached
 
@@ -231,38 +248,38 @@ def resolve_address_coordinates(address: str) -> Coordinates | None:
     if normalized in PROVINCE_COORDINATES:
         lat, lon = PROVINCE_COORDINATES[normalized]
         coords = Coordinates(latitude=lat, longitude=lon)
-        _geocode_cache.set(clean_addr, coords)
+        _geocode_cache.set(normalized, coords)
         return coords
     if normalized in LOCALITY_COORDINATES:
         lat, lon = LOCALITY_COORDINATES[normalized]
         coords = Coordinates(latitude=lat, longitude=lon)
-        _geocode_cache.set(clean_addr, coords)
+        _geocode_cache.set(normalized, coords)
         return coords
 
     # 2. Ưu tiên Dynamic Geocoding (OpenStreetMap API với timeout 10s)
     coords = _fetch_nominatim_coordinates(clean_addr)
     if coords:
-        _geocode_cache.set(clean_addr, coords)
+        _geocode_cache.set(normalized, coords)
         return coords
 
     if "," in clean_addr:
         space_addr = clean_addr.replace(",", " ")
         coords = _fetch_nominatim_coordinates(space_addr)
         if coords:
-            _geocode_cache.set(clean_addr, coords)
+            _geocode_cache.set(normalized, coords)
             return coords
         parts = [p.strip() for p in clean_addr.split(",") if p.strip()]
         for part in parts:
             coords = _fetch_nominatim_coordinates(part)
             if coords:
-                _geocode_cache.set(clean_addr, coords)
+                _geocode_cache.set(normalized, coords)
                 return coords
 
     # 3. Fallback L1: Nếu API không trả về kết quả, mới quét tên Tỉnh / Thành phố lân cận
     for key, (lat, lon) in PROVINCE_COORDINATES.items():
         if key in normalized:
             coords = Coordinates(latitude=lat, longitude=lon)
-            _geocode_cache.set(clean_addr, coords)
+            _geocode_cache.set(normalized, coords)
             return coords
 
     return None
