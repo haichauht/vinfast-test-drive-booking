@@ -136,6 +136,7 @@ import { AgentMessage, ViviStatusTyping, ViViAvatar, ContextualChoices } from '.
 import { VehicleShot, VehicleSwitcher, VehiclePanel } from '../components/booking/VehicleWorkspace'
 import { BookingHeader } from '../components/booking/BookingHeader'
 
+const HOLD_TTL_MS = 5 * 60 * 1000
 const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
 const BOOKING_UI_STATE_KEY = 'vinfast:booking-ui-state'
@@ -783,8 +784,8 @@ export function BookingPage() {
    * `slots` được ghi vào sessionStorage nên đổi xe rồi tải lại trang là thấy khung giờ
    * của mẫu xe CŨ nằm dưới tên mẫu xe MỚI.
    *
-   * TODO [BACKEND/BOOKING]: chưa có API nhả chỗ đang giữ. Đổi xe giữa chừng thì chỗ giữ
-   * của mẫu cũ nằm lại tới khi hết hạn (~2 phút), làm khung giờ đó bị khoá oan.
+   * Khi đổi xe, luồng chọn slot sẽ gọi API release trước khi giữ slot mới để không
+   * khóa oan chỗ của mẫu xe cũ trong thời gian TTL 5 phút.
    */
   const resetSelectionForVehicleChange = () => {
     showroomRequestRef.current += 1 // vô hiệu hoá mọi lượt tìm khung giờ đang bay
@@ -1024,7 +1025,7 @@ export function BookingPage() {
       const toolInput = result.tool_input || {}
       setBookingId(data.booking_id)
       setBookingVersion(data.version ?? 1)
-      setHoldExpiresAt(data.hold_expires_at ? new Date(data.hold_expires_at).getTime() : Date.now() + 120000)
+      setHoldExpiresAt(data.hold_expires_at ? new Date(data.hold_expires_at).getTime() : Date.now() + HOLD_TTL_MS)
 
       let slotShowroomId = showroomId
       if (data.showroom) {
@@ -1195,6 +1196,23 @@ export function BookingPage() {
         setTimeLeft('Đã hết hạn giữ')
         if (!holdExpiredRef.current) {
           holdExpiredRef.current = true
+          const expiredBookingId = bookingId
+          const expiredSlotId = selectedSlot?.slotId
+          if (expiredBookingId) {
+            releaseBookingHold(expiredBookingId).catch(() => {
+              // Backend cũng tự thu hồi hold hết hạn khi cleanup hoặc khi slot được giữ lại.
+            })
+          }
+          if (expiredSlotId) {
+            setSlots((current) => current.map((day) => ({
+              ...day,
+              times: day.times.map((slot) => (
+                slot.slotId === expiredSlotId
+                  ? { ...slot, isAvailable: true, unavailableLabel: '' }
+                  : slot
+              )),
+            })))
+          }
           setConfirmSlotOpen(false)
           setPendingSlot(null)
           setSelectedSlot(null)
@@ -1220,7 +1238,7 @@ export function BookingPage() {
     updateTimer()
     const interval = setInterval(updateTimer, 1000)
     return () => clearInterval(interval)
-  }, [holdExpiresAt, stage])
+  }, [bookingId, holdExpiresAt, selectedSlot?.slotId, stage])
 
   useEffect(() => {
     holdExpiredRef.current = false
@@ -1391,13 +1409,13 @@ export function BookingPage() {
       holdActionIdsRef.current.delete(actionKey)
       setBookingId(held.booking_id)
       setBookingVersion(held.version ?? 1)
-      setHoldExpiresAt(held.hold_expires_at ? new Date(held.hold_expires_at).getTime() : Date.now() + 120000)
+      setHoldExpiresAt(held.hold_expires_at ? new Date(held.hold_expires_at).getTime() : Date.now() + HOLD_TTL_MS)
       setSelectedSlot(pendingSlot)
       setConfirmSlotOpen(false)
       addMessage('user', `Tôi xác nhận ${pendingSlot.time}, ${pendingSlot.dateLabel}.`)
       setStage('collect_info')
       setAgentTyping(false)
-      reply('ViVi đã giữ tạm khung giờ này cho bạn trong 2 phút. Bạn vui lòng điền thông tin để tiếp tục nhé.')
+      reply('ViVi đã giữ tạm khung giờ này cho bạn trong 5 phút. Bạn vui lòng điền thông tin để tiếp tục nhé.')
     } catch (error) {
       setAgentTyping(false)
       setConfirmSlotOpen(false)

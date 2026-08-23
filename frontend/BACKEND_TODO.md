@@ -185,9 +185,9 @@ không phải suy đoán từ đọc code.
   nhưng backend không phát sinh hai trạng thái đầu. Frontend KHÔNG tự dựng thêm
   trạng thái không có thật. Khi nào backend có luồng chờ duyệt thì mở lại việc này.
 
-### P1 — Chưa có API nhả chỗ đang giữ
-- Đổi mẫu xe giữa chừng thì chỗ đã giữ của mẫu cũ nằm lại tới khi hết hạn (~2 phút),
-  khoá oan khung giờ đó với người dùng khác. Cần một `release_hold(booking_id)`.
+### Đã xử lý — Nhả chỗ đang giữ
+- Frontend gọi `release_hold(booking_id)` khi đổi slot, đổi xe hoặc khi TTL 5 phút hết hạn.
+- Backend đồng thời cleanup hold hết hạn và tự thu hồi hold cũ trước khi giữ lại slot.
 
 ### Ghi chú vận hành — dữ liệu slot local hết hạn
 - 16/08/2026: toàn bộ 1344 slot trong `backend/data/app.db` nằm trong 09→15/08 nên

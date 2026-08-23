@@ -49,6 +49,9 @@ async def lifespan(app: FastAPI):
     async def dispatch_notifications() -> None:
         while True:
             try:
+                expired_holds = await asyncio.to_thread(booking_service.expire_held_bookings)
+                if expired_holds:
+                    logging.getLogger(__name__).info("Released %s expired booking holds", expired_holds)
                 await asyncio.to_thread(
                     booking_service.dispatch_due_notifications,
                     settings.notification_batch_size,

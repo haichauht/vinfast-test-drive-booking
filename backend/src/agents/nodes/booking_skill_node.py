@@ -9,7 +9,10 @@ from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from src.agents.constants import PUBLIC_LLM_UNAVAILABLE_CODE, PUBLIC_LLM_UNAVAILABLE_MESSAGE
+from src.agents.constants import (
+    PUBLIC_LLM_UNAVAILABLE_CODE,
+    PUBLIC_LLM_UNAVAILABLE_MESSAGE,
+)
 from src.agents.state import AgentState
 from src.agents.tools import (
     confirm_test_drive_booking,
@@ -26,8 +29,12 @@ from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.utils import get_system_prompt, window_messages
 from src.dependencies import usage_budget_service
 from src.guardrails.untrusted_content import protect_tool_result_messages
-from src.services.llm import get_llm
-from src.services.usage_budget import BudgetExceededError, LLMCallLimitExceededError, invoke_with_budget
+from src.services.llm import extract_response_text, get_llm
+from src.services.usage_budget import (
+    BudgetExceededError,
+    LLMCallLimitExceededError,
+    invoke_with_budget,
+)
 
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "booking_skill" / "SKILL.md"
 tool_logger = logging.getLogger("agent.tools")
@@ -79,7 +86,7 @@ STRUCTURED_ACTION_TO_TOOL = {
 
 STRUCTURED_ACTION_RESPONSES = {
     "search_options": "ViVi đã kiểm tra dữ liệu showroom và lịch trống mới nhất.",
-    "hold_slot": "ViVi đã giữ khung giờ này trong 2 phút.",
+    "hold_slot": "ViVi đã giữ khung giờ này trong 5 phút.",
     "update_draft": "ViVi đã lưu thông tin người đặt và người lái.",
     "confirm_booking": "Đặt lịch lái thử đã được xác nhận.",
     "request_access": "ViVi đã gửi mã xác thực qua email.",
@@ -450,7 +457,7 @@ async def booking_skill_node(state: AgentState) -> dict:
         }
 
     # Extract response text for the API
-    response_content = cast(str, response.content) if hasattr(response, "content") else ""
+    response_content = extract_response_text(response)
 
     # Tăng tool_call_count nếu LLM đang gọi tool
     has_tool_calls = hasattr(response, "tool_calls") and bool(response.tool_calls)

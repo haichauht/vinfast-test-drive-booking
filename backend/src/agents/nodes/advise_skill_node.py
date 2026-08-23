@@ -1,18 +1,25 @@
 import logging
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from langchain_core.messages import SystemMessage, ToolMessage
 
-from src.agents.constants import PUBLIC_LLM_UNAVAILABLE_CODE, PUBLIC_LLM_UNAVAILABLE_MESSAGE
+from src.agents.constants import (
+    PUBLIC_LLM_UNAVAILABLE_CODE,
+    PUBLIC_LLM_UNAVAILABLE_MESSAGE,
+)
 from src.agents.state import AgentState
 from src.agents.tools import search_knowledge
 from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.utils import get_system_prompt, window_messages
 from src.dependencies import usage_budget_service
 from src.guardrails.untrusted_content import protect_tool_result_messages
-from src.services.llm import get_llm
-from src.services.usage_budget import BudgetExceededError, LLMCallLimitExceededError, invoke_with_budget
+from src.services.llm import extract_response_text, get_llm
+from src.services.usage_budget import (
+    BudgetExceededError,
+    LLMCallLimitExceededError,
+    invoke_with_budget,
+)
 
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "advise_skill" / "SKILL.md"
 
@@ -95,7 +102,7 @@ async def advise_skill_node(state: AgentState) -> dict:
         }
 
     # Extract response text for the API
-    response_content = cast(str, response.content) if hasattr(response, "content") else ""
+    response_content = extract_response_text(response)
 
     # Tăng tool_call_count nếu LLM đang gọi tool
     has_tool_calls = hasattr(response, "tool_calls") and bool(response.tool_calls)
