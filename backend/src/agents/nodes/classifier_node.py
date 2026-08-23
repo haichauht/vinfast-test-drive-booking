@@ -31,6 +31,7 @@ DRIVER_BOOKING_SCOPE_MESSAGE = (
     "Các thao tác tra cứu, đổi, hủy hoặc cập nhật lịch cần được thực hiện bởi "
     "người đặt lịch qua luồng xác thực booking."
 )
+
 _DRIVER_BLOCKED_SUB_INTENTS = frozenset({
     "booking_new", "booking_availability", "booking_reschedule", "booking_cancel",
     "booking_update_details", "booking_update_notifications",
@@ -182,16 +183,12 @@ async def classifier_node(state: AgentState) -> dict:
         "- booking_availability: check which test-drive dates or times are free.\n"
         "- booking_reschedule: change the booking date, time, or slot.\n"
         "- booking_cancel: cancel an existing booking.\n"
-        "- booking_update_details: change participant or booking details.\n"
+        "- booking_update_details: explicit request to modify or update registered contact details or information of the person who booked an existing booking (e.g. change contact name, phone number, email). Never use this for general questions about passengers, family, children, pets, or ride preparation.\n"
         "- booking_update_notifications: change booking notification preferences.\n"
-        "- post_booking_advisory: after a confirmed booking, guidance that helps the user prepare "
-        "for, participate in, or evaluate the upcoming test drive.\n"
-        "- vehicle_info: general VinFast vehicle/product questions not specifically tied to "
-        "preparing for an already-confirmed test drive.\n"
-        "- greeting: a social opening or greeting directed at ViVi, for example 'hi', 'hello', "
-        "'xin chào', or 'alo'.\n"
-        "- assistant_identity: a question about who ViVi is, ViVi's role, or what ViVi can help "
-        "with, for example 'bạn là ai?' or 'ViVi hỗ trợ gì?'.\n"
+        "- post_booking_advisory: after a confirmed booking, guidance that helps the user prepare for, participate in, or evaluate the upcoming test drive, including questions about passengers, family members, children, child seats, pets, luggage, or vehicle features.\n"
+        "- vehicle_info: general VinFast vehicle/product questions not specifically tied to preparing for an already-confirmed test drive (e.g. asking about car models, seat capacity for 4 or 7 people, range, charging).\n"
+        "- greeting: a social opening or greeting directed at ViVi, for example 'hi', 'hello', 'xin chào', or 'alo'.\n"
+        "- assistant_identity: a question about who ViVi is, ViVi's role, or what ViVi can help with, for example 'bạn là ai?' or 'ViVi hỗ trợ gì?'.\n"
         "- others: domain requests that do not fit another domain sub_intent.\n"
         "\n"
         "Use booking_lookup when the user wants to view, find, check, or retrieve an existing booking.\n"
