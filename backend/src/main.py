@@ -91,9 +91,10 @@ app = FastAPI(
 settings = get_settings()
 media_root = Path(settings.media_root).resolve()
 media_root.mkdir(parents=True, exist_ok=True)
+cors_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins.split(","),
+    allow_origins=cors_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
