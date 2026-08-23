@@ -17,7 +17,7 @@ from src.agents.constants import (
 from src.agents.state import AgentState
 from src.agents.trace import trace_event
 from src.dependencies import usage_budget_service
-from src.services.llm import get_classifier_llm
+from src.services.llm import extract_response_text, get_classifier_llm
 from src.services.usage_budget import (
     BudgetExceededError,
     LLMCallLimitExceededError,
@@ -83,9 +83,10 @@ async def classifier_node(state: AgentState) -> dict:
     metadata = state.get("metadata") or {}
     previous_assistant_message = ""
     for message in reversed(state.get("messages") or []):
-        if isinstance(message, AIMessage) and isinstance(message.content, str) and message.content.strip():
-            previous_assistant_message = message.content.strip()
-            break
+        if isinstance(message, AIMessage):
+            previous_assistant_message = extract_response_text(message)
+            if previous_assistant_message:
+                break
     trace_id = metadata.get("trace_id", "")
     previous_skill = state.get("active_skill", "")
     post_booking_active = bool((state.get("post_booking_context") or {}).get("active"))

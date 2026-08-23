@@ -12,6 +12,7 @@ from src.services.booking.errors import BookingError
 
 _id = new_id
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+HOLD_TTL_SECONDS = 5 * 60
 
 
 class LifecycleService(BookingBase):
@@ -20,31 +21,50 @@ class LifecycleService(BookingBase):
         slot_id: str,
         ui_action_id: str,
         *,
-        ttl_seconds: int = 120,
+        ttl_seconds: int = HOLD_TTL_SECONDS,
         source_channel: str = "web",
         _operation: str = "hold_slot",
         _idempotency_payload: dict | None = None,
     ) -> dict:
-        if ttl_seconds != 120:
-            raise BookingError("INVALID_INPUT", "Hold TTL được cố định ở 120 giây.")
+        if ttl_seconds != HOLD_TTL_SECONDS:
+            raise BookingError("INVALID_INPUT", "Hold TTL được cố định ở 300 giây.")
         request_payload = _idempotency_payload or {"slot_id": slot_id, "source_channel": source_channel}
         with self.db.transaction(immediate=True) as c:
             cached = self._idempotent_response(c, ui_action_id, _operation, request_payload)
             if cached:
                 return cached
-            slot = c.execute(
+            slot_query = (
                 "SELECT s.*,d.is_active vehicle_active,d.operational_status,d.battery_soc,d.minimum_booking_soc,"
                 "v.required_license_class FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id "
                 "JOIN vehicle_variants x ON x.id=d.variant_id JOIN vehicle_models v ON v.id=x.model_id WHERE s.id=?"
-                + (" FOR UPDATE OF s" if c.dialect == "postgres" else ""),
-                (slot_id,),
-            ).fetchone()
+                + (" FOR UPDATE OF s" if c.dialect == "postgres" else "")
+            )
+            slot = c.execute(slot_query, (slot_id,)).fetchone()
+            now = self.now()
+            if (
+                slot
+                and slot["status"] == "held"
+                and slot["held_until"]
+                and parse_utc(slot["held_until"]) <= parse_utc(now)
+                and slot["current_booking_id"]
+            ):
+                expired_booking = c.execute(
+                    "SELECT * FROM bookings WHERE id=?" + (" FOR UPDATE" if c.dialect == "postgres" else ""),
+                    (slot["current_booking_id"],),
+                ).fetchone()
+                if (
+                    expired_booking
+                    and expired_booking["status"] == "held"
+                    and parse_utc(expired_booking["hold_expires_at"]) <= parse_utc(now)
+                ):
+                    self._expire_hold_in_transaction(c, expired_booking)
+                    slot = c.execute(slot_query, (slot_id,)).fetchone()
             if not slot or slot["status"] != "available":
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Khung giờ này không còn khả dụng.", retryable=True)
-            if parse_utc(slot["start_at"]) <= parse_utc(self.now()):
+            if parse_utc(slot["start_at"]) <= parse_utc(now):
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Slot đã bắt đầu hoặc đã qua.", retryable=True)
             if parse_utc(slot["start_at"]) > parse_utc(
-                self.now() + timedelta(days=self.booking_advance_window_days)
+                now + timedelta(days=self.booking_advance_window_days)
             ):
                 raise BookingError(
                     "SLOT_NO_LONGER_AVAILABLE",
@@ -56,12 +76,14 @@ class LifecycleService(BookingBase):
             if slot["battery_soc"] is None or slot["battery_soc"] < slot["minimum_booking_soc"]:
                 raise BookingError("VEHICLE_NOT_READY", "Pin xe demo chưa đạt ngưỡng phục vụ.", retryable=True)
             overlap = c.execute(
-                "SELECT 1 FROM test_drive_slots WHERE demo_vehicle_id=? AND id<>? AND start_at<? AND end_at>? AND status IN ('held','booked','blocked') LIMIT 1",
-                (slot["demo_vehicle_id"], slot_id, slot["end_at"], slot["start_at"]),
+                "SELECT 1 FROM test_drive_slots WHERE demo_vehicle_id=? AND id<>? AND start_at<? AND end_at>? "
+                "AND (status IN ('booked','blocked') OR (status='held' AND (held_until IS NULL OR held_until>?))) "
+                "LIMIT 1",
+                (slot["demo_vehicle_id"], slot_id, slot["end_at"], slot["start_at"], iso(now)),
             ).fetchone()
             if overlap:
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Xe demo đã có lịch trùng.", retryable=True)
-            now, expires, booking_id = self.now(), self.now() + timedelta(seconds=ttl_seconds), _id("bkg")
+            expires, booking_id = now + timedelta(seconds=ttl_seconds), _id("bkg")
             c.execute(
                 "INSERT INTO bookings(id,slot_id,status,held_at,hold_expires_at,source_channel,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
                 (booking_id, slot_id, "held", iso(now), iso(expires), source_channel, iso(now), iso(now)),
@@ -108,16 +130,28 @@ class LifecycleService(BookingBase):
         with self.db.transaction(immediate=True) as c:
             b = c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone()
             if b and b["status"] == "held":
-                now = iso(self.now())
-                c.execute("UPDATE bookings SET status='cancelled', updated_at=? WHERE id=?", (now, booking_id))
                 slot_id = b["slot_id"]
-                c.execute(
-                    "UPDATE test_drive_slots SET status='available', current_booking_id=NULL, held_until=NULL, updated_at=? WHERE id=? OR current_booking_id=?",
-                    (now, slot_id, booking_id),
-                )
                 if slot_id:
-                    redis_client.delete_slot_hold(slot_id)
-                self._event(c, booking_id, "hold_released", "user", {})
+                    c.execute(
+                        "SELECT id FROM test_drive_slots WHERE id=?"
+                        + (" FOR UPDATE" if c.dialect == "postgres" else ""),
+                        (slot_id,),
+                    ).fetchone()
+                b = c.execute(
+                    "SELECT * FROM bookings WHERE id=?" + (" FOR UPDATE" if c.dialect == "postgres" else ""),
+                    (booking_id,),
+                ).fetchone()
+                if b and b["status"] == "held":
+                    now = iso(self.now())
+                    c.execute("UPDATE bookings SET status='cancelled', updated_at=? WHERE id=?", (now, booking_id))
+                    released_slot = c.execute(
+                        "UPDATE test_drive_slots SET status='available', current_booking_id=NULL, held_until=NULL, "
+                        "updated_at=? WHERE id=? AND current_booking_id=? AND status='held'",
+                        (now, slot_id, booking_id),
+                    )
+                    if slot_id and released_slot.rowcount:
+                        redis_client.delete_slot_hold(slot_id)
+                    self._event(c, booking_id, "hold_released", "user", {})
             return {"booking_id": booking_id, "status": "released"}
 
     def _draft(self, c, booking_id: str, *, require_held: bool = True) -> dict:

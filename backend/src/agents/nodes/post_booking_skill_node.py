@@ -5,7 +5,6 @@ import logging
 import re
 from collections.abc import Sequence
 from pathlib import Path
-from typing import cast
 
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
@@ -14,7 +13,7 @@ from src.agents.tools import search_knowledge, update_user_profile
 from src.agents.trace import message_to_log, messages_to_log, trace_event
 from src.agents.utils import get_system_prompt, window_messages
 from src.dependencies import profile_service
-from src.services.llm import get_llm
+from src.services.llm import extract_response_text, get_llm
 
 SKILL_PATH = Path(__file__).parent.parent / "skills" / "post_booking_skill" / "SKILL.md"
 _HOUSEHOLD_SIZE_STATEMENT = re.compile(
@@ -90,6 +89,6 @@ async def post_booking_skill_node(state: AgentState) -> dict:
         logging.getLogger(__name__).exception("Post booking skill failed")
         response = AIMessage(content="ViVi chưa lấy được nguồn thông tin phù hợp lúc này. Bạn có thể hỏi về checklist lái thử, pin/sạc, ADAS hoặc không gian sử dụng.")
         return {"messages": [response], "response": response.content, "error": str(exc), "active_skill": "post_booking", "metadata": metadata}
-    content = cast(str, response.content) if isinstance(response.content, str) else ""
+    content = extract_response_text(response)
     calls = bool(getattr(response, "tool_calls", None))
     return {"messages": [response], "response": content, "active_skill": "post_booking", "post_booking_context": booking_context, "tool_call_count": (state.get("tool_call_count") or 0) + (1 if calls else 0), "metadata": metadata}
