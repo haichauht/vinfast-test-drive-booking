@@ -1,14 +1,14 @@
-from __future__ import annotations
-
 import json
 import re
 from collections.abc import Collection
 from typing import Any
 
 from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import ToolNode
 
 from src.config import Settings, get_settings
+from src.agents.trace import trace_node
 from src.guardrails.models import GuardrailDecision
 from src.guardrails.policies import CONFIRMATION_TOOL_NAMES, MUTATING_TOOL_NAMES
 from src.guardrails.structure import PayloadLimits, validate_payload
@@ -139,17 +139,20 @@ def build_guarded_tool_node(tools: list[Any], *, skill_name: str):
     base_node = ToolNode(tools, handle_tool_errors=serialize_tool_error)
     allowed_tool_names = {tool.name for tool in tools}
 
-    async def guarded_tool_node(state: dict[str, Any]) -> dict[str, Any]:
+    @trace_node(f"{skill_name}.tools")
+    async def guarded_tool_node(
+        state: dict[str, Any], config: RunnableConfig | None = None
+    ) -> dict[str, Any]:
         settings = get_settings()
         if not settings.guardrails_enabled:
-            return await base_node.ainvoke(state)
+            return await base_node.ainvoke(state, config=config)
         decision = inspect_tool_calls(
             state,
             allowed_tool_names=allowed_tool_names,
             settings=settings,
         )
         if decision.allowed:
-            return await base_node.ainvoke(state)
+            return await base_node.ainvoke(state, config=config)
 
         messages = state.get("messages") or []
         last_message = messages[-1] if messages else None

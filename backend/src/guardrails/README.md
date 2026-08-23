@@ -115,7 +115,7 @@ Giới hạn `MAX_TOOL_CALLS=8` trong graph vẫn được giữ. Hai lớp có 
 - `analysis` luôn trở thành chuỗi rỗng. Internal reasoning không phải API contract công khai.
 - Literal secret tìm được trong kết quả tool bị loại khỏi natural-language `response` và `action_error`.
 - Assignment dạng `api_key=...`, `password: ...`, `otp_code=...` bị redact.
-- Số điện thoại và email trong natural-language response được thay bằng `[phone]`/`[email]`.
+- Số điện thoại trong natural-language response được thay bằng “hotline chính thức của showroom”; email được thay bằng `[email]`.
 - Nếu output chứa marker của system prompt, toàn bộ text được thay bằng safe fallback.
 - Output quá dài bị cắt theo `GUARDRAILS_MAX_OUTPUT_CHARS`.
 - `tool_input` là diagnostic field nên phone, email, OTP, token và contact đều bị redact đệ quy.

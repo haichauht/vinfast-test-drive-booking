@@ -10,11 +10,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from src.config import get_settings
+from src.observability import configure_langsmith
+
+# Configure before importing graph/routes so LangChain and LangGraph see the
+# canonical LANGSMITH_* variables during their initialization.
+settings = get_settings()
+configure_langsmith(settings)
+
 from src.agents.graph import close_persistent_agent, initialize_persistent_agent
 from src.api.routes import router
 from src.api.site_routes import router as site_router
 from src.bootstrap import initialize_database
-from src.config import get_settings
 from src.dependencies import booking_service, database, zalo_client
 from src.internal_portal.errors import InternalPortalError
 from src.internal_portal.routes import router as internal_router
@@ -85,7 +92,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-settings = get_settings()
 media_root = Path(settings.media_root).resolve()
 media_root.mkdir(parents=True, exist_ok=True)
 app.add_middleware(
