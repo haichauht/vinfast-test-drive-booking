@@ -63,6 +63,7 @@ export function BookingsPage({ token, user }) {
   const [profileSummaryMeta, setProfileSummaryMeta] = useState(null)
   const [profileSummaryError, setProfileSummaryError] = useState('')
   const [profileSummaryLoading, setProfileSummaryLoading] = useState(false)
+  const canViewProfileSummary = selected && ['confirmed', 'cancelled'].includes(selected.status)
   const bookingState = useRemote(
     () => api.bookings(token, {
       status,
@@ -227,7 +228,7 @@ export function BookingsPage({ token, user }) {
       {selected && (
         <div className="drawer-layer">
           <button className="drawer-backdrop" onClick={() => setSelected(null)} aria-label="Đóng chi tiết" />
-          <aside className="drawer">
+          <aside className="drawer booking-detail-modal" role="dialog" aria-modal="true" aria-label="Chi tiết booking">
             <div className="drawer__header"><div><span className="eyebrow">Chi tiết booking</span><h3>{selected.booking_code || 'Booking draft'}</h3></div><button className="icon-button" onClick={() => setSelected(null)}><X size={20} /></button></div>
             <div className="drawer__status"><StatusBadge status={selected.status} /><span>Version {selected.version}</span></div>
             <dl className="detail-list">
@@ -239,7 +240,7 @@ export function BookingsPage({ token, user }) {
               <div><dt>GPLX</dt><dd>{selected.license_check_status || 'Chưa khai báo'}</dd></div>
               <div><dt>Ghi chú</dt><dd>{selected.customer_note || 'Không có ghi chú khách hàng'}<small>{selected.internal_note || 'Không có ghi chú nội bộ'}</small></dd></div>
             </dl>
-            <section className="profile-summary" aria-live="polite">
+            {canViewProfileSummary && <section className="profile-summary" aria-live="polite">
               <div className="profile-summary__header">
                 <div>
                   <span className="section-label">Hồ sơ khách hàng</span>
@@ -253,7 +254,8 @@ export function BookingsPage({ token, user }) {
               {profileSummaryLoading && <div className="profile-summary__loading"><CircleNotch className="spin" size={18} />Yêu cầu đã được nhận, hệ thống đang tổng hợp hồ sơ khách hàng. Việc này có thể mất vài giây.</div>}
               {profileSummaryError && <div className="form-error">{profileSummaryError}</div>}
               {profileSummary && !profileSummaryLoading && <><div className="profile-summary__meta">{profileSummaryMeta?.source === 'cache' ? 'Đang hiển thị bản đã lưu' : 'Đã cập nhật bản tóm tắt mới nhất'}{profileSummaryMeta?.generatedAt ? ` · ${new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(profileSummaryMeta.generatedAt))}` : ''}</div><ProfileSummary markdown={profileSummary} /></>}
-            </section>
+            </section>}
+            {!canViewProfileSummary && <div className="read-only-note">Hồ sơ khách hàng chỉ khả dụng sau khi booking đã xác nhận, hoặc với booking đã xác nhận nhưng sau đó bị hủy.</div>}
             {user.role === 'staff' && <div className="read-only-note">Tài khoản Staff chỉ có quyền xem. Mọi thay đổi do quản lý showroom thực hiện.</div>}
             {notice && <div className="form-success"><Check size={18} />{notice}</div>}
             {actionError && <div className="form-error">{actionError}</div>}
