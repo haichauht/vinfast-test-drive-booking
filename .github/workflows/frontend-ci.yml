@@ -50,8 +50,8 @@ jobs:
       - name: Build check
         working-directory: frontend
         env:
-          VITE_API_BASE_URL: https://vinfast-backend-466298313411.asia-southeast1.run.app/api/v1
-          VITE_MEDIA_BASE_URL: https://pub-216eea433b9e4529979ce534d5ce0ae1.r2.dev
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://vinfast-backend-466298313411.asia-southeast1.run.app/api/v1' }}
+          VITE_MEDIA_BASE_URL: ${{ vars.VITE_MEDIA_BASE_URL || 'https://pub-216eea433b9e4529979ce534d5ce0ae1.r2.dev' }}
         run: npm run build
 
       - name: Store production build
@@ -90,7 +90,7 @@ jobs:
       - name: Build check
         working-directory: internal-portal/frontend
         env:
-          VITE_INTERNAL_API_BASE_URL: https://vinfast-backend-466298313411.asia-southeast1.run.app/api/v1/internal
+          VITE_INTERNAL_API_BASE_URL: ${{ vars.VITE_INTERNAL_API_BASE_URL || 'https://vinfast-backend-466298313411.asia-southeast1.run.app/api/v1/internal' }}
         run: npm run build
 
       - name: Store production build

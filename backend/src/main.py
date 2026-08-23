@@ -96,16 +96,21 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_list,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=[
         "Authorization",
         "Content-Type",
+        "Content-Length",
         "Accept",
         "Origin",
+        "User-Agent",
+        "Cache-Control",
         "X-Requested-With",
         "X-Trace-Id",
         "X-Conversation-Id",
         "X-Session-Id",
+        "If-Match",
+        "If-None-Match",
     ],
 )
 app.add_middleware(RateLimitMiddleware, database=database, settings=settings)
