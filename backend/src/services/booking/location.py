@@ -1,10 +1,59 @@
-import functools
 import json
 import math
+import os
+import threading
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Protocol
+
+
+def _get_geo_user_agent() -> str:
+    """Return compliant User-Agent for OSM/Photon, configurable via environment."""
+    explicit_agent = os.environ.get("GEOLOCATION_USER_AGENT", "").strip()
+    if explicit_agent:
+        return explicit_agent
+    contact = os.environ.get("GEOLOCATION_CONTACT_EMAIL", "").strip()
+    if contact:
+        return f"VinFast-Booking-Agent/1.0 (contact: {contact})"
+    return "VinFast-Booking-Agent/1.0 (https://github.com/AI20K-Build-Phase-Cohort-3/P-053)"
+
+
+def _parse_retry_after(error: urllib.error.HTTPError, default_seconds: float = 60.0) -> float:
+    """Extract Retry-After header duration in seconds if present."""
+    try:
+        if error.headers:
+            header_val = error.headers.get("Retry-After")
+            if header_val:
+                return max(1.0, float(header_val))
+    except (ValueError, TypeError):
+        pass
+    return default_seconds
+
+
+class _CircuitBreaker:
+    """Thread-safe circuit breaker with synchronized cooldown tracking and Retry-After support."""
+
+    def __init__(self, default_cooldown_seconds: float = 60.0) -> None:
+        self._default_cooldown = default_cooldown_seconds
+        self._cooldown_until: float = 0.0
+        self._lock = threading.Lock()
+
+    def is_available(self) -> bool:
+        with self._lock:
+            return time.time() >= self._cooldown_until
+
+    def trip(self, cooldown_seconds: float | None = None) -> None:
+        cooldown = cooldown_seconds if cooldown_seconds is not None else self._default_cooldown
+        with self._lock:
+            self._cooldown_until = time.time() + cooldown
+
+
+_photon_breaker = _CircuitBreaker(default_cooldown_seconds=60.0)
+_nominatim_breaker = _CircuitBreaker(default_cooldown_seconds=60.0)
 
 
 @dataclass(frozen=True)
@@ -33,15 +82,45 @@ class HaversineMapProvider:
 
 
 def _fetch_nominatim_coordinates(query_str: str) -> Coordinates | None:
-    url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query_str)}&countrycodes=vn&format=json&limit=1"
-    req = urllib.request.Request(url, headers={"User-Agent": "VinFast-Booking-Agent/1.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=3) as resp:  # nosec B310
-            data = json.loads(resp.read().decode("utf-8"))
-            if data and len(data) > 0:
-                return Coordinates(latitude=float(data[0]["lat"]), longitude=float(data[0]["lon"]))
-    except Exception:
-        pass
+    user_agent = _get_geo_user_agent()
+
+    # 1. Thử qua Photon Geocoder (với 429 rate-limiting check và thread-safe Circuit Breaker cooldown)
+    if _photon_breaker.is_available():
+        photon_url = f"https://photon.komoot.io/api/?q={urllib.parse.quote(query_str)}&limit=1"
+        req_photon = urllib.request.Request(
+            photon_url,
+            headers={"User-Agent": user_agent},
+        )
+        try:
+            with urllib.request.urlopen(req_photon, timeout=6) as resp:  # nosec B310
+                data = json.loads(resp.read().decode("utf-8"))
+                features = data.get("features", [])
+                if features and len(features) > 0:
+                    coords = features[0]["geometry"]["coordinates"]
+                    return Coordinates(latitude=float(coords[1]), longitude=float(coords[0]))
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                _photon_breaker.trip(_parse_retry_after(e, 60.0))
+        except Exception:
+            pass
+
+    # 2. Dự phòng qua Nominatim OSM server (với 429 rate-limiting check và thread-safe Circuit Breaker cooldown)
+    if _nominatim_breaker.is_available():
+        url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query_str)}&countrycodes=vn&format=json&limit=1"
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": user_agent},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=6) as resp:  # nosec B310
+                data = json.loads(resp.read().decode("utf-8"))
+                if data and len(data) > 0:
+                    return Coordinates(latitude=float(data[0]["lat"]), longitude=float(data[0]["lon"]))
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                _nominatim_breaker.trip(_parse_retry_after(e, 60.0))
+        except Exception:
+            pass
     return None
 
 
@@ -127,40 +206,80 @@ LOCALITY_COORDINATES: dict[str, tuple[float, float]] = {
 }
 
 
-@functools.lru_cache(maxsize=512)
+class _GeocodeCache:
+    """Thread-safe LRU cache that stores only successful (non-None) geocoding results."""
+
+    def __init__(self, maxsize: int = 1024) -> None:
+        self._maxsize = maxsize
+        self._cache: OrderedDict[str, Coordinates] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> Coordinates | None:
+        with self._lock:
+            if key not in self._cache:
+                return None
+            self._cache.move_to_end(key)
+            return self._cache[key]
+
+    def set(self, key: str, coords: Coordinates) -> None:
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            elif len(self._cache) >= self._maxsize:
+                self._cache.popitem(last=False)
+            self._cache[key] = coords
+
+
+_geocode_cache = _GeocodeCache(maxsize=1024)
+
+
 def resolve_address_coordinates(address: str) -> Coordinates | None:
     if not address:
         return None
     clean_addr = address.strip()
     normalized = clean_addr.lower()
 
+    # 0. Tra cứu từ bộ nhớ đệm trước (dùng normalized key để tránh duplicate do chữ hoa/thường)
+    cached = _geocode_cache.get(normalized)
+    if cached is not None:
+        return cached
+
     # 1. Nếu từ khóa tra cứu trùng khớp hoàn toàn tên Tỉnh / Thành phố chính (0ms L1 memory lookup)
     if normalized in PROVINCE_COORDINATES:
         lat, lon = PROVINCE_COORDINATES[normalized]
-        return Coordinates(latitude=lat, longitude=lon)
+        coords = Coordinates(latitude=lat, longitude=lon)
+        _geocode_cache.set(normalized, coords)
+        return coords
     if normalized in LOCALITY_COORDINATES:
         lat, lon = LOCALITY_COORDINATES[normalized]
-        return Coordinates(latitude=lat, longitude=lon)
+        coords = Coordinates(latitude=lat, longitude=lon)
+        _geocode_cache.set(normalized, coords)
+        return coords
 
-    # 2. Ưu tiên Dynamic Geocoding (OpenStreetMap API) cho Phường/Xã/Quận/Huyện/Tên đường cụ thể
+    # 2. Ưu tiên Dynamic Geocoding (OpenStreetMap API với timeout 10s)
     coords = _fetch_nominatim_coordinates(clean_addr)
     if coords:
+        _geocode_cache.set(normalized, coords)
         return coords
 
     if "," in clean_addr:
         space_addr = clean_addr.replace(",", " ")
         coords = _fetch_nominatim_coordinates(space_addr)
         if coords:
+            _geocode_cache.set(normalized, coords)
             return coords
         parts = [p.strip() for p in clean_addr.split(",") if p.strip()]
         for part in parts:
             coords = _fetch_nominatim_coordinates(part)
             if coords:
+                _geocode_cache.set(normalized, coords)
                 return coords
 
     # 3. Fallback L1: Nếu API không trả về kết quả, mới quét tên Tỉnh / Thành phố lân cận
     for key, (lat, lon) in PROVINCE_COORDINATES.items():
         if key in normalized:
-            return Coordinates(latitude=lat, longitude=lon)
+            coords = Coordinates(latitude=lat, longitude=lon)
+            _geocode_cache.set(normalized, coords)
+            return coords
 
     return None
