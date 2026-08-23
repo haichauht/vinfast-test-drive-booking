@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import time
 import uuid
 from collections.abc import Callable
 from typing import Annotated, Any, cast
@@ -118,6 +119,7 @@ def require_operations_admin(
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest) -> ChatResponse:
     """Chat với AI agent."""
+    request_started = time.perf_counter()
     try:
         # Tạo conversation_id mới nếu client không truyền
         conversation_id = body.conversation_id or str(uuid.uuid4())
@@ -195,7 +197,12 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             action=body.action,
             action_payload=body.action_payload,
         )
-        config = {"configurable": {"thread_id": conversation_id}}
+        config = {
+            "run_name": "vivi.chat",
+            "tags": ["vivi", "public-chat"],
+            "metadata": {"trace_id": trace_id, "conversation_id": conversation_id},
+            "configurable": {"thread_id": conversation_id},
+        }
         logging.getLogger("agent.requests").info(
             "chat_started conversation_id=%s requested_action=%s", conversation_id, body.action or "llm"
         )
@@ -270,6 +277,8 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             active_skill=result.get("active_skill"),
             tool_call_count=result.get("tool_call_count"),
             llm_call_count=(result.get("metadata") or {}).get("llm_call_count"),
+            latency_ms=round((time.perf_counter() - request_started) * 1000, 2),
+            status="error" if response.action_error else "success",
         )
         return response
     except HTTPException:
@@ -279,7 +288,9 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             "chat.error",
             trace_id=locals().get("trace_id", ""),
             conversation_id=locals().get("conversation_id", body.conversation_id),
-            error=str(e),
+            latency_ms=round((time.perf_counter() - request_started) * 1000, 2),
+            error_code=str(getattr(e, "code", "") or type(e).__name__.upper()),
+            error_message=str(e),
         )
         logging.getLogger(__name__).error("Internal error in chat endpoint: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.")
@@ -460,7 +471,12 @@ async def chat_stream(body: ChatRequest, request: Request):
             conversation_id = body.conversation_id or str(uuid.uuid4())
             identity = getattr(request.state, "identity", None)
             trace_id = getattr(request.state, "trace_id", "") or str(uuid.uuid4())
-            config = {"configurable": {"thread_id": conversation_id}}
+            config = {
+                "run_name": "vivi.chat.stream",
+                "tags": ["vivi", "public-chat", "stream"],
+                "metadata": {"trace_id": trace_id, "conversation_id": conversation_id},
+                "configurable": {"thread_id": conversation_id},
+            }
             inputs = {
                 "messages": [HumanMessage(content=body.message)],
                 "requested_action": body.action,

@@ -1,9 +1,11 @@
 from langchain_core.tools import tool
 
 from src.dependencies import booking_service
+from src.observability import trace_backend_operation
 
 
 @tool
+@trace_backend_operation("BookingService.update_booking_draft")
 def update_booking_draft(
     booking_id: str,
     booker_patch: dict | None = None,
