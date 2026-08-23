@@ -103,15 +103,6 @@ class Settings(BaseSettings):
     conversation_signing_secret: str = ""
     conversation_token_ttl_seconds: int = Field(default=28_800, ge=300, le=604_800)
 
-    # Process-local defense in depth. Production should additionally enforce
-    # distributed limits at the reverse proxy/API gateway.
-    rate_limits_enabled: bool = True
-    rate_limit_window_seconds: int = Field(default=60, ge=1, le=3_600)
-    chat_rate_limit_requests: int = Field(default=120, ge=1, le=10_000)
-    booking_hold_rate_limit_requests: int = Field(default=20, ge=1, le=1_000)
-    booking_confirm_rate_limit_requests: int = Field(default=10, ge=1, le=1_000)
-    booking_otp_rate_limit_requests: int = Field(default=10, ge=1, le=1_000)
-
     # Public endpoint rate limits. Anonymous users are identified by a
     # server-issued cookie plus an IP fallback.
     rate_limit_enabled: bool = True
@@ -147,8 +138,8 @@ class Settings(BaseSettings):
             raise ValueError("GUARDRAILS_ENABLED cannot be false in production.")
         if self.app_env == "production" and len(self.conversation_signing_secret) < 32:
             raise ValueError("CONVERSATION_SIGNING_SECRET must be at least 32 characters in production.")
-        if self.app_env == "production" and not self.rate_limits_enabled:
-            raise ValueError("RATE_LIMITS_ENABLED cannot be false in production.")
+        if self.app_env == "production" and not self.rate_limit_enabled:
+            raise ValueError("RATE_LIMIT_ENABLED cannot be false in production.")
         if self.gmail_enabled:
             missing = [
                 name

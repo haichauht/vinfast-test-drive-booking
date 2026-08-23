@@ -1,8 +1,13 @@
 """Shared constants used across multiple agent nodes.
 
-Centralizing keyword lists here prevents duplication (DRY principle)
-between classifier_node.py and sensitive_policy_node.py.
+Centralizing public fallbacks and keyword lists here prevents agent nodes from
+drifting into different user-facing behavior.
 """
+
+PUBLIC_LLM_UNAVAILABLE_CODE = "SERVICE_TEMPORARILY_UNAVAILABLE"
+PUBLIC_LLM_UNAVAILABLE_MESSAGE = (
+    "ViVi đang tạm thời chưa thể xử lý yêu cầu này. Quý khách vui lòng thử lại sau."
+)
 
 # Keywords that bypass the LLM classifier and route directly to sensitive_policy_node
 SOVEREIGNTY_KEYWORDS: list[str] = [
@@ -34,9 +39,25 @@ LOOKUP_KEYWORDS: list[str] = [
     "booking cua toi",
 ]
 
+BOOKING_RESCHEDULE_KEYWORDS: list[str] = [
+    "đổi lịch", "doi lich", "dời lịch", "doi lich", "sửa lịch", "sua lich",
+    "đổi giờ", "doi gio", "dời giờ", "đổi ngày", "doi ngay", "chuyển lịch", "chuyen lich",
+    "chuyển giờ", "chuyen gio", "chuyển ngày", "chuyen ngay", "hẹn trễ hơn", "hen tre hon",
+]
+
+BOOKING_CANCEL_KEYWORDS: list[str] = [
+    "hủy lịch", "huỷ lịch", "huy lich", "hủy booking", "huỷ booking", "huy booking",
+    "hủy luôn", "huỷ luôn", "huy luon",
+]
+
+# Natural-language requests are classified by the LLM first. These phrases are
+# intentionally retained only for the technical-error fallback path.
 BOOKING_MUTATION_KEYWORDS: list[str] = [
-    "đặt lịch", "tìm showroom", "tìm lịch", "giữ chỗ", "xác nhận đặt", "tra cứu lịch",
-    "đổi lịch", "dời lịch", "hủy lịch", "huỷ lịch", "sửa lịch", "mã otp", "xác thực otp",
+    "đặt lịch", "dat lich", "tìm showroom", "tim showroom", "tìm lịch", "tim lich",
+    "giữ chỗ", "giu cho", "xác nhận đặt", "xac nhan dat", "tra cứu lịch", "tra cuu lich",
+    "mã otp", "ma otp", "xác thực otp", "xac thuc otp",
+    *BOOKING_RESCHEDULE_KEYWORDS,
+    *BOOKING_CANCEL_KEYWORDS,
 ]
 
 ADVISORY_KEYWORDS: list[str] = [

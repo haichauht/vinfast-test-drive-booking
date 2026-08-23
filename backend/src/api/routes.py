@@ -29,7 +29,6 @@ from src.guardrails import get_guardrails
 from src.guardrails.abuse import AbuseStatus, get_abuse_tracker
 from src.guardrails.conversation import get_conversation_token_manager
 from src.guardrails.policies import ABUSE_VIOLATION_CODES
-from src.guardrails.rate_limit import get_rate_limiter
 from src.internal_portal import InternalPrincipal, InternalRole
 from src.internal_portal.routes import current_principal
 from src.models.schemas import (
@@ -63,86 +62,12 @@ SECURITY_STATE_DATASET_FILES = {
 }
 
 
-def _client_subject(request: Request) -> str:
-    return request.client.host if request.client else "unknown-client"
-
-
-def _enforce_rate_limit(
-    request: Request,
-    *,
-    bucket: str,
-    limit: int,
-    subject: str | None = None,
-    include_ip: bool = True,
-) -> None:
-    settings = get_settings()
-    if not getattr(settings, "rate_limits_enabled", True):
-        return
-    window_seconds = int(getattr(settings, "rate_limit_window_seconds", 60))
-    limiter = get_rate_limiter()
-    subjects = [(f"{bucket}.ip", _client_subject(request))] if include_ip else []
-    if subject:
-        subjects.append((f"{bucket}.subject", subject))
-    for scoped_bucket, scoped_subject in subjects:
-        decision = limiter.check(
-            scoped_bucket,
-            scoped_subject,
-            limit=limit,
-            window_seconds=window_seconds,
-        )
-        if decision.allowed:
-            continue
-        trace_event(
-            "rate_limit.blocked",
-            bucket=bucket,
-            scope=scoped_bucket.rsplit(".", 1)[-1],
-            retry_after_seconds=decision.retry_after_seconds,
-        )
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "code": "RATE_LIMIT_EXCEEDED",
-                "message": "Bạn thao tác quá nhanh. Vui lòng chờ một chút rồi thử lại.",
-                "retryable": True,
-            },
-            headers={"Retry-After": str(decision.retry_after_seconds)},
-        )
-
-
-def _enforce_action_rate_limit(request: Request, action: str | None, payload: dict[str, Any]) -> None:
-    if not action:
-        return
-    settings = get_settings()
-    if action in {"hold_slot", "hold_reschedule"}:
-        subject = str(payload.get("slot_id") or payload.get("new_slot_id") or "")
-        _enforce_rate_limit(
-            request,
-            bucket="booking_hold",
-            limit=int(getattr(settings, "booking_hold_rate_limit_requests", 20)),
-            subject=subject,
-        )
-    elif action in {"confirm_booking", "confirm_reschedule"}:
-        subject = str(payload.get("booking_id") or payload.get("current_booking_id") or "")
-        _enforce_rate_limit(
-            request,
-            bucket="booking_confirm",
-            limit=int(getattr(settings, "booking_confirm_rate_limit_requests", 10)),
-            subject=subject,
-        )
-    elif action in {"request_access", "verify_access"}:
-        subject = str(payload.get("contact_value") or payload.get("challenge_id") or "")
-        _enforce_rate_limit(
-            request,
-            bucket="booking_otp",
-            limit=int(getattr(settings, "booking_otp_rate_limit_requests", 10)),
-            subject=subject,
-        )
-
-
 def _abuse_subjects(request: Request, thread_id: str) -> tuple[str, ...]:
     subjects = [f"thread:{thread_id}"]
-    if request.client and request.client.host:
-        subjects.append(f"ip:{request.client.host}")
+    identity = getattr(request.state, "client_identity", None)
+    session_id = getattr(identity, "session_id", "")
+    if session_id:
+        subjects.append(f"session:{session_id}")
     return tuple(subjects)
 
 
@@ -219,11 +144,6 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
     """Chat với AI agent."""
     try:
         settings = get_settings()
-        _enforce_rate_limit(
-            request,
-            bucket="chat",
-            limit=int(getattr(settings, "chat_rate_limit_requests", 120)),
-        )
         trace_id = str(uuid.uuid4())
         token_manager = get_conversation_token_manager()
         conversation_identity = token_manager.verify(body.conversation_id) if body.conversation_id else None
@@ -341,14 +261,6 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
 
         safe_message = input_decision.sanitized_text or body.message
         safe_context = input_decision.sanitized_context or {}
-        _enforce_rate_limit(
-            request,
-            bucket="chat",
-            limit=int(getattr(settings, "chat_rate_limit_requests", 120)),
-            subject=conversation_identity.thread_id,
-            include_ip=False,
-        )
-        _enforce_action_rate_limit(request, body.action, body.action_payload)
         trace_event(
             "chat.request",
             trace_id=trace_id,
@@ -675,7 +587,6 @@ async def demo_action(body: DemoActionRequest, request: Request):
             status_code=400,
             detail={"code": action_decision.code, "message": action_decision.user_message},
         )
-    _enforce_action_rate_limit(request, body.action, p)
     name, handler = actions[body.action]
     try:
         data = handler(**p)

@@ -110,6 +110,7 @@ import {
 } from '../api/booking'
 import {
   BookingMode,
+  BookingPhase,
   InteractionEvent,
   bookingInteractionReducer,
   createInteractionState,
@@ -323,11 +324,19 @@ export function BookingPage() {
     }
   }, [])
 
+  // LAST_CONFIRMED_BOOKING phục vụ màn hậu booking, không phải nháp cho một chat mới.
+  // Chỉ hydrate lại dữ liệu này khi chính UI state đang khôi phục phase success.
+  const confirmedUiRestore = shouldOfferResume && (
+    restoredUi.interaction?.phase === BookingPhase.SUCCESS || restoredUi.stage === 'success'
+  )
+    ? restoredLastConfirmed
+    : null
+
   const [recipient, setRecipient] = useState(isDriverChat ? 'driver' : (initialCar ? '' : restoredUi.recipient || ''))
   const [resumePending, setResumePending] = useState(() => Boolean(
     shouldOfferResume,
   ))
-  const [selectedCarId, setSelectedCarId] = useState(initialCar?.id || restoredUi.selectedCarId || restoredLastConfirmed?.car?.id || '')
+  const [selectedCarId, setSelectedCarId] = useState(initialCar?.id || restoredUi.selectedCarId || confirmedUiRestore?.car?.id || '')
   const [interaction, dispatchInteraction] = useReducer(
     bookingInteractionReducer,
     {
@@ -369,15 +378,15 @@ export function BookingPage() {
   const [nearbyShowrooms, setNearbyShowrooms] = useState(
     Array.isArray(restoredUi.nearbyShowrooms) && restoredUi.nearbyShowrooms.length
       ? restoredUi.nearbyShowrooms
-      : restoredLastConfirmed?.showroom ? [restoredLastConfirmed.showroom] : []
+      : confirmedUiRestore?.showroom ? [confirmedUiRestore.showroom] : []
   )
-  const [showroomId, setShowroomId] = useState(restoredUi.showroomId || restoredLastConfirmed?.showroom?.id || '')
+  const [showroomId, setShowroomId] = useState(restoredUi.showroomId || confirmedUiRestore?.showroom?.id || '')
   const [pendingSlot, setPendingSlot] = useState(null)
-  const [selectedSlot, setSelectedSlot] = useState(restoredLastConfirmed?.slot || null)
+  const [selectedSlot, setSelectedSlot] = useState(confirmedUiRestore?.slot || null)
   const [confirmSlotOpen, setConfirmSlotOpen] = useState(false)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [workspaceHidden, setWorkspaceHidden] = useState(false)
-  const [person, setPerson] = useState(restoredLastConfirmed?.person || {
+  const [person, setPerson] = useState(confirmedUiRestore?.person || {
     bookingName: '',
     driverName: '',
     phone: '',
@@ -389,8 +398,8 @@ export function BookingPage() {
     marketingConsent: true,
   })
   const [formErrors, setFormErrors] = useState({})
-  const [bookingCode, setBookingCode] = useState(restoredLastConfirmed?.bookingCode || '')
-  const [bookingAdvisor, setBookingAdvisor] = useState(restoredLastConfirmed?.advisor || null)
+  const [bookingCode, setBookingCode] = useState(confirmedUiRestore?.bookingCode || '')
+  const [bookingAdvisor, setBookingAdvisor] = useState(confirmedUiRestore?.advisor || null)
   const [submitting, setSubmitting] = useState(false)
   const [successCinematic, setSuccessCinematic] = useState(false)
   const [accessFlow, setAccessFlow] = useState(null)
@@ -1164,8 +1173,15 @@ export function BookingPage() {
 
   useEffect(() => () => timersRef.current.forEach((timer) => window.clearTimeout(timer)), [])
   useEffect(() => {
-    messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, stage, agentTyping])
+    // Tin nhắn, typing indicator và workspace thường đổi trong cùng một lượt render.
+    // Chờ layout hoàn tất rồi đặt scrollTop trực tiếp; smooth scrolling có thể bị
+    // một render kế tiếp huỷ giữa chừng và khiến tin nhắn mới nằm ngoài khung nhìn.
+    const frame = window.requestAnimationFrame(() => {
+      const container = messagesRef.current
+      if (container) container.scrollTop = container.scrollHeight
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [messages, agentTyping])
 
   useEffect(() => {
     if (!holdExpiresAt || (stage !== 'collect_info' && stage !== 'review')) {

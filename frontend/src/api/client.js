@@ -30,7 +30,7 @@ export async function apiGet(path, { signal, cacheKey = path, fallbackToCache = 
   const headers = cached?.etag ? { 'If-None-Match': cached.etag } : {}
   let response
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, { headers, signal })
+    response = await fetch(`${API_BASE_URL}${path}`, { headers, signal, credentials: 'include' })
   } catch (error) {
     if (error.name === 'AbortError') throw error
     if (cached && fallbackToCache) return cached.data
@@ -58,6 +58,7 @@ export async function apiPost(path, payload, { signal } = {}) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       signal,
+      credentials: 'include',
     })
   } catch (error) {
     if (error.name === 'AbortError') throw error

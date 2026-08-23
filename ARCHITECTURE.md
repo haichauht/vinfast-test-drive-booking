@@ -50,7 +50,7 @@ flowchart LR
 | Backend | Python, FastAPI, Pydantic Settings, Uvicorn |
 | AI | LangChain, `langchain-openai`, LangGraph, PostgreSQL checkpointer |
 | Persistence | PostgreSQL 16 qua psycopg; SQLite chỉ compatibility/test |
-| Cache/rate limit | Redis 7 và database counters; có process-local guardrail limiter |
+| Cache/rate limit | Redis 7 và database counters qua public API middleware |
 | Messaging | Gmail OAuth, Zalo Bot/OTP, in-memory fallback |
 | Media | `MEDIA_ROOT` mount tại `/media`; production có thể dùng `MEDIA_BASE_URL`/CDN |
 | Container | Docker Compose: Postgres, Redis, backend, public frontend và portal (dev) |
@@ -218,7 +218,7 @@ UI context được đưa vào LLM như dữ liệu tham chiếu không đáng t
 
 - Signed conversation capability có TTL; token sửa/hết hạn được thay bằng thread cô lập mới và không dùng trực tiếp làm checkpoint key.
 - Input guard giới hạn size/depth/node/string, kiểm allowlist context/action, normalize Unicode và chặn injection/abuse.
-- Vi phạm injection hoặc abusive language tích lũy strike theo conversation/IP; đạt ngưỡng sẽ bị ban có `Retry-After`.
+- Vi phạm injection hoặc abusive language tích lũy strike theo signed conversation/anonymous session; đạt ngưỡng sẽ bị ban có `Retry-After`. Raw proxy IP không được dùng cho ban 24 giờ.
 - Tool guard chỉ cho tool đăng ký, chặn duplicate/batch mutation trái policy và bind confirmation với UI action.
 - Output guard loại internal analysis, redact credential/OTP/contact và giới hạn kích thước response/action data.
 - Rate limit nhiều lớp dùng cookie session, IP, conversation và quota riêng cho chat/action/OTP.

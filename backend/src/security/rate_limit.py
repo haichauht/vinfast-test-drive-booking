@@ -98,7 +98,7 @@ class PostgresRateLimitStore:
 def route_class_for_path(path: str) -> str | None:
     if path == "/api/v1/chat":
         return "chat"
-    if path == "/api/v1/demo/action":
+    if path in {"/api/v1/demo/action", "/api/v1/test-drive/actions"}:
         return "demo_action"
     return None
 
@@ -181,7 +181,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 identity.session_id,
                 max_age=self.settings.rate_limit_anon_cookie_ttl_seconds,
                 httponly=True,
-                samesite="lax",
+                samesite="none" if self.settings.app_env == "production" else "lax",
                 secure=self.settings.app_env == "production",
             )
         return response

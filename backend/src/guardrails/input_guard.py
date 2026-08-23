@@ -35,6 +35,40 @@ _ABUSIVE_BLOCKED_MESSAGE = (
 _INVALID_PAYLOAD_MESSAGE = "Dữ liệu gửi lên không hợp lệ hoặc quá phức tạp. Vui lòng tải lại trang và thử lại."
 _CONTEXT_STRING_MAX_CHARS = 500
 _CONTEXT_LIST_MAX_ITEMS = 30
+_LEGACY_CONTEXT_FIELDS = frozenset(
+    {
+        "mode",
+        "phase",
+        "allowed_actions",
+        "selected_vehicle_id",
+        "selected_vehicle_name",
+        "selected_showroom_id",
+        "selected_showroom_name",
+        "selected_slot_id",
+        "selected_slot_time",
+        "selected_slot_date",
+        "booking_id",
+        "nearby_showrooms",
+    }
+)
+_LEGACY_PHASE_TO_STAGE = {
+    "idle": "idle",
+    "choose_vehicle": "need_car",
+    "choose_location": "need_address",
+    "choose_showroom": "choose_showroom",
+    "choose_slot": "choose_slot",
+    "collect_info": "collect_info",
+    "review": "review",
+    "success": "success",
+    "access_request": "lookup",
+    "access_verify": "lookup",
+    "booking_list": "lookup",
+    "booking_edit": "lookup",
+    "booking_cancel_confirm": "lookup",
+    "reschedule_showroom": "lookup",
+    "reschedule_slot": "lookup",
+    "reschedule_confirm": "lookup",
+}
 _CONTEXT_STAGES = frozenset(
     {
         "idle",
@@ -48,6 +82,9 @@ _CONTEXT_STAGES = frozenset(
         "success",
     }
 )
+_SHOWROOM_CONTEXT_STAGES = frozenset({"choose_slot", "collect_info", "review", "success"})
+_SLOT_CONTEXT_STAGES = frozenset({"collect_info", "review", "success"})
+_NEARBY_SHOWROOM_CONTEXT_STAGES = frozenset({"choose_showroom", "choose_slot"})
 
 
 class InputGuard:
@@ -139,7 +176,7 @@ class InputGuard:
         payload_decision = self.inspect_payload(context, label="context")
         if not payload_decision.allowed:
             return payload_decision
-        unexpected = sorted(set(map(str, context)) - CONTEXT_ALLOWED_FIELDS)
+        unexpected = sorted(set(map(str, context)) - CONTEXT_ALLOWED_FIELDS - _LEGACY_CONTEXT_FIELDS)
         if unexpected:
             return GuardrailDecision.block(
                 "CONTEXT_FIELDS_NOT_ALLOWED",
@@ -147,6 +184,8 @@ class InputGuard:
                 _INVALID_PAYLOAD_MESSAGE,
                 details={"fields": unexpected},
             )
+
+        context = self._canonicalize_context(context)
 
         sanitized: dict[str, Any] = {}
         for key, value in context.items():
@@ -173,14 +212,82 @@ class InputGuard:
             if not isinstance(value, str) or len(value) > _CONTEXT_STRING_MAX_CHARS:
                 return self._invalid_context_type(key)
             cleaned_value = normalize_text(value)
-            if key == "channel" and cleaned_value != "booking":
+            if key == "channel" and cleaned_value not in {"booking", "driver_invitation"}:
                 return self._invalid_context_value(key)
             if key == "stage" and cleaned_value not in _CONTEXT_STAGES:
                 return self._invalid_context_value(key)
             if key == "recipient" and cleaned_value not in {"", "self", "other"}:
                 return self._invalid_context_value(key)
             sanitized[key] = cleaned_value
+
+        # UI state is advisory and may be restored from an older browser session.
+        # Keep only fields that are coherent with the current workflow stage so a
+        # stale confirmed booking cannot silently anchor a brand-new availability search.
+        stage = str(sanitized.get("stage") or "")
+        if stage not in _SHOWROOM_CONTEXT_STAGES:
+            sanitized.pop("selectedShowroom", None)
+        if stage not in _SLOT_CONTEXT_STAGES:
+            sanitized.pop("selectedSlot", None)
+            sanitized.pop("bookingId", None)
+        if stage not in _NEARBY_SHOWROOM_CONTEXT_STAGES:
+            sanitized.pop("nearbyShowrooms", None)
+            sanitized.pop("userLocation", None)
         return GuardrailDecision.allow(sanitized_context=sanitized)
+
+    @staticmethod
+    def _canonicalize_context(context: Mapping[str, Any]) -> dict[str, Any]:
+        """Normalize the temporary legacy UI contract into the canonical one.
+
+        Legacy fields are accepted only during the frontend/backend rollout and
+        are never forwarded to the agent. Canonical nested objects always win
+        when a mixed payload contains both representations.
+        """
+        canonical = {key: value for key, value in context.items() if key in CONTEXT_ALLOWED_FIELDS}
+
+        if not str(canonical.get("stage") or "").strip():
+            phase = str(context.get("phase") or "").strip()
+            stage = _LEGACY_PHASE_TO_STAGE.get(phase)
+            if stage:
+                canonical["stage"] = stage
+            else:
+                canonical.pop("stage", None)
+
+        def legacy_object(target: str, fields: Mapping[str, str]) -> None:
+            if target in canonical:
+                return
+            value = {
+                nested: context.get(source)
+                for nested, source in fields.items()
+                if context.get(source) not in (None, "")
+            }
+            if value:
+                canonical[target] = value
+
+        legacy_object(
+            "selectedVehicle",
+            {"id": "selected_vehicle_id", "name": "selected_vehicle_name"},
+        )
+        legacy_object(
+            "selectedShowroom",
+            {"id": "selected_showroom_id", "name": "selected_showroom_name"},
+        )
+        legacy_object(
+            "selectedSlot",
+            {
+                "slotId": "selected_slot_id",
+                "time": "selected_slot_time",
+                "dateLabel": "selected_slot_date",
+            },
+        )
+
+        if "bookingId" not in canonical and context.get("booking_id") not in (None, ""):
+            canonical["bookingId"] = context["booking_id"]
+        if "nearbyShowrooms" not in canonical and isinstance(context.get("nearby_showrooms"), list):
+            canonical["nearbyShowrooms"] = context["nearby_showrooms"]
+
+        # These legacy fields represented client-owned workflow decisions and
+        # are intentionally ignored: mode, allowed_actions and raw phase.
+        return canonical
 
     def _inspect_context_object(
         self,

@@ -33,11 +33,17 @@ async def sensitive_policy_node(state: AgentState) -> dict:
             "ViVi không hỗ trợ giải các bài toán học. "
             "ViVi có thể giúp gì cho bạn về đặt lịch lái thử xe điện VinFast không?"
         )
-    elif sub_intent == "out_of_scope":
+    elif sub_intent == "post_booking_required":
         response = (
             "ViVi hiện chỉ hỗ trợ đặt lịch lái thử xe điện VinFast. "
             "Tính năng tư vấn thông tin xe và hướng dẫn sau khi đặt lịch chỉ khả dụng "
             "khi bạn đã có lịch lái thử được xác nhận."
+        )
+    elif sub_intent == "out_of_scope":
+        response = (
+            "Nội dung này nằm ngoài phạm vi hỗ trợ hiện tại của ViVi. "
+            "ViVi có thể giúp Quý khách tìm hiểu xe VinFast, tìm showroom, kiểm tra lịch trống "
+            "và đặt hoặc quản lý lịch lái thử."
         )
     else:
         # Default fallback for foreign locations or general out-of-scope queries
