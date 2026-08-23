@@ -1,4 +1,3 @@
-import functools
 import json
 import math
 import threading
@@ -175,40 +174,75 @@ LOCALITY_COORDINATES: dict[str, tuple[float, float]] = {
 }
 
 
-@functools.lru_cache(maxsize=1024)
+class _GeocodeCache:
+    """Thread-safe cache that stores only successful (non-None) geocoding results."""
+
+    def __init__(self, maxsize: int = 1024) -> None:
+        self._maxsize = maxsize
+        self._cache: dict[str, Coordinates] = {}
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> Coordinates | None:
+        with self._lock:
+            return self._cache.get(key)
+
+    def set(self, key: str, coords: Coordinates) -> None:
+        with self._lock:
+            if len(self._cache) >= self._maxsize:
+                self._cache.pop(next(iter(self._cache)))
+            self._cache[key] = coords
+
+
+_geocode_cache = _GeocodeCache(maxsize=1024)
+
+
 def resolve_address_coordinates(address: str) -> Coordinates | None:
     if not address:
         return None
     clean_addr = address.strip()
     normalized = clean_addr.lower()
 
+    # 0. Tra cứu từ bộ nhớ đệm trước (chỉ lưu kết quả thành công, không cache None)
+    cached = _geocode_cache.get(clean_addr)
+    if cached is not None:
+        return cached
+
     # 1. Nếu từ khóa tra cứu trùng khớp hoàn toàn tên Tỉnh / Thành phố chính (0ms L1 memory lookup)
     if normalized in PROVINCE_COORDINATES:
         lat, lon = PROVINCE_COORDINATES[normalized]
-        return Coordinates(latitude=lat, longitude=lon)
+        coords = Coordinates(latitude=lat, longitude=lon)
+        _geocode_cache.set(clean_addr, coords)
+        return coords
     if normalized in LOCALITY_COORDINATES:
         lat, lon = LOCALITY_COORDINATES[normalized]
-        return Coordinates(latitude=lat, longitude=lon)
+        coords = Coordinates(latitude=lat, longitude=lon)
+        _geocode_cache.set(clean_addr, coords)
+        return coords
 
     # 2. Ưu tiên Dynamic Geocoding (OpenStreetMap API với timeout 10s)
     coords = _fetch_nominatim_coordinates(clean_addr)
     if coords:
+        _geocode_cache.set(clean_addr, coords)
         return coords
 
     if "," in clean_addr:
         space_addr = clean_addr.replace(",", " ")
         coords = _fetch_nominatim_coordinates(space_addr)
         if coords:
+            _geocode_cache.set(clean_addr, coords)
             return coords
         parts = [p.strip() for p in clean_addr.split(",") if p.strip()]
         for part in parts:
             coords = _fetch_nominatim_coordinates(part)
             if coords:
+                _geocode_cache.set(clean_addr, coords)
                 return coords
 
     # 3. Fallback L1: Nếu API không trả về kết quả, mới quét tên Tỉnh / Thành phố lân cận
     for key, (lat, lon) in PROVINCE_COORDINATES.items():
         if key in normalized:
-            return Coordinates(latitude=lat, longitude=lon)
+            coords = Coordinates(latitude=lat, longitude=lon)
+            _geocode_cache.set(clean_addr, coords)
+            return coords
 
     return None
