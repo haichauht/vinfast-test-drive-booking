@@ -33,10 +33,26 @@ class HaversineMapProvider:
 
 
 def _fetch_nominatim_coordinates(query_str: str) -> Coordinates | None:
+    # 1. Thử qua Photon Geocoder (OpenStreetMap engine phản hồi nhanh và ổn định)
+    photon_url = f"https://photon.komoot.io/api/?q={urllib.parse.quote(query_str)}&limit=1"
+    req_photon = urllib.request.Request(
+        photon_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VinFast/1.0"}
+    )
+    try:
+        with urllib.request.urlopen(req_photon, timeout=6) as resp:  # nosec B310
+            data = json.loads(resp.read().decode("utf-8"))
+            features = data.get("features", [])
+            if features and len(features) > 0:
+                coords = features[0]["geometry"]["coordinates"]
+                return Coordinates(latitude=float(coords[1]), longitude=float(coords[0]))
+    except Exception:
+        pass
+
+    # 2. Dự phòng qua Nominatim OSM server
     url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query_str)}&countrycodes=vn&format=json&limit=1"
     req = urllib.request.Request(url, headers={"User-Agent": "VinFast-Booking-Agent/1.0"})
     try:
-        with urllib.request.urlopen(req, timeout=3) as resp:  # nosec B310
+        with urllib.request.urlopen(req, timeout=6) as resp:  # nosec B310
             data = json.loads(resp.read().decode("utf-8"))
             if data and len(data) > 0:
                 return Coordinates(latitude=float(data[0]["lat"]), longitude=float(data[0]["lon"]))
@@ -142,7 +158,7 @@ def resolve_address_coordinates(address: str) -> Coordinates | None:
         lat, lon = LOCALITY_COORDINATES[normalized]
         return Coordinates(latitude=lat, longitude=lon)
 
-    # 2. Ưu tiên Dynamic Geocoding (OpenStreetMap API) cho Phường/Xã/Quận/Huyện/Tên đường cụ thể
+    # 2. Ưu tiên Dynamic Geocoding (OpenStreetMap API với timeout 10s)
     coords = _fetch_nominatim_coordinates(clean_addr)
     if coords:
         return coords
