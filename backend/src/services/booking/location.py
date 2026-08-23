@@ -247,39 +247,39 @@ def resolve_address_coordinates(address: str) -> Coordinates | None:
     # 1. Nếu từ khóa tra cứu trùng khớp hoàn toàn tên Tỉnh / Thành phố chính (0ms L1 memory lookup)
     if normalized in PROVINCE_COORDINATES:
         lat, lon = PROVINCE_COORDINATES[normalized]
-        coords = Coordinates(latitude=lat, longitude=lon)
-        _geocode_cache.set(normalized, coords)
-        return coords
+        exact_coords = Coordinates(latitude=lat, longitude=lon)
+        _geocode_cache.set(normalized, exact_coords)
+        return exact_coords
     if normalized in LOCALITY_COORDINATES:
         lat, lon = LOCALITY_COORDINATES[normalized]
-        coords = Coordinates(latitude=lat, longitude=lon)
-        _geocode_cache.set(normalized, coords)
-        return coords
+        exact_coords = Coordinates(latitude=lat, longitude=lon)
+        _geocode_cache.set(normalized, exact_coords)
+        return exact_coords
 
     # 2. Ưu tiên Dynamic Geocoding (OpenStreetMap API với timeout 10s)
-    coords = _fetch_nominatim_coordinates(clean_addr)
-    if coords:
-        _geocode_cache.set(normalized, coords)
-        return coords
+    resolved_coords: Coordinates | None = _fetch_nominatim_coordinates(clean_addr)
+    if resolved_coords is not None:
+        _geocode_cache.set(normalized, resolved_coords)
+        return resolved_coords
 
     if "," in clean_addr:
         space_addr = clean_addr.replace(",", " ")
-        coords = _fetch_nominatim_coordinates(space_addr)
-        if coords:
-            _geocode_cache.set(normalized, coords)
-            return coords
+        resolved_coords = _fetch_nominatim_coordinates(space_addr)
+        if resolved_coords is not None:
+            _geocode_cache.set(normalized, resolved_coords)
+            return resolved_coords
         parts = [p.strip() for p in clean_addr.split(",") if p.strip()]
         for part in parts:
-            coords = _fetch_nominatim_coordinates(part)
-            if coords:
-                _geocode_cache.set(normalized, coords)
-                return coords
+            resolved_coords = _fetch_nominatim_coordinates(part)
+            if resolved_coords is not None:
+                _geocode_cache.set(normalized, resolved_coords)
+                return resolved_coords
 
     # 3. Fallback L1: Nếu API không trả về kết quả, mới quét tên Tỉnh / Thành phố lân cận
     for key, (lat, lon) in PROVINCE_COORDINATES.items():
         if key in normalized:
-            coords = Coordinates(latitude=lat, longitude=lon)
-            _geocode_cache.set(normalized, coords)
-            return coords
+            fallback_coords = Coordinates(latitude=lat, longitude=lon)
+            _geocode_cache.set(normalized, fallback_coords)
+            return fallback_coords
 
     return None
