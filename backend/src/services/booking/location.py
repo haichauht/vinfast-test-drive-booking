@@ -1,6 +1,7 @@
 import functools
 import json
 import math
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -8,8 +9,25 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Protocol
 
-_PHOTON_COOLDOWN_UNTIL: float = 0.0
-_PHOTON_COOLDOWN_SECONDS: float = 60.0
+
+class _CircuitBreaker:
+    """Thread-safe circuit breaker with synchronized cooldown tracking."""
+
+    def __init__(self, cooldown_seconds: float = 60.0) -> None:
+        self._cooldown_seconds = cooldown_seconds
+        self._cooldown_until: float = 0.0
+        self._lock = threading.Lock()
+
+    def is_available(self) -> bool:
+        with self._lock:
+            return time.time() >= self._cooldown_until
+
+    def trip(self) -> None:
+        with self._lock:
+            self._cooldown_until = time.time() + self._cooldown_seconds
+
+
+_photon_breaker = _CircuitBreaker(cooldown_seconds=60.0)
 
 
 @dataclass(frozen=True)
@@ -38,10 +56,8 @@ class HaversineMapProvider:
 
 
 def _fetch_nominatim_coordinates(query_str: str) -> Coordinates | None:
-    global _PHOTON_COOLDOWN_UNTIL
-
-    # 1. Thử qua Photon Geocoder (với 429 rate-limiting check và Circuit Breaker cooldown)
-    if time.time() >= _PHOTON_COOLDOWN_UNTIL:
+    # 1. Thử qua Photon Geocoder (với 429 rate-limiting check và thread-safe Circuit Breaker cooldown)
+    if _photon_breaker.is_available():
         photon_url = f"https://photon.komoot.io/api/?q={urllib.parse.quote(query_str)}&limit=1"
         req_photon = urllib.request.Request(
             photon_url,
@@ -57,7 +73,7 @@ def _fetch_nominatim_coordinates(query_str: str) -> Coordinates | None:
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 # Kích hoạt Circuit Breaker cooldown 60s để tránh bị ban IP khi gặp rate-limit
-                _PHOTON_COOLDOWN_UNTIL = time.time() + _PHOTON_COOLDOWN_SECONDS
+                _photon_breaker.trip()
         except Exception:
             pass
 
