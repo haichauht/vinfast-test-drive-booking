@@ -340,7 +340,7 @@ def test_hold_slot_creates_booking_and_related_records(booking_service, booking_
     result = booking_service.hold_slot(catalog["slot_main"], "hold:001")
 
     assert result["status"] == "held"
-    assert result["remaining_seconds"] == 120
+    assert result["remaining_seconds"] == 300
     with booking_db.connect() as connection:
         booking = connection.execute("SELECT * FROM bookings WHERE id=?", (result["booking_id"],)).fetchone()
         slot = connection.execute("SELECT * FROM test_drive_slots WHERE id=?", (catalog["slot_main"],)).fetchone()
@@ -380,6 +380,45 @@ def test_hold_slot_rejects_second_booking(booking_service, catalog):
 
     assert error.value.code == "SLOT_NO_LONGER_AVAILABLE"
     assert error.value.retryable is True
+
+
+def test_hold_slot_reclaims_expired_hold_before_creating_a_new_booking(booking_service, booking_db, catalog):
+    first = booking_service.hold_slot(catalog["slot_main"], "hold:first-expired")
+    booking_service.now = lambda: FIXED_NOW + timedelta(minutes=6)
+
+    second = booking_service.hold_slot(catalog["slot_main"], "hold:after-expiry")
+
+    assert second["booking_id"] != first["booking_id"]
+    assert second["remaining_seconds"] == 300
+    with booking_db.connect() as connection:
+        first_booking = connection.execute(
+            "SELECT status FROM bookings WHERE id=?", (first["booking_id"],)
+        ).fetchone()
+        slot = connection.execute(
+            "SELECT status,current_booking_id FROM test_drive_slots WHERE id=?", (catalog["slot_main"],)
+        ).fetchone()
+    assert first_booking["status"] == "expired"
+    assert slot["status"] == "held"
+    assert slot["current_booking_id"] == second["booking_id"]
+
+
+def test_releasing_an_old_hold_does_not_unlock_a_new_booking(booking_service, booking_db, catalog):
+    first = booking_service.hold_slot(catalog["slot_main"], "hold:first-owner")
+    with booking_db.transaction(immediate=True) as connection:
+        connection.execute(
+            "UPDATE test_drive_slots SET status='available',held_until=NULL,current_booking_id=NULL WHERE id=?",
+            (catalog["slot_main"],),
+        )
+    second = booking_service.hold_slot(catalog["slot_main"], "hold:second-owner")
+
+    booking_service.release_hold(first["booking_id"])
+
+    with booking_db.connect() as connection:
+        slot = connection.execute(
+            "SELECT status,current_booking_id FROM test_drive_slots WHERE id=?", (catalog["slot_main"],)
+        ).fetchone()
+    assert slot["status"] == "held"
+    assert slot["current_booking_id"] == second["booking_id"]
 
 
 # test case of Chau + kiểm tra hai slot trùng thời gian của cùng xe không được giữ đồng thời

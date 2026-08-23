@@ -47,3 +47,11 @@ def test_abuse_ban_defaults_to_three_strikes_and_twenty_four_hours():
     assert settings.guardrails_abuse_max_strikes == 3
     assert settings.guardrails_abuse_strike_window_seconds == 3600
     assert settings.guardrails_abuse_ban_seconds == 86400
+
+
+def test_llm_defaults_use_luna_for_chat_and_gpt_4o_mini_for_classification():
+    settings = Settings(_env_file=None, app_env="test")
+
+    assert settings.model_name == "gpt-5.6-luna"
+    assert settings.classifier_model_name == "gpt-4o-mini"
+    assert settings.llm_reasoning_effort == "low"
