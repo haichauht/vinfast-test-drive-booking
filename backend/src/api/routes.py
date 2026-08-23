@@ -337,6 +337,12 @@ async def send_driver_invitation(booking_id: str) -> dict[str, Any]:
 async def booking_profile_summary(booking_id: str, refresh: bool = False) -> PlainTextResponse:
     """Return a stored booking sales brief, or generate and cache one when needed."""
     try:
+        source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
+        if source["booking"]["status"] not in {"confirmed", "cancelled"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Profile summary is available only for confirmed or cancelled bookings",
+            )
         cached = await asyncio.to_thread(profile_service.booking_profile_summary, booking_id)
         if cached and not refresh:
             return PlainTextResponse(
@@ -344,7 +350,6 @@ async def booking_profile_summary(booking_id: str, refresh: bool = False) -> Pla
                 media_type="text/markdown; charset=utf-8",
                 headers={"X-Profile-Summary-Source": "cache", "X-Profile-Summary-Generated-At": cached["generated_at"]},
             )
-        source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
         markdown = await summarize_user_profile(source)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Booking not found") from exc
