@@ -97,8 +97,24 @@ async def test_booking_skill_increments_count_for_tool_call(monkeypatch):
     assert "response" not in result
 
 
+@pytest.mark.parametrize(
+    ("message", "date_arguments"),
+    [
+        ("tui rảnh ngày 26", {"preferred_date": "2026-08-26"}),
+        ("thôi 28 t mới rảnh", {"preferred_date": "2026-08-28"}),
+        ("tui rảnh ngày 26 27", {"preferred_dates": ["2026-08-26", "2026-08-27"]}),
+        (
+            "tui rảnh từ ngày 25 đến 30",
+            {"preferred_date_from": "2026-08-25", "preferred_date_to": "2026-08-30"},
+        ),
+    ],
+)
 @pytest.mark.asyncio
-async def test_booking_availability_forces_search_tool_when_ui_context_is_ready(monkeypatch):
+async def test_booking_availability_forces_search_tool_when_ui_context_is_ready(
+    monkeypatch,
+    message,
+    date_arguments,
+):
     response = AIMessage(
         content="",
         tool_calls=[
@@ -108,7 +124,7 @@ async def test_booking_availability_forces_search_tool_when_ui_context_is_ready(
                 "args": {
                     "vehicle_model": "VF 9",
                     "showroom_id": "753",
-                    "preferred_dates": ["2026-08-25", "2026-08-26"],
+                    **date_arguments,
                 },
             }
         ],
@@ -118,11 +134,12 @@ async def test_booking_availability_forces_search_tool_when_ui_context_is_ready(
 
     result = await booking_skill_node(
         {
-            "messages": [HumanMessage(content="tui rảnh ngày 25-26")],
+            "messages": [HumanMessage(content=message)],
             "metadata": {"sub_intent": "booking_availability"},
             "context": {
-                "selected_vehicle_name": "VF 9",
-                "selected_showroom_id": "753",
+                "stage": "choose_slot",
+                "selectedVehicle": {"id": "vf9", "name": "VF 9"},
+                "selectedShowroom": {"id": "753", "name": "VinFast New City Bình Dương"},
             },
         }
     )
@@ -146,6 +163,87 @@ async def test_booking_availability_can_ask_for_missing_context_without_forcing_
 
     assert "tool_choice" not in llm.bind_tools.call_args.kwargs
     assert result["response"] == "Quý khách muốn xem lịch của mẫu xe nào?"
+
+
+@pytest.mark.asyncio
+async def test_booking_availability_does_not_force_stale_showroom_during_location_stage(monkeypatch):
+    llm, _ = _mock_bound_llm(
+        AIMessage(content="Quý khách muốn kiểm tra ngày 25 cho mẫu xe nào và tại tỉnh/thành phố nào ạ?")
+    )
+    monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+
+    result = await booking_skill_node(
+        {
+            "messages": [HumanMessage(content="ngày 25 còn lịch không")],
+            "metadata": {"sub_intent": "booking_availability"},
+            "context": {
+                "stage": "need_address",
+                "selectedVehicle": {"id": "vf9", "name": "VF 9"},
+                "selectedShowroom": {"id": "206", "name": "VinFast Lợi Mận Yên Mỹ"},
+            },
+        }
+    )
+
+    assert "tool_choice" not in llm.bind_tools.call_args.kwargs
+    assert "tỉnh/thành phố" in result["response"]
+
+
+@pytest.mark.asyncio
+async def test_booking_reschedule_intent_forces_manage_access_flow(monkeypatch):
+    get_llm = MagicMock(side_effect=AssertionError("chat LLM must not decide the management workflow"))
+    monkeypatch.setattr(booking_module, "get_llm", get_llm)
+
+    result = await booking_skill_node(
+        {
+            "messages": [HumanMessage(content="tôi muốn đổi giờ của lịch")],
+            "metadata": {"sub_intent": "booking_reschedule"},
+            "intent_entities": {"contact_value": None},
+            "tool_call_count": 0,
+        }
+    )
+
+    tool_call = result["messages"][0].tool_calls[0]
+    assert tool_call["name"] == "request_booking_access"
+    assert tool_call["args"] == {"purpose": "manage", "contact_value": ""}
+    assert result["tool_call_count"] == 1
+    get_llm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_booking_access_result_opens_email_form_without_another_llm_call(monkeypatch):
+    get_llm = MagicMock(side_effect=AssertionError("chat LLM must not rewrite the access result"))
+    monkeypatch.setattr(booking_module, "get_llm", get_llm)
+    tool_request = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "access-call-1",
+                "name": "request_booking_access",
+                "args": {"purpose": "manage", "contact_value": ""},
+            }
+        ],
+    )
+    tool_result = ToolMessage(
+        content=(
+            '{"requires_contact_value":true,"contact_type":"email",'
+            '"purpose":"manage","suggested_next_action":"show_booking_access_email_form"}'
+        ),
+        tool_call_id="access-call-1",
+        name="request_booking_access",
+    )
+
+    result = await booking_skill_node(
+        {
+            "messages": [tool_request, tool_result],
+            "metadata": {"sub_intent": "booking_reschedule"},
+        }
+    )
+
+    assert result["action_tool"] == "request_booking_access"
+    assert result["action_result"]["requires_contact_value"] is True
+    assert result["action_input"] == {"purpose": "manage", "contact_value": ""}
+    assert "nhập email" in result["response"]
+    get_llm.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -280,6 +378,36 @@ async def test_advise_skill_increments_count_for_tool_call(monkeypatch):
     assert result["messages"] == [response]
     assert result["tool_call_count"] == 1
     assert "response" not in result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("module", "node", "state"),
+    [
+        (booking_module, booking_skill_node, {"messages": [HumanMessage(content="hi")]}),
+        (advise_module, advise_skill_node, {"messages": [HumanMessage(content="Tư vấn VF8")]}),
+    ],
+)
+async def test_skill_nodes_hide_internal_llm_limit_details(monkeypatch, module, node, state):
+    llm, _ = _mock_bound_llm(AIMessage(content="unused"))
+    monkeypatch.setattr(module, "get_llm", lambda: llm)
+    monkeypatch.setattr(
+        module,
+        "invoke_with_budget",
+        AsyncMock(side_effect=module.BudgetExceededError("GLOBAL_LLM_BUDGET_EXCEEDED")),
+    )
+    trace = MagicMock()
+    monkeypatch.setattr(module, "trace_event", trace)
+
+    result = await node(state)
+
+    assert result["action_error"] == "SERVICE_TEMPORARILY_UNAVAILABLE"
+    assert "AI" not in result["response"]
+    assert "chi phí" not in result["response"]
+    assert any(
+        call.kwargs.get("error_code") == "LLM_BUDGET_EXCEEDED"
+        for call in trace.call_args_list
+    )
 
 
 # test case of Chau + kiểm tra prompt loader của hai skill có fallback khi file không đọc được

@@ -80,6 +80,69 @@ def test_context_contract_allows_and_normalizes_documented_ui_state():
     }
 
 
+def test_context_contract_temporarily_normalizes_legacy_frontend_fields():
+    decision = _inspect(
+        _guard(max_nodes=64),
+        context={
+            "channel": "booking",
+            "mode": "new_booking",
+            "phase": "choose_slot",
+            "stage": "choose_slot",
+            "allowed_actions": ["select_slot", "confirm_booking"],
+            "selected_vehicle_id": "vf8",
+            "selected_vehicle_name": "VF 8",
+            "selected_showroom_id": "showroom-1",
+            "selected_showroom_name": "VinFast Quận 7",
+            "selected_slot_id": "slot-1",
+            "selected_slot_time": "09:00",
+            "selected_slot_date": "26/08",
+            "booking_id": "booking-1",
+            "nearby_showrooms": [{"id": "showroom-1", "name": "VinFast Quận 7"}],
+        },
+    )
+
+    assert decision.allowed is True
+    assert decision.sanitized_context == {
+        "channel": "booking",
+        "stage": "choose_slot",
+        "selectedVehicle": {"id": "vf8", "name": "VF 8"},
+        "selectedShowroom": {"id": "showroom-1", "name": "VinFast Quận 7"},
+        "nearbyShowrooms": [{"id": "showroom-1", "name": "VinFast Quận 7"}],
+    }
+    assert "allowed_actions" not in decision.sanitized_context
+    assert "mode" not in decision.sanitized_context
+
+
+def test_context_contract_allows_driver_invitation_channel():
+    decision = _inspect(_guard(), context={"channel": "driver_invitation"})
+
+    assert decision.allowed is True
+    assert decision.sanitized_context == {"channel": "driver_invitation"}
+
+
+def test_context_contract_discards_booking_selection_that_conflicts_with_location_stage():
+    decision = _inspect(
+        _guard(max_nodes=64),
+        message="ngày 25 còn lịch không",
+        context={
+            "channel": "booking",
+            "stage": "need_address",
+            "selectedVehicle": {"id": "vf9", "name": "VF 9"},
+            "selectedShowroom": {"id": "206", "name": "VinFast Lợi Mận Yên Mỹ"},
+            "selectedSlot": {"slotId": "slot-old", "time": "15:00", "dateLabel": "23/08"},
+            "nearbyShowrooms": [{"id": "206", "name": "VinFast Lợi Mận Yên Mỹ"}],
+            "bookingId": "booking-old",
+        },
+    )
+
+    assert decision.allowed is True
+    assert decision.sanitized_context == {
+        "channel": "booking",
+        "stage": "need_address",
+        "selectedVehicle": {"id": "vf9", "name": "VF 9"},
+    }
+
+
 @pytest.mark.parametrize(
     "message",
     [

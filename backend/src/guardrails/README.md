@@ -24,7 +24,7 @@ Client
 ChatRequest / Pydantic
   │
   ▼
-Signed conversation capability + process-local rate limit + persistent abuse status
+Signed conversation capability + shared API rate limit + persistent abuse status
   │
   ▼
 InputGuard ── violation ──► persistent strike ──► lần 3: HTTP 403 ban
@@ -68,7 +68,7 @@ Ba enforcement point tương ứng:
 | `models.py` | Kiểu dữ liệu quyết định guardrail và output đã bảo vệ. |
 | `pipeline.py` | Facade kết nối settings với input/output guard. |
 | `conversation.py` | Phát và xác minh conversation capability HMAC có TTL; tách public token khỏi LangGraph thread ID. |
-| `rate_limit.py` | Sliding-window limiter process-local; subject chỉ được giữ dưới dạng SHA-256. |
+| `rate_limit.py` | Sliding-window utility dùng cho deterministic guardrail benchmark; runtime dùng `src.security.rate_limit`. |
 
 ## 4. Chính sách input
 
@@ -92,7 +92,7 @@ Một câu hỏi bình thường có chữ “prompt” hoặc “system” khô
 
 `context` được scan, kiểm tra top-level/nested allowlist và chuẩn hóa. Nó không còn được nối vào `SystemMessage`; booking skill truyền context đã làm sạch dưới dạng `HumanMessage` được đánh dấu là untrusted reference data. `action_payload` không được đưa vào prompt khi chạy structured action; nó được bảo vệ bằng size/depth budget và field allowlist.
 
-Khi block, API đồng thời **không gọi LLM hoặc tool**. Vi phạm prompt injection, role/secret exfiltration hoặc abusive language lần 1–2 trả `200`, câu từ chối, mã `action_error` và cảnh báo `n/3`. Lần 3 ghi ban vào database và trả `403 ABUSE_BANNED` cùng `Retry-After`; request sau đó bị chặn trước input/LLM. Subject lưu trong bảng chỉ là SHA-256 của IP và internal conversation ID, không lưu IP thô.
+Khi block, API đồng thời **không gọi LLM hoặc tool**. Vi phạm prompt injection, role/secret exfiltration hoặc abusive language lần 1–2 trả `200`, câu từ chối, mã `action_error` và cảnh báo `n/3`. Lần 3 ghi ban vào database và trả `403 ABUSE_BANNED` cùng `Retry-After`; request sau đó bị chặn trước input/LLM. Subject lưu trong bảng chỉ là SHA-256 của anonymous session và internal conversation ID. Raw proxy IP không được dùng cho ban 24 giờ.
 
 ### 4.3 Structured action contract
 
@@ -172,12 +172,11 @@ Các biến có default an toàn trong `src/config.py` và được minh họa �
 | `GUARDRAILS_ABUSE_BAN_SECONDS` | `86400` | Thời gian ban sau strike cuối, mặc định 24 giờ. |
 | `CONVERSATION_SIGNING_SECRET` | rỗng ở dev, bắt buộc ≥32 ký tự ở production | Khóa HMAC riêng cho public conversation capability. |
 | `CONVERSATION_TOKEN_TTL_SECONDS` | `28800` | TTL của conversation capability. |
-| `RATE_LIMITS_ENABLED` | `true` | Bật limiter tại application boundary; production không thể tắt. |
-| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Cửa sổ cho chat/hold/confirm/OTP limit. |
-| `CHAT_RATE_LIMIT_REQUESTS` | `120` | Số request chat/IP và conversation trong một cửa sổ. |
-| `BOOKING_HOLD_RATE_LIMIT_REQUESTS` | `20` | Limit hold theo IP và slot. |
-| `BOOKING_CONFIRM_RATE_LIMIT_REQUESTS` | `10` | Limit confirm theo IP và booking. |
-| `BOOKING_OTP_RATE_LIMIT_REQUESTS` | `10` | Limit OTP theo IP và contact/challenge. |
+| `RATE_LIMIT_ENABLED` | `true` | Bật limiter dùng chung tại public API middleware. |
+| `RATE_LIMIT_CHAT_PER_SESSION_PER_MINUTE` | `30` | Số request chat tối đa cho một anonymous session trong một phút. |
+| `RATE_LIMIT_CHAT_PER_IP_PER_MINUTE` | `60` | Giới hạn IP ngắn hạn; không dùng cho abuse ban 24 giờ. |
+| `RATE_LIMIT_OTP_REQUEST_PER_CONTACT_PER_HOUR` | `10` | Giới hạn gửi OTP theo contact trong một giờ. |
+| `RATE_LIMIT_OTP_VERIFY_PER_CHALLENGE_PER_MINUTE` | `5` | Giới hạn thử OTP theo challenge trong một phút. |
 
 Không thể tắt guardrails khi `APP_ENV=production`; Settings validation sẽ fail startup. Nếu cần debug local, chỉ tắt ở development/test và khởi động lại process vì settings/guardrails được cache.
 
@@ -250,8 +249,8 @@ Chỉ thêm pattern có tín hiệu hành động + mục tiêu rõ ràng. Trán
 
 - Regex không phát hiện mọi prompt injection đa ngôn ngữ hoặc được mã hóa tinh vi. Boundary allowlist và tool authorization mới là lớp bảo vệ quan trọng nhất.
 - Guardrails không đánh giá tính đúng/sai của nội dung tư vấn xe; cần grounding/RAG citation và eval riêng.
-- Limiter trong app là process-local. Deployment nhiều worker/instance vẫn cần distributed gateway limit; OTP cooldown trong `BookingService` tiếp tục là domain control độc lập.
-- Abuse ban được lưu trong database dùng chung, nhưng chat công khai chưa có account identity nên IP ban có thể ảnh hưởng nhiều người dùng chung NAT. Khi có đăng nhập, ưu tiên subject theo account/session đã xác thực.
+- Runtime dùng một public API limiter dựa trên database counters. Cloudflare/gateway limit và OTP cooldown trong `BookingService` tiếp tục là các lớp bảo vệ bổ sung.
+- Abuse ban được lưu trong database dùng chung và định danh theo signed conversation/anonymous session để tránh khóa nhầm người dùng chung NAT hoặc reverse-proxy IP.
 - Guardrails không thay authentication cho admin import/dashboard endpoints.
 - Output redaction giảm rủi ro accidental leakage nhưng secret không nên được đưa vào LLM context ngay từ đầu.
 

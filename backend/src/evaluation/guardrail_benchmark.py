@@ -269,7 +269,7 @@ def _run_abuse_case(case: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError(f"{case.get('case_id')}: unsupported abuse operation")
     settings = _settings(case)
     current = datetime(2026, 8, 21, 8, 0, tzinfo=UTC)
-    subjects = ("ip:benchmark-client", "thread:benchmark-conversation")
+    subjects = ("session:benchmark-client", "thread:benchmark-conversation")
     violation_codes = case_input.get(
         "violation_codes",
         ["PROMPT_INJECTION_OVERRIDE", "ABUSIVE_LANGUAGE", "ROLE_INJECTION"],

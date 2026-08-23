@@ -26,16 +26,18 @@ def test_production_cannot_disable_guardrails():
         )
 
 
-def test_production_requires_conversation_signing_and_rate_limits():
+def test_production_requires_conversation_signing():
     with pytest.raises(ValidationError, match="CONVERSATION_SIGNING_SECRET"):
         Settings(app_env="production", booking_access_otp_secret="a" * 32)
 
-    with pytest.raises(ValidationError, match="RATE_LIMITS_ENABLED"):
+
+def test_production_cannot_disable_the_canonical_rate_limiter():
+    with pytest.raises(ValidationError, match="RATE_LIMIT_ENABLED"):
         Settings(
             app_env="production",
             booking_access_otp_secret="a" * 32,
             conversation_signing_secret="b" * 32,
-            rate_limits_enabled=False,
+            rate_limit_enabled=False,
         )
 
 
