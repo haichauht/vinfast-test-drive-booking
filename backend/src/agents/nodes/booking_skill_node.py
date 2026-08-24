@@ -2,7 +2,8 @@ import hashlib
 import json
 import logging
 import re
-from datetime import datetime
+import unicodedata
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from zoneinfo import ZoneInfo
@@ -15,12 +16,14 @@ from src.agents.constants import (
 )
 from src.agents.state import AgentState
 from src.agents.tools import (
+    cancel_booking,
     confirm_test_drive_booking,
     get_booking_details,
     get_booking_draft,
     hold_test_drive_slot,
     request_booking_access,
     request_user_location,
+    reschedule_booking,
     search_test_drive_options,
     update_booking_draft,
     verify_booking_access,
@@ -82,6 +85,8 @@ STRUCTURED_ACTION_TO_TOOL = {
     "confirm_booking": confirm_test_drive_booking,
     "request_access": request_booking_access,
     "verify_access": verify_booking_access,
+    "cancel_booking": cancel_booking,
+    "reschedule_booking": reschedule_booking,
 }
 
 STRUCTURED_ACTION_RESPONSES = {
@@ -91,15 +96,19 @@ STRUCTURED_ACTION_RESPONSES = {
     "confirm_booking": "Đặt lịch lái thử đã được xác nhận.",
     "request_access": "ViVi đã gửi mã xác thực qua email.",
     "verify_access": "Xác thực thành công.",
+    "cancel_booking": "Đã hủy lịch lái thử và giải phóng khung giờ.",
+    "reschedule_booking": "Lịch lái thử đã được đổi sang khung giờ mới.",
 }
 
-BOOKING_MANAGEMENT_INTENTS = frozenset({
-    "booking_lookup",
-    "booking_reschedule",
-    "booking_cancel",
-    "booking_update_details",
-    "booking_update_notifications",
-})
+BOOKING_MANAGEMENT_INTENTS = frozenset(
+    {
+        "booking_lookup",
+        "booking_reschedule",
+        "booking_cancel",
+        "booking_update_details",
+        "booking_update_notifications",
+    }
+)
 
 PUBLIC_TOOL_ERRORS = {
     "SLOT_NO_LONGER_AVAILABLE": "Khung giờ này đã qua hoặc không còn khả dụng, vui lòng chọn giờ khác.",
@@ -108,6 +117,10 @@ PUBLIC_TOOL_ERRORS = {
     "VEHICLE_NOT_READY": "Xe demo hiện không sẵn sàng cho khung giờ này, vui lòng chọn lịch khác.",
     "VERSION_CONFLICT": "Thông tin đặt lịch đã thay đổi, vui lòng tải lại và thử lại.",
     "INVALID_INPUT": "Thông tin gửi lên chưa hợp lệ, vui lòng kiểm tra lại.",
+    "VEHICLE_NOT_FOUND": "Không tìm thấy mẫu xe trong danh mục lái thử hiện tại.",
+    "SHOWROOM_NOT_FOUND": "Không tìm thấy showroom phù hợp với yêu cầu hiện tại.",
+    "OTP_INVALID": "Mã OTP không đúng, vui lòng kiểm tra và thử lại.",
+    "OTP_EXPIRED": "Mã OTP đã hết hạn, vui lòng yêu cầu mã mới.",
 }
 
 DEFAULT_PUBLIC_TOOL_ERROR = "Không thể hoàn tất thao tác đặt lịch. Vui lòng kiểm tra lại hoặc thử lại."
@@ -197,6 +210,326 @@ def _structured_tool_call_id(action: str, payload: dict[str, Any]) -> str:
     return f"call_{hashlib.sha256(canonical.encode('utf-8')).hexdigest()[:32]}"
 
 
+def _natural_hold_action_id(*, request_identity: str, slot_id: object) -> str:
+    """Create a valid, retry-stable idempotency key for a chat-originated hold."""
+    canonical = json.dumps(
+        {"request_identity": request_identity, "slot_id": str(slot_id or "")},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
+    return f"hold:agent:{digest}"
+
+
+def _normalize_natural_hold_calls(response: Any, *, trace_id: str) -> Any:
+    """Repair only LLM-generated hold IDs; structured UI payloads remain strict."""
+    tool_calls = getattr(response, "tool_calls", None)
+    if not isinstance(tool_calls, list):
+        return response
+
+    normalized_calls: list[dict[str, Any]] = []
+    changed = False
+    for raw_call in tool_calls:
+        call = dict(raw_call)
+        args = call.get("args")
+        if call.get("name") == hold_test_drive_slot.name and isinstance(args, dict):
+            normalized_args = dict(args)
+            ui_action_id = str(normalized_args.get("ui_action_id") or "")
+            if not ui_action_id.startswith("hold:") or len(ui_action_id) <= len("hold:"):
+                normalized_args["ui_action_id"] = _natural_hold_action_id(
+                    request_identity=trace_id or ui_action_id or str(call.get("id") or "anonymous"),
+                    slot_id=normalized_args.get("slot_id"),
+                )
+                call["args"] = normalized_args
+                changed = True
+        normalized_calls.append(call)
+
+    if not changed:
+        return response
+    return response.model_copy(update={"tool_calls": normalized_calls})
+
+
+def _lookup_key(value: object) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or "")).casefold()
+    without_marks = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    return re.sub(r"[^a-z0-9]+", " ", without_marks).strip()
+
+
+_SEARCH_LOCATION_FIELDS = ("showroom_id", "showroom_query", "address", "latitude", "longitude")
+_SEARCH_SCHEDULE_FIELDS = (
+    "preferred_date",
+    "preferred_dates",
+    "preferred_date_from",
+    "preferred_date_to",
+    "preferred_time",
+)
+_VIETNAMESE_NUMBERS = {
+    "mot": 1,
+    "hai": 2,
+    "ba": 3,
+    "bon": 4,
+    "tu": 4,
+    "nam": 5,
+    "sau": 6,
+    "bay": 7,
+    "tam": 8,
+    "chin": 9,
+    "muoi": 10,
+    "muoi mot": 11,
+    "muoi hai": 12,
+}
+
+
+def _latest_search_arguments(messages: list[Any]) -> dict[str, Any]:
+    for message in reversed(messages):
+        if not isinstance(message, AIMessage):
+            continue
+        for call in reversed(getattr(message, "tool_calls", []) or []):
+            if call.get("name") == search_test_drive_options.name and isinstance(call.get("args"), dict):
+                return {key: value for key, value in call["args"].items() if value is not None}
+    return {}
+
+
+def _extract_schedule_constraints(query: str, *, today: datetime) -> dict[str, str]:
+    """Extract explicit Vietnamese date/time constraints without guessing missing values."""
+    normalized = _lookup_key(query)
+    result: dict[str, str] = {}
+
+    iso_match = re.search(r"(?<!\d)(20\d{2})[-/](\d{1,2})[-/](\d{1,2})(?!\d)", query)
+    day_first = re.search(r"(?<!\d)(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?!\d)", query)
+    word_date = re.search(r"\bngay\s+(\d{1,2})\s+thang\s+(\d{1,2})\s+nam\s+(\d{4})\b", normalized)
+    try:
+        if iso_match:
+            parsed_date = datetime(
+                int(iso_match.group(1)),
+                int(iso_match.group(2)),
+                int(iso_match.group(3)),
+            )
+            result["preferred_date"] = parsed_date.date().isoformat()
+        elif day_first:
+            year = int(day_first.group(3))
+            if year < 100:
+                year += 2000
+            parsed_date = datetime(year, int(day_first.group(2)), int(day_first.group(1)))
+            result["preferred_date"] = parsed_date.date().isoformat()
+        elif word_date:
+            parsed_date = datetime(int(word_date.group(3)), int(word_date.group(2)), int(word_date.group(1)))
+            result["preferred_date"] = parsed_date.date().isoformat()
+        elif "ngay kia" in normalized:
+            result["preferred_date"] = (today + timedelta(days=2)).date().isoformat()
+        elif re.search(r"\bngay mai\b|\bmai\b", normalized):
+            result["preferred_date"] = (today + timedelta(days=1)).date().isoformat()
+    except ValueError:
+        pass
+
+    numeric_time = re.search(r"(?<!\d)([01]?\d|2[0-3])\s*(?::|h|gio)\s*([0-5]?\d)?", normalized)
+    hour: int | None = None
+    minute = 0
+    if numeric_time:
+        hour = int(numeric_time.group(1))
+        if numeric_time.group(2):
+            minute = int(numeric_time.group(2))
+    else:
+        words = "|".join(sorted((re.escape(value) for value in _VIETNAMESE_NUMBERS), key=len, reverse=True))
+        word_time = re.search(rf"\b({words})\s+(gio(?:\s+ba muoi)?|ruoi)\b", normalized)
+        if word_time:
+            hour = _VIETNAMESE_NUMBERS[word_time.group(1)]
+            minute = 30 if word_time.group(2) in {"ruoi", "gio ba muoi"} else 0
+    if hour is not None:
+        if any(marker in normalized for marker in ("chieu", "toi")) and 1 <= hour < 12:
+            hour += 12
+        result["preferred_time"] = f"{hour:02d}:{minute:02d}"
+    return result
+
+
+def _normalize_search_calls(
+    response: Any,
+    *,
+    messages: list[Any],
+    current_query: str,
+    today: datetime,
+) -> Any:
+    calls = getattr(response, "tool_calls", None)
+    if not calls:
+        return response
+    previous = _latest_search_arguments(messages)
+    parsed_schedule = _extract_schedule_constraints(current_query, today=today)
+    normalized_calls: list[dict[str, Any]] = []
+    changed = False
+    for raw_call in calls:
+        call = dict(raw_call)
+        if call.get("name") != search_test_drive_options.name or not isinstance(call.get("args"), dict):
+            normalized_calls.append(call)
+            continue
+        arguments = dict(call["args"])
+        if not arguments.get("vehicle_model") and previous.get("vehicle_model"):
+            arguments["vehicle_model"] = previous["vehicle_model"]
+        has_current_location = any(arguments.get(field) is not None for field in _SEARCH_LOCATION_FIELDS)
+        if not has_current_location:
+            for field in _SEARCH_LOCATION_FIELDS:
+                if previous.get(field) is not None:
+                    arguments[field] = previous[field]
+        for field in _SEARCH_SCHEDULE_FIELDS:
+            if arguments.get(field) is None and previous.get(field) is not None:
+                arguments[field] = previous[field]
+        arguments.update(parsed_schedule)
+        if arguments != call["args"]:
+            call["args"] = arguments
+            changed = True
+        normalized_calls.append(call)
+    return response.model_copy(update={"tool_calls": normalized_calls}) if changed else response
+
+
+def _pending_otp_payload(messages: list[Any], query: str) -> dict[str, str] | None:
+    otp_match = re.search(r"(?<!\d)(\d{6})(?!\d)", query)
+    if not otp_match:
+        return None
+    for message in reversed(messages):
+        if not isinstance(message, ToolMessage):
+            continue
+        if message.name == verify_booking_access.name:
+            return None
+        if message.name != request_booking_access.name or getattr(message, "status", "success") == "error":
+            continue
+        decoded = _decode_tool_result(message)
+        if isinstance(decoded, dict) and decoded.get("challenge_id"):
+            return {"challenge_id": str(decoded["challenge_id"]), "otp_code": otp_match.group(1)}
+    return None
+
+
+def _resolved_vehicle_name(decoded: dict[str, Any], tool_input: dict[str, Any]) -> str:
+    vehicle = decoded.get("resolved_vehicle")
+    if isinstance(vehicle, dict) and vehicle.get("name"):
+        return str(vehicle["name"])
+    return str(tool_input.get("vehicle_model") or "mẫu xe đã chọn")
+
+
+def _grounded_booking_details_response(decoded: dict[str, Any]) -> str:
+    """Render booking facts without letting free text reinterpret persisted state."""
+    vehicle_value = decoded.get("vehicle")
+    showroom_value = decoded.get("showroom")
+    vehicle: dict[str, Any] = vehicle_value if isinstance(vehicle_value, dict) else {}
+    showroom: dict[str, Any] = showroom_value if isinstance(showroom_value, dict) else {}
+    vehicle_name = str(vehicle.get("name") or "Mẫu xe đã đặt")
+    variant_name = str(vehicle.get("variant_name") or "").strip()
+    if variant_name and variant_name.casefold() not in vehicle_name.casefold():
+        vehicle_name = f"{vehicle_name} {variant_name}"
+    status_labels = {
+        "held": "Đang giữ chỗ",
+        "confirmed": "Đã xác nhận",
+        "checked_in": "Đã check-in",
+        "completed": "Đã hoàn thành",
+        "cancelled": "Đã hủy",
+        "no_show": "Không đến",
+        "rescheduled": "Đã đổi lịch",
+    }
+    status = status_labels.get(str(decoded.get("status") or ""), str(decoded.get("status") or "Chưa rõ"))
+    location = ", ".join(
+        value for value in (str(showroom.get("name") or ""), str(showroom.get("address") or "")) if value
+    )
+    lines = [
+        "Lịch lái thử của Quý khách:",
+        f"- Mã đặt lịch: {decoded.get('booking_code') or 'Chưa có'}",
+        f"- Xe: {vehicle_name}",
+        f"- Thời gian: {decoded.get('slot_time') or 'Chưa rõ'}, {decoded.get('slot_date') or 'Chưa rõ'}",
+        f"- Địa điểm: {location or 'Chưa rõ'}",
+        f"- Trạng thái: {status}",
+    ]
+    action_labels = {
+        "reschedule": "đổi lịch",
+        "cancel": "hủy lịch",
+        "update_details": "cập nhật thông tin",
+    }
+    actions = [
+        action_labels[action]
+        for action in decoded.get("allowed_actions", [])
+        if action in action_labels
+    ]
+    if actions:
+        lines.extend(("", "ViVi có thể hỗ trợ " + ", ".join(actions) + "."))
+    return "\n".join(lines)
+
+
+def _requested_schedule_summary(tool_input: dict[str, Any]) -> str:
+    def display_date(value: object) -> str:
+        raw = str(value or "")
+        try:
+            return datetime.fromisoformat(raw).strftime("%d/%m/%Y")
+        except ValueError:
+            return raw
+
+    date_text = ""
+    if tool_input.get("preferred_date"):
+        date_text = f"ngày {display_date(tool_input['preferred_date'])}"
+    elif isinstance(tool_input.get("preferred_dates"), list) and tool_input["preferred_dates"]:
+        dates = ", ".join(display_date(value) for value in tool_input["preferred_dates"])
+        date_text = f"các ngày {dates}"
+    elif tool_input.get("preferred_date_from") and tool_input.get("preferred_date_to"):
+        date_text = (
+            f"từ ngày {display_date(tool_input['preferred_date_from'])} "
+            f"đến {display_date(tool_input['preferred_date_to'])}"
+        )
+
+    time_text = f"lúc {tool_input['preferred_time']}" if tool_input.get("preferred_time") else ""
+    schedule = " ".join(part for part in (date_text, time_text) if part)
+    return f"Yêu cầu thời gian: {schedule}.\n" if schedule else ""
+
+
+def _grounded_search_response(decoded: dict[str, Any], tool_input: dict[str, Any]) -> str:
+    """Render search results from tool evidence without adding UI or availability claims."""
+    stage = str(decoded.get("search_stage") or "")
+    vehicle_name = _resolved_vehicle_name(decoded, tool_input)
+    schedule_summary = _requested_schedule_summary(tool_input)
+
+    if stage == "location_clarification":
+        return str(decoded.get("clarification_message") or "Quý khách cho ViVi xin tỉnh hoặc thành phố cụ thể.")
+
+    if stage == "slot_selection":
+        selected = decoded.get("selected_showroom")
+        showroom_name = (
+            str(selected.get("name")) if isinstance(selected, dict) and selected.get("name") else "showroom đã chọn"
+        )
+        slots = [slot for slot in decoded.get("slots", []) if isinstance(slot, dict)]
+        schedules = [str(slot["formatted_schedule"]) for slot in slots if slot.get("formatted_schedule")][:5]
+        if not schedules:
+            return (
+                schedule_summary
+                + f"Hiện chưa có khung giờ trống cho {vehicle_name} tại {showroom_name} theo dữ liệu vừa kiểm tra."
+            )
+        lines = "\n".join(f"- {schedule}" for schedule in schedules)
+        return schedule_summary + f"Các khung giờ còn trống cho {vehicle_name} tại {showroom_name}:\n{lines}"
+
+    if stage == "showroom_selection":
+        query = str(tool_input.get("showroom_query") or "").strip()
+        showrooms = [showroom for showroom in decoded.get("showrooms", []) if isinstance(showroom, dict)]
+        if query:
+            confident_matches = [
+                showroom
+                for showroom in showrooms
+                if _lookup_key(showroom.get("name")) == _lookup_key(query)
+                or int(showroom.get("text_match_score") or 0) >= 70
+            ]
+            if not confident_matches:
+                return schedule_summary + (
+                    f"Chưa tìm thấy showroom {query} trong dữ liệu vừa kiểm tra. ViVi chưa tự thay bằng showroom khác."
+                )
+            showrooms = confident_matches
+
+        has_location = bool(tool_input.get("address")) or (
+            tool_input.get("latitude") is not None and tool_input.get("longitude") is not None
+        )
+        if not query and not has_location:
+            return f"Đã chọn {vehicle_name}. Quý khách vui lòng cung cấp tỉnh, thành phố hoặc vị trí để tìm showroom phù hợp."
+        names = [str(showroom["name"]) for showroom in showrooms if showroom.get("name")][:5]
+        if not names:
+            return schedule_summary + f"Chưa tìm thấy showroom phù hợp cho {vehicle_name} theo dữ liệu vừa kiểm tra."
+        lines = "\n".join(f"- {name}" for name in names)
+        return schedule_summary + f"Các showroom phù hợp cho {vehicle_name} theo dữ liệu vừa kiểm tra:\n{lines}"
+
+    return "ViVi đã kiểm tra dữ liệu đặt lịch nhưng chưa nhận được kết quả có thể hiển thị."
+
+
 def get_booking_prompt() -> str:
     try:
         with open(SKILL_PATH, encoding="utf-8") as f:
@@ -238,6 +571,13 @@ async def booking_skill_node(state: AgentState) -> dict:
                 "error" if failed else "success",
             )
             response_text = public_error if failed else STRUCTURED_ACTION_RESPONSES[requested_action]
+            if (
+                not failed
+                and requested_action == "confirm_booking"
+                and isinstance(decoded, dict)
+                and decoded.get("booking_code")
+            ):
+                response_text = f"Đặt lịch lái thử đã được xác nhận. Mã đặt lịch: {decoded['booking_code']}."
             if (
                 not failed
                 and requested_action == "search_options"
@@ -319,22 +659,116 @@ async def booking_skill_node(state: AgentState) -> dict:
                 "action_error": error_code if failed else "",
                 "metadata": metadata,
             }
-        if isinstance(decoded, dict) and decoded.get("search_stage") == "location_clarification":
-            response_text = str(
-                decoded.get("clarification_message") or "Quý khách cho ViVi xin tỉnh hoặc thành phố cụ thể."
+        if (
+            last_message.name == verify_booking_access.name
+            and getattr(last_message, "status", "success") != "error"
+            and isinstance(decoded, dict)
+            and decoded.get("access_session_token")
+            and decoded.get("booking_id")
+        ):
+            details_payload = {
+                "access_session_token": decoded["access_session_token"],
+                "booking_id": decoded["booking_id"],
+                "booking_code": None,
+            }
+            tool_call_message = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": get_booking_details.name,
+                        "args": details_payload,
+                        "id": _structured_tool_call_id("verified:get_booking_details", details_payload),
+                        "type": "tool_call",
+                    }
+                ],
+            )
+            trace_event(
+                "tool.call",
+                trace_id=trace_id,
+                node="booking_skill",
+                source="verified_access_binding",
+                tool=get_booking_details.name,
+                args=_safe_tool_input(details_payload),
+                tool_call_id=tool_call_message.tool_calls[0].get("id"),
+            )
+            return {
+                "messages": [tool_call_message],
+                "tool_call_count": (state.get("tool_call_count") or 0) + 1,
+                "metadata": metadata,
+            }
+        if last_message.name == get_booking_details.name:
+            failed = getattr(last_message, "status", "success") == "error"
+            error_code, public_error = _public_tool_error(decoded)
+            response_text = (
+                public_error
+                if failed or not isinstance(decoded, dict)
+                else _grounded_booking_details_response(decoded)
             )
             message = AIMessage(content=response_text)
             return {
                 "messages": [message],
                 "response": response_text,
-                "action_tool": last_message.name or "",
+                "action_tool": last_message.name,
                 "action_input": _tool_call_input(messages, last_message),
+                "action_result": None if failed else decoded,
+                "action_error": error_code if failed else "",
+                "metadata": metadata,
+            }
+        if (
+            last_message.name == search_test_drive_options.name
+            and getattr(last_message, "status", "success") != "error"
+            and isinstance(decoded, dict)
+            and decoded.get("search_stage") in {"location_clarification", "showroom_selection"}
+        ):
+            tool_input = _tool_call_input(messages, last_message)
+            response_text = _grounded_search_response(decoded, tool_input)
+            message = AIMessage(content=response_text)
+            trace_event(
+                "response.grounded",
+                trace_id=trace_id,
+                node="booking_skill",
+                source_tool=last_message.name,
+                search_stage=decoded.get("search_stage"),
+            )
+            return {
+                "messages": [message],
+                "response": response_text,
+                "action_tool": last_message.name or "",
+                "action_input": tool_input,
                 "action_result": decoded,
                 "action_error": "",
                 "metadata": metadata,
             }
 
     sub_intent = str(metadata.get("sub_intent") or "")
+    if isinstance(last_message, HumanMessage):
+        otp_payload = _pending_otp_payload(messages[:-1], str(last_message.content))
+        if otp_payload:
+            tool_call_message = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": verify_booking_access.name,
+                        "args": otp_payload,
+                        "id": _structured_tool_call_id("pending:verify_access", otp_payload),
+                        "type": "tool_call",
+                    }
+                ],
+            )
+            trace_event(
+                "tool.call",
+                trace_id=trace_id,
+                node="booking_skill",
+                source="pending_access_challenge",
+                tool=verify_booking_access.name,
+                args=_safe_tool_input(otp_payload),
+                tool_call_id=tool_call_message.tool_calls[0].get("id"),
+            )
+            return {
+                "messages": [tool_call_message],
+                "tool_call_count": (state.get("tool_call_count") or 0) + 1,
+                "metadata": metadata,
+            }
     if isinstance(last_message, HumanMessage) and sub_intent in BOOKING_MANAGEMENT_INTENTS:
         entities = state.get("intent_entities") or {}
         contact_value = str(entities.get("contact_value") or "").strip() if isinstance(entities, dict) else ""
@@ -371,7 +805,8 @@ async def booking_skill_node(state: AgentState) -> dict:
             "metadata": metadata,
         }
 
-    now_vietnam = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%Y-%m-%d")
+    now_vietnam_dt = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
+    now_vietnam = now_vietnam_dt.strftime("%Y-%m-%d")
     safe_context = state.get("context") or {}
     context = json.dumps(safe_context, ensure_ascii=False)
     prompt = (
@@ -432,9 +867,7 @@ async def booking_skill_node(state: AgentState) -> dict:
             call_purpose="booking_skill",
         )
     except (BudgetExceededError, LLMCallLimitExceededError) as e:
-        internal_error_code = (
-            "LLM_BUDGET_EXCEEDED" if isinstance(e, BudgetExceededError) else "LLM_CALL_LIMIT_EXCEEDED"
-        )
+        internal_error_code = "LLM_BUDGET_EXCEEDED" if isinstance(e, BudgetExceededError) else "LLM_CALL_LIMIT_EXCEEDED"
         trace_event("llm.limit", trace_id=trace_id, node="booking_skill", error_code=internal_error_code)
         safe_response = AIMessage(content=PUBLIC_LLM_UNAVAILABLE_MESSAGE)
         return {
@@ -455,6 +888,39 @@ async def booking_skill_node(state: AgentState) -> dict:
             "error": str(e),
             "metadata": metadata,
         }
+
+    response = _normalize_natural_hold_calls(response, trace_id=str(trace_id))
+    current_query = str(last_message.content) if isinstance(last_message, HumanMessage) else ""
+    response = _normalize_search_calls(
+        response,
+        messages=messages,
+        current_query=current_query,
+        today=now_vietnam_dt,
+    )
+
+    # Search facts are rendered from the completed tool result. The LLM may
+    # still choose a follow-up tool (for example hold_slot), but free text is
+    # not allowed to add showroom, slot or UI claims that the tool did not return.
+    if (
+        isinstance(last_message, ToolMessage)
+        and last_message.name == search_test_drive_options.name
+        and getattr(last_message, "status", "success") != "error"
+        and not getattr(response, "tool_calls", None)
+    ):
+        decoded_search = _decode_tool_result(last_message)
+        if isinstance(decoded_search, dict):
+            grounded_content = _grounded_search_response(
+                decoded_search,
+                _tool_call_input(messages, last_message),
+            )
+            response = response.model_copy(update={"content": grounded_content})
+            trace_event(
+                "response.grounded",
+                trace_id=trace_id,
+                node="booking_skill",
+                source_tool=last_message.name,
+                search_stage=decoded_search.get("search_stage"),
+            )
 
     # Extract response text for the API
     response_content = extract_response_text(response)

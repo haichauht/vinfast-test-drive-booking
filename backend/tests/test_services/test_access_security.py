@@ -67,6 +67,7 @@ def test_the_code_in_the_zalo_message_verifies_the_created_challenge(
     booking_service, booking_db, confirmed_booking_factory
 ):
     """The actual Zalo message template must carry the code stored for the challenge."""
+
     class CapturingZaloClient:
         def __init__(self):
             self.text = ""
@@ -300,6 +301,36 @@ def test_access_session_is_scoped_to_one_booking(booking_service, access_factory
     assert (details.get("id") or details.get("booking_id")) == second["booking_id"]
 
 
+def test_access_session_rejects_booking_owned_by_another_customer(booking_service, access_factory, catalog):
+    first_access = access_factory("lookup")
+    held = booking_service.hold_slot(catalog["slot_second_vehicle"], "hold:other-customer")
+    draft = booking_service.update_booking_draft(
+        held["booking_id"],
+        booker_patch={
+            "full_name": "Khach Hang Khac",
+            "phone": "0907654321",
+            "email": "other.customer@example.test",
+            "preferred_channel": "email",
+        },
+        driver_same_as_booker=True,
+        license_patch={
+            "has_driving_license": True,
+            "declared_license_class": "B1",
+            "validity_acknowledged": True,
+        },
+        expected_version=1,
+    )
+    second = booking_service.confirm_booking(held["booking_id"], "confirm:other-customer", draft["version"])
+
+    with pytest.raises(BookingError) as error:
+        booking_service.get_booking_details(
+            first_access["session"]["access_session_token"],
+            booking_id=second["booking_id"],
+        )
+
+    assert error.value.code == "ACCESS_SESSION_SCOPE_MISMATCH"
+
+
 # test case of Chau + kiểm tra API chi tiết chỉ trả cam kết GPLX và không trả số GPLX cũ
 def test_booking_details_uses_boolean_license_commitment(booking_service, access_factory):
     access = access_factory("lookup")
@@ -318,9 +349,7 @@ def test_booking_details_uses_boolean_license_commitment(booking_service, access
 # nút "Huỷ lịch". Bảng phân quyền từng bị chép làm hai bản (request_access và verify_access);
 # thêm purpose vào một bản mà quên bản kia thì xin mã vẫn được nhưng NHẬP mã nổ KeyError →
 # HTTP 500, giao diện chỉ hiện "Yêu cầu không thành công.". Hai test dưới khoá lại chuyện đó.
-def test_manage_purpose_grants_cancel_and_reschedule_in_one_session(
-    booking_service, confirmed_booking_factory
-):
+def test_manage_purpose_grants_cancel_and_reschedule_in_one_session(booking_service, confirmed_booking_factory):
     booking = confirmed_booking_factory()
     challenge = booking_service.request_access(
         booking["confirmed"]["booking_code"], BOOKER_PHONE, "manage", expose_otp=True

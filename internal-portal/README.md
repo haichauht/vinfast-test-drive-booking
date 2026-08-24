@@ -82,3 +82,6 @@ docker compose up --build postgres db-seed backend internal-portal
 ```
 
 Portal mở ở <http://localhost:3100> và proxy `/api` sang backend trong Docker network.
+
+Human Review không thuộc portal vận hành này. Ứng dụng reviewer độc lập nằm tại
+`human-review/` và sử dụng tài khoản/namespace API riêng.

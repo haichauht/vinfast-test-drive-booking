@@ -101,6 +101,25 @@ def test_showroom_query_returns_ranked_candidates_without_auto_selecting(booking
     assert all("Khớp tên showroom" in showroom["match_reasons"] for showroom in result["showrooms"])
 
 
+def test_named_showroom_in_address_field_is_resolved_only_when_unambiguous(booking_service, catalog):
+    result = booking_service.search_options(vehicle_model="VF6", address="co so Go Vapp")
+
+    assert result["search_stage"] == "showroom_selection"
+    assert result["slots"] == []
+    assert [showroom["id"] for showroom in result["showrooms"]] == [catalog["showroom_gv"]]
+    assert result["target_coordinates"] is None
+
+
+def test_broad_named_showroom_query_is_not_implicitly_resolved(booking_service, catalog):
+    result = booking_service.search_options(vehicle_model="VF6", address="showroom VinFast")
+
+    assert result["search_stage"] == "showroom_selection"
+    assert {showroom["id"] for showroom in result["showrooms"]} == {
+        catalog["showroom_q7"],
+        catalog["showroom_gv"],
+    }
+
+
 @pytest.mark.parametrize("region", ["miền Bắc", "miền Trung", "miền Nam", "miền Tây", "tôi ở miền trung"])
 def test_broad_region_requires_a_province_or_city(booking_service, catalog, region):
     result = booking_service.search_options(vehicle_model="VF6", address=region)
@@ -429,6 +448,99 @@ def test_hold_slot_rejects_overlapping_slot_of_same_vehicle(booking_service, cat
         booking_service.hold_slot(catalog["slot_overlap"], "hold:overlap")
 
     assert error.value.code == "SLOT_NO_LONGER_AVAILABLE"
+
+
+def test_overlapping_slots_cannot_consume_the_same_sales_staff(
+    booking_service,
+    booking_db,
+    catalog,
+):
+    """One consultant is capacity for one overlapping active appointment."""
+    timestamp = FIXED_NOW.isoformat()
+    with booking_db.transaction(immediate=True) as connection:
+        connection.execute(
+            "INSERT INTO sales_staff("
+            "id,showroom_id,employee_code,full_name,role,status,is_active,created_at,updated_at"
+            ") VALUES(?,?,?,?,?,'active',1,?,?)",
+            (
+                "staff_capacity_one",
+                catalog["showroom_q7"],
+                "CAPACITY-ONE",
+                "Capacity Consultant",
+                "sales_consultant",
+                timestamp,
+                timestamp,
+            ),
+        )
+        connection.executemany(
+            "INSERT INTO slot_sales_assignments("
+            "id,slot_id,sales_staff_id,assignment_role,status,created_at,updated_at"
+            ") VALUES(?,?,?,?,?,?,?)",
+            [
+                (
+                    "assign_capacity_main",
+                    catalog["slot_main"],
+                    "staff_capacity_one",
+                    "test_drive_consultant",
+                    "assigned",
+                    timestamp,
+                    timestamp,
+                ),
+                (
+                    "assign_capacity_second",
+                    catalog["slot_second_vehicle"],
+                    "staff_capacity_one",
+                    "test_drive_consultant",
+                    "assigned",
+                    timestamp,
+                    timestamp,
+                ),
+            ],
+        )
+
+    booking_service.hold_slot(catalog["slot_main"], "hold:staff-capacity-first")
+    with pytest.raises(BookingError) as error:
+        booking_service.hold_slot(catalog["slot_second_vehicle"], "hold:staff-capacity-second")
+
+    assert error.value.code == "STAFF_NOT_AVAILABLE"
+
+
+def test_search_never_offers_more_overlapping_slots_than_staff_capacity(
+    booking_service,
+    booking_db,
+    catalog,
+):
+    timestamp = FIXED_NOW.isoformat()
+    with booking_db.transaction(immediate=True) as connection:
+        connection.execute(
+            "INSERT INTO sales_staff("
+            "id,showroom_id,employee_code,full_name,role,status,is_active,created_at,updated_at"
+            ") VALUES(?,?,?,?,?,'active',1,?,?)",
+            (
+                "staff_capacity_search",
+                catalog["showroom_q7"],
+                "CAPACITY-SEARCH",
+                "Search Capacity Consultant",
+                "sales_consultant",
+                timestamp,
+                timestamp,
+            ),
+        )
+
+    result = booking_service.search_options(
+        vehicle_model="VF6",
+        showroom_id=catalog["showroom_q7"],
+        slot_limit=30,
+    )
+    overlapping = [
+        slot
+        for slot in result["slots"]
+        if slot["id"] in {catalog["slot_main"], catalog["slot_second_vehicle"]}
+    ]
+
+    assert result["staff_capacity"]["tracked"] is True
+    assert result["staff_capacity"]["active_staff_count"] == 1
+    assert len(overlapping) == 1
 
 
 # test case of Chau + kiểm tra hai request đồng thời chỉ có một request giữ slot thành công

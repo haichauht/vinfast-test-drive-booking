@@ -10,6 +10,7 @@ MVP công khai cho phép người dùng xem catalogue VinFast, trò chuyện v�
 - `backend`: FastAPI, LangGraph agent, booking service, PostgreSQL/SQLite adapter.
 - `frontend`: Vite React UI cho trang sản phẩm, tư vấn và đặt lịch.
 - `internal-portal/frontend`: React UI riêng cho Staff, Showroom Manager và Operations Admin.
+- `human-review/frontend`: ứng dụng độc lập để reviewer chấm benchmark, dùng tài khoản và API riêng.
 - `backend/src/internal_portal`: authentication, RBAC, showroom scope và Internal API dùng chung booking service.
 - `admin`: Streamlit dashboard/import data cũ, chỉ chạy qua Docker profile tùy chọn.
 - `eval/data`: bộ CSV seed dữ liệu booking/catalog.
@@ -61,6 +62,7 @@ Neon là PostgreSQL được quản lý trên Internet. Docker image backend ch�
 ```text
 backend/        FastAPI, agent, booking service, database adapter, seed scripts
 frontend/       React/Vite UI và công cụ upload media R2
+human-review/   Human Review Portal độc lập và hướng dẫn cấp tài khoản reviewer
 eval/data/      Bộ CSV nguồn cho lần khởi tạo database
 change_logs/    Nhật ký thay đổi theo ngày
 .github/        Frontend và backend CI/CD workflows
@@ -90,6 +92,8 @@ Các service mặc định:
 
 - Frontend: <http://localhost:3000>
 - Internal Portal: <http://localhost:3100>
+- Human Review Portal: <http://localhost:3300>
+- Human Review API độc lập: <http://localhost:8300>
 - Backend API: <http://localhost:8001>
 - Swagger: <http://localhost:8001/docs>
 - Legacy Streamlit admin (profile `legacy-admin`): <http://localhost:8501>

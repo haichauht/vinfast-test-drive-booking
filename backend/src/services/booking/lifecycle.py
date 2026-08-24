@@ -83,7 +83,28 @@ class LifecycleService(BookingBase):
             ).fetchone()
             if overlap:
                 raise BookingError("SLOT_NO_LONGER_AVAILABLE", "Xe demo đã có lịch trùng.", retryable=True)
+            staff_candidates, staff_capacity_tracked = self._available_sales_staff(
+                c,
+                showroom_id=slot["showroom_id"],
+                start_at=slot["start_at"],
+                end_at=slot["end_at"],
+                slot_id=slot_id,
+                lock=True,
+            )
+            if staff_capacity_tracked and not staff_candidates:
+                raise BookingError(
+                    "STAFF_NOT_AVAILABLE",
+                    "Không còn tư vấn viên khả dụng trong khung giờ này.",
+                    retryable=True,
+                )
             expires, booking_id = now + timedelta(seconds=ttl_seconds), _id("bkg")
+            if staff_candidates:
+                self._assign_sales_staff_to_slot(
+                    c,
+                    slot_id=slot_id,
+                    staff_id=str(staff_candidates[0]["id"]),
+                    now=iso(now),
+                )
             c.execute(
                 "INSERT INTO bookings(id,slot_id,status,held_at,hold_expires_at,source_channel,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
                 (booking_id, slot_id, "held", iso(now), iso(expires), source_channel, iso(now), iso(now)),

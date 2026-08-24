@@ -144,7 +144,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
     """Chat với AI agent."""
     try:
         settings = get_settings()
-        trace_id = str(uuid.uuid4())
+        trace_id = str(getattr(request.state, "trace_id", "") or uuid.uuid4())
         token_manager = get_conversation_token_manager()
         conversation_identity = token_manager.verify(body.conversation_id) if body.conversation_id else None
         if conversation_identity is None:

@@ -55,3 +55,5 @@ def test_llm_defaults_use_luna_for_chat_and_gpt_4o_mini_for_classification():
     assert settings.model_name == "gpt-5.6-luna"
     assert settings.classifier_model_name == "gpt-4o-mini"
     assert settings.llm_reasoning_effort == "low"
+    assert settings.llm_request_timeout_seconds == 60.0
+    assert settings.llm_max_retries == 1

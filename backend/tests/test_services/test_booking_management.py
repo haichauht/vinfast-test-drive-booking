@@ -91,6 +91,46 @@ def test_confirm_reschedule_transitions_both_bookings(booking_service, booking_d
     assert old_pending_jobs == 0
 
 
+def test_reschedule_booking_completes_both_steps_and_is_retry_safe(
+    booking_service,
+    access_factory,
+    catalog,
+):
+    access = access_factory("manage")
+    arguments = (
+        access["booking"]["booking_id"],
+        catalog["slot_second_vehicle"],
+        access["session"]["access_session_token"],
+        "reschedule:composite-success",
+    )
+
+    first = booking_service.reschedule_booking(*arguments)
+    second = booking_service.reschedule_booking(*arguments)
+
+    assert first == second
+    assert first["old_booking_status"] == "rescheduled"
+    assert first["new_booking_status"] == "confirmed"
+    assert first["new_slot_id"] == catalog["slot_second_vehicle"]
+
+
+def test_reschedule_booking_requires_public_idempotency_namespace(
+    booking_service,
+    access_factory,
+    catalog,
+):
+    access = access_factory("manage")
+
+    with pytest.raises(BookingError) as error:
+        booking_service.reschedule_booking(
+            access["booking"]["booking_id"],
+            catalog["slot_second_vehicle"],
+            access["session"]["access_session_token"],
+            "wrong-prefix",
+        )
+
+    assert error.value.code == "INVALID_INPUT"
+
+
 # test case of Chau + kiểm tra hủy booking giải phóng slot và dừng notification pending
 def test_cancel_booking_releases_slot_and_notifications(booking_service, booking_db, access_factory, catalog):
     access = access_factory("cancel")

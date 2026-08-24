@@ -1,4 +1,6 @@
 import logging
+import re
+import unicodedata
 
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel, Field
@@ -36,6 +38,67 @@ _DRIVER_BLOCKED_SUB_INTENTS = frozenset({
     "booking_new", "booking_availability", "booking_reschedule", "booking_cancel",
     "booking_update_details", "booking_update_notifications",
 })
+
+_DISCOVERY_VEHICLE_RE = re.compile(r"(?<![a-z0-9])(?:vf\s*\d+|ebus|xe\s+buyt\s+dien)(?![a-z0-9])")
+_DISCOVERY_LOCATION_TERMS = ("showroom", "dai ly", "co so", "dia diem")
+_AVAILABILITY_TERMS = ("lich", "slot", "suat", "khung gio", "gio nao", "ranh", "trong")
+_EXISTING_BOOKING_TERMS = (
+    "da dat",
+    "ma dat lich",
+    "ma booking",
+    "booking cua",
+    "lich cua toi",
+    "lich hen cua toi",
+    "huy lich",
+    "doi lich",
+    "doi gio hen",
+    "otp",
+    "ma xac thuc",
+)
+
+
+def _route_text(value: object) -> str:
+    normalized = unicodedata.normalize("NFD", str(value or "").casefold().replace("đ", "d"))
+    without_marks = "".join(character for character in normalized if unicodedata.category(character) != "Mn")
+    return " ".join(re.findall(r"[a-z0-9@.]+", without_marks))
+
+
+def _recent_discovery_context(messages: object) -> bool:
+    if not isinstance(messages, list):
+        return False
+    for message in reversed(messages):
+        if not isinstance(message, HumanMessage):
+            continue
+        text = _route_text(message.content)
+        return bool(_DISCOVERY_VEHICLE_RE.search(text)) or any(term in text for term in _DISCOVERY_LOCATION_TERMS)
+    return False
+
+
+def _correct_discovery_route(
+    *,
+    query: str,
+    messages: object,
+    intent: str,
+    sub_intent: str,
+) -> tuple[str, str, str | None]:
+    """Keep new-booking discovery separate from existing-booking access."""
+    normalized = _route_text(query)
+    explicitly_existing = "@" in normalized or any(term in normalized for term in _EXISTING_BOOKING_TERMS)
+    has_vehicle = bool(_DISCOVERY_VEHICLE_RE.search(normalized))
+    showroom_refinement = any(term in normalized for term in _DISCOVERY_LOCATION_TERMS)
+    continues_discovery = showroom_refinement and _recent_discovery_context(messages)
+    test_drive_request = any(term in normalized for term in ("lai thu", "chay thu", "trai nghiem"))
+
+    if explicitly_existing or not (has_vehicle or continues_discovery):
+        return intent, sub_intent, None
+    if sub_intent == "booking_lookup" or (intent == "out_of_scope" and test_drive_request):
+        corrected = (
+            "booking_availability"
+            if any(term in normalized for term in _AVAILABILITY_TERMS)
+            else "booking_new"
+        )
+        return "domain", corrected, "new_booking_discovery_must_not_open_existing_booking_access"
+    return intent, sub_intent, None
 
 
 def _driver_scope_block(state: AgentState, query: str, *, sub_intent: str) -> dict:
@@ -192,6 +255,9 @@ async def classifier_node(state: AgentState) -> dict:
         "- others: domain requests that do not fit another domain sub_intent.\n"
         "\n"
         "Use booking_lookup when the user wants to view, find, check, or retrieve an existing booking.\n"
+        "A request that names a vehicle or showroom and asks for test-drive availability is NOT "
+        "booking_lookup unless the user explicitly says the booking already exists, provides a booking "
+        "code/email, or asks to manage an appointment already made.\n"
         "IMPORTANT: When the user mentions changing/switching a vehicle model (e.g. 'đổi VF8', 'đổi xe VF5', "
         "'chuyển sang VF7', 'xem xe VF3'), classify as booking_new (NOT booking_reschedule). Only use "
         "booking_reschedule when the user explicitly asks to change an existing appointment time/date "
@@ -255,6 +321,19 @@ async def classifier_node(state: AgentState) -> dict:
             intent = "domain"
 
         sub_intent = route_result.sub_intent
+        intent, sub_intent, discovery_correction = _correct_discovery_route(
+            query=query,
+            messages=state.get("messages"),
+            intent=intent,
+            sub_intent=sub_intent,
+        )
+        if discovery_correction:
+            trace_event(
+                "classifier.route_correction",
+                trace_id=trace_id,
+                to_sub_intent=sub_intent,
+                reason=discovery_correction,
+            )
         if (
             intent == "domain"
             and context.get("stage") == "choose_slot"

@@ -29,7 +29,7 @@ def test_guardrail_benchmark_dataset_is_valid_unique_and_balanced():
     category_minimums = dataset["coverage_policy"]["minimum_cases_by_category"]
 
     assert dataset["schema_version"] == "1.2"
-    assert dataset["case_count"] == len(cases) == 82
+    assert dataset["case_count"] == len(cases) == 93
     assert len({case["case_id"] for case in cases}) == len(cases)
     assert {case["kind"] for case in cases} == {
         "abuse",
@@ -53,7 +53,7 @@ def test_guardrail_benchmark_dataset_is_valid_unique_and_balanced():
 def test_every_guardrail_benchmark_case_passes_as_a_ci_regression_gate():
     report = run_benchmark(load_dataset(DEFAULT_DATASET_PATH))
 
-    assert report["summary"]["total"] == 82
+    assert report["summary"]["total"] == 93
     assert report["summary"]["failed"] == 0
     assert report["summary"]["pass_rate"] == 1.0
     assert report["coverage_gate"]["passed"] is True
@@ -121,7 +121,7 @@ def test_benchmark_pins_test_settings_instead_of_inheriting_production_env(monke
 
     report = run_benchmark(dataset, categories={"prompt_injection"})
 
-    assert report["summary"]["total"] == 6
+    assert report["summary"]["total"] == 13
     assert report["summary"]["failed"] == 0
 
 
@@ -166,6 +166,10 @@ def test_mutation_gate_kills_removed_prompt_injection_patterns(monkeypatch):
         "INPUT-ATTACK-001",
         "INPUT-ATTACK-011",
         "INPUT-ATTACK-017",
+        "INPUT-ATTACK-018",
+        "INPUT-ATTACK-019",
+        "INPUT-ATTACK-023",
+        "INPUT-ATTACK-024",
     } <= _failed_case_ids(report)
 
 

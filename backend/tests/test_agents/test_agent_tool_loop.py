@@ -21,7 +21,7 @@ def _scripted_tool_llm(*responses):
     return llm, bound
 
 
-# Kiểm tra booking agent chạy đủ vòng gọi tool rồi trả câu trả lời cuối.
+# Kiểm tra booking agent chạy đủ vòng gọi tool rồi trả câu trả lời bám tool result.
 @pytest.mark.asyncio
 async def test_booking_agent_executes_tool_and_returns_final_response(monkeypatch):
     tool_call = AIMessage(
@@ -46,12 +46,13 @@ async def test_booking_agent_executes_tool_and_returns_final_response(monkeypatc
     result = await agent.ainvoke({"query": "Tìm lịch lái thử VF8"}, config=_config("booking-agent-real-tool-loop"))
 
     assert result["active_skill"] == "booking"
-    assert result["response"] == "VF8 information found"
+    assert result["response"].startswith("Đã chọn VF8")
+    assert "cung cấp tỉnh, thành phố hoặc vị trí" in result["response"]
     assert result["tool_call_count"] == 1
     tool_messages = [message for message in result["messages"] if isinstance(message, ToolMessage)]
     assert len(tool_messages) == 1
     assert "VF8" in tool_messages[0].content
-    assert bound.ainvoke.await_count == 2
+    assert bound.ainvoke.await_count == 1
 
 
 # Kiểm tra booking agent chặn tool ngoài whitelist.

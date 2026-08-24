@@ -80,20 +80,6 @@ async def test_staff_api_is_strictly_read_only_and_booking_is_assignment_scoped(
     _seed_staff(booking_db, catalog)
     own_booking = confirmed_booking_factory(catalog["slot_main"])
     other_booking = confirmed_booking_factory(catalog["slot_second_vehicle"])
-    with booking_db.transaction(immediate=True) as connection:
-        connection.execute(
-            "INSERT INTO slot_sales_assignments(id,slot_id,sales_staff_id,assignment_role,status,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (
-                "assignment_staff_q7",
-                catalog["slot_main"],
-                "staff_q7",
-                "test_drive_consultant",
-                "assigned",
-                FIXED_NOW.isoformat(),
-                FIXED_NOW.isoformat(),
-            ),
-        )
     service = InternalPortalService(booking_db, now=lambda: FIXED_NOW)
     headers = _headers(service, username="staff.routes", role="staff", staff_id="staff_q7")
     app.dependency_overrides[get_internal_portal_service] = lambda: service
