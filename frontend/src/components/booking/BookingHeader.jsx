@@ -1,6 +1,6 @@
 /**
  * components/booking/BookingHeader.jsx
- * 
+ *
  * Top bar header for the booking studio:
  * - Link back to home
  * - VinFast Brand logo

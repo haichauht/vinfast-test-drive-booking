@@ -10,7 +10,16 @@ class ChatRequest(BaseModel):
     conversation_id: str = Field(
         default="", max_length=100, description="ID phiên hội thoại (để nhớ lịch sử nhiều lượt)"
     )
-    action: Literal["search_options", "hold_slot", "update_draft", "confirm_booking", "request_access", "verify_access"] | None = Field(
+    action: Literal[
+        "search_options",
+        "hold_slot",
+        "update_draft",
+        "confirm_booking",
+        "request_access",
+        "verify_access",
+        "cancel_booking",
+        "reschedule_booking",
+    ] | None = Field(
         default=None,
         description="Structured booking action requested by a confirmed UI interaction.",
     )

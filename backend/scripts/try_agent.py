@@ -20,10 +20,10 @@ async def mock_classify(prompt, **kwargs):
     query_clean = "".join(c if c.isalnum() or c.isspace() else " " for c in query_part)
     words = query_clean.split()
     if any(kw in words for kw in ["chào", "hello", "hi"]):
-        return RouteSchema(intent="domain", sub_intent="vehicle_info")
+        return RouteSchema(intent="domain", sub_intent="vehicle_info", has_schedule_preference=False)
     elif any(kw in words or kw in query_part for kw in ["vf8", "sạc", "km", "thông số", "giá"]):
-        return RouteSchema(intent="domain", sub_intent="vehicle_info")
-    return RouteSchema(intent="domain", sub_intent="booking")
+        return RouteSchema(intent="domain", sub_intent="vehicle_info", has_schedule_preference=False)
+    return RouteSchema(intent="domain", sub_intent="booking", has_schedule_preference=False)
 
 
 mock_structured.ainvoke = AsyncMock(side_effect=mock_classify)

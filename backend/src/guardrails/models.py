@@ -17,11 +17,21 @@ class GuardrailDecision:
     reason: str = ""
     user_message: str = ""
     sanitized_text: str | None = None
+    sanitized_context: dict[str, Any] | None = None
     details: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def allow(cls, *, sanitized_text: str | None = None) -> GuardrailDecision:
-        return cls(allowed=True, sanitized_text=sanitized_text)
+    def allow(
+        cls,
+        *,
+        sanitized_text: str | None = None,
+        sanitized_context: dict[str, Any] | None = None,
+    ) -> GuardrailDecision:
+        return cls(
+            allowed=True,
+            sanitized_text=sanitized_text,
+            sanitized_context=sanitized_context,
+        )
 
     @classmethod
     def block(

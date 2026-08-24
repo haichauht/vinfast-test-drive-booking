@@ -31,7 +31,7 @@ Staff phải được liên kết với một nhân viên đang hoạt động; 
 
 Operations Admin có thể sửa role/scope, khóa hoặc mở tài khoản, đặt lại mật khẩu và thu hồi toàn bộ phiên đăng nhập tại mục **Tài khoản**. Không thể khóa hoặc hạ quyền Operations Admin đang hoạt động cuối cùng.
 
-Các bảng tài khoản, session, OTP, access session, identity link và audit không được import qua API `/admin/import/eval-dataset`. Bộ snapshot đầy đủ chỉ được seed bằng CLI trong môi trường development để tránh ghi đè trạng thái bảo mật production.
+Các bảng tài khoản, session, OTP, access session, identity link và audit không được import qua API `/admin/import/eval-dataset`. Business snapshot chỉ được seed bằng CLI trong môi trường development để tránh ghi đè trạng thái bảo mật production; active login session và notification read state không nằm trong seed.
 
 Không có credential mặc định trong repository. Tài khoản Operations Admin đầu
 tiên vẫn được provision từ thư mục `backend` bằng lệnh:
@@ -82,3 +82,6 @@ docker compose up --build postgres db-seed backend internal-portal
 ```
 
 Portal mở ở <http://localhost:3100> và proxy `/api` sang backend trong Docker network.
+
+Human Review không thuộc portal vận hành này. Ứng dụng reviewer độc lập nằm tại
+`human-review/` và sử dụng tài khoản/namespace API riêng.

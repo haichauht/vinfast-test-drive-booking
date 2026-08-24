@@ -1,8 +1,9 @@
 import importlib
-import uuid
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from src.guardrails.conversation import get_conversation_token_manager
 
 routes_module = importlib.import_module("src.api.routes")
 
@@ -26,7 +27,8 @@ async def test_chat_generates_conversation_id_and_uses_it_as_thread_id(client, m
 
     assert response.status_code == 200
     payload = response.json()
-    uuid.UUID(payload["conversation_id"])
+    identity = get_conversation_token_manager().verify(payload["conversation_id"])
+    assert identity is not None
     (state,) = mocked.ainvoke.await_args.args
     assert state["query"] == "VF8 range"
     assert state["context"] == {}
@@ -36,24 +38,61 @@ async def test_chat_generates_conversation_id_and_uses_it_as_thread_id(client, m
     assert state["action_tool"] == ""
     assert state["action_input"] == {}
     assert state["action_error"] == ""
-    uuid.UUID(state["metadata"]["trace_id"])
-    assert mocked.ainvoke.await_args.kwargs["config"] == {"configurable": {"thread_id": payload["conversation_id"]}}
+    assert mocked.ainvoke.await_args.kwargs["config"] == {"configurable": {"thread_id": identity.thread_id}}
 
 
 # test case of Chau + kiểm tra API giữ nguyên conversation id để tiếp tục đúng phiên hội thoại
 @pytest.mark.asyncio
 async def test_chat_reuses_client_conversation_id(client, monkeypatch):
     mocked = _mock_agent(monkeypatch, {"response": "Continued", "analysis": ""})
-    conversation_id = "chau-conversation-1"
+    identity = get_conversation_token_manager().issue()
 
     response = await client.post(
         "/api/v1/chat",
-        json={"message": "Continue booking", "conversation_id": conversation_id},
+        json={"message": "Continue booking", "conversation_id": identity.public_token},
     )
 
     assert response.status_code == 200
-    assert response.json()["conversation_id"] == conversation_id
-    assert mocked.ainvoke.await_args.kwargs["config"]["configurable"]["thread_id"] == conversation_id
+    assert response.json()["conversation_id"] == identity.public_token
+    assert mocked.ainvoke.await_args.kwargs["config"]["configurable"]["thread_id"] == identity.thread_id
+
+
+@pytest.mark.asyncio
+async def test_chat_replaces_tampered_conversation_token_with_an_isolated_thread(client, monkeypatch):
+    mocked = _mock_agent(monkeypatch, {"response": "Fresh conversation", "analysis": ""})
+    manager = get_conversation_token_manager()
+    original = manager.issue()
+    replacement_character = "A" if original.public_token[-1] != "A" else "B"
+    tampered = original.public_token[:-1] + replacement_character
+
+    response = await client.post(
+        "/api/v1/chat",
+        json={"message": "Continue booking", "conversation_id": tampered},
+    )
+
+    assert response.status_code == 200
+    replacement = manager.verify(response.json()["conversation_id"])
+    assert replacement is not None
+    assert replacement.public_token != tampered
+    assert replacement.thread_id != original.thread_id
+    assert mocked.ainvoke.await_args.kwargs["config"]["configurable"]["thread_id"] == replacement.thread_id
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_reuses_guarded_chat_conversation_binding(client, monkeypatch):
+    mocked = _mock_agent(monkeypatch, {"response": "Streamed safely", "analysis": "hidden"})
+
+    response = await client.post("/api/v1/chat/stream", json={"message": "VF8 range"})
+
+    assert response.status_code == 200
+    events = [
+        json.loads(line.removeprefix("data: ")) for line in response.text.splitlines() if line.startswith("data: ")
+    ]
+    final = next(event["response"] for event in events if event["type"] == "done")
+    identity = get_conversation_token_manager().verify(final["conversation_id"])
+    assert identity is not None
+    assert final["analysis"] == ""
+    assert mocked.ainvoke.await_args.kwargs["config"] == {"configurable": {"thread_id": identity.thread_id}}
 
 
 # test case of Chau + kiểm tra message trắng bị từ chối thay vì tốn một lượt gọi agent

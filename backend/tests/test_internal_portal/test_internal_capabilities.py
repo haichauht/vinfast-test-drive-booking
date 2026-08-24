@@ -80,20 +80,6 @@ async def test_staff_api_is_strictly_read_only_and_booking_is_assignment_scoped(
     _seed_staff(booking_db, catalog)
     own_booking = confirmed_booking_factory(catalog["slot_main"])
     other_booking = confirmed_booking_factory(catalog["slot_second_vehicle"])
-    with booking_db.transaction(immediate=True) as connection:
-        connection.execute(
-            "INSERT INTO slot_sales_assignments(id,slot_id,sales_staff_id,assignment_role,status,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (
-                "assignment_staff_q7",
-                catalog["slot_main"],
-                "staff_q7",
-                "test_drive_consultant",
-                "assigned",
-                FIXED_NOW.isoformat(),
-                FIXED_NOW.isoformat(),
-            ),
-        )
     service = InternalPortalService(booking_db, now=lambda: FIXED_NOW)
     headers = _headers(service, username="staff.routes", role="staff", staff_id="staff_q7")
     app.dependency_overrides[get_internal_portal_service] = lambda: service
@@ -119,6 +105,7 @@ async def test_staff_api_is_strictly_read_only_and_booking_is_assignment_scoped(
 
         assert own.status_code == 200
         assert own.json()["assigned_staff_id"] == "staff_q7"
+        assert own.json()["customer_profile"]["summary"]["total_bookings"] == 1
         assert other.status_code == 404
         assert mutation.status_code == 403
         assert assignment.status_code == 403
@@ -190,6 +177,7 @@ async def test_manager_api_manages_only_its_showroom_and_cannot_use_admin_comman
         )
 
         assert own.status_code == 200
+        assert own.json()["customer_profile"]["summary"]["total_bookings"] == 1
         assert foreign.status_code == 404
         assert assigned.status_code == 200
         assert assigned.json()["assigned_staff_id"] == "staff_q7"

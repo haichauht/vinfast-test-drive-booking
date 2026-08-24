@@ -5,7 +5,7 @@
 /* ─── Booking calendar: one continuous weekly surface, animated with GSAP ─ */
 
 .studio-schedule--calendar {
-  padding: 76px clamp(16px, 2vw, 26px) 22px;
+  padding: 24px clamp(16px, 2vw, 26px) 22px;
   background: #f1f3f2;
 }
 
@@ -169,19 +169,23 @@
   font-size: 0.6rem;
 }
 
+/* Thứ nằm trên, số ngày nằm ngay dưới, cả hai canh giữa ô.
+   Bản trước dùng lưới hai cột: thứ dính góc trên trái còn số ngày dạt sang phải
+   và trải hai hàng, nên hai thứ vốn phải đọc liền nhau lại nằm rời hai góc. */
 .schedule-calendar__day {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-content: center;
-  gap: 2px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
   padding: 8px 6px;
+  text-align: center;
 }
 
 .schedule-calendar__day:last-child,
 .schedule-calendar__cell:last-child { border-right: 0; }
 
 .schedule-calendar__day span {
-  align-self: end;
   color: var(--muted);
   font-size: 0.56rem;
   font-weight: 680;
@@ -189,10 +193,8 @@
 }
 
 .schedule-calendar__day strong {
-  grid-row: span 2;
-  align-self: center;
-  justify-self: end;
   font-size: 1.4rem;
+  line-height: 1.1;
   font-weight: 520;
   letter-spacing: -0.04em;
 }
@@ -202,14 +204,29 @@
   font-size: 0.52rem;
 }
 
-.schedule-calendar__day.is-today { color: var(--blue); background: rgba(20, 100, 244, 0.045); }
+/*
+ * HAI TRẠNG THÁI KHÁC NHAU, đừng lẫn:
+ *   is-today       = hôm nay theo đồng hồ  -> nền ĐEN, chữ trắng
+ *   is-highlighted = ngày người dùng vừa nhắc trong hội thoại -> nền XANH, chữ trắng
+ *
+ * Trước đây ngược lại: hôm nay tô xanh nhạt còn ngày người dùng chọn tô đen.
+ * Xanh là màu hành động của cả web nên nó phải dành cho lựa chọn của người dùng.
+ *
+ * Thứ tự khai báo quan trọng: một ô có thể vừa là hôm nay vừa được chọn, khi đó
+ * xanh phải thắng nên .is-highlighted đứng sau.
+ */
+.schedule-calendar__day.is-today {
+  color: #ffffff;
+  background: #33373b;
+  font-weight: 700;
+}
 .schedule-calendar__day.is-today span,
-.schedule-calendar__day.is-today small { color: var(--blue); }
+.schedule-calendar__day.is-today small { color: #ffffff; }
 
 .schedule-calendar__day.is-highlighted {
   color: #ffffff !important;
-  background: #33373b !important;
-  box-shadow: inset 0 -3px 0 #33373b;
+  background: var(--blue) !important;
+  box-shadow: inset 0 -3px 0 var(--blue);
   font-weight: 700;
 }
 .schedule-calendar__day.is-highlighted span,
@@ -355,7 +372,7 @@
   grid-template-rows: minmax(0, 1fr);
   gap: 24px;
   /* 78px trên: thanh công cụ nổi bắt đầu ở top 18px và cao ~62px, cộng thêm 12px thở. */
-  padding: 78px clamp(28px, 4vw, 52px) 26px;
+  padding: 26px clamp(28px, 4vw, 52px) 26px;
   background: #edf0ee;
 }
 
@@ -828,7 +845,7 @@ p { text-wrap: pretty; }
 }
 
 @media (max-width: 720px) {
-  .studio-schedule--calendar { padding: 70px 10px 18px; }
+  .studio-schedule--calendar { padding: 18px 10px 18px; }
   .studio-schedule--calendar .studio-schedule__heading { grid-template-columns: 1fr; gap: 6px; padding-inline: 4px; }
   .studio-schedule--calendar .studio-schedule__heading h2 { grid-column: 1; max-width: 21ch; font-size: clamp(1.45rem, 7vw, 2.15rem); }
   .studio-schedule--calendar .studio-schedule__heading > p { grid-column: 1; grid-row: auto; justify-self: start; max-width: 50ch; padding: 8px 0 0; border-top: 1px solid var(--line); border-left: 0; }

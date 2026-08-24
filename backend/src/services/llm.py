@@ -8,20 +8,52 @@ from pydantic import SecretStr
 from src.config import get_settings
 
 
-def _build_llm(model: str, temperature: float) -> ChatOpenAI | None:
+def extract_response_text(response: Any) -> str:
+    """Return only user-visible text from Chat Completions or Responses messages."""
+    text = getattr(response, "text", "")
+    if isinstance(text, str):
+        return text.strip()
+
+    content = getattr(response, "content", "")
+    return content.strip() if isinstance(content, str) else ""
+
+
+def _build_llm(
+    model: str,
+    temperature: float,
+    *,
+    use_responses_api: bool = False,
+    reasoning_effort: str | None = None,
+) -> ChatOpenAI | None:
     settings = get_settings()
+    request_timeout = getattr(settings, "llm_request_timeout_seconds", 60.0)
+    max_retries = getattr(settings, "llm_max_retries", 1)
     if settings.openrouter_api_key:
         return ChatOpenAI(
             model=model,
             api_key=SecretStr(settings.openrouter_api_key),
             base_url="https://openrouter.ai/api/v1",
             temperature=temperature,
+            timeout=request_timeout,
+            max_retries=max_retries,
         )
     if settings.openai_api_key:
+        openai_model = model.removeprefix("openai/")
+        if use_responses_api:
+            return ChatOpenAI(
+                model=openai_model,
+                api_key=SecretStr(settings.openai_api_key),
+                use_responses_api=True,
+                reasoning_effort=reasoning_effort,
+                timeout=request_timeout,
+                max_retries=max_retries,
+            )
         return ChatOpenAI(
-            model=model.removeprefix("openai/"),
+            model=openai_model,
             api_key=SecretStr(settings.openai_api_key),
             temperature=temperature,
+            timeout=request_timeout,
+            max_retries=max_retries,
         )
     # Deterministic endpoints remain available without an LLM key. Returning
     # None makes that state explicit so Agent nodes can choose a safe fallback
@@ -31,7 +63,14 @@ def _build_llm(model: str, temperature: float) -> ChatOpenAI | None:
 
 def get_llm() -> ChatOpenAI | None:
     settings = get_settings()
-    return _build_llm(settings.model_name, settings.llm_temperature)
+    openai_model = settings.model_name.removeprefix("openai/")
+    use_responses_api = openai_model == "gpt-5.6" or openai_model.startswith("gpt-5.6-")
+    return _build_llm(
+        settings.model_name,
+        settings.llm_temperature,
+        use_responses_api=use_responses_api,
+        reasoning_effort=settings.llm_reasoning_effort if use_responses_api else None,
+    )
 
 
 def get_classifier_llm() -> ChatOpenAI | None:
@@ -77,4 +116,4 @@ async def summarize_user_profile(profile_data: dict[str, Any]) -> str:
             HumanMessage(content=json.dumps(profile_data, ensure_ascii=False, default=str)),
         ]
     )
-    return response.content.strip() if isinstance(response.content, str) else str(response.content).strip()
+    return extract_response_text(response)

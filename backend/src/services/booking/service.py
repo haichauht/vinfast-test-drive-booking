@@ -41,6 +41,7 @@ class BookingService(
         otp_request_per_contact_per_hour: int = 3,
         otp_verify_per_challenge_per_minute: int = 5,
         access_session_ttl_seconds: int = 1800,
+        booking_advance_window_days: int = 30,
         now=utcnow,
     ):
         self.db = database
@@ -57,4 +58,5 @@ class BookingService(
         self.otp_request_per_contact_per_hour = otp_request_per_contact_per_hour
         self.otp_verify_per_challenge_per_minute = otp_verify_per_challenge_per_minute
         self.access_session_ttl_seconds = access_session_ttl_seconds
+        self.booking_advance_window_days = booking_advance_window_days
         self.now = now

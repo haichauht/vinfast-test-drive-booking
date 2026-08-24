@@ -13,12 +13,14 @@ from src.agents.nodes.post_booking_skill_node import post_booking_skill_node
 from src.agents.nodes.sensitive_policy_node import sensitive_policy_node
 from src.agents.state import AgentState
 from src.agents.tools import (
+    cancel_booking,
     confirm_test_drive_booking,
     get_booking_details,
     get_booking_draft,
     hold_test_drive_slot,
     request_booking_access,
     request_user_location,
+    reschedule_booking,
     search_knowledge,
     search_test_drive_options,
     update_booking_draft,
@@ -112,6 +114,8 @@ def build_graph(checkpointer: Any | None = None) -> CompiledStateGraph:
         verify_booking_access,
         get_booking_details,
         confirm_test_drive_booking,
+        cancel_booking,
+        reschedule_booking,
     ]
     graph.add_node(
         "booking_tools",
