@@ -53,7 +53,7 @@ export function BookingUpsell({ cars, onChoose, onBrowseAll, totalCount = 0, hea
             <span className="booking-upsell__meta">
               <strong>{car.name}</strong>
               <small>{[car.body, car.seats].filter(Boolean).join(' · ')}</small>
-              {car.price && <em>{shortPrice(car.price)}</em>}
+              {car.price && <em>{car.priceFrom || shortPrice(car.price)}</em>}
             </span>
             <ArrowRight size={14} weight="light" className="booking-upsell__go" aria-hidden="true" />
           </button>

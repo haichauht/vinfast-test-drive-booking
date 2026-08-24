@@ -913,7 +913,9 @@ export function BookingPage() {
         bookerName: booking.booker?.full_name || '',
         driverName: booking.driver?.full_name || '',
         phone: booking.driver?.phone || booking.booker?.phone || '',
-        email: booking.driver?.email || booking.booker?.email || '',
+        // This form edits the booker. Keep the contact that completed OTP
+        // verification instead of pre-filling a different driver's email.
+        email: accessValue.email || booking.booker?.email || '',
         permissions: verified.permissions || [],
         allowedActions: booking.allowed_actions || [],
         vehicleName: booking.vehicle?.name || '',
@@ -1734,7 +1736,8 @@ export function BookingPage() {
         bookerName: booking.booker?.full_name || '',
         driverName: booking.driver?.full_name || '',
         phone: booking.driver?.phone || booking.booker?.phone || '',
-        email: booking.driver?.email || booking.booker?.email || '',
+        // The verified email is the intended pre-fill value for booker edits.
+        email: accessValue.email || booking.booker?.email || '',
         permissions: verified.permissions || [],
         allowedActions: booking.allowed_actions || [],
         vehicleName: booking.vehicle?.name || '',
@@ -1785,7 +1788,7 @@ export function BookingPage() {
     setAccessBusy(true); setAccessError('')
     try {
       const booking = await getVerifiedBooking({ accessToken: accessProfile.accessToken, bookingId: summary.id })
-      const selectedProfile = { ...accessProfile, bookingId: booking.id, bookingCode: booking.booking_code || '', bookerName: booking.booker?.full_name || '', driverName: booking.driver?.full_name || '', phone: booking.driver?.phone || booking.booker?.phone || '', email: booking.driver?.email || booking.booker?.email || '', allowedActions: booking.allowed_actions || [], vehicleName: booking.vehicle?.name || '', vehicleModelId: booking.vehicle?.id || '', showroomName: booking.showroom?.name || '', showroomId: booking.showroom?.id || '', showroomAddress: booking.showroom?.address || '', advisorName: booking.advisor?.full_name || 'Chưa phân công', advisorPhone: booking.advisor?.phone || '', slotTime: booking.slot_time || '', slotDate: booking.slot_date || '' }
+      const selectedProfile = { ...accessProfile, bookingId: booking.id, bookingCode: booking.booking_code || '', bookerName: booking.booker?.full_name || '', driverName: booking.driver?.full_name || '', phone: booking.driver?.phone || booking.booker?.phone || '', email: accessProfile.email || accessValue.email || booking.booker?.email || '', allowedActions: booking.allowed_actions || [], vehicleName: booking.vehicle?.name || '', vehicleModelId: booking.vehicle?.id || '', showroomName: booking.showroom?.name || '', showroomId: booking.showroom?.id || '', showroomAddress: booking.showroom?.address || '', advisorName: booking.advisor?.full_name || 'Chưa phân công', advisorPhone: booking.advisor?.phone || '', slotTime: booking.slot_time || '', slotDate: booking.slot_date || '' }
       setAccessProfile(selectedProfile)
       setExpandedBookingId(booking.id)
       setAccessFlow({ phase: accessProfile.accessPurpose === 'cancel' ? 'confirm_cancel' : 'edit', purpose: accessProfile.accessPurpose || 'lookup', challengeId: '', expiresAt: 0 })

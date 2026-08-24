@@ -32,6 +32,7 @@ import { SmartImage } from '../components/SmartImage'
 import { SiteFooter } from '../components/SiteFooter'
 import { Vehicle3DExperience } from '../components/Vehicle3DExperience'
 import { VehicleColorConfigurator } from '../components/VehicleColorConfigurator'
+import { VehiclePriceVariants } from '../components/VehiclePrice'
 import { useVehicleCatalog, useVehicleDetail } from '../hooks/useSiteData'
 import { getVehicle3dModel } from '../data/vehicle3d'
 import { vehicleGallery } from '../data/vehicle-gallery'
@@ -390,7 +391,10 @@ export function CarDetailPage() {
   const rangeFact = car.range || findDetailFact(overviewFacts, /quang duong|tam hoat dong/)
   const chargingFact = car.charging || findDetailFact(overviewFacts, /sac|thoi gian nap/)
   const overviewItems = [
-    { label: 'Giá', value: car.price },
+    {
+      label: 'Giá niêm yết',
+      value: <VehiclePriceVariants className="vehicle-price-variants" variants={car.priceVariants} fallback={car.price} />,
+    },
     { label: 'Sức chứa', value: car.seats },
     { label: rangeFact?.label || 'Tầm hoạt động', value: rangeFact?.value },
     { label: chargingFact?.label || 'Thông tin sạc', value: chargingFact?.value },
