@@ -232,6 +232,45 @@ class ManagementService(BookingBase):
             self._save_idempotency(c, ui_action_id, "confirm_reschedule", request_payload, result, now)
             return result
 
+    def reschedule_booking(
+        self,
+        current_booking_id: str,
+        new_slot_id: str,
+        access_session_token: str,
+        ui_action_id: str,
+    ) -> dict:
+        """Complete a reschedule through one public, retry-safe command.
+
+        The existing hold/confirm operations remain the audit boundaries.  A
+        stable public action id is expanded into stable child ids, so retrying
+        after either step replays the recorded response instead of creating a
+        second booking.
+        """
+        prefix = "reschedule:"
+        if not ui_action_id.startswith(prefix) or not ui_action_id.removeprefix(prefix).strip():
+            raise BookingError(
+                "INVALID_INPUT",
+                "ui_action_id của reschedule_booking phải bắt đầu bằng 'reschedule:'.",
+            )
+        suffix = ui_action_id.removeprefix(prefix)
+        held = self.hold_reschedule_slot(
+            current_booking_id,
+            new_slot_id,
+            access_session_token,
+            f"reschedule-hold:{suffix}",
+        )
+        completed = self.confirm_reschedule(
+            current_booking_id,
+            held["booking_id"],
+            access_session_token,
+            f"reschedule-confirm:{suffix}",
+        )
+        return {
+            **completed,
+            "current_booking_id": current_booking_id,
+            "new_slot_id": new_slot_id,
+        }
+
     def cancel_booking(
         self, booking_id: str, access_session_token: str, ui_action_id: str, reason: str | None = None
     ) -> dict:

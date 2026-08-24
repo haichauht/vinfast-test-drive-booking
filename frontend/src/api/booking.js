@@ -31,6 +31,7 @@ const PUBLIC_ACTION_ERROR_MESSAGES = {
   VEHICLE_NOT_READY: 'Xe demo hiện không sẵn sàng cho khung giờ này, vui lòng chọn lịch khác.',
   VERSION_CONFLICT: 'Thông tin đặt lịch đã thay đổi, vui lòng tải lại và thử lại.',
   INVALID_INPUT: 'Thông tin gửi lên chưa hợp lệ, vui lòng kiểm tra lại.',
+  SERVICE_TEMPORARILY_UNAVAILABLE: 'ViVi đang tạm thời chưa thể xử lý yêu cầu này. Quý khách vui lòng thử lại sau.',
   AGENT_ACTION_FAILED: 'Thao tác giữ chỗ chưa hoàn tất. Vui lòng chọn lại khung giờ.',
 }
 
@@ -45,25 +46,68 @@ const rememberConversationId = (conversationId) => {
   }
 }
 
-const normalizeAgentContext = (context = {}) => ({
-  channel: 'booking',
-  mode: String(context.mode || ''),
-  phase: String(context.phase || context.stage || ''),
-  stage: String(context.stage || ''),
-  allowed_actions: Array.isArray(context.allowedActions) ? context.allowedActions : [],
-  selected_vehicle_id: context.selectedVehicle?.id || '',
-  selected_vehicle_name: context.selectedVehicle?.name || '',
-  selected_showroom_id: context.selectedShowroom?.id || '',
-  selected_showroom_name: context.selectedShowroom?.name || '',
-  selected_slot_id: context.selectedSlot?.slotId || '',
-  selected_slot_time: context.selectedSlot?.time || '',
-  selected_slot_date: context.selectedSlot?.dateLabel || '',
-  booking_id: context.bookingId || '',
-  recipient: context.recipient || '',
-  nearby_showrooms: Array.isArray(context.nearbyShowrooms)
-    ? context.nearbyShowrooms.map(({ id, name }) => ({ id, name })).slice(0, 10)
-    : [],
-})
+const compactObject = (value) => Object.fromEntries(
+  Object.entries(value).filter(([, item]) => item !== '' && item !== null && item !== undefined),
+)
+
+const VEHICLE_CONTEXT_STAGES = new Set([
+  'need_address', 'need_ward', 'choose_showroom', 'choose_slot', 'collect_info', 'review', 'success',
+])
+const SHOWROOM_CONTEXT_STAGES = new Set(['choose_slot', 'collect_info', 'review', 'success'])
+const SLOT_CONTEXT_STAGES = new Set(['collect_info', 'review', 'success'])
+const NEARBY_SHOWROOM_CONTEXT_STAGES = new Set(['choose_showroom', 'choose_slot'])
+
+const normalizeAgentContext = (context = {}) => {
+  const normalized = { channel: 'booking' }
+  const stage = String(context.stage || '').trim()
+  const recipient = String(context.recipient || '').trim()
+
+  if (stage) normalized.stage = stage
+  if (recipient) normalized.recipient = recipient
+
+  if (context.selectedVehicle && VEHICLE_CONTEXT_STAGES.has(stage)) {
+    normalized.selectedVehicle = compactObject({
+      id: context.selectedVehicle.id,
+      name: context.selectedVehicle.name,
+    })
+  }
+  if (context.selectedShowroom && SHOWROOM_CONTEXT_STAGES.has(stage)) {
+    normalized.selectedShowroom = compactObject({
+      id: context.selectedShowroom.id,
+      name: context.selectedShowroom.name,
+    })
+  }
+  if (context.selectedSlot && SLOT_CONTEXT_STAGES.has(stage)) {
+    normalized.selectedSlot = compactObject({
+      slotId: context.selectedSlot.slotId,
+      time: context.selectedSlot.time,
+      dateLabel: context.selectedSlot.dateLabel,
+      isAvailable: context.selectedSlot.isAvailable,
+      unavailableLabel: context.selectedSlot.unavailableLabel,
+    })
+  }
+  if (
+    NEARBY_SHOWROOM_CONTEXT_STAGES.has(stage)
+    && Array.isArray(context.nearbyShowrooms)
+    && context.nearbyShowrooms.length
+  ) {
+    normalized.nearbyShowrooms = context.nearbyShowrooms.slice(0, 10).map((showroom) => compactObject({
+      id: showroom.id,
+      name: showroom.name,
+      address: showroom.address,
+      distance: showroom.distance,
+    }))
+  }
+  if (context.userLocation && NEARBY_SHOWROOM_CONTEXT_STAGES.has(stage)) {
+    normalized.userLocation = compactObject({
+      latitude: context.userLocation.latitude,
+      longitude: context.userLocation.longitude,
+    })
+  }
+  if (context.bookingId) normalized.bookingId = String(context.bookingId)
+
+  return normalized
+}
 
 const agentRequest = async ({ message, action, actionPayload = {}, context = {} }) => {
   const result = await apiPost('/chat', {

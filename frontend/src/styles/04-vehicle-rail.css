@@ -122,15 +122,20 @@
   to { transform: translateX(780%); }
 }
 
+/* Hai thẻ chiếm hai nửa bằng nhau nên chữ canh trái sẽ dính lệch hẳn về mép trái
+   của từng nửa. Canh giữa cả theo chiều ngang lẫn chiều dọc thì hai khối chữ nằm
+   cân trong ô của mình và cân với nhau. */
 .model-tabs button {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 22px 24px;
   color: var(--muted);
   background: transparent;
   cursor: pointer;
-  text-align: left;
+  text-align: center;
   transition: color 0.55s var(--ease-heavy), background 0.55s var(--ease-heavy);
 }
 
@@ -168,7 +173,18 @@
   overflow-x: auto;
   padding: 8px 2px 28px;
   scroll-behavior: smooth;
-  scroll-snap-type: x mandatory;
+  /*
+   * KHÔNG dùng scroll-snap ở dải này.
+   *
+   * Dải tự chạy vòng tròn, nghĩa là mã phải tự đặt scrollLeft liên tục: mỗi nhịp
+   * trôi một thẻ, và mỗi lần đi hết một lượt lại nhảy lùi về lượt trước. Với
+   * `scroll-snap-type: mandatory`, cứ đặt scrollLeft xong là trình duyệt ÉP bám
+   * về điểm snap gần nhất — chỉ cần lệch vài pixel là nó bám ngược về thẻ trước.
+   * Đó chính là lỗi "lướt từ VF 9 sang VF 3 rồi tự về VF 7".
+   *
+   * Hai cơ chế này về bản chất tranh nhau quyền quyết định vị trí cuộn, không thể
+   * cùng tồn tại. Dải thẻ ngang thì bỏ snap đi cũng không mất gì.
+   */
   scrollbar-width: none;
 }
 
@@ -184,7 +200,6 @@
   padding: 26px 26px 17px;
   border-block: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(236, 238, 237, 0.52), rgba(255, 255, 255, 0) 48%);
-  scroll-snap-align: start;
 }
 
 /* Từ 17/08/2026 phần tử này LÀ thẻ <a> bọc cả thẻ xe, nên phải khử trang trí mặc định của
@@ -522,11 +537,51 @@
   to { background-position: -220% 0; }
 }
 
+.vehicle-rail-shell {
+  position: relative;
+}
+
+/*
+ * Hai nút điều hướng đứng HAI BÊN dải xe, canh giữa theo chiều dọc.
+ *
+ * Bản trước xếp chúng thành một hàng bên dưới dải. Thẻ xe cao hơn 650px nên hàng
+ * nút rơi hẳn khỏi tầm nhìn, người dùng không biết là có nút để bấm.
+ *
+ * Lớp phủ này trùm cả dải nên phải để pointer-events:none, nếu không nó nuốt hết
+ * thao tác kéo ngang và bấm vào thẻ xe. Chỉ hai nút mới nhận chuột.
+ */
 .rail-controls {
+  position: absolute;
+  /* Nhô HẲN ra ngoài mép dải. Để nút nằm trong lòng thẻ thì nó đè lên đúng chỗ
+     ghi tên mẫu xe. Khoảng nhô lấy đúng nửa bề rộng nút cộng một chút, để nút
+     cưỡi lên mép thẻ chứ không phủ vào phần chữ. */
+  inset: 0 -30px;
+  z-index: 4;
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+.rail-controls button {
+  pointer-events: auto;
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 26px rgba(16, 20, 28, 0.16);
+  backdrop-filter: blur(6px);
+}
+
+/* Màn hẹp: thu nút lại cho đỡ che thẻ xe. */
+/* Màn hẹp: .section-frame chỉ chừa 32px mỗi bên nên không đủ chỗ nhô ra ngoài,
+   kéo nút về sát mép dải và thu nhỏ lại. */
+@media (max-width: 1100px) {
+  .rail-controls { inset: 0 -18px; }
+}
+
+@media (max-width: 720px) {
+  .rail-controls { inset: 0 -6px; }
+  .rail-controls button { width: 40px; height: 40px; }
 }
 
 .rail-controls button,

@@ -35,6 +35,7 @@ def test_should_continue_booking_respects_tool_calls_and_loop_limit():
 @pytest.mark.asyncio
 async def test_max_tool_limit_node_cleans_dangling_tool_calls():
     from src.agents.graph import max_tool_limit_node
+
     tool_message = AIMessage(
         content="",
         tool_calls=[{"id": "call-1", "name": "search_knowledge", "args": {"query": "VF6"}}],
@@ -45,5 +46,3 @@ async def test_max_tool_limit_node_cleans_dangling_tool_calls():
     assert result["messages"][0].status == "error"
     assert result["messages"][0].tool_call_id == "call-1"
     assert isinstance(result["messages"][1], AIMessage)
-
-

@@ -688,16 +688,26 @@
   object-fit: cover;
 }
 
+/*
+ * Form nằm ở hàng `auto` của lưới .vivi-studio, tức là nó lấy bao nhiêu chỗ thì
+ * phần tin nhắn mất bấy nhiêu. Để 47dvh thì riêng form đã ăn gần nửa màn, cộng
+ * đồng hồ giữ chỗ và hàng nút nữa là đoạn hội thoại của người dùng với ViVi bị
+ * bóp còn vài dòng — đúng lúc người ta cần nhìn lại xem vừa chọn xe gì, giờ nào.
+ *
+ * Form vốn đã tự cuộn được nên hạ trần xuống không mất thông tin nào, chỉ là
+ * cuộn trong form nhiều hơn một chút.
+ */
 .vivi-customer-form {
-  max-height: 47dvh;
+  max-height: 32dvh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 3px;
 }
 
 .vivi-customer-form__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 /* Khối liên hệ riêng của người lái, chỉ hiện ở luồng đặt hộ.
@@ -769,8 +779,11 @@
 
 .vivi-customer-form input:not([type='checkbox']) {
   width: 100%;
-  height: 43px;
-  padding: 0 12px;
+  /* 43px là chiều cao của ô nhập ở modal toàn màn hình. Trong khung chat nó phải
+     gọn hơn: cả form chỉ được chiếm một phần nhỏ chiều cao, mỗi ô cao thêm 5px là
+     nhân với năm sáu ô thành mất hẳn một đoạn hội thoại. */
+  height: 38px;
+  padding: 0 11px;
   border: 1px solid var(--line);
   border-radius: 12px;
   outline: 0;
@@ -795,10 +808,10 @@
   grid-template-columns: auto 1fr;
   align-items: start;
   gap: 10px;
-  margin: 12px 0 0;
-  padding: 12px;
+  margin: 9px 0 0;
+  padding: 9px 10px;
   border: 1px solid var(--line);
-  border-radius: 13px;
+  border-radius: 12px;
   cursor: pointer;
 }
 

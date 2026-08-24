@@ -1,4 +1,6 @@
 import logging
+import re
+import unicodedata
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -6,15 +8,19 @@ from pydantic import BaseModel, Field
 
 from src.agents.constants import (
     ADVISORY_KEYWORDS,
+    BOOKING_CANCEL_KEYWORDS,
     BOOKING_MUTATION_KEYWORDS,
+    BOOKING_RESCHEDULE_KEYWORDS,
     LOOKUP_KEYWORDS,
     OUT_OF_SCOPE_KEYWORDS,
+    PUBLIC_LLM_UNAVAILABLE_CODE,
+    PUBLIC_LLM_UNAVAILABLE_MESSAGE,
     SOVEREIGNTY_KEYWORDS,
 )
 from src.agents.state import AgentState
 from src.agents.trace import trace_async_operation, trace_event, trace_node
 from src.dependencies import usage_budget_service
-from src.services.llm import get_classifier_llm
+from src.services.llm import extract_response_text, get_classifier_llm
 from src.services.usage_budget import (
     BudgetExceededError,
     LLMCallLimitExceededError,
@@ -28,10 +34,72 @@ DRIVER_BOOKING_SCOPE_MESSAGE = (
     "Các thao tác tra cứu, đổi, hủy hoặc cập nhật lịch cần được thực hiện bởi "
     "người đặt lịch qua luồng xác thực booking."
 )
+
 _DRIVER_BLOCKED_SUB_INTENTS = frozenset({
     "booking_new", "booking_availability", "booking_reschedule", "booking_cancel",
     "booking_update_details", "booking_update_notifications",
 })
+
+_DISCOVERY_VEHICLE_RE = re.compile(r"(?<![a-z0-9])(?:vf\s*\d+|ebus|xe\s+buyt\s+dien)(?![a-z0-9])")
+_DISCOVERY_LOCATION_TERMS = ("showroom", "dai ly", "co so", "dia diem")
+_AVAILABILITY_TERMS = ("lich", "slot", "suat", "khung gio", "gio nao", "ranh", "trong")
+_EXISTING_BOOKING_TERMS = (
+    "da dat",
+    "ma dat lich",
+    "ma booking",
+    "booking cua",
+    "lich cua toi",
+    "lich hen cua toi",
+    "huy lich",
+    "doi lich",
+    "doi gio hen",
+    "otp",
+    "ma xac thuc",
+)
+
+
+def _route_text(value: object) -> str:
+    normalized = unicodedata.normalize("NFD", str(value or "").casefold().replace("đ", "d"))
+    without_marks = "".join(character for character in normalized if unicodedata.category(character) != "Mn")
+    return " ".join(re.findall(r"[a-z0-9@.]+", without_marks))
+
+
+def _recent_discovery_context(messages: object) -> bool:
+    if not isinstance(messages, list):
+        return False
+    for message in reversed(messages):
+        if not isinstance(message, HumanMessage):
+            continue
+        text = _route_text(message.content)
+        return bool(_DISCOVERY_VEHICLE_RE.search(text)) or any(term in text for term in _DISCOVERY_LOCATION_TERMS)
+    return False
+
+
+def _correct_discovery_route(
+    *,
+    query: str,
+    messages: object,
+    intent: str,
+    sub_intent: str,
+) -> tuple[str, str, str | None]:
+    """Keep new-booking discovery separate from existing-booking access."""
+    normalized = _route_text(query)
+    explicitly_existing = "@" in normalized or any(term in normalized for term in _EXISTING_BOOKING_TERMS)
+    has_vehicle = bool(_DISCOVERY_VEHICLE_RE.search(normalized))
+    showroom_refinement = any(term in normalized for term in _DISCOVERY_LOCATION_TERMS)
+    continues_discovery = showroom_refinement and _recent_discovery_context(messages)
+    test_drive_request = any(term in normalized for term in ("lai thu", "chay thu", "trai nghiem"))
+
+    if explicitly_existing or not (has_vehicle or continues_discovery):
+        return intent, sub_intent, None
+    if sub_intent == "booking_lookup" or (intent == "out_of_scope" and test_drive_request):
+        corrected = (
+            "booking_availability"
+            if any(term in normalized for term in _AVAILABILITY_TERMS)
+            else "booking_new"
+        )
+        return "domain", corrected, "new_booking_discovery_must_not_open_existing_booking_access"
+    return intent, sub_intent, None
 
 
 def _driver_scope_block(state: AgentState, query: str, *, sub_intent: str) -> dict:
@@ -57,13 +125,20 @@ class RouteSchema(BaseModel):
         description=(
             "Detailed classification. Must be one of: booking_new, booking_lookup, "
             "booking_availability, booking_reschedule, booking_cancel, booking_update_details, "
-            "booking_update_notifications, post_booking_advisory, vehicle_info, "
+            "booking_update_notifications, post_booking_advisory, vehicle_info, greeting, "
+            "assistant_identity, "
             "out_of_scope, others. If intent is sensitive, use others."
         )
     )
     contact_value: str | None = Field(
         default=None,
         description="Email copied exactly from the user query, or null when no email was provided.",
+    )
+    has_schedule_preference: bool = Field(
+        description=(
+            "True when the user states, changes, or asks about a preferred test-drive date, "
+            "date range, day, or time, including shorthand such as '28 t mới rảnh'."
+        ),
     )
 
 
@@ -74,9 +149,10 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
     metadata = state.get("metadata") or {}
     previous_assistant_message = ""
     for message in reversed(state.get("messages") or []):
-        if isinstance(message, AIMessage) and isinstance(message.content, str) and message.content.strip():
-            previous_assistant_message = message.content.strip()
-            break
+        if isinstance(message, AIMessage):
+            previous_assistant_message = extract_response_text(message)
+            if previous_assistant_message:
+                break
     trace_id = metadata.get("trace_id", "")
     previous_skill = state.get("active_skill", "")
     post_booking_active = bool((state.get("post_booking_context") or {}).get("active"))
@@ -127,13 +203,6 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
         trace_event("classifier.keyword_route", trace_id=trace_id, intent="sensitive", sub_intent="out_of_scope_code")
         return {"intent": "sensitive", "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "out_of_scope_code"}, "tool_call_count": 0}
 
-    if not is_driver_invitation and any(kw in lower_query for kw in BOOKING_MUTATION_KEYWORDS):
-        return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "booking"}, "tool_call_count": 0}
-    if any(phrase in lower_query for phrase in ("xin chào", "chào bạn", "hello", "hi ")):
-        return {"intent": "domain", "active_skill": "booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "greeting"}, "tool_call_count": 0}
-    if post_booking_active and previous_skill == "post_booking" and len(query.split()) <= 8:
-        return {"intent": "domain", "active_skill": "post_booking", "previous_active_skill": previous_skill, "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "contextual_followup"}, "tool_call_count": 0}
-
     # Construct prompt for the LLM classifier dynamically based on system_prompt.md
     prompt = (
         "You classify requests for a VinFast test-drive assistant.\n"
@@ -154,6 +223,8 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
         "- A benign unrelated request is out_of_scope, not sensitive.\n"
         "- A request related to the user's test-drive journey is domain even when it is not a "
         "booking transaction.\n"
+        "- Greetings and questions about ViVi's identity, role, or supported capabilities are "
+        "domain. Never classify them as out_of_scope.\n"
         "- When a request is ambiguous but has a reasonable interpretation within the test-drive "
         "journey, prefer domain.\n"
         "\n"
@@ -167,6 +238,8 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
         "- booking_update_notifications\n"
         "- post_booking_advisory\n"
         "- vehicle_info\n"
+        "- greeting\n"
+        "- assistant_identity\n"
         "- others\n"
         "\n"
         "Domain sub-intent rules:\n"
@@ -175,28 +248,41 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
         "- booking_availability: check which test-drive dates or times are free.\n"
         "- booking_reschedule: change the booking date, time, or slot.\n"
         "- booking_cancel: cancel an existing booking.\n"
-        "- booking_update_details: change participant or booking details.\n"
+        "- booking_update_details: explicit request to modify or update registered contact details or information of the person who booked an existing booking (e.g. change contact name, phone number, email). Never use this for general questions about passengers, family, children, pets, or ride preparation.\n"
         "- booking_update_notifications: change booking notification preferences.\n"
-        "- post_booking_advisory: after a confirmed booking, guidance that helps the user prepare "
-        "for, participate in, or evaluate the upcoming test drive.\n"
-        "- vehicle_info: general VinFast vehicle/product questions not specifically tied to "
-        "preparing for an already-confirmed test drive.\n"
+        "- post_booking_advisory: after a confirmed booking, guidance that helps the user prepare for, participate in, or evaluate the upcoming test drive, including questions about passengers, family members, children, child seats, pets, luggage, or vehicle features.\n"
+        "- vehicle_info: general VinFast vehicle/product questions not specifically tied to preparing for an already-confirmed test drive (e.g. asking about car models, seat capacity for 4 or 7 people, range, charging).\n"
+        "- greeting: a social opening or greeting directed at ViVi, for example 'hi', 'hello', 'xin chào', or 'alo'.\n"
+        "- assistant_identity: a question about who ViVi is, ViVi's role, or what ViVi can help with, for example 'bạn là ai?' or 'ViVi hỗ trợ gì?'.\n"
         "- others: domain requests that do not fit another domain sub_intent.\n"
         "\n"
         "Use booking_lookup when the user wants to view, find, check, or retrieve an existing booking.\n"
+        "A request that names a vehicle or showroom and asks for test-drive availability is NOT "
+        "booking_lookup unless the user explicitly says the booking already exists, provides a booking "
+        "code/email, or asks to manage an appointment already made.\n"
         "IMPORTANT: When the user mentions changing/switching a vehicle model (e.g. 'đổi VF8', 'đổi xe VF5', "
         "'chuyển sang VF7', 'xem xe VF3'), classify as booking_new (NOT booking_reschedule). Only use "
         "booking_reschedule when the user explicitly asks to change an existing appointment time/date "
-        "('đổi lịch', 'đổi giờ hẹn').\n"
+        "('đổi lịch', 'đổi giờ hẹn', 'dời sang buổi chiều', 'chuyển sang ngày mai', "
+        "'cho tôi hẹn trễ hơn').\n"
         "\n"
         "Use booking_availability whenever the user asks which dates/times are free or available, "
         "including informal forms such as 'rảnh ngày 25-26', 'ngày 26 27 có lịch không', "
         "'từ 25 đến 30', or 'tuần sau có giờ nào'.\n"
+        "CRITICAL AVAILABILITY PRECEDENCE: a statement of when the user is free is an availability "
+        "request even when it is not phrased as a question and omits words such as 'ngày' or 'giờ'. "
+        "Examples: 'thôi 28 t mới rảnh', 'chắc 27 được á', 'tầm 3 giờ chiều nha', and "
+        "'cuối tuần tôi mới đi được' are booking_availability. When UI stage=choose_slot, prefer "
+        "booking_availability for any date/time preference refinement; use booking_new only when "
+        "the user explicitly starts another booking or changes the vehicle/location. Set "
+        "has_schedule_preference=true for these date/time refinements.\n"
         "A user stating a location is a booking request, including casual or missing-accent "
         "Vietnamese such as 't ở hcm', 'tôi đang ở Đà Nẵng', 'ở Quế Sơn', and "
         "'mình ở miền tay'. Classify these as booking_new.\n"
         "A broad region such as miền Bắc/Trung/Nam/Tây still belongs to booking_new; "
         "the booking skill will ask for a province or city.\n"
+        "Classify 'hi' as domain/greeting. Classify 'bạn là ai?' and 'bạn hỗ trợ gì?' as "
+        "domain/assistant_identity.\n"
         "\n"
         "Use UI context as supporting evidence, not as a replacement for the user's request. "
         "A successful/confirmed booking makes post_booking_advisory more likely for subsequent "
@@ -209,6 +295,8 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
         "\n"
         f"UI context: channel={context.get('channel', '')}, "
         f"stage={context.get('stage', '')}.\n"
+        f"Confirmed post-booking context active: {post_booking_active}.\n"
+        f"Previous active skill: {previous_skill or '(none)'}.\n"
         f"Previous ViVi message: {previous_assistant_message or '(none)'}\n"
         f"User query: {query}"
     )
@@ -241,11 +329,39 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
             intent = "domain"
 
         sub_intent = route_result.sub_intent
+        intent, sub_intent, discovery_correction = _correct_discovery_route(
+            query=query,
+            messages=state.get("messages"),
+            intent=intent,
+            sub_intent=sub_intent,
+        )
+        if discovery_correction:
+            trace_event(
+                "classifier.route_correction",
+                trace_id=trace_id,
+                to_sub_intent=sub_intent,
+                reason=discovery_correction,
+            )
+        if (
+            intent == "domain"
+            and context.get("stage") == "choose_slot"
+            and not post_booking_active
+            and route_result.has_schedule_preference
+            and sub_intent in {"booking_new", "booking_reschedule", "others"}
+        ):
+            trace_event(
+                "classifier.route_correction",
+                trace_id=trace_id,
+                from_sub_intent=sub_intent,
+                to_sub_intent="booking_availability",
+                reason="schedule_preference_while_choosing_slot",
+            )
+            sub_intent = "booking_availability"
         if is_driver_invitation and sub_intent in _DRIVER_BLOCKED_SUB_INTENTS:
             return _driver_scope_block(state, query, sub_intent="driver_booking_scope")
         if intent == "domain" and not post_booking_active and sub_intent == "post_booking_advisory":
             intent = "out_of_scope"
-            sub_intent = "out_of_scope"
+            sub_intent = "post_booking_required"
         use_post_booking = intent == "domain" and post_booking_active and (
             sub_intent in {"post_booking_advisory", "vehicle_info"}
             or (is_driver_invitation and sub_intent == "booking_lookup")
@@ -269,19 +385,16 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
             "tool_call_count": 0,
         }
     except (BudgetExceededError, LLMCallLimitExceededError) as e:
-        error_code = "LLM_BUDGET_EXCEEDED" if isinstance(e, BudgetExceededError) else "LLM_CALL_LIMIT_EXCEEDED"
-        safe_response = (
-            "Hệ thống đã đạt giới hạn chi phí AI trong hôm nay. Vui lòng thử lại sau."
-            if isinstance(e, BudgetExceededError)
-            else "Yêu cầu này cần quá nhiều lượt xử lý AI. Vui lòng gửi lại yêu cầu ngắn gọn hơn."
+        internal_error_code = (
+            "LLM_BUDGET_EXCEEDED" if isinstance(e, BudgetExceededError) else "LLM_CALL_LIMIT_EXCEEDED"
         )
-        trace_event("llm.limit", trace_id=trace_id, node="classifier", error_code=error_code)
+        trace_event("llm.limit", trace_id=trace_id, node="classifier", error_code=internal_error_code)
         return {
             "intent": "sensitive",
             "messages": [HumanMessage(content=query)],
-            "response": safe_response,
-            "policy_response": safe_response,
-            "action_error": error_code,
+            "response": PUBLIC_LLM_UNAVAILABLE_MESSAGE,
+            "policy_response": PUBLIC_LLM_UNAVAILABLE_MESSAGE,
+            "action_error": PUBLIC_LLM_UNAVAILABLE_CODE,
             "metadata": {**metadata, "sub_intent": "llm_limit"},
             "tool_call_count": 0,
         }
@@ -289,9 +402,16 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
         trace_event("llm.error", trace_id=trace_id, node="classifier", error=str(e))
         # Log the specific error for debugging before falling back to keyword classifier
         logger.warning("Classifier LLM call failed (%s: %s), falling back to keyword matching.", type(e).__name__, e)
-        fallback_sub_intent = (
-            "booking_lookup" if any(phrase in lower_query for phrase in LOOKUP_KEYWORDS) else "fallback_domain"
-        )
+        if any(phrase in lower_query for phrase in LOOKUP_KEYWORDS):
+            fallback_sub_intent = "booking_lookup"
+        elif any(phrase in lower_query for phrase in BOOKING_RESCHEDULE_KEYWORDS):
+            fallback_sub_intent = "booking_reschedule"
+        elif any(phrase in lower_query for phrase in BOOKING_CANCEL_KEYWORDS):
+            fallback_sub_intent = "booking_cancel"
+        elif any(phrase in lower_query for phrase in BOOKING_MUTATION_KEYWORDS):
+            fallback_sub_intent = "booking_new"
+        else:
+            fallback_sub_intent = "fallback_domain"
         active_skill = (
             "post_booking"
             if post_booking_active

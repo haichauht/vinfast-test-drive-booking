@@ -20,14 +20,15 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, ge=1, le=65535)
     app_host: str = "0.0.0.0"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    cors_origins: str = "http://localhost:3000,http://localhost:3100"
+    cors_origins: str = "http://localhost:3000,http://localhost:3100,https://c3-app-053.pages.dev,https://c3-portal-053.pages.dev"
 
     # LLM
     openai_api_key: str = ""
     openrouter_api_key: str = ""
-    model_name: str = "gpt-4o-mini"
-    classifier_model_name: str = ""
+    model_name: str = "gpt-5.6-luna"
+    classifier_model_name: str = "gpt-4o-mini"
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    llm_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "low"
 
     # Use only the current LANGSMITH_* names. Keeping LANGCHAIN_* aliases here
     # would make it ambiguous which local configuration is active.
@@ -42,6 +43,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://vinfast:vinfast@localhost:5432/vinfast_booking"
     auto_load_eval_data: bool = True
     eval_data_dir: str = "eval/data"
+    booking_advance_window_days: int = Field(default=30, ge=1, le=365)
     redis_enabled: bool = True
     redis_url: str = "redis://localhost:6379/0"
 
@@ -52,7 +54,7 @@ class Settings(BaseSettings):
 
     # Địa chỉ trang công khai, dùng để đặt link trong email gửi cho khách. Email
     # không hiểu đường dẫn tương đối nên chỗ này bắt buộc phải là URL tuyệt đối.
-    public_site_url: str = "https://vinfast-mvp.pages.dev"
+    public_site_url: str = "https://c3-app-053.pages.dev"
 
     # Vector Store
     chroma_persist_dir: str = "./data/chroma"
@@ -101,6 +103,15 @@ class Settings(BaseSettings):
     guardrails_max_payload_string_chars: int = Field(default=5_000, ge=128, le=100_000)
     guardrails_max_tool_calls_per_message: int = Field(default=3, ge=1, le=8)
     guardrails_max_output_chars: int = Field(default=8_000, ge=256, le=100_000)
+    guardrails_abuse_max_strikes: int = Field(default=3, ge=1, le=10)
+    guardrails_abuse_strike_window_seconds: int = Field(default=3_600, ge=60, le=604_800)
+    guardrails_abuse_ban_seconds: int = Field(default=86_400, ge=60, le=2_592_000)
+
+    # Public conversation IDs are signed bearer capabilities.  A dedicated
+    # secret prevents a client-selected LangGraph thread ID from joining
+    # another browser's persisted conversation.
+    conversation_signing_secret: str = ""
+    conversation_token_ttl_seconds: int = Field(default=28_800, ge=300, le=604_800)
 
     # Public endpoint rate limits. Anonymous users are identified by a
     # server-issued cookie plus an IP fallback.
@@ -128,11 +139,19 @@ class Settings(BaseSettings):
     llm_estimated_input_token_price_per_1m: float = Field(default=0.15, ge=0.0)
     llm_estimated_output_token_price_per_1m: float = Field(default=0.60, ge=0.0)
     llm_estimated_output_tokens_per_call: int = Field(default=700, ge=1, le=100_000)
+    llm_request_timeout_seconds: float = Field(default=60.0, ge=5.0, le=300.0)
+    llm_max_retries: int = Field(default=1, ge=0, le=5)
 
     @model_validator(mode="after")
     def require_production_otp_secret(self):
         if self.app_env == "production" and len(self.booking_access_otp_secret) < 32:
             raise ValueError("BOOKING_ACCESS_OTP_SECRET must be at least 32 characters in production.")
+        if self.app_env == "production" and not self.guardrails_enabled:
+            raise ValueError("GUARDRAILS_ENABLED cannot be false in production.")
+        if self.app_env == "production" and len(self.conversation_signing_secret) < 32:
+            raise ValueError("CONVERSATION_SIGNING_SECRET must be at least 32 characters in production.")
+        if self.app_env == "production" and not self.rate_limit_enabled:
+            raise ValueError("RATE_LIMIT_ENABLED cannot be false in production.")
         if self.gmail_enabled:
             missing = [
                 name

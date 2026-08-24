@@ -23,6 +23,10 @@ export function LacHongPassage() {
 
   useGSAP(
     () => {
+      // Ảnh xe KHÔNG còn hoạt cảnh chạy ngang: đã gỡ theo yêu cầu. Đặt hiện sẵn
+      // ngay đây để chúng không kẹt ở trạng thái khởi tạo của bản cũ.
+      gsap.set('.lachong-figure__car', { opacity: 1, x: 0, xPercent: 0, scale: 1 })
+
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       if (reduced) {
         gsap.set('.lachong-word, .lachong-figure__car, .lachong-block__copy > *, .lachong-spin', {
@@ -34,6 +38,22 @@ export function LacHongPassage() {
         return
       }
 
+      /*
+       * GHIM MỀM (sticky scroll timeline).
+       *
+       * Khối tiêu đề đứng yên giữa màn trong khoảng một màn hình cuộn, trong lúc đó
+       * từng chữ của câu sáng dần lên. Mục đích là giữ chân người đọc lại vài giây
+       * để họ kịp nhận ra VinFast đang có Lạc Hồng, thay vì lướt qua trong nửa giây.
+       *
+       * KHÔNG khoá bánh xe cuộn. Người dùng cuộn vẫn đi tiếp bình thường, chỉ là
+       * quãng đường cuộn đó dùng để chạy hoạt cảnh thay vì đẩy trang. Khoá cứng
+       * thao tác cuộn thì trên điện thoại nhiều người tưởng web bị treo.
+       *
+       * Bỏ ghim ở màn hẹp: ghim trên điện thoại hay giật, và ở đó khối tiêu đề vốn
+       * đã chiếm gần hết màn nên không cần giữ thêm.
+       */
+      const canPin = window.matchMedia('(min-width: 900px)').matches
+
       gsap.fromTo(
         '.lachong-word',
         { opacity: 0.14 },
@@ -43,27 +63,20 @@ export function LacHongPassage() {
           ease: 'none',
           scrollTrigger: {
             trigger: '.lachong-passage__heading',
-            start: 'top 78%',
-            end: 'bottom 45%',
+            start: canPin ? 'top 22%' : 'top 78%',
+            // Quãng ghim tính theo chiều cao màn hình chứ không đặt cứng: màn thấp
+            // mà ghim 760px thì người dùng phải cuộn mãi mới thoát ra được.
+            end: canPin ? () => `+=${Math.min(window.innerHeight * 0.85, 720)}` : 'bottom 45%',
             scrub: 0.75,
+            pin: canPin,
+            pinSpacing: canPin,
+            anticipatePin: canPin ? 1 : 0,
+            // Xoay ngang máy hay đổi cỡ cửa sổ thì tính lại quãng ghim, nếu không
+            // điểm kết thúc giữ nguyên theo chiều cao cũ và hoạt cảnh lệch hẳn.
+            invalidateOnRefresh: true,
           },
         },
       )
-
-      gsap.utils.toArray('.lachong-figure').forEach((figure) => {
-        const car = figure.querySelector('.lachong-figure__car')
-        gsap.fromTo(
-          car,
-          { xPercent: -16, scale: 0.9, opacity: 0 },
-          {
-            xPercent: 0,
-            scale: 1,
-            opacity: 1,
-            ease: 'none',
-            scrollTrigger: { trigger: figure, start: 'top 92%', end: 'center 56%', scrub: 0.9 },
-          },
-        )
-      })
 
       gsap.utils.toArray('.lachong-block__copy').forEach((copy) => {
         gsap.fromTo(

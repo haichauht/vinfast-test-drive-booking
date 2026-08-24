@@ -47,6 +47,10 @@ logs/
 htmlcov/
 .coverage
 coverage.xml
+artifacts/
+eval/human/reviews.csv
+eval/human/reviewers.json
+eval/holdout/private/
 
 # Docker
 docker-compose.override.yml
@@ -77,3 +81,6 @@ docs/docs
 plans/
 notes/
 .vercel
+deploy_tutorial.md
+eval/datav2/
+gcp-key.json

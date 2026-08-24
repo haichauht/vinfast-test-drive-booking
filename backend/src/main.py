@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,6 +57,9 @@ async def lifespan(app: FastAPI):
     async def dispatch_notifications() -> None:
         while True:
             try:
+                expired_holds = await asyncio.to_thread(booking_service.expire_held_bookings)
+                if expired_holds:
+                    logging.getLogger(__name__).info("Released %s expired booking holds", expired_holds)
                 await asyncio.to_thread(
                     booking_service.dispatch_due_notifications,
                     settings.notification_batch_size,
@@ -94,12 +98,27 @@ app = FastAPI(
 
 media_root = Path(settings.media_root).resolve()
 media_root.mkdir(parents=True, exist_ok=True)
+cors_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins.split(","),
+    allow_origins=cors_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Content-Length",
+        "Accept",
+        "Origin",
+        "User-Agent",
+        "Cache-Control",
+        "X-Requested-With",
+        "X-Trace-Id",
+        "X-Conversation-Id",
+        "X-Session-Id",
+        "If-Match",
+        "If-None-Match",
+    ],
 )
 app.add_middleware(RateLimitMiddleware, database=database, settings=settings)
 
@@ -115,14 +134,21 @@ async def internal_portal_error_handler(_request, exc: InternalPortalError):
 @app.middleware("http")
 async def request_logging(request, call_next):
     started = time.perf_counter()
+    is_chat_request = request.url.path == "/api/v1/chat" or (
+        request.url.path.startswith("/api/v1/driver-chat/") and request.url.path.endswith("/chat")
+    )
+    trace_id = str(uuid.uuid4()) if is_chat_request else ""
+    if trace_id:
+        request.state.trace_id = trace_id
     try:
         response = await call_next(request)
+        duration_ms = (time.perf_counter() - started) * 1000
         logging.getLogger("http").info(
             "%s %s -> %s %.1fms",
             request.method,
             request.url.path,
             response.status_code,
-            (time.perf_counter() - started) * 1000,
+            duration_ms,
         )
         return response
     except Exception:

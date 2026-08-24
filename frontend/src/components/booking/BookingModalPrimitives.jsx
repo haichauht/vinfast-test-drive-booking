@@ -1,6 +1,6 @@
 /**
  * components/booking/BookingModalPrimitives.jsx
- * 
+ *
  * Modals shown at the beginning of the booking flow:
  * - RecipientModal: Choice modal for self, other, or lookup
  * - ResumeModal: Choice modal for resuming an uncompleted session

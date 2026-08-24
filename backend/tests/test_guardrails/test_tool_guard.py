@@ -117,18 +117,94 @@ def test_blocks_booking_confirmation_without_explicit_user_confirmation():
     assert decision.code == "EXPLICIT_CONFIRMATION_REQUIRED"
 
 
-def test_allows_booking_confirmation_after_explicit_user_confirmation():
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        (
+            "cancel_booking",
+            {
+                "booking_id": "b1",
+                "access_session_token": "session",
+                "ui_action_id": "cancel:one",
+            },
+        ),
+        (
+            "reschedule_booking",
+            {
+                "current_booking_id": "b1",
+                "new_slot_id": "slot-2",
+                "access_session_token": "session",
+                "ui_action_id": "reschedule:one",
+            },
+        ),
+    ],
+)
+def test_destructive_management_tools_require_bound_structured_confirmation(tool_name, arguments):
+    blocked = inspect_tool_calls(
+        _state([_call(tool_name, arguments)]),
+        allowed_tool_names={tool_name},
+        settings=Settings(),
+    )
+    allowed = inspect_tool_calls(
+        _state(
+            [_call(tool_name, arguments)],
+            requested_action=tool_name,
+            action_payload=arguments,
+        ),
+        allowed_tool_names={tool_name},
+        settings=Settings(),
+    )
+
+    assert blocked.code == "EXPLICIT_CONFIRMATION_REQUIRED"
+    assert allowed.allowed is True
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Tôi xác nhận chốt lịch này",
+        "Tôi đồng ý nhận tư vấn về VF8",
+        "Can you explain what confirm means?",
+    ],
+)
+def test_natural_language_alone_never_authorizes_booking_confirmation(query):
     call = _call(
         "confirm_test_drive_booking",
         {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
     )
     decision = inspect_tool_calls(
-        _state([call], query="Tôi xác nhận chốt lịch này"),
+        _state([call], query=query),
         allowed_tool_names={"confirm_test_drive_booking"},
         settings=Settings(),
     )
 
-    assert decision.allowed is True
+    assert decision.allowed is False
+    assert decision.code == "EXPLICIT_CONFIRMATION_REQUIRED"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Tôi không xác nhận lịch này",
+        "Chưa chốt lịch nhé",
+        "Đừng đồng ý đặt lịch",
+        "Do not confirm this booking",
+        "I don't want to book now",
+    ],
+)
+def test_blocks_confirmation_when_user_phrase_is_explicitly_negated(query):
+    call = _call(
+        "confirm_test_drive_booking",
+        {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
+    )
+    decision = inspect_tool_calls(
+        _state([call], query=query),
+        allowed_tool_names={"confirm_test_drive_booking"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "EXPLICIT_CONFIRMATION_REQUIRED"
 
 
 def test_blocks_batch_containing_a_mutating_tool():
@@ -225,12 +301,57 @@ def test_allows_structured_confirmation_without_natural_language_confirmation():
         {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
     )
     decision = inspect_tool_calls(
-        _state([call], query="Cho tôi xem lại", requested_action="confirm_booking"),
+        _state(
+            [call],
+            query="Cho tôi xem lại",
+            requested_action="confirm_booking",
+            action_payload={"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
+        ),
         allowed_tool_names={"confirm_test_drive_booking"},
         settings=Settings(),
     )
 
     assert decision.allowed is True
+
+
+@pytest.mark.parametrize(
+    ("requested_action", "action_payload"),
+    [
+        (
+            "search_options",
+            {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
+        ),
+        (
+            "confirm_booking",
+            {"booking_id": "other", "expected_version": 1, "ui_action_id": "ui-1"},
+        ),
+        (
+            "confirm_booking",
+            {"booking_id": "b1", "expected_version": 2, "ui_action_id": "ui-1"},
+        ),
+        (
+            "confirm_booking",
+            {"booking_id": "b1", "expected_version": 1, "ui_action_id": "confirm:other"},
+        ),
+    ],
+)
+def test_blocks_confirmation_not_bound_to_exact_structured_payload(requested_action, action_payload):
+    call = _call(
+        "confirm_test_drive_booking",
+        {"booking_id": "b1", "expected_version": 1, "ui_action_id": "ui-1"},
+    )
+    decision = inspect_tool_calls(
+        _state(
+            [call],
+            requested_action=requested_action,
+            action_payload=action_payload,
+        ),
+        allowed_tool_names={"confirm_test_drive_booking"},
+        settings=Settings(),
+    )
+
+    assert decision.allowed is False
+    assert decision.code == "EXPLICIT_CONFIRMATION_REQUIRED"
 
 
 def test_blocks_two_mutating_tools_in_one_message():
