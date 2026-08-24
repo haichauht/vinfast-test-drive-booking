@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, ge=1, le=65535)
     app_host: str = "0.0.0.0"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    cors_origins: str = "http://localhost:3000,http://localhost:3100"
+    cors_origins: str = "http://localhost:3000,http://localhost:3100,https://c3-app-053.pages.dev,https://c3-portal-053.pages.dev"
 
     # LLM
     openai_api_key: str = ""
