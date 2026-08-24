@@ -118,6 +118,48 @@ def test_blocks_booking_confirmation_without_explicit_user_confirmation():
 
 
 @pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        (
+            "cancel_booking",
+            {
+                "booking_id": "b1",
+                "access_session_token": "session",
+                "ui_action_id": "cancel:one",
+            },
+        ),
+        (
+            "reschedule_booking",
+            {
+                "current_booking_id": "b1",
+                "new_slot_id": "slot-2",
+                "access_session_token": "session",
+                "ui_action_id": "reschedule:one",
+            },
+        ),
+    ],
+)
+def test_destructive_management_tools_require_bound_structured_confirmation(tool_name, arguments):
+    blocked = inspect_tool_calls(
+        _state([_call(tool_name, arguments)]),
+        allowed_tool_names={tool_name},
+        settings=Settings(),
+    )
+    allowed = inspect_tool_calls(
+        _state(
+            [_call(tool_name, arguments)],
+            requested_action=tool_name,
+            action_payload=arguments,
+        ),
+        allowed_tool_names={tool_name},
+        settings=Settings(),
+    )
+
+    assert blocked.code == "EXPLICIT_CONFIRMATION_REQUIRED"
+    assert allowed.allowed is True
+
+
+@pytest.mark.parametrize(
     "query",
     [
         "Tôi xác nhận chốt lịch này",
