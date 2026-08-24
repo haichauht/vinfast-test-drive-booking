@@ -205,9 +205,20 @@
   box-shadow: var(--shadow-diffuse), inset 0 1px 0 #fff;
 }
 
+/*
+ * Bảng hỗ trợ chia làm HAI HÀNG THẬT: thanh công cụ ở trên, thân cuộn ở dưới.
+ *
+ * Bản trước để .workspace-toolbar ở position:absolute nên nó trôi đè lên thân
+ * bảng: cuộn xuống thì chữ chui lên phía sau thanh công cụ rồi mới khuất, và
+ * thanh công cụ che mất thông tin đang đọc. Nay thanh chiếm chỗ thật trong lưới,
+ * thân bảng cuộn trong phần còn lại nên nội dung KHÔNG bao giờ vượt lên trên nó.
+ */
 .booking-workspace {
   position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
   background: #e6e8e7;
 }
@@ -229,14 +240,13 @@
 
 /* Hàng công cụ: viên pill nút bên trái, tiêu đề đứng ngay cạnh, cùng một trục ngang. */
 .workspace-toolbar {
-  position: absolute;
-  top: 18px;
-  right: 18px;
-  left: 18px;
+  position: relative;
   z-index: 8;
   display: flex;
   align-items: center;
   min-width: 0;
+  padding: 18px 18px 12px;
+  background: #e6e8e7;
 }
 
 /*
@@ -313,7 +323,11 @@
 }
 
 .booking-workspace__content {
-  height: 100%;
+  min-height: 0;
+  /* Thân bảng tự cuộn trong phần chỗ còn lại. Nhờ vậy nội dung bị cắt đúng ở mép
+     dưới thanh công cụ chứ không lướt qua phía sau nó. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
   animation: workspace-enter 0.58s var(--ease-heavy) both;
 }
 
@@ -547,7 +561,9 @@
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   height: 100%;
   min-height: 0;
-  padding: 60px 6% 24px;
+  /* Trước đây chừa 60px trên đỉnh để né thanh công cụ trôi. Thanh công cụ nay
+     chiếm chỗ thật trong lưới nên phần chừa đó thành khoảng trống thừa. */
+  padding: 22px 6% 24px;
   overflow: hidden;
   background: #eceeed;
 }
@@ -945,7 +961,12 @@
   50% { opacity: 0; }
 }
 
+/* Chặn trần cho cả vùng soạn: form, đồng hồ giữ chỗ và hàng nút cộng lại vẫn
+   không được lấn quá nửa màn, để phần tin nhắn luôn còn chỗ đọc được. */
 .vivi-studio__composer {
+  max-height: 52dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 14px 17px 16px;
   border-top: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.78);

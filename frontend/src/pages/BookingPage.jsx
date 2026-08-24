@@ -110,6 +110,7 @@ import {
 } from '../api/booking'
 import {
   BookingMode,
+  BookingPhase,
   InteractionEvent,
   bookingInteractionReducer,
   createInteractionState,
@@ -135,6 +136,7 @@ import { AgentMessage, ViviStatusTyping, ViViAvatar, ContextualChoices } from '.
 import { VehicleShot, VehicleSwitcher, VehiclePanel } from '../components/booking/VehicleWorkspace'
 import { BookingHeader } from '../components/booking/BookingHeader'
 
+const HOLD_TTL_MS = 5 * 60 * 1000
 const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
 const BOOKING_UI_STATE_KEY = 'vinfast:booking-ui-state'
@@ -323,11 +325,19 @@ export function BookingPage() {
     }
   }, [])
 
+  // LAST_CONFIRMED_BOOKING phục vụ màn hậu booking, không phải nháp cho một chat mới.
+  // Chỉ hydrate lại dữ liệu này khi chính UI state đang khôi phục phase success.
+  const confirmedUiRestore = shouldOfferResume && (
+    restoredUi.interaction?.phase === BookingPhase.SUCCESS || restoredUi.stage === 'success'
+  )
+    ? restoredLastConfirmed
+    : null
+
   const [recipient, setRecipient] = useState(isDriverChat ? 'driver' : (initialCar ? '' : restoredUi.recipient || ''))
   const [resumePending, setResumePending] = useState(() => Boolean(
     shouldOfferResume,
   ))
-  const [selectedCarId, setSelectedCarId] = useState(initialCar?.id || restoredUi.selectedCarId || restoredLastConfirmed?.car?.id || '')
+  const [selectedCarId, setSelectedCarId] = useState(initialCar?.id || restoredUi.selectedCarId || confirmedUiRestore?.car?.id || '')
   const [interaction, dispatchInteraction] = useReducer(
     bookingInteractionReducer,
     {
@@ -369,15 +379,15 @@ export function BookingPage() {
   const [nearbyShowrooms, setNearbyShowrooms] = useState(
     Array.isArray(restoredUi.nearbyShowrooms) && restoredUi.nearbyShowrooms.length
       ? restoredUi.nearbyShowrooms
-      : restoredLastConfirmed?.showroom ? [restoredLastConfirmed.showroom] : []
+      : confirmedUiRestore?.showroom ? [confirmedUiRestore.showroom] : []
   )
-  const [showroomId, setShowroomId] = useState(restoredUi.showroomId || restoredLastConfirmed?.showroom?.id || '')
+  const [showroomId, setShowroomId] = useState(restoredUi.showroomId || confirmedUiRestore?.showroom?.id || '')
   const [pendingSlot, setPendingSlot] = useState(null)
-  const [selectedSlot, setSelectedSlot] = useState(restoredLastConfirmed?.slot || null)
+  const [selectedSlot, setSelectedSlot] = useState(confirmedUiRestore?.slot || null)
   const [confirmSlotOpen, setConfirmSlotOpen] = useState(false)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [workspaceHidden, setWorkspaceHidden] = useState(false)
-  const [person, setPerson] = useState(restoredLastConfirmed?.person || {
+  const [person, setPerson] = useState(confirmedUiRestore?.person || {
     bookingName: '',
     driverName: '',
     phone: '',
@@ -389,8 +399,8 @@ export function BookingPage() {
     marketingConsent: true,
   })
   const [formErrors, setFormErrors] = useState({})
-  const [bookingCode, setBookingCode] = useState(restoredLastConfirmed?.bookingCode || '')
-  const [bookingAdvisor, setBookingAdvisor] = useState(restoredLastConfirmed?.advisor || null)
+  const [bookingCode, setBookingCode] = useState(confirmedUiRestore?.bookingCode || '')
+  const [bookingAdvisor, setBookingAdvisor] = useState(confirmedUiRestore?.advisor || null)
   const [submitting, setSubmitting] = useState(false)
   const [successCinematic, setSuccessCinematic] = useState(false)
   const [accessFlow, setAccessFlow] = useState(null)
@@ -690,7 +700,7 @@ export function BookingPage() {
     otpCodeRef.current = ''
   }
 
-  const clearManagementContext = ({ resetConversation = true, event = InteractionEvent.EXIT_MANAGE_BOOKING } = {}) => {
+  const clearManagementContext = ({ resetConversation = false, event = InteractionEvent.EXIT_MANAGE_BOOKING } = {}) => {
     setAccessFlow(null)
     setAccessProfile(null)
     setAccessibleBookings([])
@@ -774,8 +784,8 @@ export function BookingPage() {
    * `slots` được ghi vào sessionStorage nên đổi xe rồi tải lại trang là thấy khung giờ
    * của mẫu xe CŨ nằm dưới tên mẫu xe MỚI.
    *
-   * TODO [BACKEND/BOOKING]: chưa có API nhả chỗ đang giữ. Đổi xe giữa chừng thì chỗ giữ
-   * của mẫu cũ nằm lại tới khi hết hạn (~2 phút), làm khung giờ đó bị khoá oan.
+   * Khi đổi xe, luồng chọn slot sẽ gọi API release trước khi giữ slot mới để không
+   * khóa oan chỗ của mẫu xe cũ trong thời gian TTL 5 phút.
    */
   const resetSelectionForVehicleChange = () => {
     showroomRequestRef.current += 1 // vô hiệu hoá mọi lượt tìm khung giờ đang bay
@@ -937,7 +947,7 @@ export function BookingPage() {
         if (!recipient) setRecipient('self')
         setWorkspaceHidden(false)
         if (interaction.mode === BookingMode.MANAGE_BOOKING) {
-          clearManagementContext({ resetConversation: true, event: InteractionEvent.VIEW_VEHICLE })
+          clearManagementContext({ resetConversation: false, event: InteractionEvent.VIEW_VEHICLE })
         } else {
           dispatchInteraction({ type: InteractionEvent.VIEW_VEHICLE })
         }
@@ -1015,7 +1025,7 @@ export function BookingPage() {
       const toolInput = result.tool_input || {}
       setBookingId(data.booking_id)
       setBookingVersion(data.version ?? 1)
-      setHoldExpiresAt(data.hold_expires_at ? new Date(data.hold_expires_at).getTime() : Date.now() + 120000)
+      setHoldExpiresAt(data.hold_expires_at ? new Date(data.hold_expires_at).getTime() : Date.now() + HOLD_TTL_MS)
 
       let slotShowroomId = showroomId
       if (data.showroom) {
@@ -1164,8 +1174,15 @@ export function BookingPage() {
 
   useEffect(() => () => timersRef.current.forEach((timer) => window.clearTimeout(timer)), [])
   useEffect(() => {
-    messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, stage, agentTyping])
+    // Tin nhắn, typing indicator và workspace thường đổi trong cùng một lượt render.
+    // Chờ layout hoàn tất rồi đặt scrollTop trực tiếp; smooth scrolling có thể bị
+    // một render kế tiếp huỷ giữa chừng và khiến tin nhắn mới nằm ngoài khung nhìn.
+    const frame = window.requestAnimationFrame(() => {
+      const container = messagesRef.current
+      if (container) container.scrollTop = container.scrollHeight
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [messages, agentTyping])
 
   useEffect(() => {
     if (!holdExpiresAt || (stage !== 'collect_info' && stage !== 'review')) {
@@ -1179,6 +1196,23 @@ export function BookingPage() {
         setTimeLeft('Đã hết hạn giữ')
         if (!holdExpiredRef.current) {
           holdExpiredRef.current = true
+          const expiredBookingId = bookingId
+          const expiredSlotId = selectedSlot?.slotId
+          if (expiredBookingId) {
+            releaseBookingHold(expiredBookingId).catch(() => {
+              // Backend cũng tự thu hồi hold hết hạn khi cleanup hoặc khi slot được giữ lại.
+            })
+          }
+          if (expiredSlotId) {
+            setSlots((current) => current.map((day) => ({
+              ...day,
+              times: day.times.map((slot) => (
+                slot.slotId === expiredSlotId
+                  ? { ...slot, isAvailable: true, unavailableLabel: '' }
+                  : slot
+              )),
+            })))
+          }
           setConfirmSlotOpen(false)
           setPendingSlot(null)
           setSelectedSlot(null)
@@ -1204,7 +1238,7 @@ export function BookingPage() {
     updateTimer()
     const interval = setInterval(updateTimer, 1000)
     return () => clearInterval(interval)
-  }, [holdExpiresAt, stage])
+  }, [bookingId, holdExpiresAt, selectedSlot?.slotId, stage])
 
   useEffect(() => {
     holdExpiredRef.current = false
@@ -1375,13 +1409,13 @@ export function BookingPage() {
       holdActionIdsRef.current.delete(actionKey)
       setBookingId(held.booking_id)
       setBookingVersion(held.version ?? 1)
-      setHoldExpiresAt(held.hold_expires_at ? new Date(held.hold_expires_at).getTime() : Date.now() + 120000)
+      setHoldExpiresAt(held.hold_expires_at ? new Date(held.hold_expires_at).getTime() : Date.now() + HOLD_TTL_MS)
       setSelectedSlot(pendingSlot)
       setConfirmSlotOpen(false)
       addMessage('user', `Tôi xác nhận ${pendingSlot.time}, ${pendingSlot.dateLabel}.`)
       setStage('collect_info')
       setAgentTyping(false)
-      reply('ViVi đã giữ tạm khung giờ này cho bạn trong 2 phút. Bạn vui lòng điền thông tin để tiếp tục nhé.')
+      reply('ViVi đã giữ tạm khung giờ này cho bạn trong 5 phút. Bạn vui lòng điền thông tin để tiếp tục nhé.')
     } catch (error) {
       setAgentTyping(false)
       setConfirmSlotOpen(false)
@@ -1416,7 +1450,7 @@ export function BookingPage() {
       if (!recipient) setRecipient('self')
       setWorkspaceHidden(false)
       if (interaction.mode === BookingMode.MANAGE_BOOKING) {
-        clearManagementContext({ resetConversation: true, event: InteractionEvent.VIEW_VEHICLE })
+        clearManagementContext({ resetConversation: false, event: InteractionEvent.VIEW_VEHICLE })
       } else {
         dispatchInteraction({ type: InteractionEvent.VIEW_VEHICLE })
       }

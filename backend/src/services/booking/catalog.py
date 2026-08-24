@@ -219,9 +219,7 @@ class CatalogService(BookingBase):
             raise BookingError("INVALID_INPUT", "Latitude và longitude phải được cung cấp cùng nhau.")
         model = self.resolve_vehicle_model(vehicle_model)
         clarification = (
-            broad_region_clarification(address)
-            if address and not showroom_id and latitude is None
-            else None
+            broad_region_clarification(address) if address and not showroom_id and latitude is None else None
         )
         if clarification:
             return {
@@ -260,7 +258,7 @@ class CatalogService(BookingBase):
                 }
             marks = ",".join("?" * len(variant_ids))
             now = iso(self.now())
-            horizon = iso(self.now() + timedelta(days=30))
+            horizon = iso(self.now() + timedelta(days=self.booking_advance_window_days))
             future_slot_sql = (
                 "s.start_at::timestamptz > ?::timestamptz"
                 if c.dialect == "postgres"
@@ -311,8 +309,7 @@ class CatalogService(BookingBase):
 
                 if showroom_query:
                     scored = [
-                        (self._showroom_query_score(showroom_query, showroom), showroom)
-                        for showroom in showrooms
+                        (self._showroom_query_score(showroom_query, showroom), showroom) for showroom in showrooms
                     ]
                     showrooms = [showroom for score, showroom in scored if score > 0]
                     if not showrooms:
@@ -322,9 +319,7 @@ class CatalogService(BookingBase):
                             showroom["text_match_score"] = score
 
                 origin_coords = (
-                    Coordinates(target_coords["latitude"], target_coords["longitude"])
-                    if target_coords
-                    else None
+                    Coordinates(target_coords["latitude"], target_coords["longitude"]) if target_coords else None
                 )
                 if origin_coords:
                     destinations = [Coordinates(s["latitude"], s["longitude"]) for s in showrooms]
@@ -365,7 +360,7 @@ class CatalogService(BookingBase):
                 return {
                     "resolved_vehicle": {**model, "variants": variants},
                     "license_requirement": model["required_license_class"],
-                    "showrooms": showrooms[:min(max(showroom_limit, 1), 30)],
+                    "showrooms": showrooms[: min(max(showroom_limit, 1), 30)],
                     "target_coordinates": target_coords,
                     "slots": [],
                     "search_stage": "showroom_selection",
@@ -384,7 +379,9 @@ class CatalogService(BookingBase):
             order_sql = "s.start_at"
             values.extend(date_values)
             if preferred_time:
-                if not isinstance(preferred_time, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", preferred_time):
+                if not isinstance(preferred_time, str) or not re.fullmatch(
+                    r"(?:[01]\d|2[0-3]):[0-5]\d", preferred_time
+                ):
                     raise BookingError("INVALID_INPUT", "Preferred time must be a valid HH:MM value.")
                 hour, minute = (int(x) for x in preferred_time.split(":"))
                 target = hour * 60 + minute
@@ -408,15 +405,7 @@ class CatalogService(BookingBase):
                     slot_query_values,
                 )
             ]
-            weekdays_vi = {
-                0: "Thứ 2",
-                1: "Thứ 3",
-                2: "Thứ 4",
-                3: "Thứ 5",
-                4: "Thứ 6",
-                5: "Thứ 7",
-                6: "Chủ nhật"
-            }
+            weekdays_vi = {0: "Thứ 2", 1: "Thứ 3", 2: "Thứ 4", 3: "Thứ 5", 4: "Thứ 6", 5: "Thứ 7", 6: "Chủ nhật"}
             for s in slots:
                 dt_start = _to_vietnam_time(s["start_at"])
                 dt_end = _to_vietnam_time(s["end_at"])
@@ -430,12 +419,12 @@ class CatalogService(BookingBase):
         focused_date = date_filters["dates"][0] if date_filters["mode"] == "single" else None
         requested_dates = date_filters["dates"] if date_filters["mode"] == "list" else []
         requested_date_range = (
-            {"from": date_filters["from"], "to": date_filters["to"]}
-            if date_filters["mode"] == "range"
-            else None
+            {"from": date_filters["from"], "to": date_filters["to"]} if date_filters["mode"] == "range" else None
         )
         available_dates = sorted({slot["start_at"][:10] for slot in slots})
-        highlighted_dates = [available_date[5:] for available_date in available_dates] if date_filters["mode"] != "none" else []
+        highlighted_dates = (
+            [available_date[5:] for available_date in available_dates] if date_filters["mode"] != "none" else []
+        )
 
         return {
             "resolved_vehicle": {**model, "variants": variants},

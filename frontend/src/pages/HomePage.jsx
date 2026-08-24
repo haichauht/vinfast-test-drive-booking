@@ -81,94 +81,151 @@ const findVehicleFact = (specs = [], pattern) => specs.find(
 // Gợi ý "dải này kéo ngang được": im 2,5 giây không ai đụng thì thẻ xe tự trôi sang trái
 // rồi quay về. Chỉ là gợi ý về thao tác, KHÔNG phải carousel tự chạy — nên nó dừng hẳn
 // ngay khi người dùng chạm vào, và tối đa 3 lượt.
-const RAIL_HINT_IDLE_MS = 2500
-const RAIL_HINT_DURATION = 1.2 // đi 1,2s + về 1,2s ≈ 2,4s mỗi lượt
-const RAIL_HINT_MAX_PLAYS = 3
-const RAIL_HINT_GAP_MS = 4000
+// Băng chuyền xe chạy vòng tròn. Nhịp cố ý chậm: đây là nền cho người ta liếc
+// qua chứ không phải thứ bắt phải nhìn, chạy nhanh là thành quảng cáo nhấp nháy.
+// Số lượt lặp danh sách xe để chạy vòng tròn. Bốn là chỗ cân bằng: đủ để điểm
+// nhảy nằm xa hẳn vùng đang nhìn, mà chưa nhiều tới mức phình DOM vô ích.
+const RAIL_COPIES = 4
+const RAIL_SLIDE_DURATION = 0.9
+const RAIL_SLIDE_GAP_MS = 3200
 
 function VehicleRail({ items, loading, error, onRetry, colorsById }) {
   const rail = useRef(null)
-  // Người dùng đã tự thao tác thì thôi gợi ý vĩnh viễn (giữ trong ref để listener đọc được
-  // giá trị mới nhất mà không phải đăng ký lại effect).
-  const userTookOver = useRef(false)
+  // Đang tạm dừng vì người dùng rê chuột vào hoặc chạm tay. Giữ trong ref để
+  // listener đọc được giá trị mới nhất mà không phải đăng ký lại effect.
+  const paused = useRef(false)
+
+  /*
+   * VÒNG TRÒN BẰNG CÁCH LẶP DANH SÁCH BỐN LẦN.
+   *
+   * Nội dung giống hệt nhau lặp lại bốn lượt, nên đi hết đúng MỘT lượt thì trừ
+   * lại một lượt vào scrollLeft: chỗ mới rơi vào đúng khung hình y như chỗ cũ,
+   * mắt không thấy gì nhảy. Dải trôi mãi không hết, tới VF 9 thì VF 3 nối ngay.
+   *
+   * VÌ SAO BỐN CHỨ KHÔNG PHẢI HAI: với hai lượt, điểm nhảy nằm ngay giữa dải nên
+   * chỉ cần một nhịp lệch là người dùng bắt gặp cú nhảy. Bốn lượt đẩy điểm nhảy
+   * ra xa hẳn khỏi vùng đang nhìn, và luôn còn ba lượt nội dung ở bên phải nên
+   * kéo tay nhanh cỡ nào cũng không chạm tới mép.
+   *
+   * Ít hơn ba xe thì không lặp: dải quá ngắn, lặp lên nhìn ra ngay là trùng.
+   */
+  const loop = items.length > 2 ? Array.from({ length: RAIL_COPIES }, () => items).flat() : items
+
+  // Bề rộng một thẻ cộng khoảng hở, đọc từ DOM thật chứ không đặt cứng: bề rộng
+  // thẻ khai bằng minmax(430px, 40vw) nên đổi theo khổ màn hình.
+  const stepWidth = (el) => {
+    const first = el.firstElementChild
+    if (!first) return el.clientWidth * 0.72
+    const gap = parseFloat(getComputedStyle(el).columnGap || '0') || 0
+    return first.getBoundingClientRect().width + gap
+  }
+
+  /*
+   * Bề rộng ĐÚNG của một lượt danh sách, đo bằng khoảng cách giữa thẻ đầu của
+   * lượt 1 và thẻ đầu của lượt 2.
+   *
+   * KHÔNG lấy scrollWidth / RAIL_COPIES: scrollWidth còn tính cả đệm hai bên của
+   * khung, và lượt cuối không có khoảng hở đuôi, nên phép chia lệch vài pixel.
+   * Vài pixel đó cộng dồn qua mỗi vòng và đẩy dải trôi lệch dần.
+   */
+  const periodWidth = (el) => {
+    const first = el.children[0]
+    const second = el.children[items.length]
+    if (!first || !second) return 0
+    return second.offsetLeft - first.offsetLeft
+  }
+
+  // Nhảy về đúng chỗ tương ứng ở lượt trước đó. Nội dung ở đó giống hệt nên mắt
+  // không thấy gì đổi.
+  const wrap = (el) => {
+    if (items.length <= 2) return
+    const period = periodWidth(el)
+    if (period <= 0) return
+    if (el.scrollLeft >= period) el.scrollLeft -= period
+    // Cuộn ngược lên đầu cũng phải vòng, nếu không dải cụt ở mép trái.
+    else if (el.scrollLeft < 1) el.scrollLeft += period
+  }
+
+  const slide = (el, direction) => {
+    // scroll-behavior:smooth của .vehicle-rail đánh nhau với tween, tắt trong lúc
+    // chạy rồi trả lại. (scroll-snap đã bỏ hẳn khỏi CSS, xem ghi chú ở 04-vehicle-rail.css.)
+    el.style.scrollBehavior = 'auto'
+    // Tween một object trung gian rồi tự gán scrollLeft: với target là DOM element,
+    // GSAP đẩy prop lạ sang CSSPlugin và scrollLeft KHÔNG phải thuộc tính CSS.
+    const position = { value: el.scrollLeft }
+    return gsap.to(position, {
+      value: el.scrollLeft + direction * stepWidth(el),
+      duration: RAIL_SLIDE_DURATION,
+      ease: 'power2.inOut',
+      onUpdate: () => {
+        el.scrollLeft = position.value
+      },
+      onComplete: () => {
+        wrap(el)
+        el.style.scrollBehavior = ''
+      },
+    })
+  }
 
   const move = (direction) => {
-    userTookOver.current = true
-    rail.current?.scrollBy({ left: direction * rail.current.clientWidth * 0.72, behavior: 'smooth' })
+    const el = rail.current
+    if (el) slide(el, direction)
   }
 
   useEffect(() => {
     const el = rail.current
     if (!el || !items.length) return undefined
+    // Người tắt hiệu ứng chuyển động thì để dải xe đứng yên, họ tự cuộn.
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined
 
     let timer
     let tween
-    let plays = 0
     let visible = false
 
-    // Dải vừa đủ chỗ, không kéo được thì gợi ý là nói dối.
+    // Dải vừa đủ chỗ, không kéo được thì chạy tự động là vô nghĩa.
     const canScroll = () => el.scrollWidth - el.clientWidth > 24
 
-    const schedule = (delay) => {
+    const schedule = () => {
       window.clearTimeout(timer)
-      timer = window.setTimeout(play, delay)
+      timer = window.setTimeout(play, RAIL_SLIDE_GAP_MS)
     }
 
     const play = () => {
-      if (userTookOver.current || !visible || plays >= RAIL_HINT_MAX_PLAYS || !canScroll()) return
-      plays += 1
-      // scroll-behavior: smooth của .vehicle-rail sẽ đánh nhau với tween nếu để nguyên.
-      el.style.scrollBehavior = 'auto'
-      // Tween một object trung gian rồi tự gán scrollLeft: với target là DOM element,
-      // GSAP đẩy prop lạ sang CSSPlugin và scrollLeft KHÔNG phải thuộc tính CSS.
-      const position = { value: el.scrollLeft }
-      tween = gsap.to(position, {
-        value: el.scrollLeft + Math.min(el.clientWidth * 0.3, 190),
-        duration: RAIL_HINT_DURATION,
-        ease: 'power2.inOut',
-        yoyo: true,
-        repeat: 1,
-        onUpdate: () => {
-          el.scrollLeft = position.value
-        },
-        onComplete: () => {
-          el.style.scrollBehavior = ''
-          schedule(RAIL_HINT_GAP_MS)
-        },
+      if (paused.current || !visible || !canScroll()) return
+      tween = slide(el, 1)
+      tween.eventCallback('onComplete', () => {
+        wrap(el)
+        el.style.scrollBehavior = ''
+        schedule()
       })
     }
 
-    // Rê chuột vào = đang xem: TẠM dừng gợi ý. Rời chuột ra thì hẹn lại.
-    // Trước đây hàm này set userTookOver = true (tắt vĩnh viễn) nên chỉ cần con trỏ lướt
-    // ngang qua dải xe một lần là gợi ý chết luôn, không bao giờ chạy nữa.
+    // Rê chuột vào hoặc chạm tay = đang xem: dừng để đọc cho kỹ. Rời ra thì chạy
+    // tiếp. KHÔNG tắt vĩnh viễn: bản trước chỉ cần con trỏ lướt ngang qua một lần
+    // là hiệu ứng chết luôn, không bao giờ chạy lại.
     const pause = () => {
-      window.clearTimeout(timer)
-    }
-
-    const resume = () => {
-      if (userTookOver.current) return
-      schedule(RAIL_HINT_IDLE_MS)
-    }
-
-    // Chạm/kéo/cuộn NGANG = người dùng thật sự cầm lái: tắt gợi ý vĩnh viễn.
-    const takeOver = () => {
-      userTookOver.current = true
+      paused.current = true
       window.clearTimeout(timer)
       tween?.kill()
       el.style.scrollBehavior = ''
     }
 
-    // Cuộn DỌC trang trong khi con trỏ nằm trên dải xe KHÔNG phải là thao tác với dải xe.
-    // Bản trước bắt mọi sự kiện wheel nên chỉ cần cuộn trang xuống tới mục này là gợi ý
-    // bị tắt trước cả khi kịp chạy — đây là lý do anh Minh không bao giờ thấy nó.
-    const onWheel = (event) => {
-      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) takeOver()
+    const resume = () => {
+      paused.current = false
+      schedule()
+    }
+
+    // Kéo tay cũng phải vòng được, nếu không dải cụt ở lượt cuối. Chờ cuộn dừng
+    // hẳn mới nhảy, nhảy giữa lúc tay đang kéo là giật.
+    let settle
+    const onScroll = () => {
+      window.clearTimeout(settle)
+      settle = window.setTimeout(() => wrap(el), 160)
     }
 
     const observer = new IntersectionObserver(([entry]) => {
       visible = entry.isIntersecting
-      if (visible) schedule(RAIL_HINT_IDLE_MS)
+      if (visible) schedule()
       else window.clearTimeout(timer)
     }, { threshold: 0.35 })
     observer.observe(el)
@@ -176,21 +233,24 @@ function VehicleRail({ items, loading, error, onRetry, colorsById }) {
     el.addEventListener('pointerenter', pause)
     el.addEventListener('pointerleave', resume)
     el.addEventListener('focusin', pause)
-    el.addEventListener('pointerdown', takeOver)
-    el.addEventListener('touchstart', takeOver, { passive: true })
-    el.addEventListener('wheel', onWheel, { passive: true })
+    el.addEventListener('focusout', resume)
+    el.addEventListener('touchstart', pause, { passive: true })
+    el.addEventListener('touchend', resume, { passive: true })
+    el.addEventListener('scroll', onScroll, { passive: true })
 
     return () => {
       window.clearTimeout(timer)
+      window.clearTimeout(settle)
       tween?.kill()
       observer.disconnect()
       el.style.scrollBehavior = ''
       el.removeEventListener('pointerenter', pause)
       el.removeEventListener('pointerleave', resume)
       el.removeEventListener('focusin', pause)
-      el.removeEventListener('pointerdown', takeOver)
-      el.removeEventListener('touchstart', takeOver)
-      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('focusout', resume)
+      el.removeEventListener('touchstart', pause)
+      el.removeEventListener('touchend', resume)
+      el.removeEventListener('scroll', onScroll)
     }
   }, [items.length])
 
@@ -231,9 +291,21 @@ function VehicleRail({ items, loading, error, onRetry, colorsById }) {
   }
 
   return (
-    <>
+    // Khung bao để hai nút điều hướng đứng được hai bên dải, khung phải
+    // position:relative thì nút mới neo vào đúng mép trái/phải của dải.
+    <div className="vehicle-rail-shell">
       <div className="vehicle-rail" ref={rail}>
-        {items.map((car, index) => {
+        {loop.map((car, position) => {
+          // Ba lượt sau chỉ để mắt nhìn cho liền mạch. Máy đọc màn hình và phím
+          // Tab phải bỏ qua chúng, nếu không mỗi xe bị đọc và dừng bốn lần.
+          const isClone = position >= items.length
+          const index = position % items.length
+          // id phải kèm vị trí: bản sao dùng lại id của bản gốc là HTML có bốn
+          // phần tử trùng id, aria-labelledby trỏ vào đó sẽ vớ nhầm cái đầu tiên.
+          const titleId = `vehicle-title-${car.id}-${position}`
+          // React 18 chưa hỗ trợ thuộc tính `inert`, nên chặn phím Tab bằng
+          // tabIndex. Thiếu bước này thì bấm Tab qua dải xe phải đi bốn vòng.
+          const cloneProps = isClone ? { tabIndex: -1 } : null
           const range = car.range || findVehicleFact(car.specs, /quang duong|tam hoat dong|range/)
           const charging = car.charging || findVehicleFact(car.specs, /sac|thoi gian nap|charging/)
           // car.colorOptions về từ GET /vehicles (hiện luôn rỗng); colorsById là phần vá tạm
@@ -245,8 +317,9 @@ function VehicleRail({ items, loading, error, onRetry, colorsById }) {
           return (
             <article
               className="vehicle-tile"
-              key={car.id}
-              aria-labelledby={`vehicle-title-${car.id}`}
+              key={`${car.id}-${position}`}
+              aria-hidden={isClone || undefined}
+              aria-labelledby={titleId}
               onMouseEnter={() => prefetchVehicle(car.id)}
             >
               {/* CẢ THẺ là một <Link> duy nhất, thay cho mẹo lớp phủ ::after trước đây.
@@ -260,6 +333,7 @@ function VehicleRail({ items, loading, error, onRetry, colorsById }) {
                 to={detailPath}
                 aria-label={`Xem chi tiết ${car.name}`}
                 onFocus={() => prefetchVehicle(car.id)}
+                {...cloneProps}
               >
                 <div className="vehicle-tile__meta">
                   <span>{categoryLabel}</span>
@@ -277,7 +351,7 @@ function VehicleRail({ items, loading, error, onRetry, colorsById }) {
                 />
 
                 <div className="vehicle-tile__copy">
-                  <h3 id={`vehicle-title-${car.id}`}>{car.name}</h3>
+                  <h3 id={titleId}>{car.name}</h3>
                   <p>{car.price || 'Giá đang cập nhật'}</p>
                   {car.tagline && <span>{car.tagline}</span>}
                 </div>
@@ -347,7 +421,7 @@ function VehicleRail({ items, loading, error, onRetry, colorsById }) {
           <ArrowRight size={20} weight="light" />
         </button>
       </div>
-    </>
+    </div>
   )
 }
 
@@ -593,7 +667,7 @@ export function HomePage() {
           </div>
           <div className="home-hero__copy">
             <p className="home-hero__kicker" data-hero-reveal>
-              VinFast · Từ Việt Nam ra thế giới
+              VinFast · Mãnh liệt tinh thần Việt Nam
             </p>
             <h1 id="home-title" data-hero-reveal>
               Từ Việt Nam.
@@ -637,7 +711,8 @@ export function HomePage() {
         <section className="models-section" id="models">
           <div className="section-frame">
             <Reveal className="section-heading section-heading--wide">
-              <p className="eyebrow">Ô tô</p>
+              {/* Bỏ nhãn "Ô tô": ngay dưới nó đã là câu "Tìm chiếc VinFast phù hợp
+                  với nhu cầu của bạn", nhãn kia không thêm được thông tin nào. */}
               <h2>
                 Tìm chiếc VinFast{' '}
                 <span

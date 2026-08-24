@@ -4,11 +4,13 @@ on:
   push:
     paths:
       - 'frontend/**'
+      - 'internal-portal/frontend/**'
       - '.github/workflows/frontend-ci.yml'
     branches: [main]
   pull_request:
     paths:
       - 'frontend/**'
+      - 'internal-portal/frontend/**'
       - '.github/workflows/frontend-ci.yml'
     branches: [testing, develop, main]
 
@@ -21,7 +23,8 @@ permissions:
   deployments: write
 
 jobs:
-  build:
+  build-customer-app:
+    name: Build Customer App
     runs-on: self-hosted
     steps:
       - name: Configure Git Buffer
@@ -47,8 +50,8 @@ jobs:
       - name: Build check
         working-directory: frontend
         env:
-          VITE_API_BASE_URL: https://vinfastbooking-api-latest.onrender.com/api/v1
-          VITE_MEDIA_BASE_URL: https://pub-216eea433b9e4529979ce534d5ce0ae1.r2.dev
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://vinfast-backend-466298313411.asia-southeast1.run.app/api/v1' }}
+          VITE_MEDIA_BASE_URL: ${{ vars.VITE_MEDIA_BASE_URL || 'https://pub-216eea433b9e4529979ce534d5ce0ae1.r2.dev' }}
         run: npm run build
 
       - name: Store production build
@@ -60,9 +63,48 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  deploy:
-    name: Deploy to Cloudflare Pages
-    needs: build
+  build-internal-portal:
+    name: Build Internal Portal
+    runs-on: self-hosted
+    steps:
+      - name: Configure Git Buffer
+        run: |
+          git config --global http.postBuffer 524288000
+          git config --global http.version HTTP/1.1
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: internal-portal/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: internal-portal/frontend
+        run: npm ci
+
+      - name: Build check
+        working-directory: internal-portal/frontend
+        env:
+          VITE_INTERNAL_API_BASE_URL: ${{ vars.VITE_INTERNAL_API_BASE_URL || 'https://vinfast-backend-466298313411.asia-southeast1.run.app/api/v1/internal' }}
+        run: npm run build
+
+      - name: Store production build
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: portal-dist
+          path: internal-portal/frontend/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy-customer-app:
+    name: Deploy Customer App to Cloudflare Pages
+    needs: build-customer-app
     if: github.event_name == 'push' && github.ref_name == 'main'
     runs-on: self-hosted
 
@@ -83,4 +125,33 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler pages deploy frontend/dist --project-name=vinfast-mvp --branch=main --commit-dirty=true
+        run: |
+          npm install -g wrangler@latest
+          wrangler pages deploy frontend/dist --project-name=c3-app-053 --branch=main --commit-dirty=true
+
+  deploy-internal-portal:
+    name: Deploy Internal Portal to Cloudflare Pages
+    needs: build-internal-portal
+    if: github.event_name == 'push' && github.ref_name == 'main'
+    runs-on: self-hosted
+
+    steps:
+      - name: Download production build
+        uses: actions/download-artifact@v4
+        with:
+          name: portal-dist
+          path: internal-portal/frontend/dist
+
+      # Self-hosted runners are isolated per job.
+      - name: Set up Node.js for Wrangler
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Deploy production to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm install -g wrangler@latest
+          wrangler pages deploy internal-portal/frontend/dist --project-name=c3-portal-053 --branch=main --commit-dirty=true

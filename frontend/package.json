@@ -10,7 +10,7 @@
     "media:index": "node scripts/build-media-index.mjs",
     "media:apply": "node scripts/apply-model-overrides.mjs",
     "media:upload:r2": "node scripts/upload-r2-media.mjs --bucket vinfastbooking-media --source ../backend/data/media --concurrency 4",
-    "deploy:cloudflare": "wrangler pages deploy dist --project-name=vinfast-mvp --branch=main"
+    "deploy:cloudflare": "wrangler pages deploy dist --project-name=c3-app-053 --branch=main"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

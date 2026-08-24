@@ -225,6 +225,47 @@ def test_staff_only_sees_assigned_booking(booking_db, booking_service, catalog, 
     assert error.value.code == "ACCESS_DENIED"
 
 
+def test_booking_detail_exposes_scoped_customer_profile(
+    booking_db,
+    catalog,
+    confirmed_booking_factory,
+):
+    q7_booking = confirmed_booking_factory(catalog["slot_main"])
+    confirmed_booking_factory(catalog["slot_gv"])
+    service = InternalPortalService(booking_db)
+    operations_admin, _ = _principal(
+        service,
+        username="ops.customer-profile",
+        role="operations_admin",
+        staff_id=None,
+        showroom_ids=[],
+    )
+    q7_manager, _ = _principal(
+        service,
+        username="manager.customer-profile",
+        role="showroom_manager",
+        staff_id=None,
+        showroom_ids=[catalog["showroom_q7"]],
+    )
+
+    admin_profile = service.get_booking(operations_admin, q7_booking["booking_id"])["customer_profile"]
+    manager_profile = service.get_booking(q7_manager, q7_booking["booking_id"])["customer_profile"]
+
+    assert admin_profile["full_name"] == "Huynh Thi Hai Chau"
+    assert admin_profile["preferred_channel"] == "sms"
+    assert admin_profile["booker_is_driver"] is True
+    assert admin_profile["license"]["declared_license_class"] == "B1"
+    assert admin_profile["license"]["validity_acknowledged"] is True
+    assert admin_profile["summary"]["total_bookings"] == 2
+    assert len(admin_profile["history"]) == 2
+    assert admin_profile["vehicle_interests"] == [{"model": "VF6", "booking_count": 2}]
+
+    # Customer history follows the same scope as the booking list. A showroom
+    # manager must not learn that the same contact booked at another showroom.
+    assert manager_profile["summary"]["total_bookings"] == 1
+    assert {item["showroom_name"] for item in manager_profile["history"]} == {"VinFast Quận 7"}
+
+
 def test_manager_account_requires_exactly_one_showroom(booking_db, catalog):
     service = InternalPortalService(booking_db)
 

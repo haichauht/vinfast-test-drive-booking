@@ -35,14 +35,28 @@ async def test_router_out_of_scope_coding():
 @pytest.mark.asyncio
 # test case of Chau + kiểm tra câu chào dùng booking skill trong MVP chỉ có booking
 async def test_router_general_greeting():
-    """MVP chỉ dùng booking skill cho các câu hỏi không nhạy cảm."""
-    query = "Xin chào bạn nhé!"
+    """A short greeting is classified by the LLM and stays in the booking skill."""
+    query = "hi"
     result = await agent.ainvoke({"query": query}, config=_cfg("test-greeting"))
 
     assert result.get("intent") == "domain"
     assert result.get("active_skill") == "booking"
+    assert (result.get("metadata") or {}).get("sub_intent") == "greeting"
     assert "response" in result
     assert len(result.get("response", "")) > 0
+
+
+@pytest.mark.asyncio
+async def test_router_assistant_identity_stays_in_domain():
+    result = await agent.ainvoke(
+        {"query": "bạn là ai"},
+        config=_cfg("test-assistant-identity"),
+    )
+
+    assert result.get("intent") == "domain"
+    assert result.get("active_skill") == "booking"
+    assert (result.get("metadata") or {}).get("sub_intent") == "assistant_identity"
+    assert "response" in result
 
 
 @pytest.mark.asyncio
