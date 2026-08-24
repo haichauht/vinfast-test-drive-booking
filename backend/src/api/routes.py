@@ -38,9 +38,15 @@ from src.models.schemas import (
     CsvImportRequest,
     DatasetImportRequest,
     DemoActionRequest,
+    FloatingDemoConfirmRequest,
+    FloatingDemoCleanupRequest,
+    FloatingDemoDraftRequest,
+    FloatingDemoHoldRequest,
+    FloatingDemoOptionsRequest,
     UiDirective,
 )
 from src.services.booking import BookingError
+from src.services.booking.common import iso
 from src.services.llm import summarize_user_profile
 from src.services.profile.context import build_profile_context
 
@@ -547,6 +553,164 @@ async def chat_stream(body: ChatRequest, request: Request):
         yield f"data: {final_payload}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+def _floating_demo_available() -> bool:
+    settings = get_settings()
+    return settings.app_env != "production" and bool(getattr(settings, "floating_demo_enabled", False))
+
+
+@router.get("/floating-demo/capabilities")
+async def floating_demo_capabilities():
+    """Expose a harmless feature flag; production always reports disabled."""
+    return {"enabled": _floating_demo_available()}
+
+
+@router.post("/floating-demo/confirm")
+async def confirm_floating_demo_booking(body: FloatingDemoConfirmRequest):
+    """Confirm a held showcase booking without putting an OTP in browser memory.
+
+    This is deliberately a non-production, server-configured capability.  The
+    normal public booking flow must continue to use OTP verification.
+    """
+    if not _floating_demo_available():
+        raise HTTPException(status_code=404, detail={"code": "FLOATING_DEMO_DISABLED", "message": "Demo không khả dụng."})
+
+    payload = body.model_dump()
+    decision = get_guardrails().inspect_demo_action(action="confirm_booking", payload=payload)
+    if not decision.allowed:
+        raise HTTPException(status_code=400, detail={"code": decision.code, "message": decision.user_message})
+    try:
+        result = booking_service.confirm_booking(
+            body.booking_id,
+            body.ui_action_id,
+            body.expected_version,
+        )
+    except BookingError as exc:
+        return {
+            "success": False,
+            "message": str(exc),
+            "error": {"code": exc.code, "retryable": exc.retryable},
+        }
+    protected = get_guardrails().protect_output({
+        "response": "",
+        "action_input": payload,
+        "action_result": result,
+        "action_error": "",
+    })
+    return {"success": True, "data": protected.action_data or {}}
+
+
+@router.post("/floating-demo/hold")
+async def hold_floating_demo_slot(body: FloatingDemoHoldRequest):
+    """Create a held booking explicitly marked as a non-production showcase."""
+    if not _floating_demo_available():
+        raise HTTPException(status_code=404, detail={"code": "FLOATING_DEMO_DISABLED", "message": "Demo không khả dụng."})
+    payload = body.model_dump()
+    decision = get_guardrails().inspect_demo_action(action="hold_slot", payload=payload)
+    if not decision.allowed:
+        raise HTTPException(status_code=400, detail={"code": decision.code, "message": decision.user_message})
+    try:
+        result = booking_service.hold_slot(
+            body.slot_id,
+            body.ui_action_id,
+            source_channel="floating_demo",
+            _operation="floating_demo_hold",
+        )
+    except BookingError as exc:
+        return {
+            "success": False,
+            "message": str(exc),
+            "error": {"code": exc.code, "retryable": exc.retryable},
+        }
+    return {"success": True, "data": result}
+
+
+@router.post("/floating-demo/draft")
+async def save_floating_demo_draft(body: FloatingDemoDraftRequest):
+    """Save the fixed showcase persona without routing through the chat graph."""
+    if not _floating_demo_available():
+        raise HTTPException(status_code=404, detail={"code": "FLOATING_DEMO_DISABLED", "message": "Demo không khả dụng."})
+
+    payload = {
+        "booking_id": body.booking_id,
+        "expected_version": body.expected_version,
+        "booker_patch": {"full_name": body.full_name, "phone": body.phone, "email": body.email},
+        "driver_same_as_booker": True,
+        "has_valid_license_commitment": body.has_license,
+    }
+    decision = get_guardrails().inspect_demo_action(action="update_draft", payload=payload)
+    if not decision.allowed:
+        raise HTTPException(status_code=400, detail={"code": decision.code, "message": decision.user_message})
+    try:
+        result = booking_service.update_booking_draft(
+            body.booking_id,
+            booker_patch=payload["booker_patch"],
+            driver_same_as_booker=True,
+            license_patch={"has_driving_license": body.has_license},
+            expected_version=body.expected_version,
+        )
+    except BookingError as exc:
+        return {
+            "success": False,
+            "message": str(exc),
+            "error": {"code": exc.code, "retryable": exc.retryable},
+        }
+    return {"success": True, "data": result}
+
+
+@router.post("/floating-demo/options")
+async def search_floating_demo_options(body: FloatingDemoOptionsRequest):
+    """Search demo availability without depending on the conversational agent."""
+    if not _floating_demo_available():
+        raise HTTPException(status_code=404, detail={"code": "FLOATING_DEMO_DISABLED", "message": "Demo không khả dụng."})
+    payload = body.model_dump(exclude_none=True)
+    decision = get_guardrails().inspect_demo_action(action="search_options", payload=payload)
+    if not decision.allowed:
+        raise HTTPException(status_code=400, detail={"code": decision.code, "message": decision.user_message})
+    try:
+        result = booking_service.search_options(
+            vehicle_model=body.vehicle_model,
+            showroom_id=body.showroom_id or None,
+            showroom_query=body.showroom_query or None,
+            showroom_limit=body.showroom_limit,
+            latitude=body.latitude,
+            longitude=body.longitude,
+        )
+    except BookingError as exc:
+        return {"success": False, "message": str(exc), "error": {"code": exc.code, "retryable": exc.retryable}}
+    return {"success": True, "data": result}
+
+
+@router.post("/floating-demo/cleanup")
+async def cleanup_floating_demo_booking(body: FloatingDemoCleanupRequest):
+    """Cancel and release only a confirmed non-production demo booking.
+
+    The audit row remains cancelled, but the slot is immediately reusable and
+    this endpoint cannot operate on a real user booking.
+    """
+    if not _floating_demo_available():
+        raise HTTPException(status_code=404, detail={"code": "FLOATING_DEMO_DISABLED", "message": "Demo không khả dụng."})
+    with booking_service.db.transaction(immediate=True) as connection:
+        booking = connection.execute("SELECT * FROM bookings WHERE id=?", (body.booking_id,)).fetchone()
+        if not booking or booking["source_channel"] != "floating_demo":
+            raise HTTPException(status_code=404, detail={"code": "DEMO_BOOKING_NOT_FOUND", "message": "Không tìm thấy lịch demo."})
+        now = iso(booking_service.now())
+        if booking["status"] in {"held", "confirmed"}:
+            connection.execute(
+                "UPDATE bookings SET status='cancelled',cancelled_at=?,cancellation_reason=?,version=version+1,updated_at=? WHERE id=?",
+                (now, "floating_demo_cleanup", now, body.booking_id),
+            )
+            connection.execute(
+                "UPDATE test_drive_slots SET status='available',current_booking_id=NULL,held_until=NULL,updated_at=? WHERE id=? AND current_booking_id=?",
+                (now, booking["slot_id"], body.booking_id),
+            )
+            connection.execute(
+                "UPDATE notification_jobs SET status='cancelled',updated_at=? WHERE booking_id=? AND status='pending'",
+                (now, body.booking_id),
+            )
+            booking_service._event(connection, body.booking_id, "floating_demo_cleaned", "system")
+    return {"success": True, "data": {"booking_id": body.booking_id, "status": "cleaned"}}
 
 
 @router.post("/demo/action")

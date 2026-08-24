@@ -98,10 +98,12 @@ import {
   holdVerifiedReschedule,
   getVerifiedBooking,
   getDriverInvitationContext,
+  getFloatingDemoCapabilities,
   listVerifiedBookings,
   requestBookingAccess,
   resetBookingConversation,
   saveBookingCustomer,
+  searchFloatingDemoOptions,
   sendDriverChatMessage,
   sendBookingMessage,
   searchBookingOptions,
@@ -135,8 +137,20 @@ import { RecipientModal, ResumeModal } from '../components/booking/BookingModalP
 import { AgentMessage, ViviStatusTyping, ViViAvatar, ContextualChoices } from '../components/booking/BookingChatPrimitives'
 import { VehicleShot, VehicleSwitcher, VehiclePanel } from '../components/booking/VehicleWorkspace'
 import { BookingHeader } from '../components/booking/BookingHeader'
+import { FloatingDemoBar } from '../components/booking/FloatingDemoBar'
 
 const HOLD_TTL_MS = 5 * 60 * 1000
+const DEMO_PERSONA = Object.freeze({
+  bookingName: 'Nguyễn Hải Đăng',
+  driverName: '',
+  phone: '0912 345 678',
+  email: 'haidang.vinfast@demo.vn',
+  driverSameContact: true,
+  driverPhone: '',
+  driverEmail: '',
+  hasLicense: true,
+  marketingConsent: false,
+})
 const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
 const BOOKING_UI_STATE_KEY = 'vinfast:booking-ui-state'
@@ -444,6 +458,18 @@ export function BookingPage() {
   const [inlineOtpBusy, setInlineOtpBusy] = useState(false)
   const [inlineOtpMock, setInlineOtpMock] = useState('')
   const [inlineOtpChallengeId, setInlineOtpChallengeId] = useState('')
+  const [floatingDemoEnabled, setFloatingDemoEnabled] = useState(false)
+  const [floatingDemoStep, setFloatingDemoStep] = useState(0)
+  const [floatingDemoRunning, setFloatingDemoRunning] = useState(false)
+  const [floatingDemoPaused, setFloatingDemoPaused] = useState(false)
+  const [floatingDemoBusy, setFloatingDemoBusy] = useState(false)
+  const [floatingDemoCollapsed, setFloatingDemoCollapsed] = useState(false)
+  const [floatingDemoStatus, setFloatingDemoStatus] = useState('')
+  const [floatingDemoLogs, setFloatingDemoLogs] = useState([])
+  const floatingDemoRunRef = useRef(0)
+  const floatingDemoContextRef = useRef({})
+  const floatingDemoPausedRef = useRef(false)
+  const floatingDemoPauseWaitersRef = useRef([])
 
   const selectedCar = getCar(selectedCarId)
   // ĐÃ XONG: showroom và khung giờ lấy thật từ backend qua searchBookingOptions().
@@ -457,6 +483,24 @@ export function BookingPage() {
   const composerMode = useMemo(() => selectComposerMode(interaction), [interaction])
   const hasWorkspaceContent = Boolean(selectedCar || accessProfile)
   const workspaceVisible = workspaceModel.visible && hasWorkspaceContent && !workspaceHidden
+
+  useEffect(() => {
+    let active = true
+    getFloatingDemoCapabilities()
+      .then((capabilities) => { if (active) setFloatingDemoEnabled(Boolean(capabilities?.enabled)) })
+      .catch(() => { if (active) setFloatingDemoEnabled(false) })
+    return () => { active = false }
+  }, [])
+
+  // Keep a small on-screen trace for demos: it makes a failed API call
+  // diagnosable without asking the presenter to open DevTools.
+  useEffect(() => {
+    if (!floatingDemoStatus) return
+    setFloatingDemoLogs((current) => [
+      ...current.slice(-7),
+      { id: `${Date.now()}-${Math.random()}`, time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), text: floatingDemoStatus },
+    ])
+  }, [floatingDemoStatus])
 
   /**
    * Kết thúc cinematic → quay về khung chat, KHÔNG chuyển sang trang tĩnh.
@@ -473,6 +517,38 @@ export function BookingPage() {
     setSuccessCinematic(false)
     setStage('success')
     setActiveView('ticket')
+
+    // Floating demo still shows the completion guidance, but tags it as step 7
+    // so pressing Back removes it together with the confirmation stage.
+    if (floatingDemoContextRef.current.isSimulated) {
+      const demoName = (person.bookingName || person.driverName || '').trim().split(/\s+/).pop() || ''
+      const demoGreeting = demoName ? `${demoName.charAt(0).toUpperCase()}${demoName.slice(1)} ơi, ` : ''
+      setMessages((current) => [
+        ...current,
+        {
+          id: `${Date.now()}-${current.length}-demo-success`,
+          role: 'assistant',
+          text: `${demoGreeting}ViVi đã hoàn tất lượt trình diễn lái thử của bạn.`,
+          emphasis: true,
+          floatingDemoStep: 7,
+        },
+        {
+          id: `${Date.now()}-${current.length + 1}-demo-next-steps`,
+          role: 'assistant',
+          type: 'next_steps',
+          text: '',
+          floatingDemoStep: 7,
+        },
+        {
+          id: `${Date.now()}-${current.length + 2}-demo-preparation`,
+          role: 'assistant',
+          text: BOOKING_PREPARATION_GREETING,
+          floatingDemoStep: 7,
+        },
+      ])
+      setFloatingDemoStatus('Phiếu demo đã hoàn tất · có thể lùi để trình diễn lại')
+      return
+    }
 
     const rawName = (person.bookingName || person.driverName || '').trim().split(/\s+/).pop() || ''
     const firstName = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1) : ''
@@ -2166,6 +2242,372 @@ export function BookingPage() {
     }
   }
 
+  const ensureFloatingDemoRun = (runId) => {
+    if (floatingDemoRunRef.current !== runId) throw new Error('Demo đã được bắt đầu lại.')
+  }
+
+  // A short beat makes each visual change perceptible, while the controller keeps
+  // moving without requiring another click from the presenter.
+  const waitFloatingDemo = (runId, milliseconds = 1500) => new Promise((resolve) => {
+    window.setTimeout(() => resolve(), milliseconds)
+  }).then(() => ensureFloatingDemoRun(runId))
+
+  const getFloatingDemoLocation = () => new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve({ location: null, reason: 'Trình duyệt không hỗ trợ vị trí' })
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => resolve({ location: { latitude: coords.latitude, longitude: coords.longitude }, reason: '' }),
+      (error) => {
+        const reason = error.code === error.PERMISSION_DENIED
+          ? 'Quyền vị trí đang bị chặn'
+          : error.code === error.TIMEOUT
+            ? 'Lấy vị trí bị quá thời gian chờ'
+            : 'Không xác định được vị trí hiện tại'
+        resolve({ location: null, reason })
+      },
+      { enableHighAccuracy: false, maximumAge: 5 * 60 * 1000, timeout: 8000 },
+    )
+  })
+
+  const waitForFloatingDemoResume = async (runId) => {
+    while (floatingDemoPausedRef.current) {
+      await new Promise((resolve) => floatingDemoPauseWaitersRef.current.push(resolve))
+      ensureFloatingDemoRun(runId)
+    }
+  }
+
+  const runFloatingDemoStep = async (step, runId) => {
+    ensureFloatingDemoRun(runId)
+    if (step === 1) {
+      setRecipient('self')
+      setResumePending(false)
+      setWorkspaceHidden(false)
+      setFloatingDemoStatus('Đã chọn người đặt: chính tôi')
+      addMessage('user', 'Tôi đặt lịch lái thử cho chính tôi.', { floatingDemoStep: step })
+      return
+    }
+
+    if (step === 2) {
+      const car = cars.find((item) => item.id === 'vf9')
+      if (!car) throw new Error('Catalog hiện chưa có mẫu VF 9 để trình diễn.')
+      setSelectedCarId(car.id)
+      resetSelectionForVehicleChange()
+      setStage('need_address')
+      setActiveView('car')
+      addMessage('user', 'Tôi muốn lái thử VF 9.', { floatingDemoStep: step })
+      addMessage('assistant', 'ViVi đã chọn VF 9. Đang tìm showroom còn lịch cho buổi lái thử.', { floatingDemoStep: step })
+      setFloatingDemoStatus('Đã chọn VF 9')
+      floatingDemoContextRef.current = { car }
+      return
+    }
+
+    const context = floatingDemoContextRef.current
+    if (!context.car) throw new Error('Hãy chạy bước chọn VF 9 trước.')
+
+    if (step === 3) {
+      setFloatingDemoStatus('Đang lấy vị trí hiện tại')
+      const locationResult = await getFloatingDemoLocation()
+      const location = locationResult.location
+      ensureFloatingDemoRun(runId)
+      let result
+      if (location) {
+        result = await searchFloatingDemoOptions({
+          vehicleModel: context.car.name,
+          showroomLimit: 12,
+          ...location,
+        })
+      } else {
+        // Không có quyền vị trí thì không thể nói showroom nào là "gần nhất".
+        // Demo ưu tiên Landmark 81 để luôn có một phương án dễ nhận biết.
+        try {
+          result = await searchFloatingDemoOptions({ vehicleModel: context.car.name, showroomQuery: 'Landmark 81', showroomLimit: 12 })
+        } catch (error) {
+          if (error.code !== 'SHOWROOM_NOT_FOUND') throw error
+          result = await searchFloatingDemoOptions({ vehicleModel: context.car.name, showroomLimit: 12 })
+        }
+      }
+      ensureFloatingDemoRun(runId)
+      const showrooms = mapShowrooms(result.showrooms || [], context.car.id)
+      if (!showrooms.length) throw new Error('Không tìm thấy showroom có VF 9 để trình diễn.')
+      context.showrooms = showrooms
+      context.location = location
+      setNearbyShowrooms(showrooms)
+      setUserLocation(location)
+      setAddress({ province: '', detail: location ? 'Vị trí hiện tại' : 'Chưa cấp quyền vị trí' })
+      setStage('choose_showroom')
+      setActiveView('map')
+      setFloatingDemoStatus(location ? `Đã tìm thấy ${showrooms.length} showroom gần bạn` : `${locationResult.reason} · ưu tiên Landmark 81`)
+      addMessage('assistant', location
+        ? `ViVi đã lấy vị trí hiện tại và tìm thấy ${showrooms.length} showroom còn lịch.`
+        : `${locationResult.reason}. ViVi ưu tiên Landmark 81 cho lượt demo này.`, { floatingDemoStep: step })
+      return
+    }
+
+    if (step === 4) {
+      const showroom = context.showrooms[0]
+      if (!showroom) throw new Error('Hãy lấy vị trí hiện tại trước.')
+      const result = await searchFloatingDemoOptions({ vehicleModel: context.car.name, showroomId: showroom.id })
+      ensureFloatingDemoRun(runId)
+      const groupedSlots = groupSlots(result.slots || [])
+      const rawSlot = (result.slots || [])
+        .filter((slot) => slot.status === 'available' && new Date(slot.start_at).getTime() > Date.now())
+        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())[0]
+      const earliestSlot = rawSlot ? findSlotById(groupedSlots, rawSlot.id) : null
+      if (!earliestSlot) throw new Error(`${showroom.name} hiện chưa có khung giờ trống.`)
+      context.showroom = showroom
+      context.slots = groupedSlots
+      context.slot = earliestSlot
+      setShowroomId(showroom.id)
+      setSlots(groupedSlots)
+      setPendingSlot(null)
+      setSelectedSlot(null)
+      setStage('choose_slot')
+      setActiveView('schedule')
+      setFloatingDemoStatus(`Đã chọn ${showroom.name} · đã tải ${result.slots?.length || 0} khung giờ`)
+      addMessage('assistant', `ViVi đã chọn showroom gần nhất: ${showroom.name}. Lịch trống đã được hiển thị.`, { floatingDemoStep: step })
+      return
+    }
+
+    if (step === 5) {
+      if (!context.slot || !context.showroom) throw new Error('Hãy chọn showroom trước.')
+      setNearbyShowrooms(context.showrooms)
+      setShowroomId(context.showroom.id)
+      setSlots(context.slots || [])
+      setPendingSlot(context.slot)
+      setSelectedSlot(null)
+      setConfirmSlotOpen(false)
+      setStage('choose_slot')
+      setActiveView('schedule')
+      // The floating bar is a showcase, not a booking channel: never lock a
+      // real slot or create a record that later needs destructive cleanup.
+      context.isSimulated = true
+      context.bookingId = `floating-demo-${runId}`
+      context.bookingVersion = 1
+      setBookingId(context.bookingId)
+      setBookingVersion(1)
+      setHoldExpiresAt(null)
+      setSelectedSlot(context.slot)
+      setPendingSlot(null)
+      setFloatingDemoStatus('Đã chọn giờ gần nhất và mô phỏng giữ chỗ')
+      addMessage('assistant', `ViVi đã chọn ${context.slot.time} · ${context.slot.dateLabel} và mô phỏng giữ chỗ. Không có lịch thật nào được tạo.`, { floatingDemoStep: step })
+      return
+    }
+
+    if (step === 6) {
+      if (!context.bookingId || !context.bookingVersion) throw new Error('Hãy giữ chỗ trước khi lưu hồ sơ.')
+      setFloatingDemoStatus('Đang điền hồ sơ mẫu')
+      setPerson(DEMO_PERSONA)
+      setStage('review')
+      setActiveView('ticket')
+      addMessage('user', 'Tôi đã hoàn tất thông tin người lái.', { floatingDemoStep: step })
+      addMessage('assistant', 'Hồ sơ mẫu đã sẵn sàng. Phiếu demo có thể được xác nhận.', { floatingDemoStep: step })
+      setFloatingDemoStatus('Đã điền hồ sơ mẫu')
+      return
+    }
+
+    if (step === 7) {
+      if (!context.bookingId || !context.bookingVersion) throw new Error('Phiếu demo chưa sẵn sàng để xác nhận.')
+      setFloatingDemoStatus('Đang xác nhận phiếu demo')
+      const demoCode = `DEMO-${String(Date.now()).slice(-6)}`
+      setBookingCode(demoCode)
+      setBookingAdvisor(null)
+      setSuccessCinematic(true)
+      setFloatingDemoStatus('Hoàn tất trình diễn · không tạo lịch thật')
+      return
+    }
+  }
+
+  const advanceFloatingDemo = async () => {
+    if (floatingDemoBusy || (floatingDemoRunning && !floatingDemoPaused) || floatingDemoStep >= 7) return
+    if (floatingDemoRunning && floatingDemoPaused) {
+      floatingDemoRunRef.current += 1
+      floatingDemoPausedRef.current = false
+      floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
+      setFloatingDemoRunning(false)
+      setFloatingDemoPaused(false)
+    }
+    const runId = floatingDemoRunRef.current || 1
+    if (!floatingDemoRunRef.current) floatingDemoRunRef.current = runId
+    const nextStep = floatingDemoStep + 1
+    setFloatingDemoBusy(true)
+    try {
+      await runFloatingDemoStep(nextStep, runId)
+      ensureFloatingDemoRun(runId)
+      setFloatingDemoStep(nextStep)
+    } catch (error) {
+      if (floatingDemoRunRef.current === runId) setFloatingDemoStatus(`${error.message || 'Demo chưa hoàn tất, bạn thử lại nhé.'}${error.code ? ` · ${error.code}` : ''}`)
+    } finally {
+      if (floatingDemoRunRef.current === runId) setFloatingDemoBusy(false)
+    }
+  }
+
+  const autoPlayFloatingDemo = async () => {
+    if (floatingDemoRunning) return
+    const runId = floatingDemoRunRef.current + 1
+    floatingDemoRunRef.current = runId
+    // Auto-Play is its own showcase, never a continuation of the visitor's
+    // previous ViVi conversation.
+    resetBookingConversation()
+    setMessages([])
+    setFloatingDemoLogs([])
+    floatingDemoPausedRef.current = false
+    setFloatingDemoPaused(false)
+    setFloatingDemoRunning(true)
+    setFloatingDemoStatus('Đang bắt đầu luồng chuẩn')
+    try {
+      let step = floatingDemoStep + 1
+      let retriesForStep = 0
+      while (step <= 7) {
+        await waitForFloatingDemoResume(runId)
+        setFloatingDemoBusy(true)
+        try {
+          await runFloatingDemoStep(step, runId)
+        } catch (error) {
+          ensureFloatingDemoRun(runId)
+          const code = String(error?.code || '')
+          const slotChanged = step >= 5 && (
+            code === 'SLOT_UNAVAILABLE'
+            || code === 'SLOT_NO_LONGER_AVAILABLE'
+            || code === 'HOLD_EXPIRED'
+          )
+
+          // A real-time slot can disappear between the search and hold/confirm
+          // calls. Re-select the nearest available slot and continue automatically
+          // instead of leaving the presenter at a dead end.
+          if (slotChanged) {
+            setFloatingDemoStatus('Khung giờ vừa thay đổi · đang chọn giờ gần nhất khác')
+            await runFloatingDemoStep(5, runId)
+            ensureFloatingDemoRun(runId)
+            setFloatingDemoStep(5)
+            retriesForStep = 0
+            step = 5
+            setFloatingDemoBusy(false)
+            await waitFloatingDemo(runId)
+            continue
+          }
+
+          // Network and service errors are normally transient. Retry each current
+          // step once before surfacing the failure in the demo bar.
+          if (error?.retryable && retriesForStep < 1) {
+            retriesForStep += 1
+            setFloatingDemoStatus('Kết nối chậm · đang thử lại tự động')
+            setFloatingDemoBusy(false)
+            await waitFloatingDemo(runId, 1200)
+            continue
+          }
+          throw error
+        }
+        ensureFloatingDemoRun(runId)
+        setFloatingDemoStep(step)
+        setFloatingDemoBusy(false)
+        if (step < 7) await waitFloatingDemo(runId)
+        step += 1
+        retriesForStep = 0
+      }
+    } catch (error) {
+      if (floatingDemoRunRef.current === runId) setFloatingDemoStatus(`${error.message || 'Demo chưa hoàn tất, bạn thử lại nhé.'}${error.code ? ` · ${error.code}` : ''}`)
+    } finally {
+      if (floatingDemoRunRef.current === runId) {
+        setFloatingDemoBusy(false)
+        setFloatingDemoRunning(false)
+        setFloatingDemoPaused(false)
+      }
+    }
+  }
+
+  const toggleFloatingDemoPause = () => {
+    if (!floatingDemoRunning) return autoPlayFloatingDemo()
+    floatingDemoPausedRef.current = !floatingDemoPausedRef.current
+    setFloatingDemoPaused(floatingDemoPausedRef.current)
+    setFloatingDemoStatus(floatingDemoPausedRef.current ? 'Đã tạm dừng sau thao tác hiện tại' : 'Đang tiếp tục luồng chuẩn')
+    if (!floatingDemoPausedRef.current) {
+      floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
+    }
+  }
+
+  const rewindFloatingDemo = async () => {
+    if (floatingDemoBusy || (floatingDemoRunning && !floatingDemoPaused) || floatingDemoStep <= 0) return
+    if (floatingDemoRunning && floatingDemoPaused) {
+      floatingDemoRunRef.current += 1
+      floatingDemoPausedRef.current = false
+      floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
+      setFloatingDemoRunning(false)
+      setFloatingDemoPaused(false)
+    }
+    const targetStep = floatingDemoStep - 1
+    const heldBookingId = bookingId || floatingDemoContextRef.current.bookingId
+    if (targetStep < 5 && heldBookingId && !bookingCode && !floatingDemoContextRef.current.isSimulated) {
+      try { await releaseBookingHold(heldBookingId) } catch { /* Expired holds are already released server-side. */ }
+      setBookingId('')
+      setBookingVersion(0)
+      setHoldExpiresAt(null)
+      floatingDemoContextRef.current.bookingId = ''
+      floatingDemoContextRef.current.bookingVersion = 0
+    }
+    const viewByStep = ['agent', 'agent', 'car', 'map', 'schedule', 'schedule', 'ticket', 'ticket']
+    const stageByStep = ['idle', 'idle', 'need_address', 'choose_showroom', 'choose_slot', 'choose_slot', 'review', 'review']
+    setFloatingDemoStep(targetStep)
+    setMessages((current) => current.filter((message) => {
+      const isLaterDemoMessage = message.floatingDemoStep && message.floatingDemoStep > targetStep
+      const isLegacySuccessMessage = floatingDemoContextRef.current.isSimulated && (
+        message.type === 'next_steps'
+        || message.text === BOOKING_PREPARATION_GREETING
+        || (message.emphasis && String(message.text || '').includes('ViVi và showroom đều đã nhận được lịch đặt'))
+      )
+      return !isLaterDemoMessage && !isLegacySuccessMessage
+    }))
+    setStage(stageByStep[targetStep])
+    setActiveView(viewByStep[targetStep])
+    setFloatingDemoStatus(`Đã quay lại chặng ${targetStep || 1}.`)
+  }
+
+  const resetFloatingDemo = async () => {
+    floatingDemoRunRef.current += 1
+    floatingDemoPausedRef.current = false
+    floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
+    setFloatingDemoRunning(false)
+    setFloatingDemoPaused(false)
+    setFloatingDemoBusy(true)
+    const heldBookingId = bookingId || floatingDemoContextRef.current.bookingId
+    try {
+      if (heldBookingId && !bookingCode && !floatingDemoContextRef.current.isSimulated) await releaseBookingHold(heldBookingId)
+    } catch {
+      // Backend cleanup may already have released an expired hold; reset stays usable.
+    } finally {
+      timersRef.current.forEach((timer) => window.clearTimeout(timer))
+      timersRef.current = []
+      holdActionIdsRef.current.clear()
+      confirmActionIdsRef.current.clear()
+      floatingDemoContextRef.current = {}
+      window.sessionStorage.removeItem(BOOKING_UI_STATE_KEY)
+      resetBookingConversation()
+      setResumePending(false)
+      setRecipient('')
+      setSelectedCarId('')
+      setNearbyShowrooms([])
+      setShowroomId('')
+      setSlots([])
+      setPendingSlot(null)
+      setSelectedSlot(null)
+      setBookingId('')
+      setBookingVersion(0)
+      setHoldExpiresAt(null)
+      setTimeLeft('')
+      setBookingCode('')
+      setBookingAdvisor(null)
+      setPerson({ ...DEMO_PERSONA, bookingName: '', phone: '', email: '', hasLicense: false, marketingConsent: true })
+      setMessages([])
+      setStage('idle')
+      setActiveView('agent')
+      setFloatingDemoStep(0)
+      setFloatingDemoLogs([])
+      setFloatingDemoStatus('Đã sẵn sàng cho lượt demo mới')
+      setFloatingDemoBusy(false)
+    }
+  }
+
   // Đặt lịch xong thì thanh tab chỉ còn ĐÚNG 1 nút "Phiếu lịch".
   // Ba tab kia (Đổi mẫu xe, Showroom, Lịch trống) là công cụ của lúc đang đặt; giữ lại sau khi
   // đã có mã lịch thì thanh vừa dài vừa mời khách bấm vào những thứ không còn tác dụng, trong
@@ -2246,6 +2688,24 @@ export function BookingPage() {
   return (
     <main id="main-content" className={`agent-booking-page ${workspaceVisible ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''} ${successCinematic ? 'is-cinematic' : ''}`}>
       <BookingHeader />
+
+      {floatingDemoEnabled && !isDriverChat && !successCinematic && !confirmSlotOpen && !switcherOpen && !accessFlow && !rescheduleState && (
+        <FloatingDemoBar
+          step={floatingDemoStep}
+          running={floatingDemoRunning}
+          paused={floatingDemoPaused}
+          busy={floatingDemoBusy}
+          collapsed={floatingDemoCollapsed}
+          status={floatingDemoStatus}
+          logs={floatingDemoLogs}
+          onAutoPlay={autoPlayFloatingDemo}
+          onPause={toggleFloatingDemoPause}
+          onNext={advanceFloatingDemo}
+          onBack={rewindFloatingDemo}
+          onReset={resetFloatingDemo}
+          onToggle={() => setFloatingDemoCollapsed((value) => !value)}
+        />
+      )}
 
       {workspaceModel.visible && hasWorkspaceContent && workspaceHidden && (
         <button

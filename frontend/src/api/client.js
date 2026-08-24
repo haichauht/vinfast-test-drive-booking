@@ -34,7 +34,7 @@ export async function apiGet(path, { signal, cacheKey = path, fallbackToCache = 
   } catch (error) {
     if (error.name === 'AbortError') throw error
     if (cached && fallbackToCache) return cached.data
-    throw new ApiError('Không thể kết nối đến máy chủ.')
+    throw new ApiError('Không thể kết nối đến máy chủ.', { code: 'NETWORK_ERROR' })
   }
   if (response.status === 304 && cached) return cached.data
   const body = await response.json().catch(() => ({}))
@@ -62,13 +62,15 @@ export async function apiPost(path, payload, { signal } = {}) {
     })
   } catch (error) {
     if (error.name === 'AbortError') throw error
-    throw new ApiError('Không thể kết nối đến máy chủ.')
+    throw new ApiError('Không thể kết nối đến máy chủ.', { code: 'NETWORK_ERROR' })
   }
   const body = await response.json().catch(() => ({}))
   if (!response.ok || body.success === false) {
     const detail = body.detail || body.error || {}
     const validationDetail = Array.isArray(detail) ? detail[0] : detail
-    const message = validationDetail?.msg || validationDetail?.message || body.message || 'Yêu cầu không thành công.'
+    const message = typeof validationDetail === 'string'
+      ? validationDetail
+      : validationDetail?.msg || validationDetail?.message || body.message || 'Yêu cầu không thành công.'
     throw new ApiError(message, {
       code: validationDetail?.code,
       status: response.status,
