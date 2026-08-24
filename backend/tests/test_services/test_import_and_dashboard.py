@@ -3,6 +3,26 @@ from src.database.sqlite import SQLiteConnection
 from src.services.booking import BookingError
 from src.services.booking.importer import ImportService
 
+
+def test_v5_people_import_derives_missing_normalized_contacts(booking_service):
+    row = {
+        "phone": "090 123 4567",
+        "email": "  Customer@Example.Test ",
+        "normalized_phone": "",
+        "normalized_email": "",
+    }
+
+    values = booking_service._row_values(
+        row,
+        ["normalized_phone", "normalized_email"],
+        filename="19_people.csv",
+        is_v5=True,
+        v5_people_by_id={},
+    )
+
+    assert values == ("0901234567", "customer@example.test")
+
+
 VALID_SHOWROOM_CSV = """code,name,address,latitude,longitude,phone,email,timezone,is_active
 SR-NEW,Showroom New,123 Test Street,10.75,106.70,0900000000,new@example.com,Asia/Ho_Chi_Minh,1
 """

@@ -195,12 +195,6 @@ def test_dashboard_charts_are_scoped_and_cover_operational_windows(
 def test_staff_only_sees_assigned_booking(booking_db, booking_service, catalog, confirmed_booking_factory):
     _seed_staff(booking_db, catalog)
     booking = confirmed_booking_factory()
-    created = "2026-08-03T02:00:00+00:00"
-    with booking_db.transaction(immediate=True) as connection:
-        connection.execute(
-            "INSERT INTO slot_sales_assignments(id,slot_id,sales_staff_id,assignment_role,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-            ("assign_q7", catalog["slot_main"], "staff_q7", "test_drive_consultant", "assigned", created, created),
-        )
     service = InternalPortalService(booking_db)
     assigned, _ = _principal(
         service,
@@ -379,16 +373,20 @@ def test_direct_booking_owner_does_not_bypass_active_slot_assignment(
             "UPDATE bookings SET assigned_sales_staff_id=? WHERE id=?",
             ("staff_q7", booking["booking_id"]),
         )
+        connection.execute(
+            "UPDATE slot_sales_assignments SET status='reassigned' WHERE slot_id=?",
+            (catalog["slot_main"],),
+        )
     assert service.list_bookings(staff)["total"] == 0
     with pytest.raises(InternalPortalError) as access_error:
         service.assert_staff_booking_access(staff, booking["booking_id"])
     assert access_error.value.code == "ACCESS_DENIED"
 
-    created = "2026-08-03T02:00:00+00:00"
     with booking_db.transaction(immediate=True) as connection:
         connection.execute(
-            "INSERT INTO slot_sales_assignments(id,slot_id,sales_staff_id,assignment_role,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-            ("assign_canonical", catalog["slot_main"], "staff_q7", "test_drive_consultant", "assigned", created, created),
+            "UPDATE slot_sales_assignments SET status='assigned' "
+            "WHERE slot_id=? AND sales_staff_id=? AND assignment_role='test_drive_consultant'",
+            (catalog["slot_main"], "staff_q7"),
         )
     assert service.list_bookings(staff)["total"] == 1
     service.assert_staff_booking_access(staff, booking["booking_id"])

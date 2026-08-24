@@ -30,8 +30,43 @@ PROMPT_INJECTION_PATTERNS: tuple[tuple[str, str], ...] = (
     ),
     (
         "PROMPT_INJECTION_OVERRIDE",
+        # A direct compact override at the start of the request (optionally
+        # after the observed "show room" filler) is itself imperative enough
+        # to block, even when no second command follows it.
+        r"^\s*(?:show\s*rooms?\s+)?(?:(?:please|kindly)\s+)?"
+        r"(?:ignore|disregard|forget|override|bypass)\s+"
+        r"(?:(?:all|any|the|your|these|those)\s+)?"
+        r"(?:instructions?|rules?|prompts?|messages?)\b",
+    ),
+    (
+        "PROMPT_INJECTION_OVERRIDE",
+        # Compact English override embedded in an otherwise legitimate booking
+        # request. Require imperative framing plus a follow-up command so quoted
+        # or explanatory uses of "ignore instructions" remain benign.
+        r"(?:^|[;:,.!?]\s*|\bshow\s*rooms?\s+|\b(?:and|then|but)\s+)"
+        r"(?:(?:please|kindly)\s+|(?:can|could|would)\s+you\s+)?"
+        r"(?:ignore|disregard|forget|override|bypass)\s+"
+        r"(?:(?:all|any|the|your|these|those)\s+)?"
+        r"(?:instructions?|rules?|prompts?|messages?)\b.{0,140}"
+        r"\b(?:and|then|now|show|write|answer|respond|return|tell|find|book|call|pick|"
+        r"hay|hãy|và|rồi|viết|trả\s+lời|tìm|đặt|gọi|lấy|cho\s+tôi)\b",
+    ),
+    (
+        "PROMPT_INJECTION_OVERRIDE",
+        # Folded Vietnamese pattern: it is evaluated against both normalized
+        # and accent-folded text by InputGuard.
+        r"(?:^|[;:,.!?]\s*|\b(?:va|roi|nhung)\s+)"
+        r"(?:(?:hay|lam\s+on|cu)\s+)?"
+        r"(?:bo\s+qua|phot\s+lo|quen|ghi\s+de|vuot\s+qua|lam\s+trai)\s+"
+        r"(?:(?:moi|cac|toan\s+bo|nhung)\s+)?"
+        r"(?:huong\s+dan|chi\s+dan|chi\s+thi|quy\s+tac|luat)\b.{0,140}"
+        r"\b(?:va|roi|bay\s+gio|hay|viet|tra\s+loi|tim|dat|goi|lay|chon|cho\s+toi)\b",
+    ),
+    (
+        "PROMPT_INJECTION_OVERRIDE",
         r"\b(?:bo\s+qua|phot\s+lo|quen|vuot\s+qua|ghi\s+de|lam\s+trai)\b.{0,80}"
-        r"\b(?:huong\s+dan|chi\s+thi|system\s*prompt|luat|quy\s+tac|he\s+thong)\b",
+        r"\b(?:huong\s+dan|chi\s+thi|system\s*prompt|luat|quy\s+tac)\b.{0,50}"
+        r"\b(?:truoc|truoc\s+do|he\s+thong|an)\b",
     ),
     (
         "PROMPT_INJECTION_OVERRIDE",
@@ -52,6 +87,14 @@ PROMPT_INJECTION_PATTERNS: tuple[tuple[str, str], ...] = (
         r"\b(?:lenh|yeu\s+cau|quy\s+tac)\b.{0,30}\b(?:cua\s+toi|sau\s+day|moi)\b",
     ),
     (
+        "PROMPT_INJECTION_OVERRIDE",
+        # Decoding is benign by itself. Block only when the decoded payload is
+        # also requested to be followed or executed.
+        r"\b(?:giai\s+ma|decode)\b.{0,100}"
+        r"\b(?:lam\s+theo|thuc\s+thi|execute|run)\b.{0,100}"
+        r"\b(?:base64|chuoi|payload|noi\s+dung)\b",
+    ),
+    (
         "SECRET_EXFILTRATION",
         r"\b(?:reveal|show|print|return|dump|expose|leak)\b.{0,80}"
         r"\b(?:system\s+prompt|developer\s+message|hidden\s+instructions?|api[_ -]?keys?|"
@@ -66,6 +109,32 @@ PROMPT_INJECTION_PATTERNS: tuple[tuple[str, str], ...] = (
         "SECRET_EXFILTRATION",
         r"\b(?:hien\s+thi|tiet\s+lo|in\s+ra|tra\s+ve|doc\s+ra)\b.{0,80}"
         r"\b(?:system\s*prompt|chi\s+thi\s+an|khoa\s*api|api\s*key|token|bien\s+moi\s+truong|bi\s+mat)\b",
+    ),
+    (
+        "SECRET_EXFILTRATION",
+        r"\b(?:cho|gui|dua|lay)\s+(?:giup\s+)?toi\b.{0,80}"
+        r"\b(?:token|khoa\s*api|api\s*key|bi\s+mat|chi\s+thi\s+an|system\s*prompt)\b",
+    ),
+    (
+        "PRIVACY_EXFILTRATION",
+        r"\b(?:cho|dua|hien\s+thi|tiet\s+lo|tra\s+ve|lay)\b.{0,80}"
+        r"\b(?:so\s+dien\s+thoai|email|thong\s+tin\s+lien\s+he)\b.{0,80}"
+        r"\b(?:khach|nguoi)\s+khac\b",
+    ),
+    (
+        "PRIVACY_EXFILTRATION",
+        # Unverified authority does not grant access to a customer's contact
+        # details. Requiring both contact fields and a customer reference keeps
+        # ordinary showroom-contact and self-profile requests allowed.
+        r"\b(?:gui|cho|dua|lay|hien\s+thi|tiet\s+lo)\b.{0,100}"
+        r"\b(?:email|so\s+dien\s+thoai|thong\s+tin\s+lien\s+he)\b.{0,100}"
+        r"\b(?:cua\s+)?khach\b.{0,50}\b(?:dang\s+dat|da\s+dat|dat\s+(?:lich|vf)|booking)\b",
+    ),
+    (
+        "PRIVACY_EXFILTRATION",
+        r"\b(?:show|give|reveal|return|list)\b.{0,80}"
+        r"\b(?:phone\s+numbers?|emails?|contact\s+(?:details|information))\b.{0,80}"
+        r"\b(?:another|other)\s+(?:customer|user|person|people)s?\b",
     ),
     (
         "ROLE_INJECTION",
@@ -133,6 +202,10 @@ ACTION_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     "confirm_booking": frozenset({"booking_id", "expected_version", "ui_action_id"}),
     "request_access": frozenset({"booking_code", "contact_value", "purpose", "preferred_channel"}),
     "verify_access": frozenset({"challenge_id", "otp_code"}),
+    "cancel_booking": frozenset({"booking_id", "access_session_token", "ui_action_id", "reason"}),
+    "reschedule_booking": frozenset(
+        {"current_booking_id", "new_slot_id", "access_session_token", "ui_action_id"}
+    ),
 }
 
 PERSON_PATCH_FIELDS = frozenset({"full_name", "phone", "email", "preferred_channel"})
@@ -215,12 +288,8 @@ DEMO_ACTION_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     "update_details": frozenset(
         {"booking_id", "access_session_token", "booker_patch", "driver_patch", "driver_same_as_booker"}
     ),
-    "hold_reschedule": frozenset(
-        {"current_booking_id", "new_slot_id", "access_session_token", "ui_action_id"}
-    ),
-    "confirm_reschedule": frozenset(
-        {"current_booking_id", "new_booking_id", "access_session_token", "ui_action_id"}
-    ),
+    "hold_reschedule": frozenset({"current_booking_id", "new_slot_id", "access_session_token", "ui_action_id"}),
+    "confirm_reschedule": frozenset({"current_booking_id", "new_booking_id", "access_session_token", "ui_action_id"}),
     "cancel_booking": frozenset({"booking_id", "access_session_token", "ui_action_id", "reason"}),
     "release_hold": frozenset({"booking_id"}),
 }
@@ -245,13 +314,25 @@ MUTATING_TOOL_NAMES = frozenset(
         "confirm_test_drive_booking",
         "request_booking_access",
         "verify_booking_access",
+        "cancel_booking",
+        "reschedule_booking",
     }
 )
 
-CONFIRMATION_TOOL_NAMES = frozenset({"confirm_test_drive_booking"})
-CONFIRMATION_ACTION_BY_TOOL = {"confirm_test_drive_booking": "confirm_booking"}
+CONFIRMATION_TOOL_NAMES = frozenset(
+    {"confirm_test_drive_booking", "cancel_booking", "reschedule_booking"}
+)
+CONFIRMATION_ACTION_BY_TOOL = {
+    "confirm_test_drive_booking": "confirm_booking",
+    "cancel_booking": "cancel_booking",
+    "reschedule_booking": "reschedule_booking",
+}
 CONFIRMATION_BOUND_FIELDS_BY_TOOL = {
-    "confirm_test_drive_booking": frozenset({"booking_id", "expected_version", "ui_action_id"})
+    "confirm_test_drive_booking": frozenset({"booking_id", "expected_version", "ui_action_id"}),
+    "cancel_booking": frozenset({"booking_id", "access_session_token", "ui_action_id"}),
+    "reschedule_booking": frozenset(
+        {"current_booking_id", "new_slot_id", "access_session_token", "ui_action_id"}
+    ),
 }
 
 # Values under these keys are never safe in natural-language output or public
