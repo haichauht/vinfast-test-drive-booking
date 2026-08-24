@@ -687,6 +687,18 @@
   text-align: right;
 }
 
+.studio-vehicle__details .vehicle-price-variants {
+  display: grid;
+  gap: 3px;
+}
+
+.studio-vehicle__details .vehicle-price-variants__row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  white-space: nowrap;
+}
+
 .studio-vehicle__details > small {
   color: var(--muted);
   font-size: 0.74rem;
