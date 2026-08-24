@@ -700,7 +700,7 @@ export function BookingPage() {
     otpCodeRef.current = ''
   }
 
-  const clearManagementContext = ({ resetConversation = true, event = InteractionEvent.EXIT_MANAGE_BOOKING } = {}) => {
+  const clearManagementContext = ({ resetConversation = false, event = InteractionEvent.EXIT_MANAGE_BOOKING } = {}) => {
     setAccessFlow(null)
     setAccessProfile(null)
     setAccessibleBookings([])
@@ -947,7 +947,7 @@ export function BookingPage() {
         if (!recipient) setRecipient('self')
         setWorkspaceHidden(false)
         if (interaction.mode === BookingMode.MANAGE_BOOKING) {
-          clearManagementContext({ resetConversation: true, event: InteractionEvent.VIEW_VEHICLE })
+          clearManagementContext({ resetConversation: false, event: InteractionEvent.VIEW_VEHICLE })
         } else {
           dispatchInteraction({ type: InteractionEvent.VIEW_VEHICLE })
         }
@@ -1450,7 +1450,7 @@ export function BookingPage() {
       if (!recipient) setRecipient('self')
       setWorkspaceHidden(false)
       if (interaction.mode === BookingMode.MANAGE_BOOKING) {
-        clearManagementContext({ resetConversation: true, event: InteractionEvent.VIEW_VEHICLE })
+        clearManagementContext({ resetConversation: false, event: InteractionEvent.VIEW_VEHICLE })
       } else {
         dispatchInteraction({ type: InteractionEvent.VIEW_VEHICLE })
       }
