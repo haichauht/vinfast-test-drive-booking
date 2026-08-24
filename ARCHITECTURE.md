@@ -1,302 +1,242 @@
 # Kiến trúc hệ thống VinFast Test Drive + ViVi
 
-> Tài liệu phản ánh implementation hiện có trong source, rà soát ngày 23-08-2026. Khi khác biệt, source code là nguồn sự thật.
+> Tài liệu mô tả implementation trong `frontend/src`, `internal-portal/frontend/src` và `backend/src`, được hợp nhất ngày 22-08-2026. Source code là nguồn sự thật khi có khác biệt với tài liệu.
 
-## 1. Tổng quan hệ thống
+## 1. Tổng quan
+
+Hệ thống phục vụ hành trình tìm hiểu xe và đặt lịch lái thử VinFast, gồm website công khai, trợ lý ViVi, portal nội bộ và một FastAPI backend dùng chung.
 
 ```mermaid
 flowchart LR
-    Customer[Khách hàng] --> Website[Public FE<br/>React 18 + Vite<br/>React Router · GSAP · Three.js · Mapbox GL]
-    Staff[Nhân viên vận hành] --> PortalUI[Internal Portal FE<br/>React 18 + Vite]
-    Driver[Người lái được mời] --> DriverLink[Driver invitation link]
-    Website --> PublicNginx[Nginx public FE]
-    DriverLink --> PublicNginx
-    PortalUI --> PortalNginx[Nginx portal FE]
-    PublicNginx --> API[FastAPI API<br/>Python + Uvicorn + Pydantic]
-    PortalNginx --> API
-    API --> Core[Booking + Portal + Site catalogue]
-    API --> AI[ViVi AI<br/>LangGraph + LangChain + guardrails]
-    Core --> PG[(PostgreSQL)]
-    AI --> PG
-    AI --> LLM[OpenRouter / OpenAI<br/>ChatOpenAI]
-    AI --> Knowledge[Trusted knowledge JSON]
-    Core --> Integrations[Gmail / Zalo]
-    AI --> Redis[(Redis<br/>profile queue, optional)]
+    Customer["Khách hàng"] --> Public["Public website\nReact 18 + Vite"]
+    Operator["Nhân viên vận hành"] --> Portal["Internal portal\nReact 18 + Vite"]
+    Public -->|"/api/v1, /media"| Edge["Nginx / Vite proxy"]
+    Portal -->|"/api/v1/internal"| Edge
+    Edge --> API["FastAPI"]
+    API --> Site["SiteCatalogService\nCatalogue & content"]
+    API --> Agent["ViVi LangGraph"]
+    API --> Booking["BookingService"]
+    API --> Profile["Profile services"]
+    API --> Internal["InternalPortalService"]
+    API --> Guard["Guardrails + rate limit"]
+    Agent --> LLM["OpenAI/OpenRouter\nLangChain ChatOpenAI"]
+    Agent --> Tools["Guarded LangChain tools"] --> Booking
+    Agent --> Checkpoint["LangGraph checkpointer"]
+    Booking --> PG[("PostgreSQL")]
+    Profile --> PG
+    Internal --> PG
+    Checkpoint --> PG
+    Guard --> Redis[("Redis\noptional")]
+    Booking --> Notify["Gmail / Zalo / in-memory"]
+    API --> Media["Local media hoặc CDN/R2"]
 ```
 
-Sơ đồ này chỉ gom các khối backend chính; sơ đồ phía trên giữ chi tiết route, profile, media và từng service.
-
-Các frontend đều gọi backend qua Nginx khi chạy Docker. `docker-compose.yml` có đủ Postgres, Redis, backend, public frontend và internal portal. `docker-compose.prod.yml` hiện chỉ khai báo Postgres, Redis, backend và public frontend; portal chưa nằm trong stack production.
-
-## 2. Tech stack
-
-```mermaid
-flowchart TB
-    subgraph Frontend[Frontend]
-        React[React 18]
-        Vite[Vite]
-        UI[React Router · GSAP · Three.js<br/>Mapbox GL · model-viewer]
-        React --> Vite
-        React --> UI
-    end
-    subgraph Edge[Edge & runtime]
-        Nginx[Nginx]
-        Docker[Docker Compose]
-        Nginx --> Docker
-    end
-    subgraph Backend[Backend]
-        Python[Python]
-        FastAPI[FastAPI + Uvicorn]
-        Pydantic[Pydantic Settings]
-        Python --> FastAPI
-        FastAPI --> Pydantic
-    end
-    subgraph AI[AI]
-        LangGraph[LangGraph]
-        LangChain[LangChain + langchain-openai]
-        Provider[OpenRouter / OpenAI]
-        LangGraph --> LangChain --> Provider
-    end
-    subgraph Data[Data & integrations]
-        PG[(PostgreSQL 16)]
-        Redis[(Redis 7, optional)]
-        Gmail[Gmail OAuth]
-        Zalo[Zalo Bot]
-        Media[Local MEDIA_ROOT / CDN]
-    end
-    Frontend --> Nginx --> FastAPI
-    FastAPI --> LangGraph
-    FastAPI --> PG & Redis & Gmail & Zalo & Media
-```
-
-## 3. Backend: lớp và trách nhiệm
-
-```mermaid
-flowchart TB
-    subgraph Boundary[FastAPI boundary]
-        Middleware[CORS<br/>RateLimitMiddleware<br/>HTTP request logging]
-        PublicRoutes[Public routes<br/>chat, stream, actions, profile, import]
-        SiteRoutes[Site routes<br/>vehicles, content]
-        InternalRoutes[Internal routes<br/>/internal/*]
-        MediaRoute["/media static mount"]
-    end
-    subgraph Domain[Application services]
-        Site[SiteCatalogService]
-        Booking[BookingService mixins<br/>catalog, lifecycle, access, management,<br/>staff, notifications, import, dashboard, location]
-        Portal[InternalPortalService mixins<br/>auth, resources, operations, notifications]
-        Profiles[ProfileService + DriverInvitationService]
-        Budget[UsageBudgetService]
-    end
-    subgraph AI[ViVi AI]
-        Graph[LangGraph StateGraph]
-        Guardrails[InputGuard · ToolGuard · OutputGuard]
-        LLM[ChatOpenAI provider]
-        Knowledge[KnowledgeService]
-    end
-    subgraph Infra[Persistence and integrations]
-        PG[(PostgreSQL)]
-        Redis[(Redis, optional)]
-        Mail[Gmail OAuth]
-        Zalo[Zalo Bot / OTP]
-    end
-    Middleware --> PublicRoutes & SiteRoutes & InternalRoutes & MediaRoute
-    PublicRoutes --> Graph & Booking & Profiles & Budget
-    SiteRoutes --> Site
-    InternalRoutes --> Portal
-    Graph --> Guardrails & LLM & Knowledge & Booking & Profiles & Budget
-    Booking --> PG & Redis & Mail & Zalo
-    Portal --> PG
-    Profiles --> PG & Redis
-    Budget --> PG
-    Site --> CatalogData[In-module catalogue/content<br/>or SITE_CATALOG_PATH JSON snapshot]
-```
-
-`SiteCatalogService` không đọc catalogue từ PostgreSQL: nó dùng dữ liệu mặc định trong module hoặc snapshot JSON tại `SITE_CATALOG_PATH`, và trả ETag/Cache-Control. PostgreSQL là nguồn dữ liệu nghiệp vụ: showroom, xe demo, slot, booking, người dùng/phiên portal, OTP/access session, audit/idempotency, notification, profile và LangGraph checkpoint.
-
-### Bề mặt API
-
-| Nhóm | Endpoint chính | Xử lý |
+| Loại dữ liệu | Nguồn sự thật | Ghi chú |
 | --- | --- | --- |
-| Health | `GET /health`, `/api/v1/booking/health`, `/api/v1/status` | Liveness, trạng thái DB/agent. |
-| Site | `GET /api/v1/vehicles`, `/vehicles/{id}`, `/content/{page}` | Catalogue/content read-only, ETag. |
-| ViVi | `POST /api/v1/chat`, `/chat/stream` (alias `/booking-agent/stream`) | Chat/structured action; stream SSE. |
-| Driver | `GET /driver-chat/{token}/context`, `POST /driver-chat/{token}/chat` | Chat theo link mời có thời hạn, cô lập conversation namespace. |
-| Booking deterministic | `POST /api/v1/test-drive/actions` (alias `/demo/action`) | Search, hold/draft/confirm, OTP access, quản lý booking; không qua LLM. |
-| Profile | `GET /user-profiles/{id}/…`, booking profile summary, driver invitation | Đọc summary/profile và tạo email link cho driver. |
-| Internal | `/api/v1/internal/*` | Opaque bearer session, RBAC, dashboard, fleet, schedule, booking operations, audit. |
-| Admin import | `/api/v1/admin/import/*` | Chỉ `operations_admin`; cấm import state bảo mật. |
+| Catalogue/content marketing | `SiteCatalogService` | API `/vehicles`, `/content/{page}` độc lập dữ liệu booking. |
+| Showroom, xe demo, slot, booking, nhân sự | PostgreSQL qua service layer | Chỉ service được thực thi nghiệp vụ và ghi DB. |
+| Hồ sơ khách, booker/driver và lời mời tài xế | PostgreSQL qua profile services | Portal/admin đọc cùng dữ liệu để hỗ trợ sales. |
+| Lịch sử hội thoại | LangGraph checkpoint theo internal `thread_id` | Client giữ signed conversation capability; backend xác minh rồi ánh xạ sang thread nội bộ. |
+| Trạng thái UI booking | React state + `sessionStorage` | Không phải nguồn sự thật của slot/booking. |
+| Token portal | `sessionStorage`; hash/revocation trong PostgreSQL | Bearer token tới API nội bộ. |
 
-## 4. Vòng đời ứng dụng và worker
+## 2. Tech stack và triển khai
+
+| Lớp | Công nghệ đang dùng |
+| --- | --- |
+| Public frontend | React 18, React Router, Vite, GSAP, Three.js, Mapbox GL, `@google/model-viewer` |
+| Internal frontend | React 18, Vite |
+| Edge | Nginx trong Docker; Vite dev proxy |
+| Backend | Python, FastAPI, Pydantic Settings, Uvicorn |
+| AI | LangChain, `langchain-openai`, LangGraph, PostgreSQL checkpointer |
+| Persistence | PostgreSQL 16 qua psycopg; SQLite chỉ compatibility/test |
+| Cache/rate limit | Redis 7 và database counters qua public API middleware |
+| Messaging | Gmail OAuth, Zalo Bot/OTP, in-memory fallback |
+| Media | `MEDIA_ROOT` mount tại `/media`; production có thể dùng `MEDIA_BASE_URL`/CDN |
+| Container | Docker Compose: Postgres, Redis, backend, public frontend và portal (dev) |
+
+`docker-compose.prod.yml` triển khai PostgreSQL, Redis, backend và public frontend. Internal portal hiện có trong dev compose nhưng chưa được khai báo trong production compose.
+
+## 3. Cấu trúc source code
+
+```text
+P-053/
+├── frontend/                         # Website công khai
+│   └── src/
+│       ├── pages/, components/       # Trang marketing, booking và UI dùng chung
+│       ├── api/                      # HTTP client, booking, catalogue adapters
+│       ├── state/                    # Booking interaction state
+│       └── data/, media/, styles/    # UI data, asset mapping, CSS
+├── internal-portal/frontend/          # Portal vận hành và sales
+├── backend/
+│   ├── src/
+│   │   ├── main.py                    # FastAPI, lifespan, middleware, /media
+│   │   ├── api/                       # Public chat/action/site API
+│   │   ├── agents/                    # Graph, state, nodes, tools, prompts, skills
+│   │   ├── guardrails/                # Input/tool/output guard và contracts
+│   │   ├── services/booking/          # Booking domain
+│   │   ├── services/profile/          # Customer profile và driver invitation
+│   │   ├── internal_portal/           # Auth, RBAC, operations, resources
+│   │   ├── database/                  # DB adapters, schema, SQL guard, Redis
+│   │   ├── security/                  # Client identity và rate limiting
+│   │   └── evaluation/                # Benchmark loader, metrics và reporting
+│   ├── scripts/                       # Seed/import, media, email, evaluation
+│   └── tests/                         # API, agent, guardrail, booking, portal, benchmark
+├── eval/                              # Dataset, schema, fixtures và báo cáo evaluation
+├── docker-compose.yml
+└── docker-compose.prod.yml
+```
+
+## 4. Backend architecture
+
+### API boundary
+
+| Nhóm | Endpoint chính | Vai trò |
+| --- | --- | --- |
+| Health | `GET /health`, `GET /api/v1/booking/health` | Liveness và DB/booking readiness. |
+| Site | `GET /api/v1/vehicles`, `/vehicles/{id}`, `/content/{page}` | Catalogue/content; có ETag và Cache-Control. |
+| Agent | `POST /api/v1/chat`, `POST /chat/stream` | Chat, structured action qua graph, SSE. |
+| Booking command | `POST /api/v1/test-drive/actions` | Command xác định trước; alias cũ `/demo/action`. |
+| Driver/profile | `/driver-chat/*`, `/bookings/*/profile-summary.md`, `/user-profiles/*` | Context tài xế và tóm tắt hồ sơ hỗ trợ sales. |
+| Internal | `/api/v1/internal/*` | Login, RBAC, dashboard, tài nguyên và vận hành booking. |
+| Admin import | `/admin/import/*` | Chỉ `operations_admin`, chặn import security state. |
+
+`main.py` gắn CORS, `RateLimitMiddleware`, request logging, portal error handler và static mount `/media`. Nginx proxy `/api/` và `/media/` về backend; SPA fallback xử lý React routes.
+
+### Booking và profile domain
+
+`BookingService` là facade ghép các mixin:
+
+- `catalog.py`: tìm showroom/slot theo xe, địa chỉ, tọa độ, showroom và bộ lọc ngày.
+- `lifecycle.py`: hold, draft, confirm và expire booking.
+- `access.py`: OTP, access session, đọc lịch đã xác thực.
+- `management.py`: cập nhật, đổi lịch, hủy lịch.
+- `staff.py`: assignment, kiểm GPLX, check-in, complete, no-show.
+- `notifications.py`, `background.py`: notification job/provider/dispatcher.
+- `base.py`: transaction, audit event và idempotency.
+- `importer.py`, `dashboard.py`, `location.py`: import, snapshot vận hành, khoảng cách.
+
+Profile services resolve hồ sơ ẩn danh theo conversation/session, promote identity sau OTP hoặc booking, nối booker/driver với booking, tạo lời mời tài xế có hạn và cung cấp structured context/tóm tắt Markdown cho portal hoặc sales.
+
+### Startup và worker
 
 ```mermaid
 sequenceDiagram
     participant U as Uvicorn
-    participant F as FastAPI lifespan
+    participant A as FastAPI lifespan
     participant DB as PostgreSQL
     participant G as LangGraph
-    participant N as Notification dispatcher
     participant Z as Zalo polling
-    U->>F: startup
-    F->>DB: initialize_database / bootstrap theo cấu hình
-    F->>G: initialize_persistent_agent(DATABASE_URL)
-    alt DATABASE_URL là PostgreSQL
-        G->>DB: AsyncPostgresSaver.setup()
-    else SQLite/local test
-        G->>G: MemorySaver
+    participant N as Notification dispatcher
+    U->>A: Khởi động application
+    A->>DB: initialize_database() / bootstrap khi cần
+    A->>G: initialize_persistent_agent(DATABASE_URL)
+    G->>DB: AsyncPostgresSaver.setup()
+    opt Zalo được bật
+        A->>Z: tạo polling task
     end
-    F->>N: tạo task dispatch_due_notifications()
-    opt Zalo enabled và polling enabled
-        F->>Z: tạo polling task
-    end
+    A->>N: tạo notification loop
     loop notification_poll_interval_seconds
-        N->>DB: claim và gửi notification đến hạn
+        N->>DB: lấy và dispatch job đến hạn
     end
-    F-->>U: sẵn sàng phục vụ
-    U->>F: shutdown
-    F->>N: cancel task
-    F->>Z: cancel polling (nếu có)
-    F->>G: close persistent checkpointer
+    A-->>U: ứng dụng sẵn sàng
 ```
 
-Ở production, khởi tạo PostgreSQL checkpointer thất bại sẽ làm startup thất bại. Redis không bắt buộc cho backend: các chức năng Redis phụ thuộc như queue cập nhật profile sẽ báo unavailable nếu Redis không sẵn sàng.
+Production fail startup nếu không khởi tạo được PostgreSQL checkpointer. Notification loop luôn chạy; Zalo polling chỉ chạy khi có đủ cấu hình/token. Profile update queue được start/stop theo lifecycle của API router.
 
-## 5. ViVi: đồ thị AI thực tế
+## 5. Luồng frontend – backend
+
+### Website công khai
+
+`App.jsx` quản lý các trang marketing, chi tiết xe và booking. `BackendStatusProvider` kiểm tra `/api/v1/booking/health`; `api/client.js` dùng base URL `/api/v1`, cache GET trong RAM + `If-None-Match`, POST JSON không cache và chuẩn hóa lỗi thành `ApiError`.
+
+### Đặt lịch mới qua structured action
+
+`search_options` phân biệt vị trí khách (`address` hoặc GPS) với tên/mã showroom (`showroom_query`). Vùng quá rộng trả `location_clarification`; candidate chỉ được trả khi showroom, demo vehicle, pin và slot đều khả dụng trong cửa sổ đặt lịch cấu hình được.
+
+Ba contract ngày loại trừ nhau gồm `preferred_date`, `preferred_dates`, và `preferred_date_from` + `preferred_date_to`. Service query inventory thật và trả `available_dates`/`highlighted_dates`; frontend không tự suy diễn inventory.
+
+```mermaid
+sequenceDiagram
+    participant UI as BookingPage
+    participant API as POST /chat
+    participant GR as Guardrails
+    participant LG as LangGraph
+    participant T as Guarded tool
+    participant B as BookingService
+    participant DB as PostgreSQL
+    UI->>API: action + payload + signed conversation_id
+    API->>GR: validate và sanitize
+    API->>LG: ainvoke(internal thread_id)
+    LG->>T: allowlisted tool call
+    T->>B: command nghiệp vụ
+    B->>DB: transaction + idempotency + audit
+    DB-->>B: kết quả
+    B-->>LG: structured ToolMessage
+    LG-->>API: action result + UI directive
+    API->>GR: redact và giới hạn output
+    API-->>UI: ChatResponse
+```
+
+`ui_action_id` và hash payload cho phép replay an toàn; `expected_version` bảo vệ optimistic concurrency khi update/confirm draft. `confirm_test_drive_booking` chỉ được chạy từ structured confirmation đã bind đúng payload, không được mở cho free-form LLM.
+
+### Tra cứu, sửa, dời hoặc hủy booking
+
+Nhóm này đi qua `/test-drive/actions`, không cần LLM. Khách phải xác thực OTP để nhận access session token; service kiểm permission và owner trước mỗi command. Portal dùng opaque bearer session, RBAC và showroom scope riêng.
+
+## 6. Luồng LangChain/LangGraph của ViVi
+
+- `classifier_node.py`: keyword fast-path, LLM structured route và fallback.
+- `booking_skill_node.py`: structured action hoặc free chat với bound tools.
+- `sensitive_policy_node.py`: policy response, không gọi tool.
+- `advise_skill_node.py`: knowledge tool khi graph bật nhánh advise.
+- `tool_guard.py`: allowlist, payload contract, confirmation binding và safe error serialization.
+- `UsageBudgetService`: giới hạn cost/call theo ngày và session.
 
 ```mermaid
 flowchart TD
-    Start([ChatRequest]) --> Context[Resolve client identity<br/>profile + booking + participant context]
-    Context --> InGuard[InputGuard<br/>validate, sanitize, payload limits]
-    InGuard -->|blocked| Blocked[Safe ChatResponse]
-    InGuard -->|allowed| Classifier[classifier_node]
-    Classifier -->|sensitive / out_of_scope| Policy[sensitive_policy_node]
-    Classifier -->|booking skill| Skill[booking_skill_node<br/>hoặc post_booking_skill_node]
-    Classifier -->|confirmed booking + advisory/vehicle info| Skill
-    Skill --> HasTools{AIMessage has tool calls?}
-    HasTools -->|yes| Tools[Guarded ToolNode<br/>allowlist theo active skill]
-    Tools --> Skill
-    HasTools -->|no| OutputGuard[OutputGuard<br/>redact + response limit]
-    Policy --> OutputGuard
-    OutputGuard --> End([ChatResponse])
+    Start([ChatRequest]) --> InGuard["InputGuard\nvalidate/sanitize"]
+    InGuard -->|blocked| Reject["Safe blocked response"]
+    InGuard -->|allowed| Classifier
+    Classifier -->|sensitive| Policy["sensitive_policy_node"]
+    Classifier -->|domain/action| Booking["booking_skill_node"]
+    Booking --> HasTools{"AIMessage có tool calls?"}
+    HasTools -->|no| OutGuard["OutputGuard\nredact + size limit"]
+    HasTools -->|yes, dưới limit| ToolGuard["Guarded ToolNode"]
+    ToolGuard --> Booking
+    HasTools -->|vượt limit| Limit["max_tool_limit_node"]
+    Policy --> OutGuard
+    Limit --> OutGuard
+    OutGuard --> End([ChatResponse])
 ```
 
-Classifier dùng keyword fast-path cho một số intent/safety cases, còn lại gọi LLM với structured `RouteSchema`; khi LLM không khả dụng/lỗi, code fallback về keyword/domain route. Structured booking actions bypass classifier LLM và map thẳng tới booking skill, vì vậy các button booking vẫn dùng được không cần API key LLM.
+UI context được đưa vào LLM như dữ liệu tham chiếu không đáng tin cậy, không nối vào system role. Tool result cũng được bọc như untrusted content trước khi quay lại model. Khi hỏi availability và UI đã có xe/showroom, tool search được ép gọi để tránh trả lời từ memory.
 
-| Skill | Tool allowlist đang được nối vào graph | Ghi chú |
-| --- | --- | --- |
-| `booking` | `search_test_drive_options`, `hold_test_drive_slot`, `get_booking_draft`, `update_booking_draft`, `request_booking_access`, `request_user_location`, `verify_booking_access`, `get_booking_details`, `confirm_test_drive_booking` | Tool chỉ gọi `BookingService`; không có SQL trực tiếp từ model. |
-| `post_booking` | `search_knowledge`, `update_user_profile` | Chỉ route khi booking đã active/confirmed; dùng knowledge JSON đã có provenance và profile context. |
+`POST /chat/stream` (alias `/booking-agent/stream`) gọi cùng canonical chat handler để giữ nguyên conversation verification, rate/abuse limits, profile context và guardrails; response đã bảo vệ được chia thành SSE `token` events rồi kết thúc bằng event `done`.
 
-`calculator` và `advise_skill_node` có trong source nhưng không được gắn vào graph công khai hiện tại. Không có vector-store/Chroma được dùng trong luồng `KnowledgeService` hiện hành; knowledge được tìm kiếm trên file JSON trusted.
+## 7. Bảo mật, tin cậy và quan sát
 
-### Luồng chat và tool
+- Signed conversation capability có TTL; token sửa/hết hạn được thay bằng thread cô lập mới và không dùng trực tiếp làm checkpoint key.
+- Input guard giới hạn size/depth/node/string, kiểm allowlist context/action, normalize Unicode và chặn injection/abuse.
+- Vi phạm injection hoặc abusive language tích lũy strike theo signed conversation/anonymous session; đạt ngưỡng sẽ bị ban có `Retry-After`. Raw proxy IP không được dùng cho ban 24 giờ.
+- Tool guard chỉ cho tool đăng ký, chặn duplicate/batch mutation trái policy và bind confirmation với UI action.
+- Output guard loại internal analysis, redact credential/OTP/contact và giới hạn kích thước response/action data.
+- Rate limit nhiều lớp dùng cookie session, IP, conversation và quota riêng cho chat/action/OTP.
+- OTP có TTL, cooldown, số lần thử tối đa, pepper server-side; production không trả mock OTP.
+- Mutation booking dùng transaction, version check, idempotency và audit event.
+- Trace/log redact request, LLM và tool data; HTTP middleware ghi status/latency.
 
-```mermaid
-sequenceDiagram
-    participant C as Customer/Driver
-    participant API as POST /chat hoặc driver-chat
-    participant P as ProfileService
-    participant G as LangGraph
-    participant L as ChatOpenAI
-    participant TG as Guarded ToolNode
-    participant S as Booking/Profile/Knowledge service
-    participant DB as PostgreSQL / Redis
-    C->>API: message, context, conversation_id
-    API->>P: resolve anonymous/trusted profile + booking context
-    API->>G: ainvoke(thread_id=conversation_id)
-    G->>G: input guard + classifier
-    alt booking hoặc post-booking cần LLM
-        G->>L: prompt, history, context và tool allowlist
-        L-->>G: text hoặc tool call
-        opt tool call
-            G->>TG: validate allowlist, limits, confirmation
-            TG->>S: invoke tool
-            S->>DB: transaction / retrieval / queue
-            DB-->>S: result
-            S-->>TG: tool result
-            TG-->>G: ToolMessage
-        end
-    else structured booking action
-        G->>TG: generated deterministic tool call
-        TG->>S: BookingService command
-    end
-    G-->>API: response + action metadata
-    API->>G: OutputGuard protection
-    API-->>C: ChatResponse hoặc SSE done event
-```
+## 8. Benchmark và kiểm thử
 
-Provider LLM ưu tiên OpenRouter, sau đó OpenAI. `UsageBudgetService` ghi/kiểm soát ngân sách theo ngày và session trong PostgreSQL; giới hạn tool gồm tối đa 8 vòng ở graph và tối đa `guardrails_max_tool_calls_per_message` (mặc định 3) ở một message tool.
+Benchmark agent nằm trong `backend/src/evaluation`, dataset/report trong `eval/` và entrypoint ở `backend/scripts/run_agent_evaluation.py`. Schema benchmark 1.1 bắt buộc coverage tối thiểu theo category; CI chạy correctness/security/latency metrics cùng mutation tests cho injection detection, output sanitization, confirmation binding, conversation verification, rate limiting và abuse threshold.
 
-## 6. Booking và thông báo
-
-```mermaid
-flowchart LR
-    UI[Booking UI hoặc deterministic action API] --> B[BookingService]
-    B --> Catalog[catalog: showroom, vehicle, slot search]
-    B --> Life[lifecycle: hold, draft, confirm, expire]
-    B --> Access[access: OTP, access session]
-    B --> Manage[management: update, reschedule, cancel]
-    B --> Staff[staff: assignment, licence, check-in, complete, no-show]
-    B --> Ops[import, dashboard, location]
-    B --> TX[base: transaction, audit, idempotency]
-    Catalog --> PG[(PostgreSQL)]
-    Life --> PG
-    Access --> PG
-    Manage --> PG
-    Staff --> PG
-    Ops --> PG
-    TX --> PG
-    Life --> Redis[(Redis slot hold, optional)]
-    B --> Jobs[notification jobs]
-    Jobs --> Dispatcher[background dispatcher]
-    Dispatcher --> Channel{routing provider}
-    Channel --> Gmail[Gmail OAuth]
-    Channel --> Zalo[Zalo]
-    Channel --> Memory[In-memory fallback]
-```
-
-Mutations dùng `ui_action_id` để idempotency và `expected_version` cho optimistic concurrency. OTP/access session bảo vệ tra cứu và chỉnh sửa booking. Driver invitation được tạo từ booking, gửi qua messaging provider; token chỉ dùng cho chat/context của driver và classifier chặn các thao tác booking management trên luồng này.
-
-## 7. Post-booking profile và personalisation
-
-```mermaid
-sequenceDiagram
-    participant U as Booker hoặc driver
-    participant V as post_booking_skill
-    participant K as search_knowledge
-    participant T as update_user_profile
-    participant Q as Redis ProfileUpdateQueue
-    participant W as queue worker
-    participant P as ProfileService
-    participant DB as PostgreSQL
-    U->>V: hỏi chuẩn bị/đánh giá lái thử hoặc cung cấp sở thích
-    V->>K: tra trusted knowledge theo query/model (khi cần)
-    K-->>V: facts + provenance/scope
-    opt thông tin durable để cá nhân hoá
-        V->>T: SignalCandidate(s)
-        T->>Q: enqueue reliable, dedupe ngắn hạn
-        Q-->>T: queued/unavailable
-        W->>Q: reserve job
-        W->>P: apply signal với provenance
-        P->>DB: user_profiles + user_profile_signals
-        W->>Q: ack hoặc retry/dead-letter
-    end
-    V-->>U: tư vấn grounded và phản hồi chat
-```
-
-Profile khởi đầu anonymous theo conversation/cookie. Khi booking được confirm hoặc OTP access được xác thực, backend có thể promote/merge profile theo person và hash email/phone; plaintext liên hệ không được đưa vào profile tool. Profile queue hiện cần Redis, và worker được start/stop ở event của public router.
-
-## 8. An toàn, quan sát và dữ liệu
-
-- `RateLimitMiddleware` tạo cookie identity phía server và IP fallback; counters nằm ở PostgreSQL. Quota được tách cho chat, deterministic action và OTP.
-- Guardrails kiểm tra input/action contract, giới hạn payload, allowlist tool, explicit confirmation trước confirmation tool, giới hạn mutation batch và redact output.
-- Portal dùng opaque bearer token chỉ lưu hash trong DB, có revoke và RBAC/scope showroom; frontend portal lưu token trong `sessionStorage`.
-- Trace agent và HTTP logs thực hiện redaction. `client-log` cũng redact message/context trước khi log.
-- `/media` là `MEDIA_ROOT` local mount; DTO có thể phát URL CDN bằng `MEDIA_BASE_URL`.
-- Không đưa `.env`, Gmail refresh token, Zalo token, OTP secret hoặc driver invitation token vào source/log/documentation.
+Các thay đổi booking/agent cần chạy unit/integration tests, benchmark, Ruff và frontend checks tương ứng trước khi merge.
 
 ## 9. Quy ước mở rộng
 
-1. Tool mới phải được thêm đồng thời vào tool module, allowlist của graph, guardrail policy/contract và test; export tool đơn lẻ chưa làm tool đó có thể gọi.
-2. Skill mới cần node, routing classifier, ToolNode allowlist riêng và test permission boundary.
-3. Thêm booking action cần đi xuyên DTO/guardrail → frontend API → action map/tool hoặc service → test/UI directive.
-4. Production cần PostgreSQL cho conversation checkpoint bền vững; Redis nên được bật nếu sử dụng cập nhật profile bất đồng bộ.
+1. Production cần PostgreSQL vì conversation memory/checkpointer là bắt buộc.
+2. Redis có thể tắt bằng `REDIS_ENABLED=false`; rate-limit production vẫn cần cấu hình datastore phù hợp.
+3. Không đưa secret `.env`, Gmail refresh token, Zalo token hay OTP secret vào source/trace.
+4. Thêm booking action: cập nhật DTO/guardrail contract → frontend API → action map/tool → service/tests → UI directive.
+5. Thêm LangGraph tool: cập nhật export, graph list, ToolNode allowlist, policy/contracts và security tests.
+6. Thêm dữ liệu hồ sơ: xác định nguồn tin cậy, consent/scope hiển thị, redaction và audit trước khi đưa vào context cho agent hoặc sales.

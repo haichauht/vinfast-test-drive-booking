@@ -164,7 +164,7 @@ class RedisClient:
             print(msg, flush=True)
             return None
 
-    def hold_slot(self, slot_id: str, booking_id: str, ttl_seconds: int = 120) -> bool:
+    def hold_slot(self, slot_id: str, booking_id: str, ttl_seconds: int = 300) -> bool:
         if not self._client:
             msg = "[REDIS BYPASS] hold_slot skipped, Redis not connected"
             print(msg, flush=True)

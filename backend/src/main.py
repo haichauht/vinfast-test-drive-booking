@@ -56,6 +56,9 @@ async def lifespan(app: FastAPI):
     async def dispatch_notifications() -> None:
         while True:
             try:
+                expired_holds = await asyncio.to_thread(booking_service.expire_held_bookings)
+                if expired_holds:
+                    logging.getLogger(__name__).info("Released %s expired booking holds", expired_holds)
                 await asyncio.to_thread(
                     booking_service.dispatch_due_notifications,
                     settings.notification_batch_size,
@@ -94,12 +97,27 @@ app = FastAPI(
 
 media_root = Path(settings.media_root).resolve()
 media_root.mkdir(parents=True, exist_ok=True)
+cors_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins.split(","),
+    allow_origins=cors_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Content-Length",
+        "Accept",
+        "Origin",
+        "User-Agent",
+        "Cache-Control",
+        "X-Requested-With",
+        "X-Trace-Id",
+        "X-Conversation-Id",
+        "X-Session-Id",
+        "If-Match",
+        "If-None-Match",
+    ],
 )
 app.add_middleware(RateLimitMiddleware, database=database, settings=settings)
 
