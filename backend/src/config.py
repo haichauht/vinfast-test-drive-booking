@@ -130,6 +130,8 @@ class Settings(BaseSettings):
     llm_estimated_input_token_price_per_1m: float = Field(default=0.15, ge=0.0)
     llm_estimated_output_token_price_per_1m: float = Field(default=0.60, ge=0.0)
     llm_estimated_output_tokens_per_call: int = Field(default=700, ge=1, le=100_000)
+    llm_request_timeout_seconds: float = Field(default=60.0, ge=5.0, le=300.0)
+    llm_max_retries: int = Field(default=1, ge=0, le=5)
 
     @model_validator(mode="after")
     def require_production_otp_secret(self):

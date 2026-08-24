@@ -66,6 +66,69 @@ async def test_classifier_marks_schedule_questions_as_booking_availability(monke
 
 
 @pytest.mark.asyncio
+async def test_classifier_corrects_new_test_drive_discovery_misrouted_as_booking_lookup(monkeypatch):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        return_value=RouteSchema(
+            intent="domain",
+            sub_intent="booking_lookup",
+            has_schedule_preference=True,
+        )
+    )
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+
+    result = await classifier_node({"query": "Xem lich chay thu VF7 o showroom Thanh Ha"})
+
+    assert result["intent"] == "domain"
+    assert result["active_skill"] == "booking"
+    assert result["metadata"]["sub_intent"] == "booking_availability"
+
+
+@pytest.mark.asyncio
+async def test_classifier_keeps_existing_booking_lookup_with_identity(monkeypatch):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        return_value=RouteSchema(
+            intent="domain",
+            sub_intent="booking_lookup",
+            has_schedule_preference=False,
+        )
+    )
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+
+    result = await classifier_node({"query": "Xem lich VF7 toi da dat bang a@example.test"})
+
+    assert result["metadata"]["sub_intent"] == "booking_lookup"
+
+
+@pytest.mark.asyncio
+async def test_classifier_corrects_ebus_test_drive_from_out_of_scope(monkeypatch):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        return_value=RouteSchema(
+            intent="out_of_scope",
+            sub_intent="out_of_scope",
+            has_schedule_preference=False,
+        )
+    )
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+
+    result = await classifier_node({"query": "Toi muon lai thu EBus"})
+
+    assert result["intent"] == "domain"
+    assert result["metadata"]["sub_intent"] == "booking_new"
+
+
+@pytest.mark.asyncio
 async def test_classifier_corrects_short_schedule_preference_while_choosing_slot(monkeypatch):
     structured = MagicMock()
     structured.ainvoke = AsyncMock(

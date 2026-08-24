@@ -26,12 +26,16 @@ def _build_llm(
     reasoning_effort: str | None = None,
 ) -> ChatOpenAI | None:
     settings = get_settings()
+    request_timeout = getattr(settings, "llm_request_timeout_seconds", 60.0)
+    max_retries = getattr(settings, "llm_max_retries", 1)
     if settings.openrouter_api_key:
         return ChatOpenAI(
             model=model,
             api_key=SecretStr(settings.openrouter_api_key),
             base_url="https://openrouter.ai/api/v1",
             temperature=temperature,
+            timeout=request_timeout,
+            max_retries=max_retries,
         )
     if settings.openai_api_key:
         openai_model = model.removeprefix("openai/")
@@ -41,11 +45,15 @@ def _build_llm(
                 api_key=SecretStr(settings.openai_api_key),
                 use_responses_api=True,
                 reasoning_effort=reasoning_effort,
+                timeout=request_timeout,
+                max_retries=max_retries,
             )
         return ChatOpenAI(
             model=openai_model,
             api_key=SecretStr(settings.openai_api_key),
             temperature=temperature,
+            timeout=request_timeout,
+            max_retries=max_retries,
         )
     # Deterministic endpoints remain available without an LLM key. Returning
     # None makes that state explicit so Agent nodes can choose a safe fallback

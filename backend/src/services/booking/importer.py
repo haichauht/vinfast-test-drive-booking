@@ -9,7 +9,7 @@ from pathlib import Path
 
 from src.database import DatabaseIntegrityError
 from src.services.booking.base import BookingBase
-from src.services.booking.common import iso, new_id, normalize_timestamp, parse_utc
+from src.services.booking.common import iso, new_id, normalize_phone, normalize_timestamp, parse_utc
 from src.services.booking.errors import BookingError
 
 _id = new_id
@@ -742,6 +742,10 @@ class ImportService(BookingBase):
                 value = row["zalo_user_id"]
             elif is_v5 and filename == "31_zalo_identity_links.csv" and column == "updated_at":
                 value = row["linked_at"]
+            elif is_v5 and filename == "19_people.csv" and column == "normalized_phone":
+                value = row.get(column) or normalize_phone(row.get("phone") or "") or None
+            elif is_v5 and filename == "19_people.csv" and column == "normalized_email":
+                value = row.get(column) or (row.get("email") or "").strip().casefold() or None
             else:
                 value = row[column]
             values.append(None if value == "" else value)

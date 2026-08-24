@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime, timedelta
+from difflib import SequenceMatcher
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from src.services.booking.base import BookingBase
-from src.services.booking.common import iso
+from src.services.booking.common import iso, parse_utc
 from src.services.booking.errors import BookingError
 from src.services.booking.location import Coordinates, HaversineMapProvider, resolve_address_coordinates
 from src.services.booking.location_normalizer import (
@@ -17,6 +18,29 @@ from src.services.booking.location_normalizer import (
 
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 _SHOWROOM_TOKEN_CACHE: dict[str, tuple[tuple[str, str, str], frozenset[str]]] = {}
+_GENERIC_SHOWROOM_TOKENS = frozenset({"vinfast", "showroom", "dai", "ly", "co", "so"})
+_ADMINISTRATIVE_LOCATION_TOKENS = frozenset({
+    "phuong",
+    "quan",
+    "huyen",
+    "tinh",
+    "thanh",
+    "pho",
+    "xa",
+})
+
+
+def _showroom_identity_text(value: object) -> str:
+    normalized = normalize_location_text(str(value or ""))
+    return " ".join(token for token in normalized.split() if token not in _GENERIC_SHOWROOM_TOKENS)
+
+
+def _looks_like_showroom_reference(value: str) -> bool:
+    normalized = normalize_location_text(value)
+    tokens = set(normalized.split())
+    explicit = bool(tokens & _GENERIC_SHOWROOM_TOKENS)
+    distinctive_name = len(tokens) >= 2 and not bool(tokens & _ADMINISTRATIVE_LOCATION_TOKENS)
+    return explicit or distinctive_name
 
 
 def _showroom_location_tokens(showroom: dict) -> frozenset[str]:
@@ -299,6 +323,22 @@ class CatalogService(BookingBase):
                     candidate_values,
                 ).fetchall()
                 showrooms = [dict(row) for row in rows]
+
+                # The model sometimes places a named showroom in ``address``
+                # (for example "cơ sở Thanh Hà") instead of
+                # ``showroom_query``. Resolve that representation only when it
+                # points confidently to one available showroom. Broad
+                # locations such as "Quận 7" remain customer addresses.
+                if address and not showroom_query and _looks_like_showroom_reference(address):
+                    address_scores = [
+                        (self._showroom_query_score(address, showroom), showroom)
+                        for showroom in showrooms
+                    ]
+                    confident = [item for item in address_scores if item[0] >= 70]
+                    if len(confident) == 1:
+                        showroom_query = address
+                        address = None
+
                 target_coords: dict[str, float] | None = None
                 if latitude is not None and longitude is not None:
                     target_coords = {"latitude": latitude, "longitude": longitude}
@@ -405,6 +445,73 @@ class CatalogService(BookingBase):
                     slot_query_values,
                 )
             ]
+            raw_slot_count = len(slots)
+            staff_rows = [
+                dict(row)
+                for row in c.execute(
+                    "SELECT id FROM sales_staff WHERE showroom_id=? "
+                    "AND status='active' AND is_active=1 ORDER BY id",
+                    (showroom_id,),
+                ).fetchall()
+            ]
+            capacity_tracked = bool(staff_rows)
+            blocked_intervals: dict[str, list[tuple[str, str]]] = {}
+            current_instant = parse_utc(now)
+            for staff in staff_rows:
+                staff_id = str(staff["id"])
+                intervals = [
+                    (str(row["start_at"]), str(row["end_at"]))
+                    for row in c.execute(
+                        "SELECT start_at,end_at FROM staff_unavailability WHERE sales_staff_id=?",
+                        (staff_id,),
+                    ).fetchall()
+                ]
+                for row in c.execute(
+                    "SELECT s.start_at,s.end_at,s.status,s.held_until "
+                    "FROM slot_sales_assignments a JOIN test_drive_slots s ON s.id=a.slot_id "
+                    "WHERE a.sales_staff_id=? AND a.assignment_role='test_drive_consultant' "
+                    "AND a.status='assigned' AND s.status IN ('held','booked')",
+                    (staff_id,),
+                ).fetchall():
+                    active = row["status"] == "booked" or (
+                        row["status"] == "held"
+                        and (row["held_until"] is None or parse_utc(row["held_until"]) > current_instant)
+                    )
+                    if active:
+                        intervals.append((str(row["start_at"]), str(row["end_at"])))
+                blocked_intervals[staff_id] = intervals
+            active_staff_count = 0
+            allocated: dict[str, list[tuple[str, str]]] = {}
+            capacity_filtered_slots: list[dict[str, Any]] = []
+            for slot in slots:
+                if not capacity_tracked:
+                    capacity_filtered_slots.append(slot)
+                    continue
+                candidates = [
+                    staff
+                    for staff in staff_rows
+                    if not any(
+                        self._overlaps(start, end, slot["start_at"], slot["end_at"])
+                        for start, end in blocked_intervals[str(staff["id"])]
+                    )
+                ]
+                active_staff_count = max(active_staff_count, len(candidates))
+                selected_staff_id = next(
+                    (
+                        str(staff["id"])
+                        for staff in candidates
+                        if not any(
+                            self._overlaps(start, end, slot["start_at"], slot["end_at"])
+                            for start, end in allocated.get(str(staff["id"]), [])
+                        )
+                    ),
+                    None,
+                )
+                if selected_staff_id is None:
+                    continue
+                allocated.setdefault(selected_staff_id, []).append((slot["start_at"], slot["end_at"]))
+                capacity_filtered_slots.append(slot)
+            slots = capacity_filtered_slots
             weekdays_vi = {0: "Thứ 2", 1: "Thứ 3", 2: "Thứ 4", 3: "Thứ 5", 4: "Thứ 6", 5: "Thứ 7", 6: "Chủ nhật"}
             for s in slots:
                 dt_start = _to_vietnam_time(s["start_at"])
@@ -438,6 +545,13 @@ class CatalogService(BookingBase):
             "requested_date_range": requested_date_range,
             "available_dates": available_dates,
             "highlighted_dates": highlighted_dates,
+            "staff_capacity": {
+                "tracked": capacity_tracked,
+                "active_staff_count": active_staff_count if capacity_tracked else None,
+                "candidate_slot_count": raw_slot_count,
+                "returned_slot_count": len(slots),
+                "capacity_filtered_slot_count": raw_slot_count - len(slots),
+            },
             "missing_fields": [],
         }
 
@@ -469,6 +583,17 @@ class CatalogService(BookingBase):
             return 70
         if normalized_query and normalized_query in normalized_address:
             return 50
+
+        identity_query = _showroom_identity_text(query)
+        identity_name = _showroom_identity_text(showroom.get("name", ""))
+        if identity_query and identity_name:
+            if identity_query == identity_name:
+                return 90
+            if identity_query in identity_name or identity_name in identity_query:
+                return 70
+            similarity = SequenceMatcher(None, identity_query, identity_name).ratio()
+            if similarity >= 0.84:
+                return 75
 
         query_tokens = set(normalized_query.split())
         candidate_tokens = set(f"{normalized_code} {normalized_name} {normalized_address}".split())
