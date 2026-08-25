@@ -672,7 +672,7 @@ _CONFIRM_STYLE = """<style>
     .dual-btn-cell-left  { padding-right: 3px !important; }
     .dual-btn-cell-right { padding-left: 3px !important; }
     .dual-btn-pad { padding: 13px 5px !important; }
-    .dual-btn-text { font-size: 9.5px !important; letter-spacing: 0.55px !important; white-space: nowrap !important; }
+    .dual-btn-text { font-size: 11px !important; letter-spacing: 0.15px !important; white-space: nowrap !important; }
     .dual-btn-full { display: none !important; }
     .dual-btn-short { display: inline !important; }
     /* Căn đều ở bề ngang hẹp làm chữ giãn thưa loang lổ, trả về căn trái. */
@@ -781,12 +781,12 @@ def _invitation_action_buttons(site_url: str, invitation_url: str) -> str:
             f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
             f'bgcolor="{background}" class="{background_class}{pulse}" style="width:100%;background-color:{background};'
             f'border:1px solid {_G_GOLD_BTN};border-radius:4px;">'
-            '<tr><td class="dual-btn-pad" align="center" style="padding:15px 8px;">'
+            f'<tr><td class="dual-btn-pad" align="center" style="padding:15px 8px;font-family:{_G_BODY};">'
             f'<a href="{escape(url)}" class="dual-btn-text" style="display:block;font-family:{_G_BODY};'
-            f'font-size:10.5px;line-height:16px;font-weight:700;color:{color};letter-spacing:0.8px;'
-            f'text-transform:uppercase;text-decoration:none;">'
-            f'<span class="dual-btn-full">{escape(full_label)}</span>'
-            f'<span class="dual-btn-short" style="display:none;">{escape(short_label)}</span>'
+            f'font-size:12px;line-height:18px;font-weight:700;color:{color};letter-spacing:0.25px;'
+            f'text-decoration:none;mso-line-height-rule:exactly;">'
+            f'<span class="dual-btn-full" style="font-family:{_G_BODY};">{escape(full_label)}</span>'
+            f'<span class="dual-btn-short" style="display:none;font-family:{_G_BODY};">{escape(short_label)}</span>'
             '</a></td></tr></table>'
         )
 
