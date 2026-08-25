@@ -23,17 +23,23 @@
  */
 import { ArrowRight, Check } from '@phosphor-icons/react'
 
-export function BookingCustomerForm({ recipient, value, errors, onChange, onSubmit, onBack }) {
+export function BookingCustomerForm({ recipient, value, errors, disabled = false, onChange, onSubmit, onBack }) {
   const bookingForOther = recipient === 'other'
   const shareContact = value.driverSameContact !== false
 
   return (
-    <form className="vivi-customer-form" onSubmit={onSubmit} noValidate>
+    <form className={`vivi-customer-form ${disabled ? 'is-readonly' : ''}`} onSubmit={(event) => {
+      if (disabled) {
+        event.preventDefault()
+        return
+      }
+      onSubmit(event)
+    }} noValidate aria-disabled={disabled}>
       <div className="vivi-customer-form__grid">
-        <label><span>{bookingForOther ? 'Tên người đặt lịch' : 'Họ và tên'} <span style={{ color: '#ef4444' }}>*</span></span><input name="booking-name" autoComplete="name" value={value.bookingName} onChange={(event) => onChange('bookingName', event.target.value)} />{errors.bookingName && <small role="alert">{errors.bookingName}</small>}</label>
-        {bookingForOther && <label><span>Tên người lái thử <span style={{ color: '#ef4444' }}>*</span></span><input name="driver-name" autoComplete="off" value={value.driverName} onChange={(event) => onChange('driverName', event.target.value)} />{errors.driverName && <small role="alert">{errors.driverName}</small>}</label>}
-        <label><span>Email <span style={{ color: '#ef4444' }}>*</span></span><input name="email" type="email" inputMode="email" autoComplete="email" placeholder="tenban@example.com" value={value.email} onChange={(event) => onChange('email', event.target.value)} required />{errors.email && <small role="alert">{errors.email}</small>}</label>
-        <label><span>Số điện thoại</span><input name="tel" type="tel" inputMode="tel" autoComplete="tel" placeholder="09xx xxx xxx" value={value.phone} onChange={(event) => onChange('phone', event.target.value)} />{errors.phone && <small role="alert">{errors.phone}</small>}</label>
+        <label><span>{bookingForOther ? 'Tên người đặt lịch' : 'Họ và tên'} <span style={{ color: '#ef4444' }}>*</span></span><input name="booking-name" autoComplete="name" value={value.bookingName} disabled={disabled} onChange={(event) => onChange('bookingName', event.target.value)} />{errors.bookingName && <small role="alert">{errors.bookingName}</small>}</label>
+        {bookingForOther && <label><span>Tên người lái thử <span style={{ color: '#ef4444' }}>*</span></span><input name="driver-name" autoComplete="off" value={value.driverName} disabled={disabled} onChange={(event) => onChange('driverName', event.target.value)} />{errors.driverName && <small role="alert">{errors.driverName}</small>}</label>}
+        <label><span>Email <span style={{ color: '#ef4444' }}>*</span></span><input name="email" type="email" inputMode="email" autoComplete="email" placeholder="tenban@example.com" value={value.email} disabled={disabled} onChange={(event) => onChange('email', event.target.value)} required />{errors.email && <small role="alert">{errors.email}</small>}</label>
+        <label><span>Số điện thoại</span><input name="tel" type="tel" inputMode="tel" autoComplete="tel" placeholder="09xx xxx xxx" value={value.phone} disabled={disabled} onChange={(event) => onChange('phone', event.target.value)} />{errors.phone && <small role="alert">{errors.phone}</small>}</label>
       </div>
 
       {bookingForOther && (
@@ -43,6 +49,7 @@ export function BookingCustomerForm({ recipient, value, errors, onChange, onSubm
             <input
               type="checkbox"
               checked={shareContact}
+              disabled={disabled}
               onChange={(event) => onChange('driverSameContact', event.target.checked)}
             />
             <span><Check size={14} weight="bold" /></span>
@@ -55,16 +62,16 @@ export function BookingCustomerForm({ recipient, value, errors, onChange, onSubm
                 Showroom sẽ liên hệ trực tiếp với người lái theo thông tin dưới đây.
               </p>
               <div className="vivi-customer-form__grid">
-                <label><span>Email người lái <span style={{ color: '#ef4444' }}>*</span></span><input name="driver-email" type="email" inputMode="email" autoComplete="off" placeholder="nguoilai@example.com" value={value.driverEmail} onChange={(event) => onChange('driverEmail', event.target.value)} />{errors.driverEmail && <small role="alert">{errors.driverEmail}</small>}</label>
-                <label><span>Số điện thoại người lái</span><input name="driver-phone" type="tel" inputMode="tel" autoComplete="off" placeholder="09xx xxx xxx" value={value.driverPhone} onChange={(event) => onChange('driverPhone', event.target.value)} />{errors.driverPhone && <small role="alert">{errors.driverPhone}</small>}</label>
+                <label><span>Email người lái <span style={{ color: '#ef4444' }}>*</span></span><input name="driver-email" type="email" inputMode="email" autoComplete="off" placeholder="nguoilai@example.com" value={value.driverEmail} disabled={disabled} onChange={(event) => onChange('driverEmail', event.target.value)} />{errors.driverEmail && <small role="alert">{errors.driverEmail}</small>}</label>
+                <label><span>Số điện thoại người lái</span><input name="driver-phone" type="tel" inputMode="tel" autoComplete="off" placeholder="09xx xxx xxx" value={value.driverPhone} disabled={disabled} onChange={(event) => onChange('driverPhone', event.target.value)} />{errors.driverPhone && <small role="alert">{errors.driverPhone}</small>}</label>
               </div>
             </>
           )}
         </fieldset>
       )}
-      <label className={`license-check ${errors.hasLicense ? 'has-error' : ''}`}><input type="checkbox" checked={value.hasLicense} onChange={(event) => onChange('hasLicense', event.target.checked)} /><span><Check size={14} weight="bold" /></span><p>Tôi xác nhận người lái thử <strong>có giấy phép lái xe</strong> phù hợp với mẫu xe đăng ký <span style={{ color: '#ef4444' }}>*</span>.</p></label>
+      <label className={`license-check ${errors.hasLicense ? 'has-error' : ''}`}><input type="checkbox" checked={value.hasLicense} disabled={disabled} onChange={(event) => onChange('hasLicense', event.target.checked)} /><span><Check size={14} weight="bold" /></span><p>Tôi xác nhận người lái thử <strong>có giấy phép lái xe</strong> phù hợp với mẫu xe đăng ký <span style={{ color: '#ef4444' }}>*</span>.</p></label>
       {errors.hasLicense && <small className="vivi-customer-form__license-error" role="alert">{errors.hasLicense}</small>}
-      <label className="license-check"><input type="checkbox" checked={value.marketingConsent} onChange={(event) => onChange('marketingConsent', event.target.checked)} /><span><Check size={14} weight="bold" /></span><p>Tôi đồng ý nhận <strong>thông tin ưu đãi</strong>, <strong>khuyến mãi</strong> và <strong>sự kiện mới nhất</strong> từ VinFast.</p></label>
+      <label className="license-check"><input type="checkbox" checked={value.marketingConsent} disabled={disabled} onChange={(event) => onChange('marketingConsent', event.target.checked)} /><span><Check size={14} weight="bold" /></span><p>Tôi đồng ý nhận <strong>thông tin ưu đãi</strong>, <strong>khuyến mãi</strong> và <strong>sự kiện mới nhất</strong> từ VinFast.</p></label>
       {/* Cặp nút đi liền nhau, đúng như màn xem lại phiếu (.vivi-review-actions): nút chính
           bên trái, lối lùi bên phải. Trước đây bước này chỉ có mỗi nút chính nên vào tới form
           là kẹt — muốn đổi khung giờ phải tự mò sang bảng bên trái.
@@ -73,9 +80,9 @@ export function BookingCustomerForm({ recipient, value, errors, onChange, onSubm
           lại phiếu. Nút đưa về bảng lịch bên trái, nơi đổi được khung giờ / showroom / mẫu xe —
           tức mọi lựa chọn đã chốt TRƯỚC bước điền form này. */}
       <div className="vivi-customer-form__actions">
-        <button type="submit">Tạo phiếu để kiểm tra <ArrowRight size={16} weight="light" /></button>
+        <button type="submit" disabled={disabled}>{disabled ? 'Hồ sơ mẫu trong demo' : 'Tạo phiếu để kiểm tra'} <ArrowRight size={16} weight="light" /></button>
         {onBack && (
-          <button type="button" onClick={onBack}>Hủy</button>
+          <button type="button" onClick={onBack} disabled={disabled}>Hủy</button>
         )}
       </div>
     </form>

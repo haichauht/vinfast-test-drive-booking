@@ -39,6 +39,7 @@ from src.models.schemas import (
     CsvImportRequest,
     DatasetImportRequest,
     DemoActionRequest,
+    FloatingDemoOptionsRequest,
     UiDirective,
 )
 from src.services.booking import BookingError
@@ -569,6 +570,40 @@ async def chat_stream(body: ChatRequest, request: Request):
         yield f"data: {final_payload}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+def _floating_demo_available() -> bool:
+    settings = get_settings()
+    return settings.app_env != "production" and bool(getattr(settings, "floating_demo_enabled", False))
+
+
+@router.get("/floating-demo/capabilities")
+async def floating_demo_capabilities():
+    """Expose a harmless feature flag; production always reports disabled."""
+    return {"enabled": _floating_demo_available()}
+
+
+@router.post("/floating-demo/options")
+async def search_floating_demo_options(body: FloatingDemoOptionsRequest):
+    """Search demo availability without depending on the conversational agent."""
+    if not _floating_demo_available():
+        raise HTTPException(status_code=404, detail={"code": "FLOATING_DEMO_DISABLED", "message": "Demo không khả dụng."})
+    payload = body.model_dump(exclude_none=True)
+    decision = get_guardrails().inspect_demo_action(action="search_options", payload=payload)
+    if not decision.allowed:
+        raise HTTPException(status_code=400, detail={"code": decision.code, "message": decision.user_message})
+    try:
+        result = booking_service.search_options(
+            vehicle_model=body.vehicle_model,
+            showroom_id=body.showroom_id or None,
+            showroom_query=body.showroom_query or None,
+            showroom_limit=body.showroom_limit,
+            latitude=body.latitude,
+            longitude=body.longitude,
+        )
+    except BookingError as exc:
+        return {"success": False, "message": str(exc), "error": {"code": exc.code, "retryable": exc.retryable}}
+    return {"success": True, "data": result}
 
 
 @router.post("/demo/action")

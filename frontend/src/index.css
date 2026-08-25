@@ -34,5 +34,6 @@
 @import './styles/23-lachong.css';  /* Khối Lạc Hồng và cảnh "xe tiến ra" */
 @import './styles/24-motion-3d.css';  /* Chuyển động điện ảnh và sân khấu model GLB */
 @import './styles/25-calendar-success.css';  /* Lịch tuần, phiếu thành công, hướng dẫn sau đặt lịch */
+@import './styles/26-floating-demo.css';  /* Floating Demo Bar cho môi trường demo */
 @import './styles/26-mobile-hardening.css';  /* Lớp chốt mobile: safe-area, modal, hero, Booking hai bề mặt */
 @import './styles/27-invitation-preview.css';  /* Prototype thiệp mời cá nhân và hai mail dẫn vào thiệp */

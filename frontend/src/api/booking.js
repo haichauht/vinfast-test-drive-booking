@@ -158,6 +158,31 @@ export const resetBookingConversation = () => {
   if (typeof window !== 'undefined') window.sessionStorage.removeItem(CONVERSATION_KEY)
 }
 
+export const getFloatingDemoCapabilities = () => apiGet('/floating-demo/capabilities', {
+  cacheKey: 'floating-demo-capabilities',
+  fallbackToCache: false,
+})
+
+export const searchFloatingDemoOptions = async ({ vehicleModel, showroomId = '', showroomQuery = '', showroomLimit = 12, latitude, longitude }) => {
+  try {
+    return await apiPost('/floating-demo/options', {
+      vehicle_model: vehicleModel,
+      showroom_id: showroomId,
+      showroom_query: showroomQuery,
+      showroom_limit: showroomLimit,
+      ...(latitude === undefined ? {} : { latitude }),
+      ...(longitude === undefined ? {} : { longitude }),
+    })
+  } catch (error) {
+    if (error.status === 404) {
+      throw new ApiError('Backend chưa có API chọn lịch demo. Hãy khởi động lại backend rồi thử lại.', {
+        code: 'FLOATING_DEMO_API_OUTDATED', status: 404, retryable: false,
+      })
+    }
+    throw error
+  }
+}
+
 export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, address, latitude, longitude, preferredDate, preferredDates, preferredDateFrom, preferredDateTo, preferredTime, showroomLimit = 5, slotLimit }) => agentAction(
   'search_options',
   showroomId
