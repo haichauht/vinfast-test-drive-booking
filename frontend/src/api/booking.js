@@ -163,44 +163,6 @@ export const getFloatingDemoCapabilities = () => apiGet('/floating-demo/capabili
   fallbackToCache: false,
 })
 
-export const confirmFloatingDemoBooking = ({ bookingId, version, uiActionId = actionId('floating-demo-confirm') }) => apiPost(
-  '/floating-demo/confirm',
-  {
-    booking_id: bookingId,
-    expected_version: version,
-    ui_action_id: uiActionId,
-  },
-)
-
-export const cleanupFloatingDemoBooking = (bookingId) => apiPost(
-  '/floating-demo/cleanup', { booking_id: bookingId },
-)
-
-export const holdFloatingDemoSlot = async (slotId, uiActionId = actionId('floating-demo-hold')) => {
-  try {
-    return await apiPost('/floating-demo/hold', { slot_id: slotId, ui_action_id: uiActionId })
-  } catch (error) {
-    if (error.status === 404) {
-      throw new ApiError('Backend chưa có API giữ chỗ demo. Hãy khởi động lại backend rồi thử lại.', {
-        code: 'FLOATING_DEMO_API_OUTDATED', status: 404, retryable: false,
-      })
-    }
-    throw error
-  }
-}
-
-export const saveFloatingDemoCustomer = ({ bookingId, version, person }) => apiPost(
-  '/floating-demo/draft',
-  {
-    booking_id: bookingId,
-    expected_version: version,
-    full_name: person.bookingName,
-    phone: person.phone,
-    email: person.email,
-    has_license: person.hasLicense,
-  },
-)
-
 export const searchFloatingDemoOptions = async ({ vehicleModel, showroomId = '', showroomQuery = '', showroomLimit = 12, latitude, longitude }) => {
   try {
     return await apiPost('/floating-demo/options', {
