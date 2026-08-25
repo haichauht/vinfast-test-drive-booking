@@ -77,3 +77,9 @@ docs/docs
 plans/
 notes/
 .vercel
+
+# Local build artefacts and scratch media (never commit, tmp/ alone is 556 MB)
+tmp/
+.tmp/
+output/
+*.pptx
