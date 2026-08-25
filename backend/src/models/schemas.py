@@ -43,6 +43,7 @@ class ChatResponse(BaseModel):
     action_data: Any | None = None
     action_error: str = ""
     intent: str = ""
+    intent_entities: dict[str, Any] = Field(default_factory=dict)
     ui: UiDirective | None = None
 
 

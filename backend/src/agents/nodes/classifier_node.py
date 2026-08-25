@@ -1,4 +1,6 @@
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel, Field
@@ -76,6 +78,28 @@ class RouteSchema(BaseModel):
             "date range, day, or time, including shorthand such as '28 t mới rảnh'."
         ),
     )
+    reschedule_target_date: str | None = Field(
+        default=None,
+        description=(
+            "For booking_reschedule only: the requested target date as YYYY-MM-DD. "
+            "Resolve explicit dates and dates relative to today; otherwise null."
+        ),
+    )
+    reschedule_target_time: str | None = Field(
+        default=None,
+        description=(
+            "For booking_reschedule only: requested local showroom time as HH:MM (24-hour). "
+            "Interpret ordinary Vietnamese business-hour speech naturally: '1h30' means 13:30 "
+            "unless the user explicitly says morning. Otherwise null."
+        ),
+    )
+    reschedule_days_after_current_booking: int | None = Field(
+        default=None,
+        description=(
+            "For booking_reschedule only: positive day offset when the target is relative to the "
+            "existing appointment, e.g. 'hôm sau' means 1. Use null for an explicit date."
+        ),
+    )
 
 
 async def classifier_node(state: AgentState) -> dict:
@@ -138,6 +162,7 @@ async def classifier_node(state: AgentState) -> dict:
         trace_event("classifier.keyword_route", trace_id=trace_id, intent="sensitive", sub_intent="out_of_scope_code")
         return {"intent": "sensitive", "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "out_of_scope_code"}, "tool_call_count": 0}
 
+    today_vietnam = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).date().isoformat()
     # Construct prompt for the LLM classifier dynamically based on system_prompt.md
     prompt = (
         "You classify requests for a VinFast test-drive assistant.\n"
@@ -224,6 +249,12 @@ async def classifier_node(state: AgentState) -> dict:
         "\n"
         "If the query contains an email, copy it exactly to contact_value. "
         "Otherwise return null. Never invent contact_value.\n"
+        "For booking_reschedule, extract the requested destination date/time into the reschedule fields. "
+        f"Today in Vietnam is {today_vietnam}. Return explicit/relative-to-today dates as YYYY-MM-DD. "
+        "If the user says 'hôm sau' relative to their current appointment, leave reschedule_target_date "
+        "null and set reschedule_days_after_current_booking=1. Use 24-hour showroom time; in normal "
+        "Vietnamese booking speech, '1h30' means 13:30 unless 'sáng' is explicit. Do not infer a date "
+        "or time the user did not state. Set all reschedule fields to null for other intents.\n"
         "\n"
         f"UI context: channel={context.get('channel', '')}, "
         f"stage={context.get('stage', '')}.\n"
@@ -294,7 +325,12 @@ async def classifier_node(state: AgentState) -> dict:
             "previous_active_skill": previous_skill,
             "messages": [HumanMessage(content=query)],
             "metadata": {**metadata, "sub_intent": sub_intent},
-            "intent_entities": {"contact_value": route_result.contact_value},
+            "intent_entities": {
+                "contact_value": route_result.contact_value,
+                "reschedule_target_date": route_result.reschedule_target_date,
+                "reschedule_target_time": route_result.reschedule_target_time,
+                "reschedule_days_after_current_booking": route_result.reschedule_days_after_current_booking,
+            },
             "tool_call_count": 0,
         }
     except (BudgetExceededError, LLMCallLimitExceededError) as e:
