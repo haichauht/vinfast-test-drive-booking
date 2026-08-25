@@ -203,6 +203,10 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                 stored_booking_context = profile_service.latest_booking_context(profile.id)
                 if stored_booking_context.get("active"):
                     participant_context = {"role": "booker", "booking_id": stored_booking_context.get("id")}
+            if participant_context.get("booking_id"):
+                participant_context = profile_service.participant_context(
+                    str(participant_context["booking_id"]), str(participant_context["role"])
+                )
             profile_context = build_profile_context(profile, body.message)
         except KeyError as exc:
             if body.driver_invitation_token:
@@ -445,6 +449,7 @@ async def booking_profile_summary(booking_id: str, refresh: bool = False) -> Pla
     """Return a stored booking sales brief, or generate and cache one when needed."""
     try:
         source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
+        source["test_drive_context"] = await asyncio.to_thread(profile_service.booking_context_signals, booking_id)
         if source["booking"]["status"] not in {"confirmed", "cancelled"}:
             raise HTTPException(
                 status_code=409,

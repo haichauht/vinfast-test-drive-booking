@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.database import Database
-from src.services.profile.models import ProfileSnapshot, SignalCandidate
+from src.services.profile.models import BookingSignalCandidate, ProfileSnapshot, SignalCandidate
 from src.services.profile.taxonomy import ALLOWED_CATEGORIES, normalize_key
 
 logger = logging.getLogger("profile.lifecycle")
@@ -322,6 +322,73 @@ class ProfileService:
         if not same_person:
             result["driver"] = participant(row["driver_person_id"], str(row["driver_name"] or ""), "driver")
         return result
+
+    def booking_context_signals(self, booking_id: str) -> list[dict[str, Any]]:
+        with self.db.connect() as c:
+            rows = c.execute(
+                "SELECT category,key,value_json,description,subject,certainty,confidence,source_type,source_participant "
+                "FROM test_drive_context_signals WHERE booking_id=? AND status='active' ORDER BY updated_at DESC",
+                (booking_id,),
+            ).fetchall()
+        return [{**dict(row), "value": json.loads(row["value_json"])} for row in rows]
+
+    def participant_context(self, booking_id: str, role: str) -> dict[str, Any]:
+        """Project active booking signals into a stable prompt-facing view."""
+        signals = self.booking_context_signals(booking_id)
+        values = {(item["subject"], item["key"]): item["value"] for item in signals}
+        own = role if role in {"booker", "driver"} else "booker"
+        other = "driver" if own == "booker" else "booker"
+        participation = {
+            "attending": values.get((own, f"{own}_attending"), "unknown"),
+            "will_drive": values.get((own, f"{own}_will_drive"), "unknown"),
+            "evaluation_involvement": values.get((own, f"{own}_evaluation_involvement"), "unknown"),
+            "purchase_involvement": values.get((own, f"{own}_purchase_involvement"), "unknown"),
+        }
+        other_participant = {"role": other, "attending": values.get((other, f"{other}_attending"), "unknown")}
+        guests = {
+            "count": values.get(("group", "additional_guest_count"), 0),
+            "context": values.get(("group", "additional_guest_context"), []),
+        }
+        known = {"booker_attending", "driver_attending", "booker_will_drive", "driver_will_drive", "booker_evaluation_involvement", "driver_evaluation_involvement", "booker_purchase_involvement", "driver_purchase_involvement", "additional_guest_count", "additional_guest_context"}
+        return {"role": own, "booking_id": booking_id, "booking_participation": participation,
+                "other_participant": other_participant, "additional_attendees": guests,
+                "other_booking_context": [item for item in signals if item["key"] not in known]}
+
+    def apply_booking_signals(self, booking_id: str, candidates: list[BookingSignalCandidate], *, source_participant: str, source_ref: str) -> None:
+        now = _now()
+        with self.db.transaction(immediate=True) as c:
+            for candidate in candidates:
+                old = c.execute(
+                    "SELECT id,source_type,source_participant,confidence FROM test_drive_context_signals "
+                    "WHERE booking_id=? AND subject=? AND category=? AND key=? AND status='active' ORDER BY updated_at DESC LIMIT 1",
+                    (booking_id, candidate.subject, candidate.category, candidate.key),
+                ).fetchone()
+                # A subject's explicit statement outranks a third-party inference/system default.
+                self_report = candidate.subject == source_participant and candidate.source_type == "explicit_user"
+                old_self_report = bool(old and old["source_participant"] == candidate.subject and old["source_type"] == "explicit_user")
+                if old_self_report and not self_report:
+                    continue
+                if candidate.operation == "retract":
+                    if old:
+                        c.execute("UPDATE test_drive_context_signals SET status='retracted',updated_at=? WHERE id=?", (now, old["id"]))
+                    continue
+                signal_id = _id("booking_signal")
+                confidence = candidate.confidence
+                if old and candidate.operation == "strengthen": confidence = max(confidence, min(1.0, float(old["confidence"] or .5) + .15))
+                if old and candidate.operation == "weaken": confidence = min(confidence, max(0.0, float(old["confidence"] or .5) - .25))
+                c.execute("INSERT INTO test_drive_context_signals VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+                    signal_id, booking_id, candidate.category, candidate.key, json.dumps(candidate.value, ensure_ascii=False),
+                    candidate.description, candidate.subject, candidate.certainty, confidence, candidate.source_type,
+                    source_participant, source_ref, "active", None, now, now,
+                ))
+                if old:
+                    c.execute("UPDATE test_drive_context_signals SET status='superseded',superseded_by_signal_id=?,updated_at=? WHERE id=?", (signal_id, now, old["id"]))
+            # A booking context change makes any generated portal brief stale.
+            c.execute("DELETE FROM booking_profile_summaries WHERE booking_id=?", (booking_id,))
+
+    def invalidate_booking_profile_summary(self, booking_id: str) -> None:
+        with self.db.transaction(immediate=True) as c:
+            c.execute("DELETE FROM booking_profile_summaries WHERE booking_id=?", (booking_id,))
 
     def booking_profile_summary(self, booking_id: str) -> dict[str, str] | None:
         """Return the latest stored sales brief for a booking, if one exists."""

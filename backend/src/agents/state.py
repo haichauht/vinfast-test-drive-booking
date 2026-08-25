@@ -28,6 +28,7 @@ class AgentState(TypedDict, total=False):
     profile_context: dict
     post_booking_context: dict
     participant_context: dict
+    confirmed_booking_context: dict
     next_skill_hint: str
     intent_entities: dict
     tool_call_count: int  # số vòng tool đã gọi, giới hạn tối đa 8
