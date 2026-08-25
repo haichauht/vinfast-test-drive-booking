@@ -134,15 +134,15 @@ export function DemoCompletionModal({ onRestartRealSession, onClose }) {
         >
           <X size={16} weight="bold" aria-hidden="true" />
         </button>
-        <p style={{ margin: '0 0 6px', color: 'var(--blue, #1464f4)', fontSize: '0.78rem', fontWeight: 600, letterSpacing: '0.02em' }}>
+        <div style={{ margin: '0 0 6px', color: 'var(--blue, #1464f4)', fontSize: '0.78rem', fontWeight: 600, letterSpacing: '0.02em', textTransform: 'none' }}>
           Trải nghiệm hoàn tất
-        </p>
+        </div>
         <h2 id="demo-complete-title" style={{ fontSize: '1.35rem', fontWeight: 560, margin: '0 0 10px', color: 'var(--ink, #171a20)', letterSpacing: '-0.035em', lineHeight: 1.25 }}>
           Bạn đã xem xong luồng mẫu
         </h2>
-        <p style={{ fontSize: '0.88rem', color: 'var(--muted, #6b6f76)', margin: '0 0 24px', lineHeight: 1.55 }}>
+        <div style={{ fontSize: '0.88rem', color: 'var(--muted, #6b6f76)', margin: '0 0 24px', lineHeight: 1.55, textTransform: 'none' }}>
           ViVi đã cùng bạn đi qua các bước đặt lịch lái thử VinFast. Bạn có thể bắt đầu tạo lịch hẹn thật cho riêng mình ngay bây giờ.
-        </p>
+        </div>
         <div style={{ display: 'flex', gap: '10px', width: '100%', alignItems: 'center' }}>
           <button
             type="button"
