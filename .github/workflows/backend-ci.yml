@@ -137,6 +137,4 @@ jobs:
             --port 8000 \
             --memory 1Gi \
             --cpu 1 \
-            --set-env-vars "APP_ENV=production" \
-            --set-env-vars "BOOKING_ACCESS_OTP_SECRET=${{ secrets.BOOKING_ACCESS_OTP_SECRET }}" \
-            --set-env-vars "CONVERSATION_SIGNING_SECRET=${{ secrets.CONVERSATION_SIGNING_SECRET }}"
+            --update-env-vars "APP_ENV=production" \
