@@ -367,6 +367,16 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                     action_data.get("booking_id"),
                 )
         protected = guardrails.protect_output(result)
+        raw_intent_entities = result.get("intent_entities") or {}
+        public_intent_entities = {
+            key: raw_intent_entities.get(key)
+            for key in (
+                "reschedule_target_date",
+                "reschedule_target_time",
+                "reschedule_days_after_current_booking",
+            )
+            if raw_intent_entities.get(key) is not None
+        }
         response = ChatResponse(
             response=protected.response,
             analysis=protected.analysis,
@@ -376,6 +386,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             action_data=protected.action_data,
             action_error=protected.action_error,
             intent=str(result.get("intent") or ""),
+            intent_entities=public_intent_entities,
             ui=_chat_ui_directive(result),
         )
         trace_event(
