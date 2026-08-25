@@ -9,7 +9,7 @@ from src.agents.tools.reschedule_booking.tool import reschedule_booking
 from src.agents.tools.search_knowledge.tool import search_knowledge
 from src.agents.tools.search_test_drive_options.tool import search_test_drive_options
 from src.agents.tools.update_booking_draft.tool import update_booking_draft
-from src.agents.tools.update_user_profile.tool import update_user_profile
+from src.agents.tools.update_post_booking_signals.tool import update_post_booking_signals
 from src.agents.tools.verify_booking_access.tool import verify_booking_access
 
 __all__ = [
@@ -25,5 +25,5 @@ __all__ = [
     "reschedule_booking",
     "verify_booking_access",
     "get_booking_details",
-    "update_user_profile",
+    "update_post_booking_signals",
 ]

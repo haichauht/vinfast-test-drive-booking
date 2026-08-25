@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 
 from src.agents.state import AgentState
-from src.agents.tools import search_knowledge, update_user_profile
+from src.agents.tools import search_knowledge, update_post_booking_signals
 from src.agents.trace import message_to_log, messages_to_log, trace_async_operation, trace_event, trace_node
 from src.agents.utils import get_system_prompt, window_messages
 from src.dependencies import profile_service
@@ -51,7 +51,7 @@ async def post_booking_skill_node(state: AgentState, config: RunnableConfig | No
     action_result = state.get("action_result")
     if isinstance(action_result, dict) and action_result.get("status") == "confirmed" and action_result.get("booking_id"):
         booking_context = {"active": True, **profile_service.booking_context(str(action_result["booking_id"]))}
-        participant_context = {"role": "booker", "booking_id": str(action_result["booking_id"])}
+        participant_context = profile_service.participant_context(str(action_result["booking_id"]), "booker")
     prompt = (
         f"{get_system_prompt()}\n\n--- ACTIVE SKILL GUIDELINES (POST BOOKING) ---\n{get_post_booking_prompt()}"
         f"\n\n--- USER PROFILE BRIEF ---\n{(state.get('profile_context') or {}).get('brief', 'Profile chưa có dữ liệu.')}"
@@ -77,19 +77,19 @@ async def post_booking_skill_node(state: AgentState, config: RunnableConfig | No
             text = facts[0]["content"] if facts else "ViVi có thể giúp bạn chuẩn bị checklist lái thử, đánh giá pin/sạc, ADAS, không gian gia đình và các câu hỏi nên trao đổi với tư vấn viên."
             response = AIMessage(content=text)
         else:
-            tool_choice = update_user_profile.name if _requires_profile_capture(messages) else None
+            tool_choice = update_post_booking_signals.name if _requires_profile_capture(messages) else None
             bound = llm.bind_tools(
-                [search_knowledge, update_user_profile],
+                [search_knowledge, update_post_booking_signals],
                 tool_choice=tool_choice,
             )
             llm_messages = [SystemMessage(content=prompt)] + window_messages(messages)
-            trace_event("llm.request", trace_id=trace_id, node="post_booking_skill", messages=messages_to_log(llm_messages), tools=[search_knowledge.name, update_user_profile.name])
+            trace_event("llm.request", trace_id=trace_id, node="post_booking_skill", messages=messages_to_log(llm_messages), tools=[search_knowledge.name, update_post_booking_signals.name])
             response = await trace_async_operation(
                 "llm.post_booking_skill",
                 trace_id=trace_id,
                 input={
                     "messages": messages_to_log(llm_messages),
-                    "tools": [search_knowledge.name, update_user_profile.name],
+                    "tools": [search_knowledge.name, update_post_booking_signals.name],
                 },
                 awaitable=bound.ainvoke(llm_messages, config=config),
             )
