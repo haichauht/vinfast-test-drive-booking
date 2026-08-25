@@ -52,26 +52,6 @@ class DemoActionRequest(BaseModel):
     conversation_id: str = Field(default="", max_length=100)
 
 
-class FloatingDemoConfirmRequest(BaseModel):
-    booking_id: str = Field(..., min_length=1, max_length=128)
-    expected_version: int = Field(..., ge=1)
-    ui_action_id: str = Field(..., min_length=1, max_length=160)
-
-
-class FloatingDemoHoldRequest(BaseModel):
-    slot_id: str = Field(..., min_length=1, max_length=128)
-    ui_action_id: str = Field(..., min_length=1, max_length=160)
-
-
-class FloatingDemoDraftRequest(BaseModel):
-    booking_id: str = Field(..., min_length=1, max_length=128)
-    expected_version: int = Field(..., ge=1)
-    full_name: str = Field(..., min_length=1, max_length=120)
-    phone: str = Field(..., min_length=6, max_length=32)
-    email: str = Field(..., min_length=3, max_length=254)
-    has_license: bool
-
-
 class FloatingDemoOptionsRequest(BaseModel):
     vehicle_model: str = Field(..., min_length=1, max_length=120)
     showroom_id: str = Field(default="", max_length=128)
@@ -79,10 +59,6 @@ class FloatingDemoOptionsRequest(BaseModel):
     showroom_limit: int = Field(default=12, ge=1, le=30)
     latitude: float | None = None
     longitude: float | None = None
-
-
-class FloatingDemoCleanupRequest(BaseModel):
-    booking_id: str = Field(..., min_length=1, max_length=128)
 
 
 class CsvImportRequest(BaseModel):
