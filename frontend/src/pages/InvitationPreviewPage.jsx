@@ -9,7 +9,7 @@ import { vehicleMediaMap } from '../media/vehicle-media-map'
 
 const vinfastWordmark = vehicleImage('Vinfast-logo-new_NO_Tagline -2D-Horizontal black.png')
 const lacHongSide = showcaseImage('lac-hong-900lx/film-side.png')
-const VINFAST_HOME_URL = 'https://vinfastauto.com/vn_vi'
+const VINFAST_HOME_URL = 'https://c3-app-053.pages.dev/'
 
 const SAMPLE_INVITATION = {
   guestName: 'Nguyễn Hoàng Minh',
@@ -208,7 +208,9 @@ function InvitationExperience({ invitation }) {
     const streaks = intro.current.querySelectorAll('.invitation-film__streak')
     const message = intro.current.querySelector('.invitation-film__message')
     const messageRule = intro.current.querySelector('.invitation-film__message-rule')
-    const selectedVehicle = content.current.querySelector('.invitation-vehicle__image')
+    // Animate the visual wrapper instead of the image itself. Keeping a transform on a
+    // transparent WebP makes Safari/Retina reuse a softened GPU texture after the intro.
+    const selectedVehicle = content.current.querySelector('.invitation-vehicle__visual')
     const vehicleWidth = vehicle.getBoundingClientRect().width || window.innerWidth
     const travel = ((window.innerWidth + vehicleWidth) / 2) + (mobileLite ? 36 : 80)
     const centerPauseX = mobileLite ? -8 : -24
@@ -224,7 +226,12 @@ function InvitationExperience({ invitation }) {
 
     const sequence = gsap.timeline({
       defaults: { ease: 'power3.inOut' },
-      onComplete: () => setIntroDone(true),
+      onComplete: () => {
+        // Return the vehicle to normal browser compositing once the motion is finished,
+        // so fine bodywork and transparent edges are rendered at the device's full DPR.
+        gsap.set(selectedVehicle, { clearProps: 'transform,opacity' })
+        setIntroDone(true)
+      },
     })
 
     sequence
@@ -296,7 +303,7 @@ function InvitationExperience({ invitation }) {
           <a
             className="invitation-header__home"
             href={VINFAST_HOME_URL}
-            aria-label="Đến trang chủ chính thức của VinFast"
+            aria-label="Đến trang chủ VinFast"
           >
             <House size={18} weight="light" aria-hidden="true" />
             <span>Trang chủ</span>
@@ -322,13 +329,16 @@ function InvitationExperience({ invitation }) {
             <strong className="invitation-vehicle__model" aria-hidden="true">
               {vehicleMediaMap[invitation.vehicleId]?.name || invitation.model}
             </strong>
-            <img
-              className="invitation-vehicle__image"
-              src={selectedVehicleImage}
-              alt={invitation.model}
-              decoding="async"
-              fetchPriority="high"
-            />
+            <div className="invitation-vehicle__visual">
+              <img
+                className="invitation-vehicle__image"
+                src={selectedVehicleImage}
+                alt={invitation.model}
+                decoding="async"
+                fetchPriority="high"
+                draggable="false"
+              />
+            </div>
             <div className="invitation-vehicle__caption">
               <span>Mẫu xe bạn đã chọn</span>
               <strong>{invitation.model}</strong>
