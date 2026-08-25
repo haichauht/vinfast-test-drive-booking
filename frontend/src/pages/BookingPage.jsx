@@ -486,9 +486,10 @@ export function BookingPage() {
   const [floatingDemoRunning, setFloatingDemoRunning] = useState(false)
   const [floatingDemoPaused, setFloatingDemoPaused] = useState(false)
   const [floatingDemoBusy, setFloatingDemoBusy] = useState(false)
-  // Demo starts as a small pill. Opening the panel deliberately enters a
-  // presentation-only mode; it must not compete with the booking chat.
-  const [floatingDemoCollapsed, setFloatingDemoCollapsed] = useState(true)
+  // Make the optional showcase discoverable on first arrival at /booking.
+  // The presenter can still collapse it immediately, and Reset returns it to
+  // its compact state for the next run.
+  const [floatingDemoCollapsed, setFloatingDemoCollapsed] = useState(false)
   const [floatingDemoPosition, setFloatingDemoPosition] = useState(null)
   const [floatingDemoStatus, setFloatingDemoStatus] = useState('')
   const [floatingDemoLogs, setFloatingDemoLogs] = useState([])
