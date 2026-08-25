@@ -1377,7 +1377,14 @@ def render_booking_dark_email(
     )
     invitation_url = (
         public_invitation_url(f["code"])
-        if notification_type in {"booking_confirmation", "reschedule_confirmation"}
+        if notification_type in {
+            "booking_confirmation",
+            "reschedule_confirmation",
+            "reminder",
+            "reminder_24h",
+            "reminder_2h",
+            "booking_update",
+        }
         and f["code"] != "-"
         else ""
     )

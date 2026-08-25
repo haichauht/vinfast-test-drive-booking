@@ -180,7 +180,12 @@ def main() -> int:
             html = _browser_ready(render_booking_dark_email(kind, data).html)
             if data is PLACEHOLDER:
                 html = _mask_dates(html)
-            elif kind in {"booking_confirmation", "reschedule_confirmation"}:
+            elif kind in {
+                "booking_confirmation",
+                "reschedule_confirmation",
+                "reminder",
+                "booking_update",
+            }:
                 signed_url = public_invitation_url(str(data["booking_code"]))
                 html = html.replace(
                     f'href="{signed_url}"',
