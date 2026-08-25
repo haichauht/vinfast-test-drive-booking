@@ -379,6 +379,14 @@
   height: 100%;
   padding: 92px clamp(20px, 4vw, 48px) 32px;
   overflow: auto;
+  font-family: var(--font-body);
+}
+
+.booking-history button,
+.booking-history p,
+.booking-history small,
+.booking-history span {
+  font-family: var(--font-body);
 }
 
 .booking-history__list {
@@ -494,6 +502,11 @@
   /* 12px chứ không phải 8px: "Đổi giờ" và "Huỷ lịch" là hai việc trái ngược nhau,
      đứng sát quá thì dễ bấm nhầm cái không quay lại được. */
   gap: 12px;
+}
+
+/* Mobile mở bước xác nhận đổi giờ ngay trên phiếu. Desktop giữ nguyên luồng cũ. */
+.booking-history__update-mobile {
+  display: none;
 }
 
 .booking-history__back,
@@ -880,6 +893,183 @@
   font-size: 0.68rem;
   font-weight: 650;
   cursor: pointer;
+}
+
+.vivi-studio__menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/*
+ * Menu thao tác lịch dùng cùng token, bán kính và nhịp chữ của agent hiện tại.
+ * Trên desktop là dialog giữa màn hình; mobile đổi thành bottom sheet ở file hardening.
+ */
+.booking-action-menu {
+  position: fixed;
+  z-index: 10010;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(12, 14, 18, 0.48);
+  backdrop-filter: blur(12px);
+  animation: studio-fade-in 0.2s ease both;
+}
+
+.booking-action-menu__panel {
+  width: min(100%, 560px);
+  max-height: min(760px, calc(100dvh - 48px));
+  padding: 26px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 24px;
+  outline: 0;
+  color: var(--ink);
+  background: #f6f7f6;
+  box-shadow: 0 28px 80px rgba(10, 14, 20, 0.28), inset 0 1px 0 #fff;
+  font-family: var(--font-body);
+}
+
+.booking-action-menu__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.booking-action-menu__header > div {
+  display: grid;
+  gap: 7px;
+}
+
+.booking-action-menu__header span {
+  color: var(--blue);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.booking-action-menu__header h2 {
+  max-width: 420px;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.55rem, 3vw, 2.15rem);
+  font-weight: 560;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+.booking-action-menu__header > button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--ink-soft);
+  background: var(--surface);
+  cursor: pointer;
+  transition: color 0.2s var(--ease-soft), border-color 0.2s var(--ease-soft), transform 0.2s var(--ease-soft);
+}
+
+.booking-action-menu__header > button:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+  transform: rotate(4deg);
+}
+
+.booking-action-menu__list {
+  display: grid;
+  gap: 9px;
+}
+
+.booking-action-menu__list > button {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 76px;
+  padding: 11px 14px 11px 11px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  color: var(--ink);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.22s var(--ease-soft), border-color 0.22s var(--ease-soft),
+    background 0.22s var(--ease-soft), transform 0.22s var(--ease-soft);
+}
+
+.booking-action-menu__list > button:hover:not(:disabled) {
+  border-color: var(--ink);
+  color: var(--surface);
+  background: var(--ink);
+  transform: translateY(-1px);
+}
+
+.booking-action-menu__list > button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
+.booking-action-menu__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: var(--blue);
+  background: #f5f6f5;
+}
+
+.booking-action-menu__list > button:hover:not(:disabled) .booking-action-menu__icon {
+  border-color: rgba(255, 255, 255, 0.28);
+  color: var(--surface);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.booking-action-menu__copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.booking-action-menu__copy strong {
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.booking-action-menu__copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+}
+
+.booking-action-menu__list > button:hover:not(:disabled) .booking-action-menu__copy small {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.booking-action-menu__panel > p {
+  margin: 16px 2px 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.booking-action-menu button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
 }
 
 .vivi-studio__messages {
