@@ -208,7 +208,9 @@ function InvitationExperience({ invitation }) {
     const streaks = intro.current.querySelectorAll('.invitation-film__streak')
     const message = intro.current.querySelector('.invitation-film__message')
     const messageRule = intro.current.querySelector('.invitation-film__message-rule')
-    const selectedVehicle = content.current.querySelector('.invitation-vehicle__image')
+    // Animate the visual wrapper instead of the image itself. Keeping a transform on a
+    // transparent WebP makes Safari/Retina reuse a softened GPU texture after the intro.
+    const selectedVehicle = content.current.querySelector('.invitation-vehicle__visual')
     const vehicleWidth = vehicle.getBoundingClientRect().width || window.innerWidth
     const travel = ((window.innerWidth + vehicleWidth) / 2) + (mobileLite ? 36 : 80)
     const centerPauseX = mobileLite ? -8 : -24
@@ -224,7 +226,12 @@ function InvitationExperience({ invitation }) {
 
     const sequence = gsap.timeline({
       defaults: { ease: 'power3.inOut' },
-      onComplete: () => setIntroDone(true),
+      onComplete: () => {
+        // Return the vehicle to normal browser compositing once the motion is finished,
+        // so fine bodywork and transparent edges are rendered at the device's full DPR.
+        gsap.set(selectedVehicle, { clearProps: 'transform,opacity' })
+        setIntroDone(true)
+      },
     })
 
     sequence
@@ -322,13 +329,16 @@ function InvitationExperience({ invitation }) {
             <strong className="invitation-vehicle__model" aria-hidden="true">
               {vehicleMediaMap[invitation.vehicleId]?.name || invitation.model}
             </strong>
-            <img
-              className="invitation-vehicle__image"
-              src={selectedVehicleImage}
-              alt={invitation.model}
-              decoding="async"
-              fetchPriority="high"
-            />
+            <div className="invitation-vehicle__visual">
+              <img
+                className="invitation-vehicle__image"
+                src={selectedVehicleImage}
+                alt={invitation.model}
+                decoding="async"
+                fetchPriority="high"
+                draggable="false"
+              />
+            </div>
             <div className="invitation-vehicle__caption">
               <span>Mẫu xe bạn đã chọn</span>
               <strong>{invitation.model}</strong>
