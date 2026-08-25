@@ -159,6 +159,7 @@ body.invitation-film-open {
   place-content: center;
   justify-items: center;
   gap: 28px;
+  opacity: 0;
   pointer-events: none;
   will-change: transform, opacity;
 }
@@ -193,6 +194,7 @@ body.invitation-film-open {
   height: auto;
   transform: translate(-50%, -50%);
   filter: drop-shadow(0 34px 28px rgba(0, 0, 0, 0.78));
+  opacity: 0;
   will-change: transform, opacity;
 }
 
@@ -204,6 +206,7 @@ body.invitation-film-open {
   width: min(54vw, 780px);
   height: 1px;
   background: #f5c542;
+  opacity: 0;
   will-change: transform, opacity;
 }
 
@@ -222,6 +225,7 @@ body.invitation-film-open {
   width: min(780px, calc(100vw - 48px));
   text-align: center;
   transform: translate(-50%, -50%);
+  opacity: 0;
   will-change: transform, opacity;
 }
 

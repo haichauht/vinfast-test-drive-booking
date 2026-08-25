@@ -9,7 +9,7 @@ import { vehicleMediaMap } from '../media/vehicle-media-map'
 
 const vinfastWordmark = vehicleImage('Vinfast-logo-new_NO_Tagline -2D-Horizontal black.png')
 const lacHongSide = showcaseImage('lac-hong-900lx/film-side.png')
-const VINFAST_HOME_URL = 'https://vinfastauto.com/vn_vi'
+const VINFAST_HOME_URL = 'https://c3-app-053.pages.dev/'
 
 const SAMPLE_INVITATION = {
   guestName: 'Nguyễn Hoàng Minh',
@@ -303,7 +303,7 @@ function InvitationExperience({ invitation }) {
           <a
             className="invitation-header__home"
             href={VINFAST_HOME_URL}
-            aria-label="Đến trang chủ chính thức của VinFast"
+            aria-label="Đến trang chủ VinFast"
           >
             <House size={18} weight="light" aria-hidden="true" />
             <span>Trang chủ</span>
