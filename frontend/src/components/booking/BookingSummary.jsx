@@ -65,7 +65,7 @@ const timeAsMinutes = (value) => {
  * làm mắt phải lọc. `onBack` là lối quay về danh sách lịch — trước đây vào màn này là kẹt,
  * không có đường lùi.
  */
-export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDates = [], onPick, onBack, backLabel = 'Chọn lịch khác', compact = false }) {
+export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDates = [], onPick, onBack, backLabel = 'Chọn lịch khác', compact = false, disabled = false }) {
   const root = useRef(null)
   const direction = useRef(0)
   const today = new Date()
@@ -214,9 +214,9 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDa
       <div className="schedule-calendar">
         <header className="schedule-calendar__toolbar">
           <div className="schedule-calendar__navigation" aria-label="Điều hướng tuần">
-            <button type="button" onClick={() => changeWeek(-1)} disabled={isCurrentWeek} aria-label="Xem tuần trước"><CaretLeft size={17} weight="bold" /></button>
-            <button type="button" onClick={returnToCurrentWeek} disabled={isCurrentWeek}>Tuần này</button>
-            <button type="button" onClick={() => changeWeek(1)} disabled={isLastVisibleWeek} aria-label="Xem tuần sau"><CaretRight size={17} weight="bold" /></button>
+            <button type="button" onClick={() => changeWeek(-1)} disabled={disabled || isCurrentWeek} aria-label="Xem tuần trước"><CaretLeft size={17} weight="bold" /></button>
+            <button type="button" onClick={returnToCurrentWeek} disabled={disabled || isCurrentWeek}>Tuần này</button>
+            <button type="button" onClick={() => changeWeek(1)} disabled={disabled || isLastVisibleWeek} aria-label="Xem tuần sau"><CaretRight size={17} weight="bold" /></button>
           </div>
           <div className="schedule-calendar__range">
             <strong>{rangeLabel}</strong>
@@ -264,7 +264,7 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDa
                         {entry ? (
                           <button
                             type="button"
-                            disabled={!available}
+                            disabled={disabled || !available}
                             className={`${available ? 'is-available' : 'is-unavailable'} ${active ? 'is-active' : ''}`.trim()}
                             onClick={(event) => available && selectSlot(event, day, entry)}
                             aria-label={`${entry.time}, ${day.source.dateLabel}: ${entry.isAvailable ? `${car.name} còn xe` : entry.unavailableLabel}`}
