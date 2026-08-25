@@ -496,6 +496,22 @@ export function BookingPage() {
   const floatingDemoContextRef = useRef({})
   const floatingDemoPausedRef = useRef(false)
   const floatingDemoPauseWaitersRef = useRef([])
+  const floatingDemoDelayWaitersRef = useRef([])
+  const floatingDemoMountedRef = useRef(true)
+
+  // Auto-play is intentionally cancellable.  Invalidating its run token and
+  // resolving pending pauses/delays means an unmounted page never continues a
+  // scripted turn or attempts a later state update.
+  useEffect(() => {
+    floatingDemoMountedRef.current = true
+    return () => {
+      floatingDemoMountedRef.current = false
+      floatingDemoRunRef.current += 1
+      floatingDemoPausedRef.current = false
+      floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
+      floatingDemoDelayWaitersRef.current.splice(0).forEach((resolve) => resolve())
+    }
+  }, [])
 
   const selectedCar = getCar(selectedCarId)
   const leaveRecipientModal = useCallback(() => {
@@ -2358,13 +2374,21 @@ export function BookingPage() {
   }
 
   const ensureFloatingDemoRun = (runId) => {
-    if (floatingDemoRunRef.current !== runId) throw new Error('Demo đã được bắt đầu lại.')
+    if (!floatingDemoMountedRef.current || floatingDemoRunRef.current !== runId) {
+      throw new Error('Demo đã được bắt đầu lại.')
+    }
   }
 
   // A short beat makes each visual change perceptible, while the controller keeps
   // moving without requiring another click from the presenter.
   const waitFloatingDemo = (runId, milliseconds = FLOATING_DEMO_STEP_DELAY_MS) => new Promise((resolve) => {
-    window.setTimeout(() => resolve(), milliseconds)
+    const finish = () => {
+      window.clearTimeout(timer)
+      floatingDemoDelayWaitersRef.current = floatingDemoDelayWaitersRef.current.filter((waiter) => waiter !== finish)
+      resolve()
+    }
+    const timer = window.setTimeout(finish, milliseconds)
+    floatingDemoDelayWaitersRef.current.push(finish)
   }).then(() => ensureFloatingDemoRun(runId))
 
   const getFloatingDemoLocation = () => new Promise((resolve) => {
