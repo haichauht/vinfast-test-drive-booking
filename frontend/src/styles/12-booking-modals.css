@@ -201,7 +201,13 @@
   padding: 10px 0;
 }
 
-.cancellation-confirm-modal dd { overflow-wrap: anywhere; }
+/* Cùng loại bảng nhãn/giá trị với phiếu hẹn nên cùng cách chống rớt chữ.
+   `anywhere` cắt giữa từ ngay khi thấy chật; `break-word` chỉ cắt khi một từ dài
+   hơn cả ô. `text-wrap: pretty` lo phần không bỏ lại một chữ lẻ ở hàng cuối. */
+.cancellation-confirm-modal dd {
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+}
 
 @media (max-width: 620px) {
   .cancellation-confirm-modal > div { padding: 24px; }

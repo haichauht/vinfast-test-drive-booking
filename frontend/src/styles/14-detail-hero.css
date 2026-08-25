@@ -377,7 +377,8 @@
     padding: 10px 12px;
   }
 
-  .vivi-studio__head > button {
+  .vivi-studio__head > button,
+  .vivi-studio__head-actions > button {
     padding: 8px 9px;
   }
 
