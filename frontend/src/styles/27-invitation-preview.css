@@ -364,13 +364,39 @@ body.invitation-film-open {
   white-space: nowrap;
 }
 
+.invitation-vehicle__visual {
+  position: relative;
+  z-index: 0;
+  display: grid;
+  width: 100%;
+  place-items: center;
+  isolation: isolate;
+}
+
+/* A CSS ground shadow stays independent from the transparent WebP. Applying filter and
+   transform to the image itself made Safari retain a low-resolution composited texture. */
+.invitation-vehicle__visual::after {
+  position: absolute;
+  z-index: -1;
+  bottom: 4%;
+  left: 50%;
+  width: min(72%, 620px);
+  height: clamp(24px, 5vw, 46px);
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0) 72%);
+  content: '';
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
 .invitation-vehicle__image {
+  position: relative;
+  z-index: 1;
   display: block;
-  width: min(92%, 820px);
+  width: min(92%, 780px);
   max-height: 350px;
   object-fit: contain;
-  filter: drop-shadow(0 28px 26px rgba(0, 0, 0, 0.58));
-  will-change: transform, opacity;
+  image-rendering: auto;
+  user-select: none;
 }
 
 .invitation-vehicle__caption {
@@ -789,12 +815,16 @@ body.invitation-film-open {
   padding: 10px 12px;
   border: 1px solid #ffd24a;
   border-radius: 4px;
-  font-size: 11px;
+  font-family: inherit;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 1.05px;
-  line-height: 1.3;
+  letter-spacing: 0.25px;
+  line-height: 18px;
   text-align: center;
-  text-transform: uppercase;
+}
+
+.email-preview__action span {
+  font-family: inherit;
 }
 
 .email-preview__action--secondary {
@@ -918,9 +948,15 @@ body.invitation-film-open {
   }
 
   .invitation-vehicle__image {
-    width: 108%;
-    max-width: none;
+    width: 100%;
+    max-width: 620px;
     max-height: 230px;
+  }
+
+  .invitation-vehicle__visual::after {
+    bottom: 2%;
+    width: 78%;
+    height: 28px;
   }
 
   .invitation-vehicle__caption {
@@ -1075,8 +1111,8 @@ body.invitation-film-open {
   .email-preview__action {
     min-height: 46px;
     padding-inline: 7px;
-    font-size: 9.5px;
-    letter-spacing: 0.65px;
+    font-size: 11px;
+    letter-spacing: 0.15px;
     white-space: nowrap;
   }
 
@@ -1099,8 +1135,8 @@ body.invitation-film-open {
   }
 
   .email-preview__action {
-    font-size: 9px;
-    letter-spacing: 0.35px;
+    font-size: 10.5px;
+    letter-spacing: 0;
   }
 }
 
