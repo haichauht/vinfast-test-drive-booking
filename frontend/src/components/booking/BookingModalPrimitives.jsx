@@ -134,7 +134,7 @@ export function DemoCompletionModal({ onRestartRealSession, onClose }) {
         >
           <X size={16} weight="bold" aria-hidden="true" />
         </button>
-        <p style={{ margin: '0 0 6px', color: 'var(--blue, #1464f4)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+        <p style={{ margin: '0 0 6px', color: 'var(--blue, #1464f4)', fontSize: '0.78rem', fontWeight: 600, letterSpacing: '0.02em' }}>
           Trải nghiệm hoàn tất
         </p>
         <h2 id="demo-complete-title" style={{ fontSize: '1.35rem', fontWeight: 560, margin: '0 0 10px', color: 'var(--ink, #171a20)', letterSpacing: '-0.035em', lineHeight: 1.25 }}>
