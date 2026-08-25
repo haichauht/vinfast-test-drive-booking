@@ -5,6 +5,7 @@ from src.internal_portal import InternalPortalService
 from src.services.booking import BookingService
 from src.services.booking.gmail_provider import GmailMessagingProvider
 from src.services.booking.notifications import InMemoryMessagingProvider, RoutingMessagingProvider
+from src.services.booking.public_invitation import PublicInvitationService
 from src.services.knowledge import KnowledgeService
 from src.services.profile import ProfileService
 from src.services.profile.driver_invitation import DriverInvitationService
@@ -64,4 +65,5 @@ driver_invitation_service = DriverInvitationService(
 # Background notification rendering reuses the invitation service to embed a
 # driver chat link in the one-time booking confirmation email.
 booking_service.driver_invitation_service = driver_invitation_service
+public_invitation_service = PublicInvitationService(database)
 knowledge_service = KnowledgeService()

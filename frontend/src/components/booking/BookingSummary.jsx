@@ -400,6 +400,26 @@ export function buildGoogleCalendarUrl({ car, showroom, slot, bookingCode, advis
   return `https://calendar.google.com/calendar/render?${params.toString()}`
 }
 
+/**
+ * Dán hai chữ cuối lại với nhau bằng khoảng trắng không ngắt.
+ *
+ * Ô giá trị trong phiếu hẹp (lưới hai cột, nhãn đã chiếm 100px), nên chuỗi dài
+ * tự xuống dòng và hay bỏ lại đúng MỘT chữ ở hàng cuối: "VinFast Nguyễn Văn"
+ * rồi "Cừ" đứng lẻ loi. Đây là thứ chủ dự án ghét nhất trong cả màn này.
+ *
+ * Không vá từng ca: chỉ cần chữ cuối luôn đi cùng chữ áp cuối là mọi chuỗi đều
+ * hết rớt lẻ, dù dài ngắn ra sao. Chuỗi một chữ thì giữ nguyên.
+ *
+ * Dùng kèm `text-wrap: pretty` bên CSS. Hai thứ bù nhau: CSS lo mấy đoạn văn dài
+ * mà mã không đi qua được, còn hàm này lo đúng chỗ nhạy nhất là ô giá trị.
+ */
+const noOrphan = (value) => {
+  if (typeof value !== 'string') return value
+  const words = value.trim().split(/\s+/)
+  if (words.length < 2) return value
+  return `${words.slice(0, -1).join(' ')}\u00A0${words[words.length - 1]}`
+}
+
 export function BookingTicket({ car, showroom, slot, person, recipient, bookingCode, advisor = null, compact = false }) {
   const advisorLabel = advisor?.full_name
     ? `${advisor.full_name}${advisor.phone ? ` · ${advisor.phone}` : ''}`
@@ -424,7 +444,7 @@ export function BookingTicket({ car, showroom, slot, person, recipient, bookingC
       style={{ color: '#0C64E6', textDecoration: 'underline', fontWeight: 600 }}
       title="Bấm để mở vị trí và chỉ đường trên Google Maps"
     >
-      {showroom.name} ↗
+      {noOrphan(`${showroom.name} ↗`)}
     </a>
   )
 
@@ -455,10 +475,13 @@ export function BookingTicket({ car, showroom, slot, person, recipient, bookingC
       </div>
       <dl>
         {rows.map(([label, value]) => (
-          <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+          <div key={label}>
+            <dt>{noOrphan(label)}</dt>
+            <dd>{noOrphan(value)}</dd>
+          </div>
         ))}
       </dl>
-      <p><CheckCircle size={16} weight="fill" /> Đã xác nhận có giấy phép lái xe phù hợp.</p>
+      <p><CheckCircle size={16} weight="fill" /> {noOrphan('Đã xác nhận có giấy phép lái xe phù hợp.')}</p>
     </section>
   )
 }

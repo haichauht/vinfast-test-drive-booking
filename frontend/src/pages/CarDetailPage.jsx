@@ -37,6 +37,7 @@ import { useVehicleCatalog, useVehicleDetail } from '../hooks/useSiteData'
 import { getVehicle3dModel } from '../data/vehicle3d'
 import { vehicleGallery } from '../data/vehicle-gallery'
 import { limoInteriorFilm } from '../data/media'
+import { getClientDeviceProfile } from '../utils/deviceProfile'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
@@ -47,7 +48,18 @@ gsap.registerPlugin(useGSAP, ScrollTrigger)
  * động nên nút điều khiển chỉ làm rối mặt. Máy bật prefers-reduced-motion thì không tự chạy.
  */
 function FilmVideo({ className, src, poster, label }) {
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const { constrained, reducedMotion } = getClientDeviceProfile()
+
+  if (constrained) {
+    return (
+      <SmartImage
+        className={`${className || ''} film-video-static`.trim()}
+        src={poster}
+        alt={label}
+        fit="cover"
+      />
+    )
+  }
 
   return (
     <video
@@ -215,6 +227,8 @@ export function CarDetailPage() {
       // documented in BACKEND_HANDOFF.md. The backend may choose a named preset,
       // while duration/easing/selectors stay controlled by this frontend.
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const mobileLite = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches
+        || navigator.connection?.saveData === true
       const visitKey = `vinfast-intro-seen:${car.id}`
       const firstVisit = !window.sessionStorage.getItem(visitKey)
       window.sessionStorage.setItem(visitKey, 'true')
@@ -233,6 +247,26 @@ export function CarDetailPage() {
           clearProps: 'transform,filter',
         })
         return
+      }
+
+      // Mobile dùng bố cục theo dòng chảy, vì vậy chỉ reveal nhẹ rồi dừng. Không kéo xe
+      // thêm 72px theo scroll: chuyển động đó hợp với sân khấu desktop nhưng dễ tạo tràn
+      // ngang và va vào vùng chữ khi điện thoại xoay màn hình.
+      if (mobileLite) {
+        const mobileIntro = gsap.timeline({ defaults: { ease: 'power3.out' } })
+        mobileIntro
+          .fromTo(
+            '.detail-hero__car',
+            { opacity: 0.45, scale: 0.96 },
+            { opacity: 1, scale: 1, duration: 0.58 },
+          )
+          .fromTo(
+            '[data-detail-copy]',
+            { y: 16, opacity: 0 },
+            { y: 0, opacity: 1, duration: 0.42, stagger: 0.05 },
+            0.08,
+          )
+        return () => mobileIntro.kill()
       }
 
       const intro = gsap.timeline({ defaults: { ease: 'power4.out' } })
@@ -559,6 +593,7 @@ export function CarDetailPage() {
               <section className="detail-film" aria-labelledby="detail-film-title">
                 <FilmVideo
                   src={limoInteriorFilm}
+                  poster={car.hero}
                   label="Thước phim không gian nội thất Limo Green"
                 />
                 <div className="detail-film__veil" aria-hidden="true" />

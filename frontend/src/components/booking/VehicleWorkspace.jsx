@@ -12,6 +12,7 @@ import { SmartImage } from '../SmartImage'
 import { BookingSuccessVehicleModel } from '../Vehicle3DExperience'
 import { getVehicle3dModel } from '../../data/vehicle3d'
 import { carGroups } from '../../data/cars'
+import { useDialogFocus } from '../../hooks/useDialogFocus'
 import { VehiclePriceVariants } from '../VehiclePrice'
 
 export function VehicleShot({ car, className = '', eager = false, mode = car.studioShot.mode }) {
@@ -26,18 +27,16 @@ export function VehicleShot({ car, className = '', eager = false, mode = car.stu
 }
 
 export function VehicleSwitcher({ cars, currentId, onSelect, onClose }) {
-  useEffect(() => {
-    const handleKey = (event) => { if (event.key === 'Escape') onClose() }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [onClose])
+  const dialogRef = useDialogFocus({ onClose })
 
   return (
     <div
+      ref={dialogRef}
       className="vehicle-switcher"
       role="dialog"
       aria-modal="true"
       aria-labelledby="vehicle-switcher-title"
+      tabIndex={-1}
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}
     >
       <div className="vehicle-switcher__panel">
