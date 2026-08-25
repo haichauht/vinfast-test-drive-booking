@@ -104,7 +104,7 @@ const normalizeAgentContext = (context = {}) => {
       longitude: context.userLocation.longitude,
     })
   }
-  if (context.bookingId && SLOT_CONTEXT_STAGES.has(stage)) normalized.bookingId = String(context.bookingId)
+  if (context.bookingId) normalized.bookingId = String(context.bookingId)
 
   return normalized
 }

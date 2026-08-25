@@ -13,6 +13,7 @@ import { BookingSuccessVehicleModel } from '../Vehicle3DExperience'
 import { getVehicle3dModel } from '../../data/vehicle3d'
 import { carGroups } from '../../data/cars'
 import { useDialogFocus } from '../../hooks/useDialogFocus'
+import { VehiclePriceVariants } from '../VehiclePrice'
 
 export function VehicleShot({ car, className = '', eager = false, mode = car.studioShot.mode }) {
   return (
@@ -130,7 +131,10 @@ export function VehiclePanel({ car }) {
         <div className="studio-vehicle__details">
           {car.tagline && <p className="studio-vehicle__tagline">{car.tagline}</p>}
           <dl>
-            <div><dt>Giá niêm yết</dt><dd>{car.price || 'Đang cập nhật'}</dd></div>
+            <div>
+              <dt>Giá niêm yết</dt>
+              <dd><VehiclePriceVariants className="vehicle-price-variants" variants={car.priceVariants} fallback={car.price} /></dd>
+            </div>
             <div><dt>Kiểu xe</dt><dd>{car.body || 'Đang cập nhật'}</dd></div>
             {extraSpecs.map((spec) => (
               <div key={spec.label}><dt>{spec.label}</dt><dd>{spec.value}</dd></div>
