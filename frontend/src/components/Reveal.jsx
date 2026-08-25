@@ -17,6 +17,7 @@ import { useRef } from 'react'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import { getClientDeviceProfile } from '../utils/deviceProfile'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
@@ -31,21 +32,26 @@ export function Reveal({
 
   useGSAP(
     () => {
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        gsap.set(root.current, { opacity: 1, y: 0 })
+      const { compact, constrained, reducedMotion } = getClientDeviceProfile()
+      if (reducedMotion || constrained) {
+        gsap.set(root.current, { opacity: 1, y: 0, filter: 'none' })
         return
       }
 
       gsap.fromTo(
         root.current,
-        { opacity: 0, y, filter: 'blur(10px)' },
+        {
+          opacity: 0,
+          y: compact ? Math.min(y, 24) : y,
+          filter: compact ? 'none' : 'blur(10px)',
+        },
         {
           opacity: 1,
           y: 0,
           filter: 'blur(0px)',
-          duration: 1.05,
-          delay,
-          ease: 'power4.out',
+          duration: compact ? 0.48 : 1.05,
+          delay: compact ? Math.min(delay, 0.08) : delay,
+          ease: compact ? 'power3.out' : 'power4.out',
           scrollTrigger: {
             trigger: root.current,
             start: 'top 88%',

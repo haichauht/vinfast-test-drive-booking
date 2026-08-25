@@ -121,6 +121,10 @@ class Settings(BaseSettings):
     rate_limit_demo_action_per_session_per_hour: int = Field(default=300, ge=1, le=100_000)
     rate_limit_demo_action_per_ip_per_minute: int = Field(default=120, ge=1, le=100_000)
     rate_limit_demo_action_per_ip_per_hour: int = Field(default=1_200, ge=1, le=1_000_000)
+    # Thiệp mời là endpoint công khai, không đăng nhập, và mã lịch chỉ có 6 ký tự hex
+    # nên phải chặn dò mã. Quota để rộng cho khách thật mở lại thiệp nhiều lần.
+    rate_limit_invitation_per_ip_per_minute: int = Field(default=20, ge=1, le=10_000)
+    rate_limit_invitation_per_ip_per_hour: int = Field(default=120, ge=1, le=100_000)
     rate_limit_otp_request_per_contact_per_hour: int = Field(default=10, ge=1, le=1_000)
     rate_limit_otp_verify_per_challenge_per_minute: int = Field(default=5, ge=1, le=1_000)
 

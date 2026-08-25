@@ -12,6 +12,8 @@ import { SmartImage } from '../SmartImage'
 import { BookingSuccessVehicleModel } from '../Vehicle3DExperience'
 import { getVehicle3dModel } from '../../data/vehicle3d'
 import { carGroups } from '../../data/cars'
+import { useDialogFocus } from '../../hooks/useDialogFocus'
+import { VehiclePriceVariants } from '../VehiclePrice'
 
 export function VehicleShot({ car, className = '', eager = false, mode = car.studioShot.mode }) {
   return (
@@ -25,18 +27,16 @@ export function VehicleShot({ car, className = '', eager = false, mode = car.stu
 }
 
 export function VehicleSwitcher({ cars, currentId, onSelect, onClose }) {
-  useEffect(() => {
-    const handleKey = (event) => { if (event.key === 'Escape') onClose() }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [onClose])
+  const dialogRef = useDialogFocus({ onClose })
 
   return (
     <div
+      ref={dialogRef}
       className="vehicle-switcher"
       role="dialog"
       aria-modal="true"
       aria-labelledby="vehicle-switcher-title"
+      tabIndex={-1}
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}
     >
       <div className="vehicle-switcher__panel">
@@ -131,7 +131,10 @@ export function VehiclePanel({ car }) {
         <div className="studio-vehicle__details">
           {car.tagline && <p className="studio-vehicle__tagline">{car.tagline}</p>}
           <dl>
-            <div><dt>Giá niêm yết</dt><dd>{car.price || 'Đang cập nhật'}</dd></div>
+            <div>
+              <dt>Giá niêm yết</dt>
+              <dd><VehiclePriceVariants className="vehicle-price-variants" variants={car.priceVariants} fallback={car.price} /></dd>
+            </div>
             <div><dt>Kiểu xe</dt><dd>{car.body || 'Đang cập nhật'}</dd></div>
             {extraSpecs.map((spec) => (
               <div key={spec.label}><dt>{spec.label}</dt><dd>{spec.value}</dd></div>

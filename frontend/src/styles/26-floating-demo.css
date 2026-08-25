@@ -88,6 +88,8 @@
 @keyframes floating-demo-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 767px) {
+  /* Demo controls are desktop-only; mobile keeps the booking chat uncluttered. */
+  .floating-demo-bar { display: none; }
   .floating-demo-bar { right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); left: 10px; width: auto; border-radius: 20px; }
   .floating-demo-bar__head p { display: none; }
   .floating-demo-bar__steps small { font-size: 0.53rem; }
