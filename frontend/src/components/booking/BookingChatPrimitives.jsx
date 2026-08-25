@@ -22,7 +22,7 @@ export function ViViAvatar({ compact = false }) {
   )
 }
 
-export function AgentMessage({ message, isLatest }) {
+export function AgentMessage({ message, isLatest, onTypingComplete }) {
   const [displayedText, setDisplayedText] = useState(
     isLatest && message.role === 'assistant' ? '' : (message.text || '')
   )
@@ -52,6 +52,7 @@ export function AgentMessage({ message, isLatest }) {
       if (index >= currentFullText.length) {
         clearInterval(timer)
         setIsTyping(false)
+        onTypingComplete?.(message.id)
       }
     }, 16)
 
@@ -59,7 +60,7 @@ export function AgentMessage({ message, isLatest }) {
       clearInterval(timer)
       setIsTyping(false)
     }
-  }, [message.role, isLatest])
+  }, [message.id, message.role, isLatest, onTypingComplete])
 
   useEffect(() => {
     if (!isTyping) {
@@ -82,7 +83,10 @@ export function AgentMessage({ message, isLatest }) {
   }
 
   return (
-    <div className={`vivi-message vivi-message--${message.role} ${message.emphasis ? 'vivi-message--emphasis' : ''}`.trim()}>
+    <div
+      className={`vivi-message vivi-message--${message.role} ${message.emphasis ? 'vivi-message--emphasis' : ''}`.trim()}
+      data-message-id={message.id}
+    >
       {message.role === 'assistant' && <ViViAvatar compact />}
       <div>
         <p>{formatText(displayedText)}</p>

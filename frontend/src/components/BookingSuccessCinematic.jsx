@@ -60,6 +60,11 @@ const createSeededRandom = (text) => {
 /** A small deterministic particle renderer keeps smoke physical and repeatable. */
 const useTyreSmoke = (canvasRef, rootRef, vehicleRef, controlRef, vehicleId) => {
   useEffect(() => {
+    if (
+      window.matchMedia('(prefers-reduced-motion: reduce), (max-width: 900px), (pointer: coarse)').matches
+      || navigator.connection?.saveData === true
+    ) return undefined
+
     const canvas = canvasRef.current
     const root = rootRef.current
     if (!canvas || !root) return undefined
@@ -216,6 +221,8 @@ export function BookingSuccessCinematic({ car, onComplete }) {
   const vehicle = useRef(null)
   const canvas = useRef(null)
   const smoke = useRef({ intensity: 0, rearMix: 0, skid: 0 })
+  const mobileLite = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches
+    || navigator.connection?.saveData === true
   // Chỉ chạy phim khi CẢ HAI khung đã nằm trong bộ nhớ đệm, nếu không cú xoay giữa phim sẽ
   // hiện ra một khoảng trống đúng lúc người xem đang nhìn chăm chú nhất.
   const [framesReady, setFramesReady] = useState(false)
@@ -223,6 +230,11 @@ export function BookingSuccessCinematic({ car, onComplete }) {
   useTyreSmoke(canvas, root, vehicle, smoke, 'lac-hong-900lx')
 
   useEffect(() => {
+    if (mobileLite) {
+      setFramesReady(true)
+      return undefined
+    }
+
     let active = true
     let pending = 2
     const done = () => { pending -= 1; if (pending <= 0 && active) setFramesReady(true) }
@@ -237,7 +249,7 @@ export function BookingSuccessCinematic({ car, onComplete }) {
     // Mạng chậm cũng không được treo màn chờ: quá 4 giây thì cứ chạy.
     const timeout = window.setTimeout(() => { if (active) setFramesReady(true) }, 4000)
     return () => { active = false; window.clearTimeout(timeout) }
-  }, [])
+  }, [mobileLite])
 
   useGSAP(
     () => {
@@ -258,6 +270,23 @@ export function BookingSuccessCinematic({ car, onComplete }) {
       const rearFrame = root.current?.querySelector('[data-frame="rear"]')
       const confirmation = root.current?.querySelector('.booking-film__confirmation')
       const confirmationRule = confirmation?.querySelector('i')
+
+      if (mobileLite) {
+        gsap.set(root.current, { autoAlpha: 0 })
+        gsap.set(brandPrelude, { autoAlpha: 0, scale: 0.94 })
+        gsap.set(confirmation, { opacity: 0 })
+        const timeline = gsap.timeline()
+          .to(root.current, { autoAlpha: 1, duration: 0.18, ease: 'power2.out' })
+          .to(brandPrelude, { autoAlpha: 1, scale: 1, duration: 0.28, ease: 'power2.out' })
+          .to(brandPrelude, { autoAlpha: 0, duration: 0.18, ease: 'power2.in' }, '+=0.12')
+          .to(confirmation, { opacity: 1, duration: 0.22, ease: 'power2.out' })
+          .to(confirmationRule, { scaleX: 1, duration: 0.24, ease: 'power2.out' }, '<')
+          .to({}, { duration: 0.34 })
+          .to(root.current, { autoAlpha: 0, duration: 0.2, ease: 'power2.in' })
+          .call(onComplete)
+        return () => timeline.kill()
+      }
+
       if (!movingVehicle) return undefined
 
       gsap.set(root.current, { autoAlpha: 0 })
@@ -336,25 +365,28 @@ export function BookingSuccessCinematic({ car, onComplete }) {
 
       return () => timeline.kill()
     },
-    { scope: root, dependencies: [framesReady, onComplete] },
+    { scope: root, dependencies: [framesReady, mobileLite, onComplete] },
   )
 
   if (!car) return null
 
   return (
-    <div className="booking-film" ref={root} role="status" aria-live="polite" aria-label="Đang hoàn tất lịch lái thử">
+    <div className="booking-film" ref={root} role="dialog" aria-modal="true" aria-label="Lịch lái thử đã được xác nhận">
+      <button type="button" className="booking-film__skip" onClick={onComplete} autoFocus>
+        Bỏ qua chuyển động
+      </button>
       <div className="booking-film__brand" aria-hidden="true">
         <img className="booking-film__brand-mark" src={vinfastWordmark} alt="" />
       </div>
       <div className="booking-film__air" aria-hidden="true"><span /><span /><span /><span /></div>
-      <canvas className="booking-film__smoke" ref={canvas} aria-hidden="true" />
-      <div className="booking-film__rig">
+      {!mobileLite && <canvas className="booking-film__smoke" ref={canvas} aria-hidden="true" />}
+      {!mobileLite && <div className="booking-film__rig">
         {/* Hai khung chồng lên nhau, chỉ đổi opacity nên trình duyệt không phải tính lại bố cục. */}
         <div className="booking-film__vehicle" ref={vehicle}>
           <img className="booking-film__frame" data-frame="side" src={lacHongSideFrame} alt="" aria-hidden="true" />
           <img className="booking-film__frame" data-frame="rear" src={lacHongRearFrame} alt="" aria-hidden="true" />
         </div>
-      </div>
+      </div>}
       <div className="booking-film__confirmation" aria-hidden="true">
         <i />
         <strong>Lịch lái thử đã được xác nhận.</strong>

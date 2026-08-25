@@ -24,6 +24,7 @@ from src.dependencies import (
     internal_portal_service,
     profile_service,
     profile_update_queue,
+    public_invitation_service,
 )
 from src.guardrails import get_guardrails
 from src.guardrails.abuse import AbuseStatus, get_abuse_tracker
@@ -60,6 +61,27 @@ SECURITY_STATE_DATASET_FILES = {
     "14_booking_access_sessions.csv",
     "15_zalo_identity_links.csv",
 }
+
+
+@router.get("/invitations/{token}")
+async def get_public_invitation(token: str):
+    """Resolve a signed invitation capability to the latest active booking."""
+    if len(token) > 256:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "INVITATION_INVALID", "message": "Thiệp mời không hợp lệ."},
+        )
+    try:
+        invitation = await asyncio.to_thread(public_invitation_service.resolve, token)
+    except KeyError:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "INVITATION_UNAVAILABLE",
+                "message": "Thiệp mời không hợp lệ hoặc lịch hẹn không còn hiệu lực.",
+            },
+        ) from None
+    return {"data": invitation.as_dict()}
 
 
 def _abuse_subjects(request: Request, thread_id: str) -> tuple[str, ...]:
