@@ -325,6 +325,26 @@
   font-size: 0.79rem;
 }
 
+.detail-overview__facts .vehicle-price-variants {
+  display: grid;
+  gap: 0.2em;
+}
+
+.detail-overview__facts .vehicle-price-variants__row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.8em;
+}
+
+.detail-overview__facts .vehicle-price-variants__row > span:last-child {
+  white-space: nowrap;
+}
+
+.detail-overview__facts .vehicle-price-variants__detail {
+  color: var(--muted);
+}
+
 .detail-story {
   padding: 176px 0;
   color: var(--surface);

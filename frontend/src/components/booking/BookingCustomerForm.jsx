@@ -36,10 +36,10 @@ export function BookingCustomerForm({ recipient, value, errors, disabled = false
       onSubmit(event)
     }} noValidate aria-disabled={disabled}>
       <div className="vivi-customer-form__grid">
-        <label><span>{bookingForOther ? 'Tên người đặt lịch' : 'Họ và tên'} <span style={{ color: '#ef4444' }}>*</span></span><input value={value.bookingName} disabled={disabled} onChange={(event) => onChange('bookingName', event.target.value)} />{errors.bookingName && <small role="alert">{errors.bookingName}</small>}</label>
-        {bookingForOther && <label><span>Tên người lái thử <span style={{ color: '#ef4444' }}>*</span></span><input value={value.driverName} disabled={disabled} onChange={(event) => onChange('driverName', event.target.value)} />{errors.driverName && <small role="alert">{errors.driverName}</small>}</label>}
-        <label><span>Email <span style={{ color: '#ef4444' }}>*</span></span><input type="email" placeholder="tenban@example.com" value={value.email} disabled={disabled} onChange={(event) => onChange('email', event.target.value)} required />{errors.email && <small role="alert">{errors.email}</small>}</label>
-        <label><span>Số điện thoại</span><input type="tel" placeholder="09xx xxx xxx" value={value.phone} disabled={disabled} onChange={(event) => onChange('phone', event.target.value)} />{errors.phone && <small role="alert">{errors.phone}</small>}</label>
+        <label><span>{bookingForOther ? 'Tên người đặt lịch' : 'Họ và tên'} <span style={{ color: '#ef4444' }}>*</span></span><input name="booking-name" autoComplete="name" value={value.bookingName} disabled={disabled} onChange={(event) => onChange('bookingName', event.target.value)} />{errors.bookingName && <small role="alert">{errors.bookingName}</small>}</label>
+        {bookingForOther && <label><span>Tên người lái thử <span style={{ color: '#ef4444' }}>*</span></span><input name="driver-name" autoComplete="off" value={value.driverName} disabled={disabled} onChange={(event) => onChange('driverName', event.target.value)} />{errors.driverName && <small role="alert">{errors.driverName}</small>}</label>}
+        <label><span>Email <span style={{ color: '#ef4444' }}>*</span></span><input name="email" type="email" inputMode="email" autoComplete="email" placeholder="tenban@example.com" value={value.email} disabled={disabled} onChange={(event) => onChange('email', event.target.value)} required />{errors.email && <small role="alert">{errors.email}</small>}</label>
+        <label><span>Số điện thoại</span><input name="tel" type="tel" inputMode="tel" autoComplete="tel" placeholder="09xx xxx xxx" value={value.phone} disabled={disabled} onChange={(event) => onChange('phone', event.target.value)} />{errors.phone && <small role="alert">{errors.phone}</small>}</label>
       </div>
 
       {bookingForOther && (
@@ -62,8 +62,8 @@ export function BookingCustomerForm({ recipient, value, errors, disabled = false
                 Showroom sẽ liên hệ trực tiếp với người lái theo thông tin dưới đây.
               </p>
               <div className="vivi-customer-form__grid">
-                <label><span>Email người lái <span style={{ color: '#ef4444' }}>*</span></span><input type="email" placeholder="nguoilai@example.com" value={value.driverEmail} disabled={disabled} onChange={(event) => onChange('driverEmail', event.target.value)} />{errors.driverEmail && <small role="alert">{errors.driverEmail}</small>}</label>
-                <label><span>Số điện thoại người lái</span><input type="tel" placeholder="09xx xxx xxx" value={value.driverPhone} disabled={disabled} onChange={(event) => onChange('driverPhone', event.target.value)} />{errors.driverPhone && <small role="alert">{errors.driverPhone}</small>}</label>
+                <label><span>Email người lái <span style={{ color: '#ef4444' }}>*</span></span><input name="driver-email" type="email" inputMode="email" autoComplete="off" placeholder="nguoilai@example.com" value={value.driverEmail} disabled={disabled} onChange={(event) => onChange('driverEmail', event.target.value)} />{errors.driverEmail && <small role="alert">{errors.driverEmail}</small>}</label>
+                <label><span>Số điện thoại người lái</span><input name="driver-phone" type="tel" inputMode="tel" autoComplete="off" placeholder="09xx xxx xxx" value={value.driverPhone} disabled={disabled} onChange={(event) => onChange('driverPhone', event.target.value)} />{errors.driverPhone && <small role="alert">{errors.driverPhone}</small>}</label>
               </div>
             </>
           )}

@@ -188,6 +188,11 @@ def test_confirmation_email_is_personalised(booking_service, confirmed_booking_f
     assert "Thông tin nhân viên<br>hỗ trợ của bạn" in html
     # Bộ màu vàng đen: nền Rich Black, một màu vàng duy nhất cho cả nền lẫn chữ.
     assert "#121212" in html and "#F5C542" in html
+    # Mail xác nhận có đúng hai CTA nằm cùng hàng: trang đặt lịch và thiệp mời.
+    assert "Đến trang đặt lịch VinFast" in html
+    assert "Xem thiệp mời của bạn" in html
+    assert "/invitation/v1." in html
+    assert "Xem thiệp mời của bạn:" in message["body"]
     # Thư xác nhận lịch không phải chỗ bán hàng.
     assert "giá" not in html.lower().split("<body")[1]
 
@@ -354,6 +359,9 @@ def test_every_booking_template_carries_the_same_fields(notification_type):
 
     # Riêng thư đổi giờ có thêm giờ cũ để đối chiếu.
     assert ("Giờ trước đây" in html) is (notification_type == "reschedule_confirmation")
+    has_invitation = notification_type in {"booking_confirmation", "reschedule_confirmation"}
+    assert ("Xem thiệp mời của bạn" in html) is has_invitation
+    assert ("/invitation/v1." in html) is has_invitation
 
 
 def test_lac_hong_watermark_asset_exists():
