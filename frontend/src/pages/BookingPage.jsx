@@ -60,7 +60,6 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowRight,
-  ArrowsClockwise,
   CalendarBlank,
   CarProfile,
   CaretDown,
@@ -70,7 +69,7 @@ import {
   ChatCircleDots,
   Clock,
   Crosshair,
-  MagnifyingGlass,
+  DotsThree,
   MapPin,
   Minus,
   NavigationArrow,
@@ -136,6 +135,7 @@ import { getVehicle3dModel } from '../data/vehicle3d'
 import { RecipientModal, ResumeModal } from '../components/booking/BookingModalPrimitives'
 import { AgentMessage, ViviStatusTyping, ViViAvatar, ContextualChoices } from '../components/booking/BookingChatPrimitives'
 import { VehicleShot, VehicleSwitcher, VehiclePanel } from '../components/booking/VehicleWorkspace'
+import { BookingActionMenu } from '../components/booking/BookingActionMenu'
 import { BookingHeader } from '../components/booking/BookingHeader'
 import { useDialogFocus } from '../hooks/useDialogFocus'
 import { clearBookingReturnContext, takeBookingReturnContext } from '../utils/bookingReturnContext'
@@ -423,6 +423,7 @@ export function BookingPage() {
   const [bookingAdvisor, setBookingAdvisor] = useState(confirmedUiRestore?.advisor || null)
   const [submitting, setSubmitting] = useState(false)
   const [successCinematic, setSuccessCinematic] = useState(false)
+  const [actionMenuOpen, setActionMenuOpen] = useState(false)
   const [accessFlow, setAccessFlow] = useState(null)
   const [accessValue, setAccessValue] = useState({ bookingCode: '', email: '', otpCode: '' })
   const [accessError, setAccessError] = useState('')
@@ -911,6 +912,10 @@ export function BookingPage() {
       const formattedBookings = (bookings.data || bookings || []).map(formatBookingSummary)
       setAccessibleBookings(formattedBookings)
       setActiveView('bookings')
+      if (formattedBookings.length > 0) {
+        setWorkspaceHidden(false)
+        setMobileSurface('workspace')
+      }
       const isCancellation = accessPurpose === 'cancel'
 
       if (formattedBookings.length > 1) {
@@ -1769,6 +1774,7 @@ export function BookingPage() {
       setAccessibleBookings(formattedBookings)
       setWorkspaceHidden(false)
       setActiveView('bookings')
+      if (formattedBookings.length > 0) setMobileSurface('workspace')
       const accessPurpose = accessFlow?.purpose || 'manage'
       const isCancellation = accessPurpose === 'cancel'
 
@@ -1940,12 +1946,16 @@ export function BookingPage() {
   }
 
   const changeAccessProfile = (field, value) => setAccessProfile((current) => ({ ...current, [field]: value }))
+  const openRescheduleConfirmation = () => {
+    if (rescheduleState?.step !== 'pending') return
+    setRescheduleState((current) => ({ ...current, step: 'confirm' }))
+    dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
+  }
   const saveAccessProfile = async (event) => {
     event.preventDefault()
     if (!accessProfile) return
     if (rescheduleState?.step === 'pending') {
-      setRescheduleState((current) => ({ ...current, step: 'confirm' }))
-      dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
+      openRescheduleConfirmation()
       return
     }
     setAccessBusy(true); setAccessError('')
@@ -2001,6 +2011,7 @@ export function BookingPage() {
     if (car && targetProfile?.showroomId) {
       setSelectedCarId(car.id)
       setWorkspaceHidden(false)
+      setMobileSurface('workspace')
       setAccessFlow((current) => current ? { ...current, phase: 'edit', purpose: 'reschedule' } : { phase: 'edit', purpose: 'reschedule', challengeId: '', expiresAt: 0 })
       dispatchInteraction({ type: InteractionEvent.START_RESCHEDULE })
       loadRescheduleSlots(car, { id: targetProfile.showroomId, name: targetProfile.showroomName })
@@ -2022,6 +2033,7 @@ export function BookingPage() {
       setRescheduleState((current) => ({ ...current, step: 'pending', slot, newBookingId: held.booking_id }))
       setRescheduleSecondsLeft(Math.max(0, Math.ceil((new Date(held.hold_expires_at).getTime() - Date.now()) / 1000)))
       setExpandedBookingId(accessProfile.bookingId)
+      setMobileSurface('workspace')
       dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
       addMessage('assistant', 'ViVi đã giữ tạm khung giờ mới và cập nhật trên phiếu. Bạn bấm “Cập nhật thông tin” để kiểm tra, xác nhận toàn bộ lịch.')
     } catch (error) { setAccessError(error.message) } finally { setAccessBusy(false) }
@@ -2321,7 +2333,77 @@ export function BookingPage() {
           : 'Mẫu xe'
 
   const renderWorkspace = () => {
-    if (activeView === 'bookings' && accessProfile) return <section className="booking-history"><div className="booking-history__list">{accessibleBookings.map((booking) => { const expanded = expandedBookingId === booking.id; const details = booking.id === accessProfile.bookingId ? accessProfile : null; const bookingCodeLabel = booking.booking_code || 'Lịch lái thử'; return <div key={booking.id} className={expanded ? 'is-active is-expanded' : ''}><button type="button" onClick={() => { setExpandedBookingId(expanded ? '' : booking.id); if (!expanded) selectAccessibleBooking(booking) }}><strong>{bookingCodeLabel}</strong><small>{booking.display_time || (booking.start_at ? new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(booking.start_at)) : 'Lịch lái thử')}</small></button>{expanded && details && <div className="booking-history__details"><p><span>Mẫu xe</span>{details.vehicleName}</p><p><span>Showroom</span>{details.showroomName}<small>{details.showroomAddress}</small></p><p><span>Thời gian</span>{details.slotTime} · {details.slotDate}</p>{rescheduleState?.step === 'pending' && <p className="booking-history__hold"><span>Khung giờ mới đang được giữ</span>Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}</p>}<p><span>Tư vấn viên</span>{details.advisorName}<small>{details.advisorPhone || 'Chưa có số điện thoại'}</small></p><div className="booking-history__actions"><span className="booking-history__actions-main">{allowedActions.includes('reschedule') && <button type="button" className="booking-history__action" onClick={() => beginAccessibleReschedule(booking)} aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}><PencilSimple size={13} weight="bold" /> Đổi giờ</button>}{details.allowedActions?.includes('cancel') && <button type="button" className="booking-history__action booking-history__action--danger" onClick={() => beginAccessibleCancellation(booking)} aria-label={`Huỷ lịch ${bookingCodeLabel}`}><Prohibit size={13} weight="bold" /> Huỷ lịch</button>}</span></div></div>}</div> })}</div></section>
+    if (activeView === 'bookings' && accessProfile) {
+      return (
+        <section className="booking-history">
+          <div className="booking-history__list">
+            {accessibleBookings.map((booking) => {
+              const expanded = expandedBookingId === booking.id
+              const details = booking.id === accessProfile.bookingId ? accessProfile : null
+              const bookingCodeLabel = booking.booking_code || 'Lịch lái thử'
+              const displayTime = booking.display_time || (booking.start_at
+                ? new Intl.DateTimeFormat('vi-VN', {
+                  weekday: 'long',
+                  day: '2-digit',
+                  month: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }).format(new Date(booking.start_at))
+                : 'Lịch lái thử')
+
+              return (
+                <div key={booking.id} className={expanded ? 'is-active is-expanded' : ''}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExpandedBookingId(expanded ? '' : booking.id)
+                      if (!expanded) selectAccessibleBooking(booking)
+                    }}
+                  >
+                    <strong>{bookingCodeLabel}</strong>
+                    <small>{displayTime}</small>
+                  </button>
+
+                  {expanded && details && (
+                    <div className="booking-history__details">
+                      <p><span>Mẫu xe</span>{details.vehicleName}</p>
+                      <p><span>Showroom</span>{details.showroomName}<small>{details.showroomAddress}</small></p>
+                      <p><span>Thời gian</span>{details.slotTime} · {details.slotDate}</p>
+                      {rescheduleState?.step === 'pending' && (
+                        <p className="booking-history__hold">
+                          <span>Khung giờ mới đang được giữ</span>
+                          Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}
+                        </p>
+                      )}
+                      <p><span>Tư vấn viên</span>{details.advisorName}<small>{details.advisorPhone || 'Chưa có số điện thoại'}</small></p>
+                      <div className="booking-history__actions">
+                        <span className="booking-history__actions-main">
+                          {allowedActions.includes('reschedule') && (
+                            <button type="button" className="booking-history__action" onClick={() => beginAccessibleReschedule(booking)} aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}>
+                              <PencilSimple size={13} weight="bold" /> Đổi giờ
+                            </button>
+                          )}
+                          {details.allowedActions?.includes('cancel') && (
+                            <button type="button" className="booking-history__action booking-history__action--danger" onClick={() => beginAccessibleCancellation(booking)} aria-label={`Huỷ lịch ${bookingCodeLabel}`}>
+                              <Prohibit size={13} weight="bold" /> Huỷ lịch
+                            </button>
+                          )}
+                        </span>
+                        {rescheduleState?.step === 'pending' && (
+                          <button type="button" className="booking-history__update-mobile" onClick={openRescheduleConfirmation}>
+                            Cập nhật thông tin <ArrowRight size={14} weight="bold" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )
+    }
     if (rescheduleState?.step === 'showroom') return <section className="studio-schedule"><div className="reschedule-left-grid">{rescheduleState.showrooms.map((showroom) => <button type="button" key={showroom.id} onClick={() => loadRescheduleSlots(rescheduleState.car, showroom)}><strong>{showroom.name}</strong><small>{showroom.address}</small></button>)}</div></section>
     if (rescheduleState?.step === 'schedule') return <SchedulePanel compact onBack={exitReschedule} car={rescheduleState.car} showroom={rescheduleState.showroom} slots={groupSlots(rescheduleState.slots)} pendingSlot={null} highlightedDates={highlightedDates} onPick={(picked) => holdReschedule(rescheduleState.slots.find((slot) => slot.id === picked.slotId))} />
     if (rescheduleState?.step === 'pending') return <SchedulePanel compact onBack={exitReschedule} car={rescheduleState.car} showroom={rescheduleState.showroom} slots={groupSlots(rescheduleState.slots)} pendingSlot={{ slotId: rescheduleState.slot.id }} highlightedDates={highlightedDates} onPick={(picked) => holdReschedule(rescheduleState.slots.find((slot) => slot.id === picked.slotId))} />
@@ -2524,7 +2606,18 @@ export function BookingPage() {
                   <ArrowLeft size={16} weight="bold" aria-hidden="true" />
                   <span>Trang chủ</span>
                 </Link>
-                {allowedActions.includes('start_lookup') && <button type="button" onClick={startLookup}>Tra cứu lịch</button>}
+                {!isDriverChat && (
+                  <button
+                    type="button"
+                    className="vivi-studio__menu-button"
+                    onClick={() => setActionMenuOpen(true)}
+                    aria-haspopup="dialog"
+                    aria-expanded={actionMenuOpen}
+                  >
+                    <DotsThree size={18} weight="bold" aria-hidden="true" />
+                    <span>Menu</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -2609,43 +2702,12 @@ export function BookingPage() {
                 onSlot={chooseSlot}
               />
 
-              {/*
-                Hành động sau khi đặt lịch xong.
-                Chọn theo đúng thứ một người vừa đặt lịch thật sự cần, KHÔNG phải thứ nghe hay:
-                - "Thêm vào lịch" đứng đầu vì bỏ quên buổi hẹn là vấn đề lõi của dự án
-                  (nghiên cứu người dùng có một ca no-show thật). Tạo .ics ngay ở frontend nên
-                  không phụ thuộc email/OTP.
-                - "Đổi hoặc huỷ lịch" vì lo lắng lớn thứ hai là "lỡ bận thì sao".
-                - "Đặt thêm mẫu xe khác" cho người đang so sánh nhiều xe.
-                KHÔNG thêm nút kiểu "Tôi tới trễ thì sao?" hay "Có mất phí không?" — không có
-                API nào trả lời được, mà bịa chính sách cho khách là điều tuyệt đối không làm.
-                Những câu đó người dùng vẫn gõ tự do cho ViVi được, và thẻ hướng dẫn phía trên
-                đã đưa sẵn hotline + số showroom.
-              */}
-              {stage === 'success' && (
-                <div className="vivi-capabilities vivi-capabilities--success">
-                  <button type="button" onClick={addBookingToCalendar}>
-                    <CalendarBlank size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                    Thêm vào lịch của tôi
-                  </button>
-                  <button type="button" onClick={() => startLookup({ addUserMessage: false })}>
-                    <ArrowsClockwise size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                    Đổi hoặc huỷ lịch
-                  </button>
-                  <button type="button" onClick={bookAnotherVehicle}>
-                    <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                    Đặt thêm mẫu xe khác
-                  </button>
-                </div>
-              )}
-
               {/* Hàng nút nhanh ngay trên ô nhập.
-                  ĐÃ GỠ 2 nút vì trùng nguyên si với thứ đã có sẵn trên màn hình:
-                  - "Tra cứu lịch đã đặt"  → trùng nút "Tra cứu lịch" ở header ViVi (cùng
-                    handler startLookup, cùng điều kiện allowedActions.includes('start_lookup')).
+                  Các thao tác quản lý lịch và hậu đặt lịch đã được gom vào menu ở header:
+                  không lặp lại chúng trong vùng composer để giữ không gian trò chuyện.
                   - "Đổi mẫu xe khác"      → trùng tab "Đổi mẫu xe" ở panel trái, bấm vào cũng
                     mở đúng bảng chọn xe đó.
-                  Đừng thêm lại: hai nút này từng làm màn agent có 2 bản của cùng một hành động. */}
+                  Đừng thêm lại: mỗi hành động chỉ có một điểm truy cập rõ ràng. */}
               {(allowedActions.some((action) => (
                 action === 'choose_vehicle' ? !showVehicleChoices : ['use_geolocation', 'view_vehicle'].includes(action)
               )) || stage === 'need_address' || stage === 'choose_showroom') && (
@@ -2830,6 +2892,16 @@ export function BookingPage() {
           </button>
         </nav>
       )}
+
+      <BookingActionMenu
+        open={actionMenuOpen}
+        onClose={() => setActionMenuOpen(false)}
+        hasConfirmedBooking={Boolean(bookingCode)}
+        onAddToCalendar={addBookingToCalendar}
+        onManageBooking={() => startLookup({ addUserMessage: false })}
+        onBookAnother={bookAnotherVehicle}
+        onLookup={startLookup}
+      />
 
       {switcherOpen && (
         <VehicleSwitcher
