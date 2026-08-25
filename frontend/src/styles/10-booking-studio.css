@@ -83,6 +83,7 @@
 }
 
 .recipient-modal__panel {
+  position: relative;
   width: min(100%, 680px);
   padding: 42px;
   border: 1px solid rgba(255, 255, 255, 0.72);
@@ -90,6 +91,40 @@
   background: #f8f9f8;
   box-shadow: inset 0 1px 0 #fff, 0 34px 90px -44px rgba(18, 24, 32, 0.6);
   animation: studio-panel-in 0.55s var(--ease-heavy) both;
+}
+
+.recipient-modal__back {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 28px -20px rgba(18, 24, 32, 0.7);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: color 0.2s var(--ease-soft), border-color 0.2s var(--ease-soft), background 0.2s var(--ease-soft), transform 0.2s var(--ease-soft);
+}
+
+.recipient-modal__back:hover {
+  border-color: rgba(20, 100, 244, 0.4);
+  color: var(--blue);
+  background: #fff;
+  transform: translateX(-2px);
+}
+
+.recipient-modal__back:active { transform: scale(0.96); }
+
+.recipient-modal__back:focus-visible {
+  outline: 3px solid rgba(20, 100, 244, 0.28);
+  outline-offset: 3px;
 }
 
 .recipient-modal__mark,
@@ -823,7 +858,20 @@
   text-transform: uppercase;
 }
 
-.vivi-studio__head > button {
+.vivi-studio__head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vivi-studio__home-link {
+  display: none;
+}
+
+.vivi-studio__head > button,
+.vivi-studio__head-actions > button {
   padding: 9px 12px;
   border: 1px solid var(--line);
   border-radius: 12px;

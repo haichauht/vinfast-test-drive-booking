@@ -41,6 +41,7 @@ import { Reveal } from '../components/Reveal'
 import { SmartImage } from '../components/SmartImage'
 import { chargingUnits as fallbackChargingUnits, ownershipMedia } from '../data/ownership'
 import { usePageContent } from '../hooks/useSiteData'
+import { getClientDeviceProfile } from '../utils/deviceProfile'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
@@ -87,7 +88,27 @@ export function ChargingPage() {
 
   useGSAP(
     () => {
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+      const { compact, constrained, reducedMotion } = getClientDeviceProfile()
+      if (reducedMotion || constrained) {
+        gsap.set('.ownership-hero__media img, .ownership-hero [data-intro], .charger-card, .network-place, .charger-card__visual img', {
+          clearProps: 'transform,filter',
+          opacity: 1,
+        })
+        return undefined
+      }
+
+      if (compact) {
+        gsap.set('.ownership-hero__media img, .charger-card, .network-place, .charger-card__visual img', {
+          clearProps: 'transform,filter',
+          opacity: 1,
+        })
+        const intro = gsap.fromTo(
+          '.ownership-hero [data-intro]',
+          { y: 18, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.48, stagger: 0.05, ease: 'power3.out' },
+        )
+        return () => intro.kill()
+      }
 
       gsap.fromTo(
         '.ownership-hero__media img',

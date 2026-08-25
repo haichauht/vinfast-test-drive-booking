@@ -81,3 +81,8 @@ deploy_tutorial.md
 eval/datav2/
 gcp-key.json
 
+# Local build artefacts and scratch media (never commit, tmp/ alone is 556 MB)
+tmp/
+.tmp/
+output/
+*.pptx
