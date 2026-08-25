@@ -230,6 +230,8 @@ def test_reminder_email_is_personalised(booking_service, booking_db, confirmed_b
     html = provider.messages[0]["html_body"]
     assert "ViVi nhắc bạn<br>lịch lái thử" in html
     assert "ViVi nhắc bạn có lịch hẹn với ViVi tại" in html
+    assert "Xem thiệp mời của bạn" in html
+    assert "/invitation/v1." in html
     # Chung khung với thư xác nhận: cùng bộ ảnh inline, cùng màu vàng, cùng font.
     assert [image.cid for image in provider.messages[0]["inline_images"]] == [
         "vinfast-logo-band",
@@ -359,7 +361,14 @@ def test_every_booking_template_carries_the_same_fields(notification_type):
 
     # Riêng thư đổi giờ có thêm giờ cũ để đối chiếu.
     assert ("Giờ trước đây" in html) is (notification_type == "reschedule_confirmation")
-    has_invitation = notification_type in {"booking_confirmation", "reschedule_confirmation"}
+    has_invitation = notification_type in {
+        "booking_confirmation",
+        "reschedule_confirmation",
+        "booking_update",
+        "reminder",
+        "reminder_24h",
+        "reminder_2h",
+    }
     assert ("Xem thiệp mời của bạn" in html) is has_invitation
     assert ("/invitation/v1." in html) is has_invitation
 
