@@ -1,1019 +1,1096 @@
-# PRD: AI Agent đặt lịch lái thử & tư vấn xe VinFast
+# PRD v2.0 — VinFast Test Drive: đặt lịch đáng tin cậy và ViVi chăm sóc sau đặt lịch
 
-Tài liệu yêu cầu sản phẩm cho dự án P-053. Đọc cùng: [Discovery, User Empathy và Concept Spec](docs/User%20Empathy,%20Spec%20and%20PRD.pdf), [sơ đồ kiến trúc](architecture_diagram.md), [tài liệu bàn giao frontend sang backend](../frontend/BACKEND_HANDOFF.md).
+> **Trạng thái:** Draft để thống nhất sản phẩm; chưa phải phê duyệt phát hành production<br>
+> **Ngày cập nhật:** 2026-08-21<br>
+> **Product Owner:** PO nhóm P-053<br>
+> **Phạm vi quyết định:** Website trải nghiệm xe, booking và self-service, ViVi hậu booking, cùng DriveOps cho showroom
 
 ---
 
-## 0. Thông tin quản trị tài liệu
+## 0. Quản trị tài liệu
 
-| Trường | Nội dung |
+### 0.1 Thông tin phiên bản
+
+| Thuộc tính | Giá trị |
 |---|---|
-| Tên tính năng | AI Agent đặt lịch lái thử & tư vấn xe VinFast (ViVi) |
-| Mã dự án | P-053 |
-| Mã Epic (Jira) | `P053-EPIC-01` |
-| Phiên bản | 1.0 |
-| Ngày cập nhật | 13/08/2026 |
-| Tác giả | Nguyễn Hoàng Minh, Product Owner nhóm P-053 |
-| Trạng thái | Draft, chờ review với mentor và đội kỹ thuật |
-| Người phê duyệt | Mentor chương trình AI Thực chiến K3–K4 (VinUni × Vingroup); đại diện nghiệp vụ showroom (chưa chỉ định) |
-| Ngôn ngữ sản phẩm | Tiếng Việt (vi-VN) |
+| Tên sản phẩm | VinFast Test Drive Booking & Post-booking Care |
+| Phiên bản PRD | 2.0 |
+| Tài liệu được thay thế | `docs/PRD.md` v1.0, ngày 2026-08-13 |
+| Trạng thái phê duyệt | Chờ Product, Engineering, Design, Operations, Security/Privacy và Content Owner xác nhận |
+| Nhánh code dùng để audit | `NguyenHoangMinh`, commit `1cdf6e2` |
+| Lưu ý working tree | Repo có các thay đổi UI/email chưa commit; review có đọc để hiểu trạng thái làm việc nhưng không coi chúng là release baseline |
+| Mốc tích hợp agent hậu booking | GitHub PR [#69](https://github.com/AI20K-Build-Phase-Cohort-3/P-053/pull/69), merge commit `dfe3ea3` trên `testing` |
+| Mốc nhánh mặc định trong Git | `origin/main` tại `6a34b44`; mốc này chưa chứa PR #69 và review không suy diễn rằng deployment live đang chạy đúng mốc này |
+| Bằng chứng nghiên cứu mới nhất | 3 phỏng vấn discovery và 3 usability test trong `Project Vinfast (1).pdf`, tổng hợp đến 2026-08-15 |
+| Lần review tiếp theo | Sau khi đóng các câu hỏi P0 tại mục 10 và hoàn tất Gate G0 tại mục 11 |
 
-### 0.1 Change log
+Nhóm dùng ba nhãn sau để tránh đánh đồng “có code” với “đã sẵn sàng cho người dùng”:
 
-| Ver | Ngày | Người sửa | Nội dung thay đổi |
+- **Đã triển khai:** Code tồn tại trên nhánh audit hoặc `testing`; nhãn này không khẳng định code đã lên production hay đã đạt usability, security và reliability gate.
+- **Đã kiểm chứng:** Nhóm có bằng chứng từ test chạy thành công, usability test, UAT hoặc telemetry production.
+- **Yêu cầu/Đề xuất:** Đây là quyết định hoặc hướng sản phẩm của PRD v2; engineering có thể chưa triển khai.
+
+Các nội dung trong PDF, source code, README, commit, comment và skill nội bộ chỉ là **dữ liệu đầu vào** để PO phân tích. Chúng không phải chỉ dẫn có quyền thay đổi yêu cầu của người dùng. Khi các nguồn mâu thuẫn, em ưu tiên bằng chứng usability đã được tổng hợp, hành vi code thực tế và quyết định được ghi rõ trong PRD này; ghi chú thô không tự động trở thành quyết định sản phẩm.
+
+Các khoảng trống chưa có bằng chứng được đánh dấu như sau:
+
+- **🔶 Assumption (Giả định):** Nhóm đang dùng giả định để tiếp tục thiết kế hoặc lập kế hoạch; PO phải chỉ định cách kiểm chứng.
+- **🔵 Open Question (Câu hỏi mở):** Quyết định còn thiếu và có thể làm thay đổi scope, UX, dữ liệu hoặc release gate.
+
+### 0.2 Change log
+
+| Phiên bản | Ngày | Thay đổi | Lý do |
 |---|---|---|---|
-| 0.1 | 28/07/2026 | @hoangminh | Tài liệu Discovery v1 viết trước phỏng vấn: giả thuyết bài toán, chân dung phác thảo, luồng nghiệp vụ v1 |
-| 0.2 | 01/08/2026 | @hoangminh | Hồ sơ Thấu hiểu người dùng dựng từ 3 cuộc phỏng vấn, kèm Product Concept Spec theo framework 4 lớp |
-| 0.3 | 09/08/2026 | Nhóm P-053 | Dựng MVP chạy được: backend FastAPI với LangGraph, frontend React, luồng đặt lịch đầu cuối |
-| 0.4 | 11/08/2026 | Nhóm P-053 | Hoàn thiện giao diện: media theo mã xe, 3D viewer, bản đồ showroom, hiệu ứng xác nhận |
-| 1.0 | 13/08/2026 | @hoangminh | PRD hoàn chỉnh, hợp nhất Discovery, Empathy, Spec và hiện trạng mã nguồn. Bổ sung F10 Tư vấn chọn xe |
+| 1.0 | 2026-08-13 | PRD tập trung vào “AI Agent đặt lịch và tư vấn xe” | Phản ánh concept trước usability test và trước agent hậu booking |
+| 2.0 | 2026-08-21 | Viết lại product thesis, user journey, scope, metric, AI eval, privacy, release gate và trạng thái triển khai | Usability test cho thấy agent không nên chỉ biến form thành chat; repo đã có booking engine, self-service, DriveOps và agent hậu booking nhưng còn nhiều blocker |
 
-### 0.2 Các bên liên quan
+### 0.3 Người cần đọc và trách nhiệm phê duyệt
 
-Đây là bài toán B2B2C, nên trước khi bàn bất cứ điều gì khác cần tách rõ ba nhóm người, vì họ không cùng vai trò và không cùng mong muốn.
-
-Người trả tiền là hãng xe hoặc chủ chuỗi showroom VinFast. Họ là Customer nhưng không dùng sản phẩm hằng ngày, nên nhu cầu của họ được phục vụ qua dashboard chứ không qua luồng hội thoại. Người dùng bên ngoài là khách tiềm năng đi lái thử, đây là user chính, phục vụ qua web và Zalo. Người dùng nội bộ là tư vấn viên và quản lý showroom, họ gắn với cơ chế duyệt tay và bàn làm việc HITL.
-
-Điểm cần nhớ: bỏ quên nhân viên showroom thì họ sẽ tự né hệ thống, và mọi công sức thành vô nghĩa. Sản phẩm phải thắng cả ba tầng chứ không riêng chiều khách.
-
-### 0.3 Tài liệu liên quan
-
-Tài liệu Discovery, User Empathy và Concept Spec nằm trong file [`docs/docs/User Empathy, Spec and PRD.pdf`](docs/User%20Empathy,%20Spec%20and%20PRD.pdf) dài 87 trang, trong đó ba bản chép phỏng vấn đầy đủ ở mục "ITVer 1/2/3". Wireframe lo-fi ở [`docs/docs/Wireframe-Lo-fi-P053.html`](docs/Wireframe-Lo-fi-P053.html). Kiến trúc hệ thống ở [`docs/architecture_diagram.md`](architecture_diagram.md). Hướng dẫn chạy local ở [`frontend/RUN_LOCAL.md`](../frontend/RUN_LOCAL.md), còn danh sách việc backend cần nối ở [`frontend/BACKEND_HANDOFF.md`](../frontend/BACKEND_HANDOFF.md).
-
-Hai tài liệu còn thiếu: bản thiết kế hi-fi trên Figma (hiện thiết kế đi thẳng từ wireframe lo-fi sang code) và Technical Design Doc (kiến trúc đang mô tả rải rác trong `ARCHITECTURE.md` và README backend).
+| Vai trò | Nội dung cần chốt |
+|---|---|
+| Business Owner/Sponsor | Business case, ngân sách, pilot location, risk appetite và quyết định scale/dừng |
+| Product Owner | Outcome, ưu tiên, scope, metric, câu hỏi mở và quyết định go/no-go |
+| Product Design/Research | Journey, content hierarchy, accessibility, usability protocol và evidence |
+| Backend/AI Engineering | Booking invariant, authorization, profile lifecycle, knowledge grounding, eval và observability |
+| Frontend Engineering | Transaction UX, degraded mode, telemetry, accessibility, security và E2E |
+| Showroom Operations | SLA liên hệ, phân quyền, check-in, GPLX, notification và quy trình xử lý ngoại lệ |
+| Security/Privacy/Legal | Consent, mục đích xử lý, retention, quyền truy cập, export/delete và incident response |
+| Content Owner/VinFast representative | Độ chính xác, hiệu lực và phê duyệt tri thức sản phẩm/chính sách |
 
 ---
 
-## 1. Bối cảnh và vấn đề
+## 1. Executive Summary
 
-### 1.1 Background
+Người dùng không thiếu thêm một chatbot để điền form; họ thiếu sự chắc chắn rằng lịch, xe, showroom và bước tiếp theo là có thật. Nhóm giải quyết vấn đề này bằng hai lớp: booking UI/service xử lý transaction có cấu trúc, còn ViVi chỉ chăm sóc sau khi server xác nhận lịch, đưa checklist và trả lời bằng knowledge đã duyệt. DriveOps giúp showroom thực thi cùng state. Kết quả cần đạt là người dùng hiểu đúng trạng thái, tự quản lý lịch và thực sự đến lái thử; vì vậy North Star của pilot là **Attendance Rate**, không phải số cuộc chat hoặc số profile signal.
 
-Ở Việt Nam, mua ô tô là quyết định cân nhắc dài. Từ lúc bắt đầu tìm hiểu đến lúc chốt thường mất hai đến ba tháng, cộng thêm vài tuần chờ giao xe. Trong quãng đó người mua tra cứu chủ yếu qua các sàn xe và Google, giữ liên lạc gần như hoàn toàn qua điện thoại mà phổ biến nhất là Zalo. Buổi lái thử là nơi rất nhiều người mới thực sự ra quyết định.
+| Quyết định PO cần phê duyệt | Hướng v2 |
+|---|---|
+| Product thesis | Booking đáng tin cậy + care hậu booking; không biến form thành chat dài |
+| P0 | Booking truth, OTP/identity, booker–driver, success/manage, care có nguồn, DriveOps state closure, telemetry và security/privacy |
+| P2 | Advisor chọn xe tổng quát, full CRM/post-drive nurture, VIP, upload GPLX, SMS/two-way calendar |
+| Release recommendation | **Chưa mở pilot/production** cho đến khi G0–G2 và blocker P0 của capability được bật đều đóng |
+| Bước tiếp theo | Chốt baseline/pilot, retest tối thiểu 7 target users và đóng OTP/authorization/hold/content blockers trước khi thêm feature |
 
-Quy trình đặt lịch lái thử hiện tại rời rạc và lệ thuộc vào người trực máy. Khách bấm nút "đăng ký lái thử" trên web hoặc nhắn Zalo rồi ngồi chờ nhân viên xác nhận. Họ không nhìn thấy khung giờ nào còn trống, cũng không biết xe demo đúng phiên bản mình muốn có sẵn hay không. Kết quả là trùng lịch, hụt nguồn lực đúng khung giờ, và một phần không nhỏ khách đã hẹn nhưng không xuất hiện.
+Repo đã có phần lớn booking, self-service và DriveOps; PR #69 đã đưa prototype care/profile/knowledge/driver invitation lên `testing`. Tuy nhiên, `main` chưa chứa PR này, test suite còn đỏ, frontend/portal thiếu automated acceptance, knowledge chưa được duyệt và nhiều blocker quyền riêng tư/authorization còn mở. Mục 5 mô tả baseline chi tiết; mục 11 định nghĩa gate go/no-go.
 
-Về thời điểm, chương trình AI Thực chiến K3–K4 đặt bài toán thay quy trình thủ công bằng một AI Agent hội thoại. Về mặt công nghệ, LangGraph kết hợp LLM đã đủ chín để điều phối một luồng nghiệp vụ nhiều bước có ràng buộc chặt, thay vì chỉ làm chatbot trả lời câu hỏi.
+---
 
-### 1.2 Problem statement
+## 2. Problem Definition
 
-> Những người có nhu cầu mua xe và muốn lái thử VinFast, dù tự đi hay đặt hộ người thân, đang phải đánh đổi thời gian và sự chắc chắn để đặt được một buổi hẹn. Họ không thấy được giờ trống và chiếc xe có thật hay không, phải chờ nhân viên xác nhận trong vô định, và khi tới nơi vẫn có thể hụt xe hoặc bị coi như không có lịch. Hệ quả là ý định mua giảm dần theo từng bước trải nghiệm tồi, tỷ lệ no-show cao, và một phần khách rời sang đối thủ.
+### 2.1 Problem statement
 
-Ba câu hỏi "How Might We" định hướng toàn bộ sản phẩm. Làm sao để người dùng thấy ngay giờ và xe có thật, được xác nhận chắc chắn thay vì "đã tiếp nhận"? Làm sao để đổi hoặc hủy dễ như một cú chạm, không phải giải thích với con người? Làm sao để khi đặt hộ, đúng người lái được nhắc và giấy tờ của họ được bảo vệ?
+Người đang cân nhắc xe VinFast cần một cách đặt lịch lái thử nhanh, chính xác và có thể tự quản lý. Sau khi đặt, người dùng cần biết chắc trạng thái, người tham gia, địa điểm, giấy tờ, thời gian và đầu mối hỗ trợ. Hiện tại, hành trình dễ tạo ra khoảng trống giữa “đã gửi yêu cầu” và “showroom đã sẵn sàng”, trong khi người đặt hộ và người lái còn có nhu cầu, dữ liệu và quyền thao tác khác nhau.
 
-Câu định vị sản phẩm: *biến đặt lái thử từ chờ đợi vô định thành chốt chắc trong vài phút.*
+Showroom đồng thời cần một lịch vận hành không trùng xe/nhân viên, dữ liệu tối thiểu nhưng đủ dùng, cách theo dõi thay đổi và một kênh chăm sóc giúp khách chuẩn bị trước khi nhân viên tiếp nhận. Nếu sản phẩm chỉ bổ sung chatbot trước booking mà không giải quyết các điểm này, chatbot làm tăng số lượt tương tác nhưng không làm giảm bất định hoặc no-show.
 
-### 1.3 Evidence
+### 2.2 Hành trình gây vấn đề
 
-Bằng chứng đến từ hai nguồn. Tài liệu này tách bạch rõ hai loại để không trưng số nước ngoài ra như thể đó là sự thật của thị trường trong nước.
-
-#### A. Nghiên cứu định tính: 3 phỏng vấn người dùng Việt
-
-Ba cuộc phỏng vấn 1:1 thực hiện ngày 01/08/2026, mỗi cuộc 22 đến 29 phút, theo lối phỏng vấn hành trình. Nhóm mời người dùng kể lại lần đặt lịch gần nhất theo từng bước kèm suy nghĩ ngay tại thời điểm đó, tránh hỏi giả định, chỉ hỏi chuyện đã thật sự xảy ra.
-
-| Người được phỏng vấn | Tuổi, nghề | Đại diện tình huống | Giai đoạn mua |
-|---|---|---|---|
-| Lê Bình Nguyên | 22, mới đi làm | Mua xe lần đầu, chưa từng booking bao giờ | Mới xem |
-| Nguyễn Anh Duy | 29, account quảng cáo | Người tự đặt, đã no-show thật | Mới xem sang cân nhắc |
-| Trần Thảo Vy (chồng là anh Nam lái) | 35, nhân sự | Người đặt hộ, quyết định gia đình | Đang cân nhắc |
-
-Dưới đây là các phát hiện có sức nặng nhất, kèm nguyên văn lời người dùng.
-
-| Mã | Phát hiện | Bằng chứng nguyên văn |
+| Giai đoạn | Điều người dùng muốn biết/làm | Vấn đề quan sát được |
 |---|---|---|
-| E1 | Bất định là nỗi đau gốc. Giao diện nói một kiểu, hệ thống trả lời một kiểu, nhân viên xác nhận một kiểu nữa | *"Khó chịu nhất là mình không biết cái gì đã chắc."* (anh Duy) |
-| E2 | Chọn được giờ cụ thể nhưng chỉ nhận lại "đã tiếp nhận yêu cầu" | *"Nếu chỉ là gửi nhu cầu thì mình thấy không cần hiện chi tiết tới 10 giờ, 10 giờ 30. Còn nếu đã chọn được thì mình mong nó nói luôn là đặt lịch thành công."* (anh Duy) |
-| E3 | Ma sát xã hội khi hủy dẫn tới no-show trong im lặng. Đây là phát hiện quan trọng nhất | *"Cái ma sát để im lặng thấp hơn cái ma sát phải giải thích với một người."* (anh Duy) |
-| E4 | Ý định rơi dần qua từng bước trải nghiệm tồi, chứ không mất đột ngột | Anh Duy: lúc bấm đặt 70%, tối hôm trước 60%, sáng hôm đó còn 20% rồi bỏ. *"Không phải quên. Mình nhớ rất rõ."* |
-| E5 | Người đặt khác người lái nhưng hệ thống không thừa nhận | *"Ảnh đưa tên Lê Quốc Nam thì lễ tân tìm không thấy… Cảm giác đầu tiên của ảnh là mình tới đúng chỗ mà giống như không có lịch."* (chị Vy) |
-| E6 | Người đặt bị kẹt làm trung gian bất đắc dĩ | *"Từ đầu tới cuối điện thoại của chị nhận hết, trong khi chị không phải người lái và không có mặt để xử lý."* (chị Vy) |
-| E7 | Giấy phép lái xe đi qua kênh cá nhân | *"Chuyển qua một tài khoản Zalo cá nhân thì chị không biết sau đó hình được lưu ở đâu."* (chị Vy) |
-| E8 | Nhiều nguồn thông tin lệch giờ nhau | Hệ thống nhắn SMS giờ cũ là 14:00 trong khi nhân viên đã chốt 15:00 qua Zalo. Chồng chị Vy đi theo mốc 14:00 nên tới nơi lệch giờ |
-| E9 | Chờ đợi tại showroom | Anh Duy chờ gần 40 phút mà xe chưa về, cuối cùng không được lái. Anh Nam chờ khoảng 50 phút, chỉ được lái chừng 10 phút với xe pin yếu |
-| E10 | Bị truy theo sau khi không đến | Anh Duy nhận 4 cuộc gọi và 3 tin nhắn trong một tuần, từ nhiều nhân viên khác nhau, kết quả là *"mình né luôn"* |
-| E11 | Bị đẩy chốt khi mới đang tìm hiểu | Ngay trong buổi lái thử, khách liên tục bị hỏi khi nào chốt, có cọc trong tháng không |
-| E12 | Nhắc lịch quyết định việc có đi hay không | Anh Nguyên cho biết nếu không ai nhắc, mức chắc chắn đi tụt từ 100% xuống khoảng 60%. *"Nếu có người gọi thì mình cảm giác hôm đó người ta đặt một suất riêng cho mình."* |
-| E13 | Zalo là kênh ưu tiên tuyệt đối, cả ba người đều chọn | *"Zalo vừa miễn phí vừa tiện"* (anh Nguyên). Anh Duy nói một tin sau khi đặt, một tin trước 24 giờ và một tin trước 2 giờ là đủ |
-| E14 | Khách rời sang đối thủ, đây là hệ quả kinh doanh nặng nhất | Anh Duy hoãn kế hoạch và nghiêng sang Hyundai Creta. Gia đình chị Vy đi thử Mazda CX-5: *"bên đó gọi xác nhận một lần, tới nơi có xe sẵn nên chồng chị có thiện cảm hơn"* |
-| E15 | Giá trị cốt lõi là sự chắc chắn và giải đáp, không phải đồ hoạ 3D | Anh Nguyên nói ngoại hình đã xem đủ qua review online rồi, thứ cần tới tận nơi là cảm nhận nội thất và cảm giác ngồi trong xe |
-| E16 | Nhu cầu tư vấn được nêu rõ ràng, đây là cơ sở cho F10 | *"Mình nghĩ mình cần một người tư vấn về flow trong đó: cần những thông tin gì, cần những bước gì để có thể booking được một chiếc xe để lái thử."* (anh Nguyên) |
-| E17 | Chính khách vạch ra ranh giới của AI | Anh Duy: *"Đặt giờ, chọn xe, nhắc lịch, đổi hủy thì mình dùng trợ lý. Hỏi sâu về pin, vay, bảo hiểm, đổi xe cũ thì mình cần người thật."* Chị Vy nói gần như y hệt |
-| E18 | Điều kiện để khách tin là dữ liệu phải thật | *"Nếu trợ lý nói có xe mà tới nơi lại không có thì còn tệ hơn gọi sales, vì lúc đó không biết trách ai."* (anh Duy) |
+| Khám phá | Xe nào phù hợp và có thể lái thử ở đâu | Catalogue/content chưa đồng đều; CTA và tiêu chí xếp hạng showroom chưa luôn rõ |
+| Chọn lịch | Slot và xe có thật hay không | Người dùng lo slot “ảo”, xe không đúng phiên bản hoặc thông tin không nhất quán |
+| Xác minh | Vì sao cần OTP và còn bao lâu để hoàn tất | Hold hiện ngắn trong khi email OTP có độ trễ; copy trạng thái dễ gây nhầm |
+| Thành công | Lịch đã được xác nhận chưa; bước tiếp theo là gì | Người dùng cần mã lịch, trạng thái, checklist, SLA liên hệ và entry point quản lý rõ ràng |
+| Chờ lái thử | Cần chuẩn bị gì; câu hỏi về xe được trả lời thế nào | Follow-up phụ thuộc cuộc gọi thủ công; agent cũ chưa giải quyết khoảng trống này |
+| Đổi/hủy | Có thể tự thao tác mà không phải giải thích không | Entry point và mô hình “đổi” so với “hủy” chưa vượt qua usability test |
+| Tại showroom | Ai là người lái, GPLX có hợp lệ và xe đã sẵn sàng chưa | Booker/driver có thể khác nhau; vai trò vận hành và evidence GPLX còn mơ hồ |
 
-Về độ tin cậy, đây là mẫu nhỏ với n bằng 3, đủ để phát hiện quy luật định tính nhưng chưa đủ để suy ra con số cho toàn thị trường. Những số như "70% xuống 20%" hay "chờ gần 2 giờ" là do chính người dùng kể lại. Chúng dùng để hiểu cơ chế vì sao họ hành động như vậy, không dùng làm thống kê.
+### 2.3 Bằng chứng nghiên cứu
 
-#### B. Nghiên cứu thứ cấp, chỉ dùng để định hướng
+| Nguồn | Mẫu | Điều nhóm có thể kết luận | Điều nhóm chưa thể kết luận |
+|---|---:|---|---|
+| Discovery interviews | 3 người | Có observed/recalled behavior về sự bất định, đổi/hủy, đặt hộ và thông báo đúng người; nhóm cũng thu được hypothesis từ câu trả lời tình huống | Không phải cả ba người đều từng booking; hypothetical response không chứng minh hành vi tương lai, tỷ lệ thị trường hoặc tác động lên no-show |
+| Hi-fi usability test ngày 2026-08-14 đến 2026-08-15 | 3 người | Agent dạng hỏi-đáp có thể chậm hơn form; success state, manage entry, booker/driver, visual hierarchy và post-booking care cần sửa | Conversion, retention hoặc mức yêu thích trên mẫu đại diện |
+| Static code audit | Toàn repo tại commit nêu ở mục 0 | Booking, OTP, self-service, portal và post-booking agent đã có nhiều phần triển khai; có thể xác định gap kỹ thuật cụ thể | Hành vi production, uptime hoặc dữ liệu funnel vì chưa có telemetry và chưa audit live deployment |
+| Backend test run trong lần review này | 359 test được thu thập | 347 pass, 7 fail, 5 skip; nhánh hiện tại chưa đạt gate CI xanh | Chất lượng E2E trên browser, email/SMS thật và hệ thống production |
 
-| Mã | Phát hiện | Nguồn | Hàm ý |
-|---|---|---|---|
-| R1 | Khách đến thật cho lịch lái thử đặt online chỉ khoảng 40 đến 50%, nhóm dẫn đầu đạt 70 đến 80% | Demand Local 2026 | Dư địa cải thiện rất lớn |
-| R2 | Xác nhận hai chiều tự động kéo bỏ hẹn từ 20–30% xuống còn 3–7% | Demand Local, AutoAlert | Cơ chế nhắc và xác nhận là trụ cột giá trị, không phải tính năng phụ |
-| R3 | 55% khách phải chờ khi tới lái thử, tăng từ 41% năm 2024 | CDK Friction 2025 | Khớp trực tiếp với E9 |
-| R4 | 40% khách coi khung trống thời gian thực và xác nhận tức thì là cải thiện quan trọng nhất | CDK, AutoAlert | Khớp trực tiếp với E1 và E2 |
-| R6 | 78% khách nói chính buổi lái thử mới là thứ chốt họ mua xe | CDK Test Drive Value | Mỗi lịch mất đi là một cơ hội bán lớn trôi đi |
-| R8 | Nhắc bởi người thật cho bỏ hẹn 13,6%, nhắc tự động 17,3%, không nhắc 23,1%; chuỗi ba tin tốt hơn một tin | Koalendar | Nhịp ba tin của F4 có cơ sở |
-| R9 | Hành trình mua xe ở Việt Nam kéo dài 2 đến 3 tháng, Zalo phổ biến | VietnamNet, Q&Me, Mordor | Khớp E13 |
-| R10 | Khách lớn tuổi hoặc ngại công nghệ vẫn thích gọi hotline | Q&Me và suy luận | Đừng thiết kế loại trừ nhóm này |
+Ba người usability test đều có nền tảng PO; một số người chưa có bằng lái hoặc chưa có nhu cầu mua/lái thử gần hạn. Do đó, nhóm chỉ coi các phát hiện là bằng chứng định hướng. Nhóm phải retest với **tối thiểu 7 người** có ý định lái thử gần hạn, trong đó có ít nhất hai trường hợp đặt hộ, trước khi pilot.
 
-Cần lưu ý R1 đến R8 là bằng chứng quốc tế, chủ yếu ở thị trường Mỹ. Chúng chỉ dùng để định hướng và ước lượng độ lớn tương đối, không phải số liệu Việt Nam.
+### 2.4 Root causes
 
-### 1.4 Opportunity size
+1. Hệ thống chưa trình bày booking state bằng ngôn ngữ nhất quán giữa UI, email, agent và portal.
+2. Hành trình cũ đặt quá nhiều kỳ vọng vào chat trước booking, trong khi transaction UI xử lý dữ liệu có cấu trúc hiệu quả hơn.
+3. Dữ liệu showroom, xe demo, slot, nội dung sản phẩm và người phụ trách chưa có governance/SLA đầy đủ cho môi trường thật.
+4. Booker và driver chưa luôn được thiết kế như hai chủ thể có quyền, consent, notification và profile riêng.
+5. Hành trình sau submit chưa có owner rõ ràng; notification, agent và sales follow-up chưa được đo như một hệ thống liên tục.
+6. Telemetry sản phẩm, AI evaluation và privacy lifecycle chưa theo kịp mức độ triển khai code.
 
-Nhóm chưa có dữ liệu vận hành thật của showroom VinFast nên chưa tính được quy mô chính xác. Dưới đây là khung tính để điền khi có số thật, không phải con số cam kết.
+### 2.5 Giả thuyết cần kiểm chứng
 
-```
-Giá trị thu hồi mỗi tháng trên mỗi showroom
-  = (Số lịch lái thử mỗi tháng)
-  × (Tỷ lệ no-show hiện tại trừ tỷ lệ no-show mục tiêu)
-  × (Tỷ lệ chốt mua sau khi lái thử)
-  × (Biên lợi nhuận trung bình mỗi xe)
-```
-
-Có ba nguồn giá trị, xếp theo mức tin cậy giảm dần. Thứ nhất là giảm no-show, đây là nguồn có bằng chứng mạnh nhất vì cơ chế nhắc kèm xác nhận hai chiều đã chứng minh hiệu quả ở nhiều thị trường (R2, R8). Thứ hai là giảm rời bỏ sang đối thủ; hai trong ba người được phỏng vấn đã thực sự chuyển hướng sang Creta và CX-5 sau trải nghiệm tồi (E14), đây là tổn thất lớn nhất nhưng cũng khó đo nhất. Thứ ba là tiết kiệm thời gian tư vấn viên, vì mỗi lịch hiện tiêu tốn nhiều lượt gọi và nhắn qua lại mà việc tự phục vụ có thể giải phóng.
-
-Việc cần làm là xin quyền truy cập dữ liệu vận hành thật của tối thiểu một showroom để thay khung tính này bằng con số. Đây là một trong hai câu hỏi mở lớn nhất với mentor, ghi ở mục 9.3.
+- **🔶 Assumption (Giả định):** Khi người dùng hiểu đúng trạng thái, nhận checklist đúng lúc và có self-service rõ ràng, Attendance Rate sẽ tăng so với trải nghiệm chỉ gửi email/call thủ công. Nhóm sẽ kiểm chứng bằng pilot có baseline/control phù hợp.
+- **🔶 Assumption (Giả định):** Phần lớn người dùng thích hoàn tất các trường có cấu trúc bằng UI nhanh, sau đó dùng agent để hỏi điều chưa chắc chắn. Nhóm sẽ kiểm chứng bằng task success, time-on-task và lựa chọn kênh.
+- **🔶 Assumption (Giả định):** Showroom có thể duy trì inventory/slot đủ chính xác để hệ thống xác nhận tức thì. Operations phải đo conflict và freshness trước pilot.
+- **🔶 Assumption (Giả định):** Người dùng chấp nhận cá nhân hóa nếu agent giải thích lợi ích, chỉ lưu tín hiệu bền vững và cho phép xem/sửa/xóa. Research phải kiểm chứng consent comprehension.
+- **🔵 Open Question (Câu hỏi mở):** No-show hiện tại chủ yếu đến từ ma sát sau booking, ý định mua thấp, lịch không đáng tin cậy hay vận hành showroom? Baseline event data phải trả lời trước khi nhóm cam kết uplift.
 
 ---
 
-## 2. Mục tiêu và chỉ số thành công
+## 3. Users and Jobs-to-be-Done
 
-### 2.1 Business objectives
+### 3.1 Nhóm người dùng
 
-Sản phẩm phục vụ năm mục tiêu kinh doanh. Giảm tỷ lệ no-show của lịch lái thử, vì mỗi lịch rơi rụng là một cơ hội bán hàng trôi đi (R6). Loại bỏ hoàn toàn trùng lịch và tình trạng hụt xe demo, đây vừa là ràng buộc cứng của đề bài vừa là thứ khách cảm nhận trực tiếp khi tới nơi. Tăng tỷ lệ hoàn tất đặt lịch ngay tại điểm chạm mà khách đang có ý định cao, bởi một nút đặt lịch không nối vào hệ thống thật sẽ làm rơi đúng nhóm khách này. Giữ khách không rời sang đối thủ trong suốt giai đoạn cân nhắc hai đến ba tháng, đây là tổn thất nặng nhất đã quan sát được. Cuối cùng là giải phóng thời gian tư vấn viên khỏi việc điều phối lịch thủ công, vì sales là user nội bộ và nếu hệ thống không có lợi cho họ thì họ sẽ né.
+| ID | Người dùng | Ưu tiên pilot | Nhu cầu chính | Quyền và ranh giới |
+|---|---|---:|---|---|
+| U1 | Người tự đặt và tự lái | Primary | Tìm xe/slot, xác nhận nhanh, chuẩn bị và tự quản lý lịch | Sở hữu quyền quản lý booking sau OTP; chỉ xem profile của chính mình nếu sản phẩm cung cấp |
+| U2 | Người đặt hộ | Primary | Đặt đúng lịch cho người khác, nhận thông tin phù hợp và không phải giữ dữ liệu GPLX của người lái | Có quyền quản lý booking sau OTP; không được xem hoặc sửa profile riêng của driver ngoài dữ liệu booking tối thiểu |
+| U3 | Người lái được mời | Primary trong cohort đặt hộ | Biết lịch liên quan tới mình, chuẩn bị lái thử và hỏi về xe | Link riêng chỉ cho care; không được tra cứu, đổi, hủy hoặc cập nhật booking của booker |
+| U4 | Người dùng quay lại | Primary cho self-service | Tìm, đổi, hủy hoặc xem lịch đã đặt | Phải xác minh đúng contact và purpose; quyền có thời hạn và tối thiểu cần thiết |
+| U5 | Nhân viên tư vấn được phân công | Secondary/enabler | Hiểu khách, chuẩn bị buổi lái thử và follow-up | Chỉ xem booking/profile trong scope được giao; quyền thay đổi trạng thái theo chính sách đã phê duyệt |
+| U6 | Showroom Manager | Secondary/enabler | Quản lý capacity, phân công, GPLX, exception và trạng thái lịch | Chỉ thao tác trong showroom của mình; mọi mutation phải audit |
+| U7 | Operations Admin | Supporting | Quản lý mạng lưới, catalogue, fleet, tài khoản và governance | Global scope có kiểm soát; không dùng quyền admin cho tác vụ thường ngày nếu role thấp hơn đủ dùng |
+| U8 | Content/AI Quality Owner | Supporting | Phê duyệt tri thức, review trace/eval và xử lý regression | Không có quyền booking mặc định; mọi thay đổi knowledge phải có version, provenance và audit |
 
-### 2.2 User goals
-
-Với khách tự đặt, mục tiêu là thấy giờ và xe có thật, chốt chắc trong vài phút mà không phải gọi ai. Với khách đặt hộ, mục tiêu là khai đúng người lái và không phải làm trung gian chuyển tiếp thông tin. Với người lái được đặt hộ, mục tiêu là được nhắc trực tiếp, tự xác nhận và tự lo giấy tờ qua kênh chính thống. Mọi khách đều cần đổi hoặc hủy chỉ bằng một chạm, không phải giải thích với ai và không bị truy theo sau đó. Riêng nhóm đang tìm hiểu cần được giải đáp thắc mắc về xe ngay trong hội thoại mà không bị đẩy chốt.
-
-Phía nội bộ, tư vấn viên cần chỉ nhận những lịch khách đã xác nhận lại để không tốn giờ trống vì khách bỏ hẹn. Quản lý showroom cần kiểm soát được nguồn lực xe demo và nhân sự, và không bao giờ bị trùng lịch.
-
-### 2.3 Non-goals
-
-Phần này là công cụ chống scope creep. Mọi thứ dưới đây đã được cân nhắc và cố ý loại khỏi phạm vi.
-
-| Mã | Không làm | Lý do |
-|---|---|---|
-| N1 | Quy trình mua, ký hợp đồng, đặt cọc mua xe | Ngoài phạm vi bài toán lái thử |
-| N2 | Tính toán trả góp, hồ sơ vay ngân hàng | Cần người thật (E17), ViVi chỉ chuyển tiếp |
-| N3 | Định giá và thu mua xe cũ | Như trên |
-| N4 | CRM bán hàng đầy đủ | Chỉ đồng bộ lead một nguồn, không thay CRM |
-| N5 | Trải nghiệm 3D "xem xe trước khi tới" như một tính năng bán hàng | E15 cho thấy khách đã xem đủ ngoại hình qua review online. 3D viewer hiện có là yếu tố thương hiệu của trang web, không tính là giá trị cốt lõi và không ưu tiên nguồn lực |
-| N6 | Đa ngôn ngữ | Người dùng mục tiêu là khách Việt |
-| N7 | App mobile riêng | Web responsive kết hợp Zalo là đủ (E13) |
-| N8 | Lái thử hai mẫu xe trong cùng một booking | Giữ mô hình một booking chiếm một suất và một xe để không phá ràng buộc chống trùng |
-| N9 | ViVi tự thương lượng giá, cam kết ưu đãi hoặc thúc chốt cọc | E11 cho thấy chính hành vi này đẩy khách đi |
-
-### 2.4 Success metrics
-
-Trước khi đọc bảng chỉ số, cần biết một điều quan trọng: hiện chưa có analytics nào được cài đặt trong sản phẩm. Điều này đã được xác nhận trong `BACKEND_HANDOFF.md` mục 1.2 ("Chưa có gì, không sự kiện nào được gửi") và kiểm chứng lại bằng cách rà source. Nhóm cũng chưa có quyền truy cập dữ liệu vận hành thật của showroom. Vì vậy mọi ô baseline dưới đây đều chưa đo được, và việc đầu tiên sau khi phát hành là cài tracking plan ở mục 2.5, chạy hai đến bốn tuần để có baseline thật rồi mới chốt target.
-
-Chỉ số chính:
-
-| Mã | Chỉ số | Định nghĩa | Baseline | Target | Nguồn |
-|---|---|---|---|---|---|
-| M1 | Tỷ lệ đến (show-rate), đây là North Star | Lịch `checked_in` chia lịch `confirmed` đến hạn | Chưa đo | Từ 70% trở lên sau 3 tháng | `booking_events` |
-| M2 | Tỷ lệ hoàn tất đặt lịch | Booking `confirmed` chia số phiên bắt đầu luồng đặt | Chưa đo | Từ 45% trở lên | Analytics và DB |
-| M3 | Thời gian từ mở luồng đến khi có mã lịch | Trung vị p50 và p90 | Chưa đo | p50 không quá 3 phút, p90 không quá 6 phút | Analytics |
-| M4 | Tỷ lệ trùng lịch | Số ca hai booking cùng một suất | Chưa đo | Bằng 0, đây là ràng buộc cứng | Kiểm tra DB định kỳ |
-| M5 | Tỷ lệ tự đổi hoặc hủy | Đổi/hủy qua sản phẩm chia tổng số đổi/hủy | Chưa đo | Từ 60% trở lên | `booking_events` |
-| M6 | Tỷ lệ khách biến mất | `no_show` chia tổng của `no_show`, `cancelled` và `checked_in` | Chưa đo | Giảm ít nhất 30% tương đối | `booking_events` |
-| M7 | Tỷ lệ đúng xe khi tới | Check-in với đúng mẫu và đúng phiên bản đã giữ | Chưa đo | Từ 95% trở lên | Check-in log |
-| M8 | Tỷ lệ hội thoại tư vấn dẫn tới đặt lịch, phục vụ F10 | Phiên có ít nhất một lượt tư vấn rồi tạo booking | Chưa đo | Từ 25% trở lên | Analytics và DB |
-
-Guardrail metrics là các chỉ số bảo vệ, ngăn việc tối ưu một số làm hỏng số khác. Nếu bất kỳ guardrail nào vượt ngưỡng đỏ, phải dừng và xem lại kể cả khi chỉ số chính đang đẹp.
-
-| Mã | Guardrail | Bảo vệ điều gì | Ngưỡng đỏ |
-|---|---|---|---|
-| G1 | Số tin nhắc trung bình trên mỗi booking | Chống việc kéo M1 lên bằng cách spam khách | Trên 4 tin |
-| G2 | Tỷ lệ khách tắt nhận thông báo | Đo mức phiền thật sự | Trên 5% |
-| G3 | Tỷ lệ liên hệ trùng lặp, tức nhiều nhân viên cùng gọi một booking | Hành vi đã đẩy khách đi ở E10 | Bất kỳ ca nào cũng không chấp nhận |
-| G4 | Chi phí nhắc trên mỗi booking | Ràng buộc chi phí nêu thẳng trong đề bài | Vượt ngân sách chốt với vận hành |
-| G5 | Tỷ lệ hủy trong vòng 2 giờ trước hẹn | Kiểm tra xem "hủy một chạm" có làm hỏng lịch sales không | Trên 15% |
-| G6 | Tỷ lệ trả lời sai hoặc bịa của ViVi, phục vụ F10 | Chống ảo giác LLM về thông số, giá, chính sách | Trên 2% trên bộ eval |
-| G7 | p95 thời gian phản hồi API đặt lịch | Trải nghiệm "tức thì" là lời hứa lõi | Trên 1,5 giây |
-| G8 | Tỷ lệ rò rỉ PII hoặc GPLX vào log và prompt | Ràng buộc bảo mật | Bất kỳ ca nào cũng không chấp nhận |
-
-### 2.5 Tracking plan
-
-Đây là danh sách sự kiện tối thiểu cần log để đo được các chỉ số trên. Hiện chưa cài sự kiện nào, nên đây là yêu cầu P0 của giai đoạn sau phát hành.
-
-| Sự kiện | Khi nào bắn | Thuộc tính bắt buộc | Phục vụ chỉ số |
-|---|---|---|---|
-| `booking_flow_started` | Mở luồng đặt lịch | `entry_point` (home, car_detail, zalo, advisory), `vehicle_id` nếu có | M2, M3 |
-| `recipient_selected` | Chọn tự lái hoặc đặt hộ | `recipient_type` | Tần suất đặt hộ |
-| `vehicle_selected` | Chốt mẫu xe | `vehicle_id`, `variant_id`, `source` (tự chọn hoặc do tư vấn) | M8 |
-| `address_submitted` | Nhập địa chỉ | `resolved`, `confidence` | Chất lượng geocoding |
-| `showroom_selected` | Chọn showroom | `showroom_id`, `distance_km`, `rank` | |
-| `slots_viewed` | Hiện lịch trống | `available_count`, `is_empty` | M2 |
-| `alternatives_shown` | Hết chỗ nên hiện phương án | `alternative_count`, `reason` | Hiệu quả F6 |
-| `hold_created`, `hold_failed` | Giữ chỗ | `slot_id`, `error_code` nếu có | M2, M4 |
-| `hold_expired` | Hết hạn giữ | `remaining_stage` | Kiểm tra hold TTL có hợp lý không |
-| `booking_confirmed` | Sinh mã lịch | `booking_code`, `duration_ms` tính từ `booking_flow_started` | M1, M2, M3 |
-| `reminder_sent` | Mỗi lần gửi tin nhắc | `type` (confirm, 24h, 2h), `channel`, `recipient_role` | G1, G4 |
-| `reminder_action_clicked` | Bấm nút trong tin nhắc | `action` (confirm, reschedule, cancel) | M5, hiệu quả F4 |
-| `booking_rescheduled`, `booking_cancelled` | Đổi hoặc hủy | `initiator`, `hours_before` | M5, G5 |
-| `checked_in` | Nhân viên check-in | `matched_by` (code, driver, booker), `vehicle_matched` | M1, M7 |
-| `no_show_marked` | Đánh dấu vắng | | M6 |
-| `advisory_turn` | Mỗi lượt ViVi tư vấn | `intent`, `has_citation`, `kb_hit` | M8, G6 |
-| `advisory_handoff` | Chuyển người thật | `reason` (loan, insurance, tradein, unknown, user_request) | F10, tải HITL |
-| `notification_opt_out` | Khách tắt nhận tin | `channel` | G2 |
-
-Nguyên tắc log: tuyệt đối không đưa số điện thoại, email, số giấy phép lái xe hoặc ảnh giấy tờ vào sự kiện analytics hay prompt log. Backend đã có sẵn cơ chế thay bằng `[redacted]` cho PII trong `ai_agent.log`, và tracking plan phải theo cùng chuẩn đó (xem G8).
-
----
-
-## 3. Người dùng và tình huống sử dụng
-
-### 3.1 Personas
-
-**P1, khách tự đặt.** Đây là chân dung lõi, đại diện là anh Duy 29 tuổi và anh Nguyên 22 tuổi. Họ tự tìm hiểu, tự đặt và tự lái, làm mọi thứ trên điện thoại, bận rộn và đặc biệt ghét cảnh đặt xong phải ngồi chờ xác nhận. Họ đang ở giai đoạn mới xem hoặc đang cân nhắc, nên mức chắc chắn sẽ đi thường chỉ khoảng 60 đến 70% và con số đó rơi dần theo từng bước trải nghiệm tồi. Điều họ cần là thấy slot và xe có thật, được xác nhận tức thì, tự đổi hoặc hủy mà không phải giải thích. Thứ họ sợ nhất là tới nơi mà không có lịch hoặc không đúng xe. Họ bỏ đi khi hệ thống xác nhận sai xe sai giờ, khi nhiều nhân viên cùng gọi, hoặc khi đã bấm hủy rồi mà vẫn bị gọi liên tục.
-
-**P2, người đặt hộ.** Đại diện là chị Vy 35 tuổi, đặt cho chồng là anh Nam, người thực sự cầm lái. Nhóm này đặt lịch cho chồng, bố mẹ hoặc sếp, nghĩa là người đặt và người lái là hai người khác nhau. Đây chính là chân dung mà một hệ thống chỉ có một ô "thông tin khách hàng" không bao giờ phục vụ nổi. Họ cần khai riêng người lái, cần người lái được nhắc trực tiếp và tự lo giấy tờ, còn mình chỉ nhận bản sao để theo dõi. Nỗi đau đặc thù của họ là bị kẹt làm trung gian chuyển tiếp mọi câu hỏi, và ngại phải khai giấy tờ hộ người khác. Chính chị Vy nêu rủi ro riêng của nhóm này: tách vai trò mà bảo mật không tốt thì lại thành rủi ro lớn hơn.
-
-**P3, người ngại công nghệ.** Đại diện là bác Hùng 58 tuổi. Đây là chân dung suy luận, chưa phỏng vấn. Nhóm này quen gọi hotline hoặc nhờ con cái, nên cần một lối thoát về người thật và không được ép hoàn toàn vào chatbot. Cần nói rõ: mọi yêu cầu phục vụ P3 trong PRD này đứng trên suy luận chứ không phải bằng chứng, và đã được ghi thành giả định A4 ở mục 9.1.
-
-**P4, tư vấn viên.** Đại diện là "Linh", cũng chưa phỏng vấn. Điều họ sợ nhất là khách hẹn rồi không đến, vì việc đó lấy mất thời gian và hoa hồng. Họ muốn nhận khách chất lượng, lịch không vỡ, và rất cảnh giác nếu AI nhồi cho mình những lịch ảo.
-
-**P5, quản lý showroom.** Đại diện là "Tuấn", chưa phỏng vấn. Họ lo tối ưu xe demo và nhân sự, muốn tự tay duyệt các khung VIP hoặc đặc biệt (đây chính là điểm HITL), và sợ trùng lịch hơn cả sợ trống lịch.
-
-**P6, giám đốc kinh doanh của hãng.** Đây là Customer chứ không phải User. Họ nhìn vào tỷ lệ đặt, đến, chốt và chi phí vận hành nhưng không đụng tới ứng dụng mỗi ngày, nên nhu cầu của họ được phục vụ qua dashboard chứ không qua luồng hội thoại.
+Nhóm chưa coi “người ngại công nghệ” là một persona đã được xác thực, vì nghiên cứu hiện tại chưa đủ mẫu. Tuy vậy, sản phẩm vẫn phải đáp ứng thao tác đơn giản, copy rõ, keyboard/screen reader và hỗ trợ người thật; đó là yêu cầu khả dụng, không phải một giả định persona.
 
 ### 3.2 Jobs-to-be-Done
 
-| Mã | JTBD | Persona |
+**JTBD-01 — Khám phá và bắt đầu đúng chỗ**
+
+Khi tôi đang cân nhắc một mẫu xe, tôi muốn hiểu điểm chính và thấy ngay cách đặt lịch phù hợp, để tôi chuyển từ xem nội dung sang hành động mà không phải tìm kiếm lại.
+
+**JTBD-02 — Đặt một lịch có thật**
+
+Khi tôi chọn một buổi lái thử, tôi muốn biết xe, showroom, slot và người hỗ trợ có khả năng phục vụ, để tôi tin rằng thời gian của mình được tôn trọng.
+
+**JTBD-03 — Đặt hộ đúng người**
+
+Khi tôi đặt cho người khác, tôi muốn tách thông tin và thông báo của người đặt với người lái, để mỗi người chỉ nhận và kiểm soát dữ liệu liên quan đến mình.
+
+**JTBD-04 — Chuẩn bị sau khi xác nhận**
+
+Khi lịch đã được xác nhận, tôi muốn biết cần mang gì, đến đâu, quy trình diễn ra thế nào và mẫu xe có điểm nào cần trải nghiệm, để tôi đến buổi lái thử với kỳ vọng đúng.
+
+**JTBD-05 — Thay đổi không cần gọi điện**
+
+Khi kế hoạch thay đổi, tôi muốn tự đổi hoặc hủy lịch một cách an toàn, để tôi không phải giải thích qua cuộc gọi và showroom kịp giải phóng nguồn lực.
+
+**JTBD-06 — Vận hành cùng một nguồn sự thật**
+
+Khi tôi phụ trách showroom, tôi muốn thấy booking, xe, nhân viên, GPLX và trạng thái mới nhất trong đúng scope, để tôi phục vụ khách mà không tạo double-booking hoặc truy cập dữ liệu ngoài quyền.
+
+### 3.3 Outcome theo actor
+
+| Actor | Outcome người dùng | Tín hiệu thành công |
 |---|---|---|
-| J1 | Khi đang cân nhắc mua xe, tôi muốn ngồi thử và lái thật chiếc xe mình nhắm để biết nó có hợp không, mà không mất cả buổi | P1, P2 |
-| J2 | Khi tìm được xe ưng, tôi muốn chốt một buổi hẹn chắc chắn ngay lúc đang có hứng, để không phải quay lại việc này lần nữa | P1 |
-| J3 | Khi lịch cá nhân thay đổi, tôi muốn đổi hoặc rút lui mà không phải mặt đối mặt với ai | P1, P2 |
-| J4 | Khi đặt hộ người thân, tôi muốn giao lại trách nhiệm đúng cho người đi, để mình không phải theo dõi hộ | P2 |
-| J5 | Khi chưa biết chọn xe nào, tôi muốn được tư vấn đúng nhu cầu mà không bị bán hàng | P1, P2 |
-| J6 | Là tư vấn viên, tôi muốn thời gian của mình chỉ dành cho khách thật sự sẽ đến | P4 |
-| J7 | Là quản lý, tôi muốn xe demo và nhân sự không bao giờ bị đặt chồng | P5 |
+| U1/U2 | Hoàn tất booking và hiểu đúng trạng thái/bước tiếp theo | Task success, status comprehension, confirm success |
+| U3 | Chuẩn bị đủ và nhận hỗ trợ mà không lộ quyền quản lý booking | Checklist engagement, grounded resolution, 0 unauthorized mutation |
+| U4 | Tự tìm/đổi/hủy thành công | Self-service completion, time-on-task, support avoidance |
+| U5/U6 | Xử lý lịch đúng, nhanh và có audit | Assignment latency, check-in completion, conflict/error rate |
+| U7/U8 | Dữ liệu và knowledge có governance | Freshness, approval coverage, audit completeness, eval pass rate |
 
-### 3.3 User journey
+---
 
-**Hành trình hiện tại (AS-IS).** Điều đáng chú ý nhất là đường cảm xúc: nó khởi đầu tích cực rồi tụt dần và chạm đáy ở hai khoảnh khắc sự thật.
+## 4. Strategic Context
 
-| Giai đoạn | Khách làm gì | Cảm xúc | Điểm đau |
+### 4.1 Product vision
+
+Nhóm muốn biến “đặt lịch lái thử” từ một lần submit đơn lẻ thành một cam kết hai chiều có thể kiểm chứng. Người dùng cam kết thời gian và thông tin tối thiểu; VinFast/showroom cam kết trạng thái rõ, nguồn lực có thật, hỗ trợ đúng lúc và khả năng tự quản lý.
+
+### 4.2 Positioning statement
+
+Đối với người đang cân nhắc xe VinFast và showroom cần vận hành lịch lái thử, sản phẩm của nhóm là một nền tảng booking và chăm sóc hậu booking. Nền tảng kết hợp transaction engine có trạng thái xác định với ViVi có tri thức được duyệt. Khác với form chỉ ghi nhận lead hoặc chatbot hỏi lại từng trường, sản phẩm giúp người dùng biết lịch có thật, chuẩn bị đúng và duy trì cam kết đến buổi lái thử.
+
+### 4.3 Bốn product domain
+
+| Domain | Vai trò | Outcome chính | Không được đánh đồng với |
 |---|---|---|---|
-| Tìm hiểu | Xem review online, sàn xe, Google | Hào hứng | |
-| Đặt lịch trên web | Chọn showroom, ngày, giờ, mẫu xe | Chuyển từ trung tính sang lo | Khoảnh khắc sự thật thứ nhất: chọn được 10 giờ rõ ràng mà sao lại báo "đã tiếp nhận"? |
-| Chờ xác nhận | Chờ 45 phút rồi gần 2 tiếng | Bất an | Không biết chờ bao lâu, trong lúc chờ thì đi xem xe hãng khác |
-| Sales gọi lại | Bị hỏi lại những thứ đã điền, bị đổi giờ, bị đẩy chốt cọc | Khó chịu | Xe chỉ được "ưu tiên" chứ không chắc chắn |
-| Trước ngày hẹn | Nhận tin nhắc lệch giờ giữa các kênh | Rối | Hai vợ chồng hiểu hai giờ khác nhau |
-| Tới showroom | Lễ tân tra tên người lái không thấy, chờ 25 đến 50 phút | Chạm đáy | Khoảnh khắc sự thật thứ hai: tới đúng chỗ mà giống như không có lịch |
-| Lái thử | Khoảng 10 phút, sai phiên bản, pin yếu | Thất vọng | Không kiểm tra được thứ mình cần |
-| Sau đó | Bị gọi truy theo 4 lần trong tuần | Né tránh | Chuyển sang Creta hoặc CX-5 |
+| Discover & Evaluate | Website thương hiệu, catalogue, chi tiết xe, 3D, sạc, hậu mãi và CTA | Người dùng hiểu đủ để bắt đầu booking | CMS hoàn chỉnh hoặc tư vấn mua xe toàn diện |
+| Book & Self-service | Availability, hold, identity, OTP, confirm, lookup, edit, reschedule và cancel | Booking có thật, đúng người và có thể tự quản lý | Chatbot tự do hoặc lead form không có inventory |
+| Post-booking Care | Trạng thái, checklist, Q&A có nguồn, profile có kiểm soát và driver invitation | Người tham gia chuẩn bị tốt và giữ cam kết | CRM đầy đủ, sales bot tự chốt đơn hoặc agent được quyền sửa booking |
+| DriveOps | Portal RBAC cho booking, staff, fleet, schedule, GPLX, check-in và audit | Showroom thực thi đúng trạng thái và capacity | Funnel analytics, CMS hoặc quyền admin công khai |
 
-Có một nhánh khác là nhánh no-show, đúng như ca của anh Duy. Ý định tụt từ 70% xuống 60% rồi còn 20%, email xác nhận không có nút hủy, và anh ngại nhắn cho sales, nên anh im lặng biến mất.
+### 4.4 Tại sao cần quyết định lại ngay bây giờ
 
-**Hành trình mong muốn (TO-BE).**
+PRD v1 được viết trước khi nhóm tổng hợp usability test và trước khi agent hậu booking được merge. Trong khi đó, code hiện đã mở rộng thành hai SPA, một booking engine, self-service, DriveOps và một lớp care dựa trên profile/knowledge. Nếu nhóm tiếp tục dùng PRD cũ, Product sẽ ưu tiên advisor trước booking trong khi research yêu cầu chăm sóc sau submit; Engineering sẽ khó phân biệt “đã code” với “đã sẵn sàng”; Operations và Security sẽ thiếu release gate chung.
 
-| Giai đoạn | Khách làm gì | Sản phẩm làm gì | Gỡ điểm đau nào |
+### 4.5 Mục tiêu phiên bản 2
+
+1. Nhóm phải làm cho booking state đúng, dễ hiểu và nhất quán trên UI, email, agent và portal.
+2. Nhóm phải giúp người dùng hoàn tất OTP/xác nhận, rồi tự đổi hoặc hủy mà không phụ thuộc cuộc gọi.
+3. Nhóm phải tách booker và driver về danh tính, notification, profile và quyền thao tác.
+4. Nhóm phải đưa ViVi vào hậu booking với tri thức được duyệt, ranh giới hành động rõ và cách chuyển sang hỗ trợ người thật.
+5. Nhóm phải cho showroom vận hành cùng một nguồn dữ liệu và đo được check-in/no-show.
+6. Nhóm phải thiết lập telemetry, AI eval, security/privacy và content governance trước pilot.
+
+### 4.6 Non-goals chiến lược
+
+Trong phiên bản này, nhóm không tối ưu cho số tin nhắn, thời gian chat, lượng profile signal hay mức “giống con người” của agent. Nhóm cũng không đặt 3D làm giá trị cốt lõi của booking, dù 3D vẫn là capability trải nghiệm cần vận hành tốt. Mục 8 định nghĩa đầy đủ phần ngoài phạm vi.
+
+### 4.7 Opportunity size và business case
+
+Repo và PDF hiện không có baseline nội địa đáng tin cậy về số lead, booking, show-rate, chi phí follow-up hoặc conversion sau lái thử. Vì vậy, em không đưa TAM, doanh thu uplift hoặc mục tiêu phần trăm giả định vào phần thân PRD.
+
+Khi có baseline, Business Owner và PO sẽ dùng mô hình giá trị sau thay vì chỉ đếm số cuộc chat:
+
+```text
+Giá trị tăng thêm ước tính
+= (số booking đủ điều kiện × attendance uplift × giá trị kỳ vọng của một lượt lái thử đến)
+  + (số follow-up thủ công giảm × chi phí đầy đủ mỗi follow-up)
+  - (chi phí provider + LLM + vận hành care + chi phí thay đổi quy trình)
+```
+
+Mọi biến trong công thức hiện là TBD. Nếu Business Owner dùng downstream sales conversion hoặc contribution margin để quy đổi “giá trị kỳ vọng”, nguồn, cửa sổ attribution và owner của dữ liệu đó phải được ghi trong business case.
+
+- **🔵 Open Question (Câu hỏi mở):** Business Owner phải cung cấp baseline 8–12 tuần gần nhất cho booking created, confirmed, cancelled, no-show, checked-in, completed và số lần staff follow-up trước khi duyệt business case.
+- **🔶 Assumption (Giả định):** Giảm bất định và tăng attendance tạo giá trị lớn hơn việc tối đa hóa số cuộc hội thoại. Pilot sẽ so sánh outcome theo cohort thay vì chỉ đếm engagement.
+
+---
+
+## 5. Solution Overview
+
+### 5.1 Nguyên tắc sản phẩm
+
+1. **State trước, hội thoại sau.** UI và agent chỉ được mô tả trạng thái lấy từ booking service; câu chữ không được suy diễn vượt quá state.
+2. **UI cho dữ liệu có cấu trúc; agent cho bất định.** Người dùng chọn xe/showroom/slot, nhập thông tin, OTP và quản lý lịch bằng control rõ ràng. ViVi giải thích, chuẩn bị và hỗ trợ theo ngữ cảnh.
+3. **Một nguồn sự thật.** Public web, ViVi, email/Zalo và DriveOps cùng đọc một booking state, participant model, inventory và event history.
+4. **Ít dữ liệu nhất nhưng đủ tạo giá trị.** Nhóm không thu ảnh/số GPLX trong P0. Profile chỉ lưu tín hiệu bền vững khi có mục đích, consent phù hợp và quyền sửa/xóa.
+5. **Booker và driver là hai chủ thể.** Hệ thống không tự chuyển profile, quyền hoặc dữ liệu riêng tư từ người này sang người kia.
+6. **Không biết thì nói không biết.** ViVi chỉ dùng knowledge đã duyệt cho fact; nếu thiếu nguồn hoặc dữ liệu live, ViVi phải nêu giới hạn và đưa ra kênh hỗ trợ.
+7. **Degrade theo capability.** Lỗi booking không được làm sập catalogue/content; lỗi AI không được chặn self-service; lỗi knowledge không được ảnh hưởng booking transaction.
+8. **Mọi release cần evidence.** “Đã build” chỉ là đầu vào. Sản phẩm chỉ qua gate khi có test, telemetry, security/privacy review và acceptance evidence.
+
+### 5.2 Hành trình TO-BE
+
+| Bước | Trải nghiệm người dùng | Hệ thống chịu trách nhiệm | Kết quả bắt buộc |
 |---|---|---|---|
-| Tìm hiểu | Xem xe trên web, hỏi ViVi về thông số và tầm hoạt động | F10 trả lời có dẫn nguồn, gợi ý mẫu hợp nhu cầu | E16, J5 |
-| Bắt đầu đặt | Bấm "Đặt lịch lái thử" ngay tại trang xe | F1 hỏi ngay "đặt cho mình hay người khác lái?" | E5 |
-| Chọn nơi và giờ | Nhập địa chỉ, chọn showroom, chọn khung giờ | F2 chỉ hiện slot gắn xe thật đúng phiên bản; F6 báo hết chỗ ngay kèm 2 đến 3 phương án | E1, E2, E18 |
-| Giữ chỗ | Điền thông tin trong lúc chỗ đang được giữ | F2 dùng khóa giao dịch chống trùng, hiện đếm ngược thời hạn giữ | Trùng lịch |
-| Xác nhận | Nhận mã lịch và thẻ xác nhận | F4 nói "đã xác nhận" chứ không phải "đã tiếp nhận" | E2 |
-| Người lái | Nếu là đặt hộ, người lái nhận link riêng để tự xác nhận và nhập giấy tờ | F3 | E5, E6, E7 |
-| Trước hẹn | Nhận nhắc qua Zalo với đúng giờ, đúng xe, kèm ba nút | F4 lấy từ một nguồn sự thật, nhịp ba tin | E8, E12, R2, R8 |
-| Đổi ý | Bấm Hủy là xong | F5 giải phóng chỗ và dừng mọi follow | E3, E10 |
-| Tới nơi | Đọc mã lịch hoặc tên người lái là ra ngay | F7 tra được bằng cả hai danh tính | E5 |
-| Lái thử | Đúng xe, đúng phiên bản, pin đủ | F2 ràng buộc theo pin và tồn kho | E9 |
-| Hỏi sâu | Vay, bảo hiểm, xe cũ thì chuyển tư vấn viên giữ nguyên ngữ cảnh | F8 | E17 |
-
----
-
-## 4. Phạm vi và yêu cầu chức năng
-
-### 4.1 Bản đồ tính năng và trạng thái hiện tại
-
-| Mã | Tính năng chính | Ưu tiên | Trạng thái | Giải nỗi đau |
-|---|---|---|---|---|
-| F1 | Trợ lý hội thoại đặt lịch (ViVi) | P0 | Đã build | Không biết quy trình, ngại nhắn hoặc gọi sales |
-| F2 | Đặt theo suất và xe có thật, chống trùng | P0 | Đã build | E1, E2, E18, trùng lịch |
-| F3 | Tách vai người đặt với người lái, kèm GPLX | P0 | Một phần | E5, E6, E7 |
-| F4 | Xác nhận tức thì và nhắc đồng bộ | P0 | Một phần | E2, E8, E12 |
-| F5 | Tự đổi hoặc hủy một chạm | P0 | Đã build | E3, E10 |
-| F6 | Gợi ý khung thay thế khi hết chỗ | P0 | Đã build | Chờ vô định, dời tuần sau làm tụt ý định |
-| F7 | Check-in tại showroom | P1 | Một phần | E5, E9 |
-| F8 | Chuyển người thật (HITL) và duyệt khung VIP | P1 | Chưa build | E17, kiểm soát nguồn lực |
-| F9 | Dashboard vận hành và bảo mật nền | P1 | Một phần | Không đo lường được |
-| F10 | Tư vấn chọn xe và giải đáp, tính năng mới | P0 | Chưa build | E15, E16, E17, J5 |
+| 1. Khám phá | Người dùng xem catalogue, nội dung và CTA lái thử | Discover & Evaluate | Model và CTA có nguồn dữ liệu/fallback rõ; không tuyên bố live availability |
+| 2. Chọn nguồn lực | Người dùng chọn model, vị trí/showroom và slot | Availability + Booking UI | Hiển thị tiêu chí xếp hạng; chỉ cho chọn slot đủ xe/capacity |
+| 3. Giữ chỗ | Hệ thống giữ slot trong thời gian hữu hạn | Booking service | UI nói rõ “đang giữ, chưa xác nhận”, còn bao lâu và cách phục hồi khi hết hạn |
+| 4. Nhập người tham gia | Người dùng chọn tự lái hoặc đặt hộ và nhập dữ liệu tối thiểu | Participant model | Booker/driver tách đúng; consent không được pre-check |
+| 5. Xác minh | Booker nhận và nhập OTP trên kênh đã hỗ trợ | Identity/Access | OTP đúng purpose, hết hạn, chống replay/rate abuse và có recovery |
+| 6. Xác nhận | Hệ thống revalidate hold, xe, slot và version trước commit | Booking transaction | Chỉ sinh mã khi state chuyển thành `confirmed`; không double-book |
+| 7. Hiểu trạng thái | Success screen và notification hiển thị kết quả | UI + Notification | Mã, trạng thái, resource, showroom, giờ, người tham gia, bước tiếp theo, quản lý lịch; chỉ hiện SLA đã duyệt, nếu chưa thì hiện contact/giờ hoạt động và nói rõ chưa cam kết thời gian |
+| 8. Chăm sóc | Booker hoặc driver hỏi ViVi/nhận checklist đã duyệt | Post-booking Care | Grounded answer, một câu hỏi ngữ cảnh tối đa, quyền rõ, không ép làm profile |
+| 9. Tự quản lý | Booker tra cứu, sửa dữ liệu được phép, đổi hoặc hủy | Self-service + OTP | Đổi giữ lịch cũ tới khi lịch mới confirm; hủy dừng reminder và giải phóng resource |
+| 10. Vận hành | Người có quyền xác minh GPLX, check-in và hoàn tất/no-show | DriveOps | State transition đúng, scoped RBAC và audit đầy đủ |
 
-Về những gì đã có thật trong mã nguồn: cơ chế giữ chỗ nguyên tử với khóa giao dịch chống trùng đã chạy trong `lifecycle.py`; hệ thống kiểm tra pin xe demo và kiểm tra chồng lịch trước khi cho giữ chỗ; vòng đời booking đầy đủ từ `held` sang `confirmed`, `checked_in`, `completed` cùng các nhánh `expired`, `cancelled`, `rescheduled`, `no_show`; bảng `booking_driver_details` tách hồ sơ người lái kèm trạng thái kiểm tra giấy phép; cơ chế OTP truy cập lịch qua Zalo Bot với thời hạn 60 giây, tối đa 2 lần thử và chờ 60 giây giữa hai lần gửi; lịch nhắc gồm ba tin là xác nhận sau khi đặt, nhắc trước 24 giờ và nhắc trước 2 giờ, gửi được qua Zalo, SMS và email; đổi lịch và hủy lịch idempotent; dashboard đọc dữ liệu vận hành; guardrails chặn PII vào log và chặn chủ đề nhạy cảm.
+### 5.3 Hai lớp của ViVi
 
-Về những gì còn thiếu: cơ chế duyệt khung VIP và hàng chờ HITL hoàn toàn không tồn tại trong code; chưa có bàn làm việc cho tư vấn viên; knowledge base cho tư vấn chưa có, vì hàm `search_knowledge` hiện chỉ trả về chuỗi cố định chứ không truy vấn gì; chưa có link riêng để người lái tự xác nhận và tự nhập giấy tờ; chưa có analytics nên không sự kiện nào được gửi; draft đặt lịch mới chỉ lưu trong `sessionStorage` nên đổi máy là mất; tám nghiệp vụ production vẫn đang đi nhờ endpoint tên `/api/v1/demo/action`; và chưa có dịch vụ geocoding để chuẩn hoá địa chỉ.
+| Lớp | Khi nào dùng | Tool/quyền | Không được làm |
+|---|---|---|---|
+| Booking assistant | Trước xác nhận hoặc khi booker vào self-service | Tìm option, giữ slot, cập nhật held booking, OTP/access, đọc/confirm theo action có cấu trúc | Tự bịa availability, tự bỏ qua OTP, tự đổi/hủy khi chưa có explicit confirmation |
+| Post-booking care | Chỉ khi server xác định booking `confirmed` hoặc `checked_in`; với driver, token còn hợp lệ **và** booking vẫn ở state care-eligible | Tìm knowledge đã duyệt và cập nhật profile signal hợp lệ | Sửa/đổi/hủy/tra cứu booking qua driver link; dùng profile làm nguồn fact; lưu PII/OTP/secret; tư vấn bán hàng không có nguồn |
 
-### 4.2 Business rules
+Artifact `advise_skill_node.py` hiện không được nối vào graph và không phải capability đang chạy. Trong v2, tư vấn chọn xe tổng quát trước booking thuộc P2. Nhóm không xây một lớp advisor thứ ba ở P0 cho đến khi booking và care đạt gate.
 
-Mã quy tắc giữ nguyên từ Concept Spec để truy vết được. QA dùng danh sách này làm danh mục kiểm thử.
+### 5.4 Booking state machine chuẩn
 
-**Vòng đời booking:**
+Booking bắt đầu ở `held`; hệ thống hiện không có state `draft`. PO chọn state machine chuẩn cho P0 như sau:
 
-| Mã | Quy tắc | Trạng thái |
-|---|---|---|
-| R-B1 | Booking vừa tạo ở trạng thái Nháp, chưa chiếm chỗ nào | Đã có |
-| R-B2 | Không hai booking cùng giữ một suất tại một thời điểm | Đã có |
-| R-B3 | Trạng thái "Đã giữ chỗ" có thời hạn, hết hạn thì tự giải phóng | Đã có, hiện cố định 120 giây, xem OQ-2 |
-| R-B4 | Chỉ booking đã xác nhận mới có mã lịch và được nhắc | Đã có |
-| R-B5 | Hủy, hết hạn giữ và no-show đều giải phóng suất | Đã có |
-| R-B6 | Mọi thay đổi giờ hoặc xe phải phản chiếu về một nguồn sự thật duy nhất, mọi kênh nhắc đọc cùng nguồn | Đã có |
+```text
+held ──confirm──> confirmed ──license + check-in──> checked_in ──complete──> completed
+  │                    ├──cancel────────────────────────────────> cancelled
+  │                    ├──reschedule────────────────────────────> rescheduled
+  │                    └──after grace period────────────────────> no_show
+  ├──hold timeout────> expired
+  └──user releases──> cancelled
+```
 
-**Người đặt, người lái và giấy phép lái xe:**
+| State | Copy người dùng chuẩn | Care active | Mutation chính |
+|---|---|---:|---|
+| `held` | “Đang giữ chỗ — lịch chưa được xác nhận” | Không | Cập nhật thông tin, OTP, confirm hoặc release |
+| `confirmed` | “Lịch lái thử đã được xác nhận” | Có | Booker đổi/hủy qua access phù hợp |
+| `checked_in` | “Bạn đã check-in tại showroom” | Có trong phạm vi hỗ trợ buổi lái thử | Người có quyền hoàn tất |
+| `completed` | “Buổi lái thử đã hoàn tất” | Không trong v2 | Chỉ đọc lịch sử; post-drive nurture là future scope |
+| `no_show` | “Showroom ghi nhận bạn chưa đến” | Không | Liên hệ hỗ trợ/đặt lịch mới theo policy |
+| `cancelled` | “Lịch đã hủy” | Không | Không gửi reminder; cho phép tạo lịch mới |
+| `rescheduled` | “Lịch này đã được đổi; vui lòng xem lịch mới” | Không trên booking cũ | Chỉ booking mới được chăm sóc |
+| `expired` | “Thời gian giữ chỗ đã hết” | Không | Chọn slot mới |
 
-| Mã | Quy tắc | Trạng thái |
-|---|---|---|
-| R-K1 | Mỗi booking có đúng một người đặt | Đã có |
-| R-K2 | Nếu đặt hộ, người đặt không mặc nhiên là người lái | Đã có |
-| R-K3 | Người đặt không xem được GPLX của người lái | Một phần, cần kiểm thử |
-| R-K4 | Người đặt được quyền đổi hoặc hủy booking mình tạo | Đã có |
-| R-D1 | Mỗi booking có đúng một người lái, nếu trùng người đặt thì dùng chung hồ sơ | Đã có |
-| R-D2 | Nếu khác người đặt thì gửi link riêng để người lái tự xác nhận và tự nhập giấy tờ | Chưa có |
-| R-D3 | Chỉ nhắc người lái sau khi họ đồng ý nhận tin, không spam người chưa đồng ý | Một phần |
-| R-D4 | Check-in phải tra được booking bằng chính danh tính người lái, không chỉ bằng người đặt | Một phần |
-| R-G1 | Không thu GPLX ở bước gửi yêu cầu, chỉ thu sau khi booking đã xác nhận | Đã có theo thiết kế |
-| R-G2 | GPLX chỉ đi qua kênh chính thống, hiển thị rõ mục đích và thời hạn xóa, không qua tài khoản cá nhân của sales | Một phần |
-| R-G3 | Người đặt không xem được GPLX của người lái | Một phần |
-| R-G4 | Luôn có lựa chọn mang bản gốc tới đối chiếu thay cho upload | Chưa có |
+Mọi UI/email/agent copy phải phân biệt `held` với `confirmed`. Nếu một môi trường nghiệp vụ cần showroom duyệt thủ công, nhóm phải bổ sung state `pending_confirmation` và SLA trước khi dùng copy “đã xác nhận”; nhóm không được dùng copy để che một state chưa tồn tại.
 
-**Suất và xe:**
+**Invariant P0:** Journey hiện được thiết kế để confirm đồng bộ ngay sau OTP và bước revalidation cuối. Hệ thống không có hàng chờ duyệt thủ công: request thành công phải trả `confirmed`, còn request lỗi phải giữ/đóng state đúng và đưa recovery. Nếu Business/Operations thay đổi invariant này, PO phải bổ sung `pending_confirmation`, success copy, SLA, notification, cancel path và care scope trước khi release.
 
-| Mã | Quy tắc | Trạng thái |
-|---|---|---|
-| R-S1 | Một suất chỉ phục vụ một booking, khóa giao dịch quyết định ai giữ trước khi có tranh chấp | Đã có |
-| R-S2 | Trạng thái giữ có thời hạn, hết hạn thì tự về trống | Đã có |
-| R-S3 | Suất phải gắn xe đúng phiên bản khách chọn. Còn chỗ với sales mà không có xe đúng bản thì không phải là suất hợp lệ | Đã có |
-| R-S4 | Khi hết suất cho khung mong muốn thì kích hoạt phương án thay thế | Đã có |
-| R-X1 | Chỉ xe ở trạng thái sẵn sàng mới được gắn vào suất mở bán | Đã có |
-| R-X2 | Một xe không phục vụ hai booking chồng giờ | Đã có |
-| R-X3 | Pin dưới ngưỡng thì không mở suất mới cho xe đó, tránh cảnh chạy một vòng ngắn vì pin yếu | Đã có |
+### 5.5 Participant, identity và quyền
 
-**Nhắc lịch, phương án thay thế và HITL:**
+| Chủ thể | Dữ liệu booking tối thiểu | Cách xác thực | Quyền |
+|---|---|---|---|
+| Booker | Tên, email; điện thoại nếu kênh/nghiệp vụ cần | OTP theo contact và purpose | Xem, sửa trường được phép, đổi, hủy và nhận thông tin booking |
+| Driver cùng booker | Dùng cùng `person_id` | Quyền booker | Care và quản lý như một người |
+| Driver khác booker | Tên, email; cam kết có GPLX hợp lệ; không lưu ảnh/số GPLX ở P0 | Private invitation token có expiry và binding | Care theo booking; không có booking mutation |
+| Internal user | Tài khoản portal và role/scope | Bearer session nội bộ | Theo RBAC; mọi mutation audit |
 
-| Mã | Quy tắc | Trạng thái |
-|---|---|---|
-| R-N1 | Nội dung nhắc phải cụ thể: giờ, địa điểm, đúng mẫu xe, câu "đã giữ chỗ", kèm nút Xác nhận, Đổi, Hủy. Không nhắc chung chung | Một phần |
-| R-N2 | Nhịp mặc định gồm một tin sau khi đặt, một tin trước 24 giờ và một tin trước 2 giờ. Gọi điện chỉ khi khách chọn cần tư vấn hoặc khi có thay đổi quan trọng | Đã có |
-| R-N3 | Không để nhiều sales cùng nhắn hoặc gọi một booking | Chưa có |
-| R-N4 | Khi booking bị hủy thì dừng mọi nhắc và mọi follow, không truy theo | Một phần |
-| R-A1 | Chỉ đề xuất phương án có suất và xe thật, không đề xuất chỗ trống ảo | Đã có |
-| R-A2 | Báo hết chỗ ngay tại bước chọn, không cho chọn rồi hôm sau mới báo | Đã có |
-| R-A3 | Khách tự chọn trên màn hình, không bắt chờ sales gọi hỏi qua lại | Đã có |
-| R-H1 | Khi chuyển người thật, AI giữ nguyên booking và hồ sơ, không bắt khai lại | Chưa có |
-| R-H2 | Booking khung VIP phải qua duyệt trước khi sang trạng thái đã xác nhận | Chưa có |
-| R-H3 | Từ chối duyệt thì booking về trạng thái đã hủy kèm lý do, và suất được giải phóng | Chưa có |
-| R-H4 | Chỉ quản lý mới được duyệt khung VIP | Chưa có |
-| R-O2 | Lead đồng bộ một nguồn, không chia số cho nhiều sales | Chưa có |
+Driver invitation P0 phải có các thuộc tính sau: server chỉ lưu hash; raw token chỉ truyền qua TLS tới endpoint resolve/chat và không được persist vào log, analytics, referrer hoặc storage dài hạn; token gắn đúng booking và driver; một booking chỉ có một link active; link hết hạn không muộn hơn thời điểm kết thúc lịch hoặc TTL policy; cancel/reschedule phải revoke link cũ và phát hành link phù hợp cho booking mới; request phát hành/revoke chỉ dành cho actor có quyền; delivery/open/resolve/expire/revoke đều có event không chứa token thô. Client phải resolve với server ngay khi mở link và chỉ render care active sau khi state/token/participant đều hợp lệ.
 
-### 4.3 User stories và acceptance criteria
+### 5.6 Care contract
 
-Định dạng: là [vai trò], tôi muốn [hành động], để [giá trị]. Acceptance criteria viết theo Given/When/Then để QA chuyển thẳng thành test case.
+Agent hậu booking v2 là **agent hỗ trợ chuẩn bị trước và trong buổi lái thử theo yêu cầu**, kết hợp các notification/checklist chủ động đã được duyệt. Agent chưa phải CRM tự động hoặc agent chăm sóc sau khi lái thử.
 
----
+Mỗi lượt care phải tuân theo thứ tự:
 
-#### US-01. Slot và xe có thật, xác nhận ngay (P0, đã build)
+1. ViVi trả lời câu hỏi hiện tại hoặc nêu rõ thiếu dữ liệu.
+2. ViVi nối câu trả lời với booking/profile chỉ khi ngữ cảnh thực sự liên quan.
+3. ViVi đưa ra một bước tiếp theo dễ làm, ví dụ xem checklist, mở bản đồ, quản lý lịch hoặc liên hệ showroom.
+4. ViVi chỉ hỏi tối đa một câu có giá trị cho nhu cầu hiện tại; ViVi không phỏng vấn để “làm đầy hồ sơ”.
+5. Khi người dùng sửa hoặc rút lại một preference, profile phải giữ lịch sử nhưng view active phải phản ánh lựa chọn mới.
 
-Là người muốn lái thử, tôi muốn thấy giờ và xe còn thật và được xác nhận ngay, để chắc chắn buổi hẹn sẽ diễn ra.
+Care checklist P0 gồm: trạng thái hiện tại; mã lịch; giờ và showroom; bản đồ/đường đi; giấy tờ bản gốc cần mang; thời lượng dự kiến; quy trình tại showroom; điểm nên trải nghiệm theo nhu cầu; đầu mối hỗ trợ; link quản lý lịch dành cho booker. UI phải ghi được view và một acknowledgement action đơn giản; checklist item state/persistence chi tiết thuộc P1. Mỗi claim có tính thời điểm phải đến từ booking service hoặc content record còn hiệu lực.
 
-Bằng chứng E1, E2, E18. Quy tắc R-S1, R-S3, R-B4.
+Sự “chủ động” trong P0 đến từ trigger xác định như confirmation, T-24h và T-2h với template được duyệt. Agent không tự quyết định gửi outbound message dựa trên suy đoán profile.
 
-**AC-01.1.** Given còn suất VF 6 Plus lúc 10:00 thứ Bảy tại showroom X, When tôi chọn khung đó, Then hệ thống giữ chỗ và hiển thị "Đã xác nhận, 10:00 T7, VF 6 Plus, showroom X" kèm mã lịch.
+P0 chỉ cho phép Q&A về trạng thái và chuẩn bị booking hiện tại, quy trình/showroom, giấy tờ, sạc/ADAS/không gian và các tính năng của đúng mẫu/phiên bản đã đặt mà người dùng nên trải nghiệm. ViVi phải từ chối hoặc handoff các yêu cầu chọn/so sánh mẫu xe khác, giá lăn bánh/khuyến mãi live, vay, bảo hiểm, đàm phán và cam kết mua bán. ViVi có thể chỉ dẫn người dùng về catalogue hoặc tạo booking mới qua luồng riêng, nhưng không biến care thread thành advisor/bán hàng tổng quát.
 
-**AC-01.2.** Given khung tôi muốn đã hết chỗ, When tôi chọn, Then hệ thống hiện ngay 2 đến 3 phương án thay thế gắn xe thật, không bắt chờ sales gọi lại.
+### 5.7 Knowledge và grounding
 
-**AC-01.3.** Given một suất có xe demo với pin dưới ngưỡng phục vụ, When hệ thống dựng danh sách khung giờ, Then suất đó không được hiển thị là khả dụng.
+Repo hiện có retrieval lexical dựa trên JSON với provenance và filter market/model/trim/model-year. Đây không phải semantic/vector RAG. P0 không yêu cầu vector search; P0 yêu cầu **fact được kiểm soát**.
 
-**AC-01.4.** Given tôi đã chọn phiên bản Plus, When hệ thống hiện khung giờ, Then mọi khung hiện ra đều gắn xe đúng phiên bản Plus, không hiện khung chỉ còn chỗ với sales.
-
-**AC-01.5.** Given màn hình cho tôi chọn giờ cụ thể, When tôi bấm xác nhận, Then hệ thống tuyệt đối không được trả về thông điệp dạng "đã tiếp nhận yêu cầu, sẽ có nhân viên liên hệ".
-
----
-
-#### US-02. Không double-booking (P0, đã build)
-
-Là hệ thống, khi hai khách tranh một suất, chỉ một người được giữ.
-
-Quy tắc R-B2, R-S1. Phục vụ M4.
-
-**AC-02.1.** Given suất S đang trống, When hai khách bấm giữ gần như đồng thời, Then đúng một người giữ được nhờ khóa giao dịch, còn người kia lập tức thấy phương án thay thế chứ không thấy lỗi kỹ thuật.
-
-**AC-02.2.** Given một xe demo đã có booking từ 10:00 đến 10:30, When hệ thống xét suất 10:15 đến 10:45 của cùng xe đó, Then suất này bị từ chối vì chồng giờ.
-
-**AC-02.3.** Given khách bấm nút Xác nhận hai lần liên tiếp do double-click hoặc mạng chập chờn, When cả hai request tới server với cùng `ui_action_id`, Then chỉ tạo một booking và request thứ hai trả về đúng kết quả của request đầu.
-
----
-
-#### US-03. Đổi hoặc hủy không phải giải thích (P0, đã build)
-
-Là người muốn lái thử, tôi muốn tự đổi hoặc hủy chỉ bằng một chạm, để không phải nhắn giải thích với ai khi kế hoạch đổi.
-
-Bằng chứng E3, E10. Quy tắc R-N4.
-
-**AC-03.1.** Given tôi có một lịch đã xác nhận, When tôi bấm Hủy, Then lịch được hủy tức thì, chỗ được giải phóng, và không có cuộc gọi truy theo nào sau đó.
-
-**AC-03.2.** Given tôi vừa hủy lịch, When hệ thống xét hàng đợi thông báo, Then mọi tin nhắc đang chờ của booking đó bị hủy và không tin nào được gửi thêm.
-
-**AC-03.3.** Given tôi muốn đổi sang khung khác, When tôi chọn khung mới, Then hệ thống giữ chỗ mới trước rồi mới giải phóng chỗ cũ, để tôi không mất cả hai.
-
-**AC-03.4.** Given tôi từng no-show và nay quay lại đặt, When tôi bắt đầu luồng đặt, Then tôi được đặt bình thường, không bị chặn và không bị nhắc dồn về lần vắng trước.
-
----
-
-#### US-04. Đặt hộ, đúng người lái được nhắc (P0, build một phần)
-
-Là người đặt hộ, tôi muốn khai người lái là người khác, để đúng người đó được nhắc và tự lo giấy tờ, còn tôi không phải làm trung gian.
-
-Bằng chứng E5, E6. Quy tắc R-K2, R-D2, R-D4.
-
-**AC-04.1** (đã có). Given tôi bắt đầu đặt lịch, When hệ thống mở hội thoại, Then câu hỏi đầu tiên là "đặt cho mình hay người khác lái?", trước khi hỏi bất cứ thông tin nào khác.
-
-**AC-04.2** (đã có). Given tôi chọn đặt cho người khác, When tôi nhập thông tin người lái, Then hệ thống tạo hồ sơ người lái riêng, tách khỏi hồ sơ người đặt.
-
-**AC-04.3** (chưa có). Given tôi đã khai người lái là anh Nam, When booking được xác nhận, Then hệ thống gửi cho anh Nam một link riêng để anh tự xác nhận và tự nhập giấy phép lái xe.
-
-**AC-04.4** (một phần). Given anh Nam tới showroom, When lễ tân tra bằng tên hoặc số điện thoại của anh Nam, Then hệ thống tìm ra đúng booking chứ không chỉ tra được bằng tên chị Vy.
-
-**AC-04.5** (chưa có). Given booking đã xác nhận có người đặt khác người lái, When hệ thống gửi thông báo, Then người lái nhận bản chính có nút hành động, còn người đặt nhận bản sao chỉ để theo dõi, và nội dung hai bản khác nhau.
-
-**AC-04.6** (một phần). Given tôi là người đặt, When tôi xem chi tiết booking, Then tôi không nhìn thấy giấy phép lái xe của người lái.
-
----
-
-#### US-05. Giấy phép lái xe đúng lúc, đúng kênh (P1, build một phần)
-
-Là người lái, tôi muốn chỉ cung cấp giấy phép khi thật cần và qua kênh chính thống, để giấy tờ của tôi không trôi nổi.
-
-Bằng chứng E7. Quy tắc R-G1 đến R-G4.
-
-**AC-05.1.** Given tôi mới ở bước gửi yêu cầu và lịch chưa chắc chắn, When hệ thống thu thập thông tin, Then hệ thống không được hỏi giấy phép lái xe ở bước này.
-
-**AC-05.2.** Given lịch và xe đã được xác nhận, When hệ thống cần giấy phép, Then tôi nhập qua kênh chính thống, có thông báo rõ mục đích sử dụng và thời hạn xóa.
-
-**AC-05.3.** Given quy trình cần đối chiếu giấy phép, When nhân viên xử lý, Then nhân viên không được yêu cầu gửi ảnh qua tài khoản Zalo hoặc Facebook cá nhân.
-
-**AC-05.4** (chưa có). Given tôi không muốn upload trước, When hệ thống hỏi giấy phép, Then luôn có lựa chọn mang bản gốc tới đối chiếu tại showroom.
-
----
-
-#### US-06. Nhắc cụ thể để tăng cam kết (P0, build một phần)
-
-Là người dùng, tôi muốn được nhắc cụ thể rằng xe đã sẵn sàng và đã giữ chỗ cho tôi, đúng lúc, để tôi có lý do chắc chắn để đi.
-
-Bằng chứng E12 (không nhắc thì mức chắc chắn tụt từ 100% còn 60%), E13, R2, R8. Quy tắc R-N1 đến R-N4.
-
-**AC-06.1** (đã có). Given booking đã xác nhận lúc 10:00 thứ Bảy, When hệ thống lập lịch nhắc, Then tạo đúng ba tin: ngay sau khi đặt, trước 24 giờ và trước 2 giờ.
-
-**AC-06.2** (một phần). Given còn 2 giờ tới hẹn, When hệ thống nhắc qua Zalo, Then tin ngắn ghi rõ giờ, địa điểm, đúng mẫu và phiên bản xe, câu "đã giữ chỗ cho bạn", kèm ba nút Xác nhận, Đổi, Hủy.
-
-**AC-06.3.** Given khách đã nhận tin nhắc tự động, When nhân viên xét việc liên hệ, Then không có nhiều nhân viên cùng nhắn hoặc gọi cho một booking.
-
-**AC-06.4.** Given giờ hẹn được đổi từ 14:00 sang 15:00, When bất kỳ kênh nào gửi tin, Then mọi kênh đều đọc từ một nguồn sự thật và hiển thị 15:00. Đây chính là ca lỗi thật của chị Vy ở E8.
-
----
-
-#### US-07. Gợi ý khung thay thế khi hết chỗ (P0, đã build)
-
-Là khách đang muốn đặt, tôi muốn khi khung mình chọn hết chỗ thì được đề xuất lựa chọn khác ngay, để tôi không bỏ ngang.
-
-Bằng chứng: anh Duy nói "nói ngay là hết, đừng cho mình chọn rồi hôm sau mới báo". Quy tắc R-A1 đến R-A3.
-
-**AC-07.1.** Given khung 10:00 thứ Bảy đã hết, When tôi chọn khung đó, Then hệ thống báo hết ngay tại bước chọn, kèm 2 đến 3 phương án theo thứ tự: lệch 30 đến 60 phút cùng showroom, rồi cùng giờ ở showroom gần nhất, rồi cùng khung vào ngày khác.
-
-**AC-07.2.** Given hệ thống đề xuất phương án thay thế, When tôi xem danh sách, Then mọi phương án đều có suất và xe thật, không có chỗ trống ảo.
-
-**AC-07.3.** Given cả tuần ở showroom này đã hết suất, When tôi xem lịch, Then hệ thống nói thẳng là hết và đề xuất showroom gần hoặc tuần kế, tuyệt đối không hiển thị lịch trống giả.
-
----
-
-#### US-08. Check-in tại showroom (P1, build một phần)
-
-Là người lái, tôi muốn tới nơi là có lịch ngay và đúng xe, để không phải chứng minh mình có hẹn.
-
-Bằng chứng E5, E9. Quy tắc R-D4, R-X1, R-X3.
-
-**AC-08.1.** Given tôi có booking đã xác nhận, When nhân viên tra bằng mã lịch, hoặc tên và số điện thoại người lái, hoặc tên và số điện thoại người đặt, Then cả ba cách đều ra đúng booking.
-
-**AC-08.2.** Given tôi check-in thành công, When màn hình nhân viên hiển thị, Then hiện đúng xe và đúng phiên bản đã giữ, kèm vị trí xe.
-
-**AC-08.3.** Given pin xe demo tụt dưới ngưỡng sau khi booking đã xác nhận, When hệ thống phát hiện, Then thông báo sớm cho khách và đề xuất đổi xe hoặc đổi giờ, thay vì để khách tới rồi mới biết.
-
----
-
-#### US-09. Quản lý duyệt khung VIP (P1, chưa build)
-
-Là quản lý showroom, tôi muốn duyệt các khung VIP hoặc đặc biệt trước khi hệ thống giữ chỗ, để kiểm soát nguồn lực.
-
-Quy tắc R-H2, R-H3, R-H4.
-
-**AC-09.1.** Given một yêu cầu rơi vào khung VIP, When khách chọn, Then booking chuyển sang trạng thái chờ quản lý duyệt, và khách được báo rõ đang chờ duyệt kèm thời gian dự kiến.
-
-**AC-09.2.** Given booking đang chờ duyệt, When tôi duyệt, Then booking sang trạng thái đã xác nhận và khách nhận thông báo. Khi tôi từ chối, booking sang trạng thái đã hủy kèm lý do và chỗ được giải phóng.
-
-**AC-09.3.** Given tôi là tư vấn viên chứ không phải quản lý, When tôi mở hàng chờ duyệt VIP, Then tôi không có quyền duyệt.
-
----
-
-#### US-10. Chuyển người thật giữ nguyên ngữ cảnh (P1, chưa build)
-
-Là khách có câu hỏi sâu, tôi muốn được nối với tư vấn viên mà không phải khai lại từ đầu, để không mất công.
-
-Bằng chứng E17. Quy tắc R-H1.
-
-**AC-10.1.** Given tôi đang hỏi ViVi về phương án vay, When ViVi chuyển tôi cho tư vấn viên, Then tư vấn viên nhìn thấy nguyên ngữ cảnh gồm xe đang quan tâm, showroom, lịch đang giữ nếu có, và lịch sử hội thoại, còn tôi không phải khai lại gì.
-
-**AC-10.2.** Given đang ngoài giờ làm việc của showroom, When tôi yêu cầu gặp người thật, Then hệ thống nói rõ khung giờ sẽ được liên hệ lại, không để tôi chờ vô định. Chờ vô định chính là nỗi đau gốc, không được tái tạo nó ở đây.
-
----
-
-#### US-11. Dashboard vận hành (P1, build một phần)
-
-Là quản lý showroom, tôi muốn thấy phễu đặt, đến, chốt, để biết hiệu quả thật.
-
-**AC-11.1.** Given có booking trong hệ thống, When tôi mở dashboard, Then thấy phễu đặt, đến, chốt, kèm tỷ lệ no-show, số hold đang hoạt động và số tin nhắc đang chờ.
-
-**AC-11.2.** Given dashboard hiển thị danh sách lead, When dữ liệu được trả về, Then dữ liệu không chứa mã OTP và không chứa giấy phép lái xe thô.
-
-**AC-11.3** (chưa có). Given một lead vào hệ thống, When lead được phân công, Then chỉ một nhân viên phụ trách, không chia một lead cho nhiều người.
-
----
-
-### 4.4 F10, tư vấn chọn xe và giải đáp
-
-Đây là phần bổ sung chính của PRD v1.0 so với Concept Spec v0.2.
-
-#### 4.4.1 Vì sao thêm tính năng này
-
-Có ba luận cứ, và cả ba đều đến từ bằng chứng phỏng vấn chứ không phải suy đoán.
-
-Thứ nhất, khách nói thẳng là họ cần tư vấn. Anh Nguyên, người chưa từng booking bao giờ, nói rằng mình cần một người tư vấn về flow, cần biết những thông tin gì và những bước gì để booking được một chiếc xe để lái thử (E16). Khi được hỏi điều gì làm anh bỏ website, câu trả lời đầu tiên của anh là nó không đáp ứng được hết những thông tin anh muốn.
-
-Thứ hai, chính tài liệu Empathy đã chỉ đích danh đây là giá trị cốt lõi. Nguyên văn: giá trị cốt lõi nằm ở việc đặt lịch chắc chắn và giải đáp thắc mắc, không phải ở đồ hoạ 3D (E15). Anh Nguyên cũng xác nhận rằng vấn đề của anh chỉ là giải đáp thắc mắc và đặt lịch.
-
-Thứ ba, tư vấn là cửa vào tự nhiên của luồng đặt lịch. Người ở giai đoạn mới xem, chiếm hai trong ba người phỏng vấn, chưa sẵn sàng chọn ngày giờ vì họ còn đang phân vân giữa VF 6 và Creta, giữa VF 7 và CX-5. Nếu ViVi chỉ biết đặt lịch, ta bỏ lỡ toàn bộ nhóm này. F10 biến hội thoại từ câu hỏi "chọn ngày nào" thành câu hỏi "anh chị cần xe cho việc gì", rồi mới dẫn sang đặt lịch.
-
-Về hiện trạng kỹ thuật, khung sườn đã có sẵn: node `advise_skill_node` và bộ phân loại ý định định tuyến giữa nhánh booking và nhánh advise đều đã chạy. Nhưng công cụ tra cứu tri thức lại là hàm giả. Hàm `search_knowledge` trả về đúng chuỗi `f"Kết quả tìm kiếm cho: {query}"` và không truy vấn gì cả. Nghĩa là ViVi hiện đang trả lời câu hỏi về xe hoàn toàn bằng trí nhớ của LLM. Đây là rủi ro bịa đặt nghiêm trọng, và cũng là lý do F10 được xếp mức P0.
-
-#### 4.4.2 Phạm vi F10
-
-| Mã | Tính năng phụ | Ưu tiên |
-|---|---|---|
-| F10.1 | Hỏi đáp thông số, giá, chính sách dựa trên knowledge base chính thống, có dẫn nguồn | P0 |
-| F10.2 | Tư vấn chọn xe theo nhu cầu: hỏi ngược vài câu rồi gợi ý một đến hai mẫu kèm lý do | P0 |
-| F10.3 | So sánh hai mẫu xe theo tiêu chí khách quan tâm | P1 |
-| F10.4 | Cầu nối sang đặt lịch, giữ nguyên ngữ cảnh xe vừa tư vấn | P0 |
-| F10.5 | Ranh giới và chuyển người thật cho chủ đề ngoài năng lực | P0 |
-| F10.6 | Chống bịa: không biết thì nói không biết | P0 |
-
-#### 4.4.3 Business rules của F10
-
-| Mã | Quy tắc |
+| Yêu cầu | Quy tắc P0 |
 |---|---|
-| R-T1 | ViVi chỉ trả lời về thông số, giá, tầm hoạt động, tính năng, chính sách bảo hành và sạc dựa trên knowledge base. Nếu không có trong knowledge base thì nói thẳng là chưa có thông tin và đề nghị nối tư vấn viên |
-| R-T2 | Mọi câu trả lời chứa con số, gồm giá, tầm hoạt động, dung lượng pin, công suất, thời gian sạc, bắt buộc kèm nguồn là tên tài liệu và ngày hiệu lực |
-| R-T3 | ViVi không được thúc chốt, không gợi ý đặt cọc, không tạo cảm giác khan hiếm giả, và không hỏi ngân sách hay thời điểm mua khi khách chưa nêu. Chính hành vi này ở E11 đã đẩy anh Duy và anh Nam đi |
-| R-T4 | Các chủ đề bắt buộc chuyển người thật, ViVi không tự trả lời, gồm: vay và trả góp, bảo hiểm, định giá và thu mua xe cũ, khiếu nại và sự cố, đàm phán giá cùng ưu đãi cá nhân hoá. Đây là ranh giới do chính khách vạch ra ở E17 |
-| R-T5 | Khi tư vấn xong và khách quan tâm một mẫu, ViVi đề nghị đặt lịch một lần duy nhất, không lặp lại nếu khách chưa muốn |
-| R-T6 | Chuyển từ tư vấn sang đặt lịch phải giữ nguyên mẫu và phiên bản đang bàn, khách không phải chọn lại xe |
-| R-T7 | ViVi không bao giờ hứa có xe hoặc có khung giờ trong lúc tư vấn. Mọi khẳng định về tình trạng sẵn có chỉ được nói sau khi truy vấn dữ liệu thật qua luồng đặt lịch (E18) |
-| R-T8 | Câu hỏi ngoài phạm vi như chính trị, chủ quyền, lập trình, toán học đi theo chính sách guardrail hiện có, không trả lời tự do |
-| R-T9 | ViVi không so sánh trực tiếp bất lợi với xe hãng khác. Được nêu thông số VinFast, không được hạ thấp đối thủ |
+| Review state | Production chỉ phục vụ record `approved`; `pending_internal_review`, `rejected`, `expired` và `superseded` không được trả về |
+| Provenance | Record phải có nguồn, market, model/trim/year liên quan, effective/review/expiry date và owner |
+| Live-data boundary | Giá hiện tại, khuyến mãi, tồn xe/slot và chính sách thay đổi phải gọi nguồn live hoặc nói rõ chưa thể xác nhận |
+| Answer rendering | Fact quan trọng phải kèm nguồn/ngày hiệu lực ở dạng người dùng hiểu được; model không được tự tạo citation |
+| Missing knowledge | ViVi nêu giới hạn, không bịa và đưa ra đường dẫn/contact phù hợp |
+| Governance | Content Owner duyệt; AI Quality Owner theo dõi retrieval miss, stale fact và regression theo version |
 
-#### 4.4.4 User stories của F10
+### 5.8 Profile và cá nhân hóa
 
----
+Profile giúp ViVi ghi nhớ tín hiệu bền vững như nhu cầu không gian, thói quen di chuyển, mối quan tâm sạc, trải nghiệm xe điện và điều người dùng muốn quan sát. Profile không phải mục tiêu tự thân.
 
-##### US-12. Hỏi đáp có nguồn về xe (P0, chưa build)
+P0 phải đáp ứng:
 
-Là người đang tìm hiểu xe, tôi muốn hỏi ViVi về thông số và chính sách rồi nhận câu trả lời chính xác có dẫn nguồn, để tôi tin được thông tin đó.
+- Hệ thống phân biệt `direct`, `inferred` và `third_party`; inference luôn có certainty/confidence và không được trình bày như fact đã xác nhận.
+- Dữ liệu của booker và driver không được trộn. Tín hiệu do một người nói về người kia chỉ được dùng hạn chế, gắn third-party và không được nâng thành direct fact.
+- Validator deterministic phải chặn email, phone, địa chỉ chính xác, GPS, OTP, credential, token, GPLX, dữ liệu sức khỏe/tài chính và free text nhạy cảm khỏi profile signal.
+- UI/agent phải giải thích cá nhân hóa, cung cấp opt-out và cho người dùng xem, sửa, retract, export hoặc yêu cầu xóa theo policy đã phê duyệt.
+- Log không được ghi raw snapshot/profile/identity. Trace chỉ giữ field đã redaction và dùng access control/retention riêng.
+- Sales brief chỉ hiển thị trong portal cho actor đúng scope; brief phải tách direct/inferred, không hiển thị internal ID/hash và không tự động biến inference thành lead fact.
 
-**AC-12.1.** Given tôi hỏi VF 6 Plus đi được bao nhiêu km một lần sạc, When ViVi trả lời, Then câu trả lời lấy số từ knowledge base, ghi rõ đang nói về phiên bản nào, kèm nguồn và ngày hiệu lực.
+**🔵 Open Question (Câu hỏi mở):** Legal/Privacy Owner phải chốt lawful basis, retention theo trạng thái profile, cách xử lý deletion khi signal đã tham gia audit, và wording consent trước Gate G1.
 
-**AC-12.2.** Given tôi hỏi một thông tin không có trong knowledge base, When ViVi xử lý, Then ViVi nói rõ là chưa có thông tin đó và đề nghị nối tư vấn viên, tuyệt đối không suy đoán hay bịa số.
+### 5.9 Notification và calendar
 
-**AC-12.3.** Given knowledge base có hai phiên bản tài liệu khác ngày, When ViVi trích dẫn, Then dùng bản mới nhất còn hiệu lực.
-
-**AC-12.4.** Given tôi hỏi xe còn không, mai đặt được không, trong lúc đang tư vấn, When ViVi trả lời, Then ViVi không khẳng định còn hay hết, mà chuyển sang luồng đặt lịch để tra dữ liệu thật.
-
----
-
-##### US-13. Tư vấn chọn xe theo nhu cầu (P0, chưa build)
-
-Là người chưa biết chọn mẫu nào, tôi muốn kể nhu cầu rồi được gợi ý xe phù hợp, để thu hẹp lựa chọn trước khi đi lái thử.
-
-Bằng chứng: hai trong ba người phỏng vấn đang ở giai đoạn mới xem; chị Vy và chồng mỗi người thích một mẫu khác nhau và cần lái thử để loại bớt.
-
-**AC-13.1.** Given tôi nói nhà bốn người, hay về quê cuối tuần, chung cư có chỗ sạc, When ViVi tư vấn, Then ViVi hỏi tối đa ba câu làm rõ về số chỗ cần, ngân sách khoảng bao nhiêu, ưu tiên điều gì, rồi gợi ý một đến hai mẫu kèm lý do gắn với chính điều tôi vừa kể.
-
-**AC-13.2.** Given tôi chỉ nói một câu mơ hồ là tôi muốn mua xe điện, When ViVi phản hồi, Then ViVi hỏi làm rõ trước chứ không đổ ngay danh sách toàn bộ mẫu xe.
-
-**AC-13.3.** Given tôi chưa nêu ngân sách, When ViVi tư vấn, Then ViVi không hỏi tôi dự tính mua khi nào hay trả trước bao nhiêu. Đây là câu hỏi làm khách khó chịu nhất trong phỏng vấn (E11).
-
-**AC-13.4.** Given tôi hỏi về mẫu xe trưng bày chưa mở lái thử là Lạc Hồng 900 LX hoặc 900S, When ViVi trả lời, Then ViVi nói rõ mẫu này chưa mở lái thử và không đề nghị đặt lịch cho nó.
-
----
-
-##### US-14. So sánh hai mẫu xe (P1, chưa build)
-
-Là người đang phân vân giữa hai mẫu, tôi muốn thấy bảng so sánh theo tiêu chí mình quan tâm, để quyết định thử mẫu nào.
-
-**AC-14.1.** Given tôi hỏi VF 6 với VF 7 khác gì nhau, When ViVi trả lời, Then hiện bảng so sánh tối đa sáu tiêu chí gồm kích thước, số chỗ, tầm hoạt động, công suất, giá và tính năng nổi bật, mỗi số đều có nguồn.
-
-**AC-14.2.** Given tôi nêu tiêu chí riêng như quan tâm hàng ghế sau và an toàn cho trẻ con, When ViVi so sánh, Then ViVi ưu tiên đúng tiêu chí tôi nêu lên đầu bảng.
-
-**AC-14.3.** Given tôi hỏi VF 6 so với Hyundai Creta thì sao, When ViVi trả lời, Then ViVi nêu thông số VF 6 và không hạ thấp Creta, đồng thời đề nghị lái thử để tôi tự cảm nhận.
-
----
-
-##### US-15. Từ tư vấn sang đặt lịch, không mất ngữ cảnh (P0, chưa build)
-
-Là người vừa được tư vấn xong, tôi muốn đặt lịch ngay mà không phải chọn lại xe, để không mất công làm lại.
-
-**AC-15.1.** Given ViVi vừa tư vấn tôi nên thử VF 6 Plus, When tôi nói vậy đặt lịch cho tôi, Then luồng đặt lịch mở với VF 6 Plus đã được chọn sẵn, và bước tiếp theo là hỏi đặt cho mình hay người khác lái.
-
-**AC-15.2.** Given tôi đang ở giữa luồng đặt lịch, When tôi hỏi một câu tư vấn như xe này sạc đầy mất bao lâu, Then ViVi trả lời rồi quay lại đúng bước tôi đang dở, không làm mất tiến trình đặt lịch.
-
-**AC-15.3.** Given tôi được tư vấn nhưng chưa muốn đặt, When tôi nói để tôi suy nghĩ thêm, Then ViVi không nhắc lại lời mời đặt lịch trong phần còn lại của phiên.
-
----
-
-##### US-16. Ranh giới rõ ràng, chuyển người thật đúng lúc (P0, chưa build)
-
-Là người có câu hỏi tài chính hoặc phức tạp, tôi muốn được nối với người thật thay vì nhận câu trả lời chung chung, để tôi có thông tin dùng được.
-
-Bằng chứng E17: anh Duy và chị Vy độc lập nêu gần như cùng một danh sách.
-
-**AC-16.1.** Given tôi hỏi về trả góp, lãi suất, bảo hiểm hoặc thu xe cũ, When ViVi nhận diện chủ đề, Then ViVi không tự trả lời mà nói rõ sẽ nối tôi với tư vấn viên, và chuyển kèm nguyên ngữ cảnh.
-
-**AC-16.2.** Given tôi hỏi cùng một câu ba lần mà ViVi vẫn không trả lời được, When lượt thứ ba kết thúc, Then ViVi chủ động đề nghị chuyển người thật thay vì tiếp tục xin lỗi.
-
-**AC-16.3.** Given tôi nói thẳng là cho tôi gặp người thật, When ViVi nhận yêu cầu, Then chuyển ngay, không cố giữ tôi lại và không hỏi thêm lý do. Nhóm ngại công nghệ ở R10 cần đúng lối thoát này.
-
----
-
-#### 4.4.5 Nguồn tri thức cho F10
-
-| Nguồn | Nội dung | Trạng thái |
+| Kênh | Trạng thái code audit | Quyết định v2 |
 |---|---|---|
-| Catalogue xe trong database | Tên, phiên bản, giá niêm yết, số chỗ, kiểu dáng, thông số tóm tắt | Đã có, ở `vehicle_models` và `vehicle_variants` |
-| Nội dung trang marketing | Trang chủ, trạm sạc, hậu mãi | Đã có, qua `/api/v1/content/{page}` |
-| Brochure PDF chính thức | Thông số chi tiết từng mẫu | File có trong bundle frontend nhưng chưa được index |
-| Chính sách bảo hành, sạc, hậu mãi | Điều kiện, thời hạn | Chưa có, cần thu thập từ VinFast |
-| Danh mục showroom | Địa chỉ, giờ mở cửa, liên hệ | Đã có |
-| Câu hỏi thường gặp | Quy trình lái thử, giấy tờ cần mang | Chưa có, cần soạn |
+| Email | Gmail adapter có thể cấu hình; mặc định development dùng in-memory mock | Email là kênh bắt buộc của pilot sau khi E2E với provider thật đạt gate |
+| Zalo | Có khi cấu hình bot và người dùng đã liên kết | Kênh tùy chọn; không được giả định mọi số điện thoại có Zalo linked |
+| SMS | Chưa có SMS provider production đúng nghĩa | Ngoài P0; UI/copy không được tuyên bố SMS đã sẵn sàng |
+| Calendar | UI hiện mở Google Calendar template; code tạo `.ics` tồn tại nhưng chưa được nối vào hành động người dùng; không có two-way sync | Gọi đúng là “thêm vào Google Calendar”, không gọi là “đồng bộ”; reschedule phải tạo thông tin mới và cảnh báo event cũ |
 
-Về ràng buộc nội dung, knowledge base chỉ được nạp từ tài liệu chính thống của VinFast và mỗi tài liệu phải gắn ngày hiệu lực. Không scrape web, không lấy từ diễn đàn hay bài review. Sai thông số giá hoặc sai chính sách là rủi ro pháp lý chứ không chỉ là lỗi trải nghiệm.
+Người đặt và người lái phải nhận nội dung khác nhau. Notification cho driver khác booker chỉ được gửi sau khi mục đích, nguồn contact và consent/legitimate-interest policy được phê duyệt. Khi booking bị cancel/reschedule, worker phải ngăn cả job `pending`, `retrying` và `processing` gửi nội dung cũ hoặc phải có idempotent state check ngay trước delivery.
 
-### 4.5 Edge cases và error states
+Mỗi booking chỉ có một follow-up owner active. Notification service và sales workflow phải dùng cùng contact policy: dedupe theo purpose/time window, frequency cap theo participant/channel, global opt-out cho nội dung không thiết yếu, suppression ngay khi cancel/no-show policy đóng care, và không để email/Zalo/cuộc gọi từ nhiều owner lặp cùng nội dung. Confirmation/giao dịch bắt buộc phải được phân loại riêng với marketing/care tùy chọn.
 
-| Mã | Tình huống | Xử lý mong muốn | Trạng thái |
+### 5.10 Capability baseline tại thời điểm viết PRD
+
+| Capability | Trạng thái | Bằng chứng chính | Khoảng trống trước pilot |
 |---|---|---|---|
-| EC-01 | Đua giữ chỗ, hai khách cùng bấm một suất trong tích tắc | Khóa giao dịch quyết định, người thua lập tức thấy phương án thay thế chứ không thấy lỗi kỹ thuật | Đã có |
-| EC-02 | Hold hết hạn ngay khi bấm xác nhận | Nếu suất vẫn còn thì ưu tiên hoàn tất; nếu vừa bị người khác giữ thì chuyển sang phương án thay thế, không báo lỗi cụt | Đã có |
-| EC-03 | Người lái không bao giờ tự xác nhận hoặc không nạp giấy phép | Booking vẫn giữ cho người đặt, nhắc riêng người lái, cho check-in bằng bản gốc | Chưa có, xem OQ-5 |
-| EC-04 | Đổi lịch nhưng suất mới cũng hết giữa chừng | Quay lại bước chọn suất kèm phương án thay thế, giữ nguyên hồ sơ và không bắt khai lại | Đã có |
-| EC-05 | Pin xe tụt dưới ngưỡng sau khi đã xác nhận | Thông báo sớm và đề xuất đổi xe hoặc giờ, thay vì để khách tới rồi mới biết | Một phần |
-| EC-06 | No-show rồi khách quay lại đặt | Cho đặt lại bình thường, không truy theo và không nhắc dồn | Đã có |
-| EC-07 | Một người đặt nhiều booking cho nhiều người lái | Mỗi booking có người lái riêng, việc nhắc và giấy tờ tách theo từng người | Đã có |
-| EC-08 | Showroom hết suất cả tuần | Nói thẳng, đề xuất showroom gần hoặc tuần kế, không hiển thị lịch trống giả | Đã có |
-| EC-09 | Địa chỉ mơ hồ, chỉ nhận diện được tỉnh hoặc thành phố | Giữ màn hình xe, hỏi lại phường xã, không tải toàn bộ showroom của tỉnh | Một phần, chưa có geocoding |
-| EC-10 | Không có showroom nào gần | Gợi ý showroom kế tiếp kèm khoảng cách rõ ràng | Đã có |
-| EC-11 | Mất mạng giữa luồng đặt | Giữ tiến trình, báo rõ hold còn hay hết, cho thử lại | Một phần, mới có `sessionStorage` |
-| EC-12 | Backend không khả dụng | Báo rõ ràng, không để trang trắng, polling health mỗi 30 giây | Đã có |
-| EC-13 | LLM không phản hồi hoặc hết quota | Luồng đặt lịch bằng nút vẫn chạy bình thường vì không phụ thuộc LLM, chỉ chat tự do báo lỗi | Đã có theo thiết kế |
-| EC-14 | Khách nhập số điện thoại hoặc email sai định dạng | Báo lỗi tại chỗ, không mất dữ liệu đã nhập | Đã có |
-| EC-15 | OTP sai quá số lần cho phép | Khóa thử lại, hướng dẫn xin mã mới sau thời gian chờ | Đã có, hiện 2 lần và chờ 60 giây |
-| EC-16 | Số điện thoại chưa liên kết Zalo Bot | Báo rõ "chưa liên kết", khác hẳn với "kênh chưa cấu hình", kèm hướng dẫn cách liên kết | Đã có |
-| EC-17 | Khách hỏi câu ngoài phạm vi như chính trị, code, toán | Theo chính sách guardrail hiện có, từ chối lịch sự và kéo về chủ đề xe | Đã có |
-| EC-18 | Knowledge base trả về kết quả mâu thuẫn | Ưu tiên tài liệu mới nhất còn hiệu lực; nếu vẫn mâu thuẫn thì không trả lời số mà chuyển người thật | Chưa có |
-| EC-19 | Khách hỏi về xe không có trong catalogue | Nói rõ chưa có thông tin, không suy đoán | Chưa có |
-| EC-20 | Ngoài giờ làm việc showroom mà cần chuyển người thật | Nói rõ khung giờ sẽ được liên hệ lại, không để khách chờ vô định | Chưa có |
+| Website/catalogue/detail/3D/charging/after-sales | Đã triển khai một phần trên public SPA | `frontend/src/App.jsx`, `HomePage.jsx`, `CarDetailPage.jsx` | Content không đồng đều; claim giá/chính sách hard-code; fallback/performance/a11y chưa đủ |
+| Booking UI + backend transaction | Đã triển khai | `BookingPage.jsx`, `services/booking/lifecycle.py` | Hold cleanup runtime, copy/state, hold-vs-OTP, E2E và telemetry |
+| Inline email OTP trước confirm | UI đã nối OTP nhưng backend confirm chưa enforce access token/permission | `BookingPage.jsx`, `services/booking/access.py`, confirm tool/service | P0: bind token với booking/contact/purpose, chống replay và bắt buộc ở mọi confirm endpoint |
+| Booker/driver model + onsite GPLX | Đã triển khai | booking schema/lifecycle và portal license flow | Consent driver; evidence/role workflow; không upload GPLX trong P0 |
+| Lookup/edit/reschedule/cancel | Đã triển khai nhưng chưa usability-pass | `BookingPage.jsx`, `management.py` | Entry point, edit driver policy, notification/token lifecycle, E2E |
+| DriveOps RBAC/booking/fleet/schedule/audit | Đã triển khai một phần | `internal-portal/frontend`, `backend/src/internal_portal` | Portal routing/search/pagination, staff action policy, MFA/reset, usability/a11y |
+| Agent hậu booking | Đã merge vào `testing`, chưa có trên `main` | PR #69; `post_booking_skill` và node | Reactive only; test coverage, budget/tool-loop, security/privacy và rollout |
+| Driver invitation | Đã triển khai trên `testing` | `driver_invitation.py`, confirmation email, frontend invitation mode | Authorized issuance, reschedule/revoke, consent, telemetry và E2E |
+| Persistent profile/sales brief | Backend prototype | `services/profile`, summary APIs | Data rights, validator, safe logging, portal consumer, authorization và recovery |
+| Trusted knowledge | 25 record pending review; lexical retrieval | `services/knowledge` | 0 approved record tại audit; production gate đang cho phép pending |
+| Product analytics | Chưa triển khai | Không có tracking abstraction trong hai frontend | Event taxonomy, consent, dashboards, experiment/cohort design |
+| Automated frontend/E2E/a11y | Chưa triển khai | `package.json` không có test script | Test runner, critical journeys, browser/device/a11y evidence |
+| Human handoff | Chưa có workflow/tool end-to-end | Chỉ có contact/advisor data rời rạc | Handoff reason, transcript/context packet, SLA, ownership và closure |
 
----
+### 5.11 Quyết định sản phẩm đã chốt trong PRD v2
 
-## 5. Yêu cầu phi chức năng
-
-### 5.1 Hiệu năng
-
-API tra khung giờ trống phải trả về trong 800ms ở mức p95, còn API giữ chỗ và xác nhận trong 1,5 giây ở mức p95, đúng theo guardrail G7. Phản hồi đầu tiên của ViVi khi tư vấn không quá 3 giây, và nếu có streaming thì tính từ token đầu tiên. Hệ thống phải chịu được ít nhất 200 phiên đặt lịch đồng thời trên mỗi showroom mà không suy giảm. Thời gian dựng trang lần đầu (LCP) trên mạng 4G không quá 2,5 giây.
-
-Có một yêu cầu bắt buộc cần nhấn mạnh: luồng đặt lịch bằng nút không được phụ thuộc vào LLM. LLM chết thì việc đặt lịch vẫn phải chạy.
-
-### 5.2 Bảo mật và phân quyền
-
-Hệ thống không được ghi số điện thoại, email, số giấy phép lái xe hoặc ảnh giấy tờ vào log ứng dụng hay prompt log. Backend đã có cơ chế thay bằng `[redacted]`, và cơ chế này phải phủ 100% đường ghi log. Giấy phép lái xe chỉ truyền qua kênh chính thống có TLS, cấm đi qua tài khoản cá nhân của nhân viên.
-
-Việc truy cập lịch đã đặt phải qua xác thực OTP, và phiên truy cập có thời hạn. Phân quyền theo vai: khách chỉ thấy lịch của mình, tư vấn viên thấy lịch được phân công, và chỉ quản lý mới được duyệt khung VIP. Người đặt không xem được giấy phép lái xe của người lái. Dashboard và API vận hành không bao giờ trả về mã OTP hoặc dữ liệu giấy phép thô.
-
-Guardrails đầu vào và đầu ra phải chặn chủ đề nhạy cảm, chặn rò rỉ prompt và chặn lộ dữ liệu nội bộ qua hội thoại. Mọi thao tác thay đổi trạng thái booking đều có idempotency key để chống lặp.
-
-### 5.3 Quyền riêng tư và tuân thủ dữ liệu
-
-Nguyên tắc là thu thập tối thiểu, chỉ lấy dữ liệu cần cho buổi hẹn, và không thu giấy phép lái xe trước khi lịch được xác nhận theo R-G1. Ngay tại điểm thu thập giấy phép phải thông báo rõ mục đích sử dụng và thời hạn lưu. Giấy phép được xóa tự động sau thời hạn đã công bố, con số cụ thể chờ chốt ở OQ-4. Người dùng có quyền yêu cầu xóa dữ liệu của mình. Sản phẩm tuân thủ Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân, và có cơ chế tắt nhận thông báo được tôn trọng ngay lập tức, gắn với guardrail G2.
-
-### 5.4 Khả năng tiếp cận
-
-Các luồng chính gồm đặt lịch, tra cứu, đổi và hủy phải đạt WCAG 2.1 mức AA. Tương phản màu cho chữ thường tối thiểu 4.5:1. Người dùng phải điều hướng được hoàn toàn bằng bàn phím, và có link bỏ qua để nhảy tới nội dung chính. Mọi ảnh có thuộc tính `alt` mô tả, mọi trường nhập có nhãn liên kết đúng. Giao diện phải tôn trọng `prefers-reduced-motion`, nghĩa là hiệu ứng chuyển cảnh tắt được.
-
-Có một yêu cầu riêng phục vụ persona P3: lối thoát về người thật phải hiện rõ trên mọi màn hình.
-
-### 5.5 Đa ngôn ngữ và thiết bị
-
-Tiếng Việt là ngôn ngữ duy nhất ở bản này, đúng theo non-goal N6. Dấu tiếng Việt phải hiển thị đúng trên mọi kênh, kể cả tin nhắn Zalo và SMS. Thiết kế theo hướng mobile-first vì hai trong ba người phỏng vấn đặt lịch trên điện thoại. Hỗ trợ Chrome, Safari và Edge ở hai phiên bản gần nhất, riêng Safari iOS từ bản 15 trở lên, và hoạt động được ở màn hình rộng 360px.
-
-### 5.6 Khả năng mở rộng và vận hành
-
-Kiến trúc phải chịu được mở rộng lên ít nhất 50 showroom mà không cần đổi thiết kế. Các tham số như giờ mở cửa, thời hạn giữ chỗ và ngưỡng pin phải cấu hình được theo từng showroom. Cần health check cho từng thành phần gồm database, LLM và kênh thông báo. Mỗi lượt hội thoại phải truy vết được để phục vụ debug, nhưng trace không được chứa PII. Chi phí LLM và chi phí tin nhắn phải theo dõi được theo từng booking, gắn với guardrail G4.
-
----
-
-## 6. Trải nghiệm và thiết kế
-
-### 6.1 Tài liệu thiết kế
-
-Wireframe lo-fi đã có tại [`docs/docs/Wireframe-Lo-fi-P053.html`](docs/Wireframe-Lo-fi-P053.html). Bản thiết kế hi-fi trên Figma thì chưa có, vì thiết kế hiện đi thẳng từ lo-fi sang code; rủi ro này đã ghi ở R-05. Giao diện đang chạy là một React SPA gồm năm trang: trang chủ, chi tiết xe, đặt lịch, hậu mãi và trạm sạc.
-
-### 6.2 Bản đồ màn hình
-
-| Mã | Màn hình | Mục đích | Trạng thái |
-|---|---|---|---|
-| M1 | Điểm vào, gồm nút "Đặt lái thử" trên web và Zalo OA | Mở luồng, tạo booking nháp, báo rõ đây là kênh chính thống để tạo niềm tin (E18) | Web đã có, Zalo OA chưa có |
-| M2 | Hội thoại chọn xe và showroom | Chọn mẫu, phiên bản và showroom gần | Đã có |
-| M3 | Chọn suất theo lịch thời gian thực, kèm phương án thay thế | Cho khách thấy giờ có thật theo xe và giữ chỗ | Đã có |
-| M4 | Khai "đặt cho ai" | Tách vai ngay tại điểm đặt | Đã có |
-| M5 | Xác nhận kèm mã lịch | Biến "đã tiếp nhận" thành "đã xác nhận" | Đã có |
-| M6 | Link riêng cho người lái để tự xác nhận và nhập giấy phép | Đúng người lái đồng ý và nạp giấy tờ an toàn | Chưa có |
-| M7 | Trang "Lịch của tôi" để đổi hoặc hủy một chạm | Tự phục vụ, gỡ ma sát xã hội khi hủy | Đã có |
-| M8 | Mẫu tin nhắc qua Zalo và email | Giữ cam kết bằng nội dung cụ thể | Một phần |
-| M9 | Check-in tại showroom | Đảm bảo tới nơi là có lịch và đúng xe | Một phần |
-| M10 | Bàn làm việc HITL, gồm hàng chờ handoff và hàng chờ duyệt VIP | Đưa người thật vào đúng lúc, giữ ngữ cảnh | Chưa có |
-| M11 | Dashboard vận hành | Cho showroom đo phễu đặt, đến, chốt | Một phần |
-| M12 | Hội thoại tư vấn phục vụ F10 | Hỏi đáp có nguồn, gợi ý xe, so sánh | Chưa có, màn hình mới |
-
-### 6.3 Trạng thái màn hình bắt buộc
-
-Mỗi màn hình phải thiết kế đủ năm trạng thái, và đây là nơi trải nghiệm hay dở lộ ra rõ nhất.
-
-Trạng thái mặc định là lúc mọi thứ bình thường. Trạng thái đang tải phải có phản hồi thị giác trong vòng 300ms, và riêng thao tác giữ chỗ với xác nhận thì phải khóa nút để chống bấm hai lần. Trạng thái rỗng, chẳng hạn khi hết suất, phải nói thẳng kèm đề xuất phương án thật, tuyệt đối không bao giờ hiện lịch trống giả theo R-A1. Trạng thái lỗi phải nói được hai điều: chuyện gì đã xảy ra và người dùng nên làm gì tiếp theo, đồng thời giữ nguyên dữ liệu họ đã nhập. Trạng thái thành công phải xác nhận rõ ràng kèm mã lịch, và phải phân biệt rạch ròi giữa "đã giữ chỗ, chờ xác nhận" với "đã xác nhận".
-
-### 6.4 UX copy
-
-Nguyên tắc xuyên suốt là nói cho khách biết cái gì đã chắc (E1). Cột bên phải trong bảng dưới là những cách viết tuyệt đối phải tránh, lấy thẳng từ nỗi đau đã ghi nhận trong phỏng vấn.
-
-| Tình huống | Nên viết | Không được viết |
+| ID | Quyết định | Rationale |
 |---|---|---|
-| Đặt lịch thành công | "Đã xác nhận. 10:00 T7 07/09, VF 6 Plus, VinFast Gò Vấp. Mã lịch VF260907A1B2" | "Yêu cầu của bạn đã được tiếp nhận, nhân viên sẽ liên hệ." Chính câu này gây bất định ở E2 |
-| Đang giữ chỗ | "Đang giữ chỗ cho bạn, còn 1:47 để hoàn tất" | "Đang xử lý…" |
-| Hết chỗ | "Khung 10:00 vừa có người đặt. Còn 3 lựa chọn có sẵn xe VF 6 Plus: …" | "Khung giờ không khả dụng." |
-| Tin nhắc trước 24 giờ | "Nhắc lịch: 10:00 mai, VF 6 Plus đã được giữ cho anh Nam, VinFast Gò Vấp. [Xác nhận] [Đổi giờ] [Hủy]" | "Đừng quên lịch hẹn của bạn!" Nhắc chung chung là vô ích theo E12 |
-| Hủy thành công | "Đã hủy lịch. Chỗ đã được giải phóng. Không có ai liên hệ lại về lịch này." | "Rất tiếc bạn hủy lịch. Nhân viên sẽ gọi lại để tư vấn thêm." Truy theo đẩy khách đi theo E10 |
-| Đặt hộ | "Đã gửi link xác nhận riêng cho anh Nam qua Zalo. Chị nhận bản sao để theo dõi." | "Chúng tôi sẽ liên hệ với bạn." Người đặt bị kẹt làm trung gian theo E6 |
-| Thu giấy phép lái xe | "Cần bằng lái của người lái để chuẩn bị hồ sơ. Dữ liệu dùng cho buổi lái thử này và xóa sau [X] ngày. Hoặc bạn có thể mang bản gốc tới đối chiếu." | "Vui lòng gửi ảnh 2 mặt bằng lái." (E7) |
-| Backend lỗi | "Hiện chưa kết nối được hệ thống đặt lịch. Bạn thử lại sau ít phút, hoặc gọi hotline [số]." | Trang trắng, hoặc dòng "Error 500" |
-| F10 không biết | "Thông tin này em chưa có trong tài liệu chính thức. Em nối anh chị với tư vấn viên nhé?" | Bịa một con số nghe hợp lý, đây là rủi ro nặng nhất của F10 theo G6 |
-| F10 chuyển người thật | "Phần trả góp cần tư vấn viên tính theo hồ sơ cụ thể. Em chuyển anh chị nhé, anh chị không phải khai lại gì." | "Bạn có thể tham khảo lãi suất khoảng 8 đến 10% một năm." (R-T4) |
-
-### 6.5 Nguyên tắc thiết kế rút từ phỏng vấn
-
-Nói cái gì đã chắc, ở mọi bước; trạng thái đang giữ và trạng thái đã xác nhận phải trông khác nhau rõ rệt. Không bao giờ hiện lựa chọn không có thật, vì thà nói hết còn hơn cho chọn rồi rút lại (E18). Nút hủy phải dễ tìm ngang nút đặt, bởi giấu nút hủy không giữ được khách mà chỉ tạo ra no-show im lặng (E3). Không đẩy chốt: không đếm ngược giả, không câu "chỉ còn 2 suất", không hỏi ngân sách khi khách chưa mời (E11). Và luôn có lối thoát về người thật, hiện rõ trên mọi màn hình (R10).
+| D-01 | P0 dùng structured booking UI; ViVi không thay form bằng chuỗi câu hỏi dài | Usability synthesis cho thấy chat có thể chậm hơn form |
+| D-02 | Agent P0 tập trung hậu booking; advisor chọn xe tổng quát là P2 | Khoảng trống sau submit có bằng chứng mạnh hơn và code mới đi theo hướng này |
+| D-03 | Booking state `held` chiếm slot; mã chỉ được phát hành khi chuyển `confirmed`; care active ở `confirmed`/`checked_in` | Phản ánh invariant code và giảm copy mơ hồ |
+| D-04 | Booker/driver tách profile, notification và quyền | Giảm rò dữ liệu và phục vụ đúng người |
+| D-05 | GPLX P0 được kiểm bản gốc tại showroom; không upload/lưu số/ảnh | Data minimization và phù hợp implementation hiện tại |
+| D-06 | Bỏ VIP approval khỏi v2 | Không có evidence đủ mạnh; ghi chú nghiên cứu mới đề xuất bỏ; giảm nhánh state không cần thiết |
+| D-07 | 3D là capability trải nghiệm, không phải core value/metric của booking | 3D đã có code nhưng không giải quyết root problem |
+| D-08 | Profile không được âm thầm làm giàu; người dùng có quyền kiểm soát | Personalization chỉ có giá trị khi có trust và immediate user benefit |
+| D-09 | P0 care kết thúc khi hành trình lái thử kết thúc; post-drive nurture là future | Code hiện dừng ở `completed`; chưa có discovery/CRM consent cho post-drive |
 
 ---
 
-## 7. Phụ thuộc và ràng buộc
+## 6. Success Metrics and Evaluation
 
-### 7.1 Phụ thuộc kỹ thuật
+### 6.1 North Star Metric
 
-| Mã | Phụ thuộc | Trạng thái | Rủi ro nếu thiếu |
-|---|---|---|---|
-| DEP-1 | Dữ liệu tồn kho xe demo thời gian thực từ showroom | Chưa có nguồn thật | Chí mạng. Không có dữ liệu thật thì toàn bộ lời hứa "slot có thật" sụp đổ (E18) |
-| DEP-2 | Lịch làm việc tư vấn viên | Chưa có nguồn thật | Không xác định được suất khả dụng chính xác |
-| DEP-3 | Zalo Bot API để gửi tin và nhận webhook | Đã tích hợp, cần token production | Mất kênh liên lạc ưu tiên số một (E13) |
-| DEP-4 | Nhà cung cấp LLM (OpenAI hoặc OpenRouter) | Đã tích hợp | Chat tự do và F10 ngừng hoạt động, nhưng đặt lịch bằng nút vẫn chạy |
-| DEP-5 | Nhà cung cấp bản đồ kèm API key giới hạn domain | Đang dùng Leaflet tải từ CDN và tile Google không key, không dùng được cho production | Bản đồ chọn showroom không hiển thị |
-| DEP-6 | Dịch vụ geocoding chuẩn hoá địa chỉ | Chưa có | Không phân biệt được địa chỉ mơ hồ với trường hợp không có showroom |
-| DEP-7 | Nền tảng analytics | Chưa chọn | Không đo được bất kỳ chỉ số nào ở mục 2.4 |
-| DEP-8 | Knowledge base chính thống cho F10 | Cần thu thập từ VinFast | F10 không thể triển khai an toàn |
-| DEP-9 | Nhà cung cấp SMS và email dự phòng | Có khung, chưa có nhà cung cấp thật | Không có kênh dự phòng khi khách chưa dùng Zalo |
-| DEP-10 | Hạ tầng triển khai | Một phần | Không phát hành được |
+**Attendance Rate của lịch đủ điều kiện**
 
-### 7.2 Phụ thuộc tổ chức
+```text
+Attendance Rate = số logical appointment có event check-in
+                  / (số logical appointment có event check-in + số logical appointment no-show)
+```
 
-Cần xin quyền truy cập dữ liệu và khách thật của một showroom để kiểm chứng, việc này do PO cùng mentor phụ trách và hiện là câu hỏi mở lớn nhất (DEP-11). Cần phỏng vấn tư vấn viên và quản lý showroom vì hai persona P4 và P5 chưa có tiếng nói nào trong nghiên cứu (DEP-12). Cần VinFast cung cấp nội dung chính thống gồm brochure và chính sách bảo hành, sạc, hậu mãi (DEP-13). Cần đào tạo nhân viên showroom dùng màn hình check-in và bàn làm việc HITL (DEP-14). Cuối cùng cần pháp chế phê duyệt chính sách lưu và xóa giấy phép lái xe (DEP-15).
+Một **logical appointment** là booking mới nhất trong một chuỗi reschedule; chuỗi chỉ được đếm một lần. Numerator dùng event check-in đầu tiên, nên một booking đi từ `checked_in` sang `completed` không bị đếm hai lần. Cohort chỉ đóng sau khi slot kết thúc cộng grace period 30 phút và data-closure window 24 giờ; booking test, `held`, `expired`, predecessor `rescheduled` và booking bị showroom hủy không tham gia. Booking người dùng hủy được báo cáo riêng theo khoảng cách tới giờ hẹn; PO không giấu late-cancellation bằng cách gộp vào no-show.
 
-### 7.3 Ràng buộc
+Nếu một appointment vẫn `confirmed` sau data-closure window, dashboard phải gắn `unclosed`; báo cáo quyết định scale tạm coi nó là non-attended và đồng thời hiển thị State Closure Completeness. Nhóm không đưa kết luận outcome nếu completeness dưới gate. Dashboard phải tách theo showroom, resource được hứa, channel, self/book-for-other và cohort dùng/không dùng care.
 
-Về kỹ thuật, backend chạy Python 3.11 trở lên với FastAPI, LangGraph điều phối agent, cơ sở dữ liệu là SQLite ở môi trường dev và PostgreSQL ở production với khóa giao dịch; frontend dùng React và Vite. Việc chống trùng lịch là ràng buộc cứng của đề bài và không được đánh đổi vì bất kỳ lý do gì.
+Baseline hiện là **TBD** vì repo không có telemetry production đã xác minh. PO không dùng target 70%, 45%, 25% hoặc ngưỡng 80% trong PRD cũ/PDF làm cam kết, vì chúng không xuất phát từ baseline VinFast của dự án.
 
-Về chi phí, chi phí nhắc lịch và chi phí LLM được nêu thẳng là ràng buộc trong đề bài, nên được theo dõi qua guardrail G4.
+### 6.2 Metric hierarchy
 
-Về pháp lý, sản phẩm chịu Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân, và giấy phép lái xe là dữ liệu nhạy cảm.
+| Tầng | Metric | Định nghĩa | Baseline | Cách dùng |
+|---|---|---|---|---|
+| Business outcome | Attendance Rate | Công thức mục 6.1 | TBD | North Star; so theo cohort/pilot |
+| User outcome | Booking confirmation task success | Người dùng bắt đầu booking và đạt `confirmed` với dữ liệu hợp lệ | TBD | Tìm friction ở slot/form/OTP |
+| User outcome | Status comprehension | Người test nói đúng state, bước tiếp theo và nơi quản lý sau success | Nghiên cứu mới chỉ định tính | Gate usability |
+| User outcome | Self-service completion | Lookup/reschedule/cancel hoàn tất không cần staff hỗ trợ | TBD | Đo giá trị tự phục vụ |
+| Care outcome | Preparation checklist engagement | Người tham gia mở checklist hoặc acknowledgement CTA trước giờ hẹn | Chưa có event | Leading indicator, không thay Attendance; item completion là P1 nếu checklist trở thành tương tác |
+| Care outcome | Grounded resolution rate | Care session được human label là đúng, có căn cứ và giải quyết/đưa bước tiếp theo | Chưa có golden baseline | AI quality gate |
+| Care outcome | Driver invitation activation | Link hợp lệ được driver mở và bắt đầu care / link delivered | Chưa đo | Kiểm chứng giá trị luồng đặt hộ |
+| Ops outcome | Assignment-to-contact latency | Thời gian từ confirmed tới assigned staff/first acknowledged contact | Chưa đo | SLA showroom |
+| Ops outcome | State closure completeness | Booking đã qua lịch có `completed`, `no_show` hoặc trạng thái hợp lệ | Chưa đo | Guardrail cho North Star |
+| Reliability | Notification delivery success | Job delivered / job eligible theo kênh thật | Chưa đo | Provider/worker health |
+| Reliability | Profile persist success | Signal hợp lệ persisted / enqueue accepted, gồm retry/DLQ | Chưa đo | Không mất dữ liệu âm thầm |
+| Guardrail | Unauthorized data/action incidents | Truy cập profile/token hoặc booking mutation trái quyền | Chưa đo | Phải bằng 0 Sev-1/Sev-2 mở khi release |
+| Guardrail | Double-booking incidents | Hai booking active dùng cùng resource chồng thời gian | Chưa đo | Phải bằng 0 trong test/pilot |
+| Guardrail | Late cancellation rate | User cancellation sau cutoff do Operations/PO chốt / confirmed appointment | Chưa đo | Không để Attendance che mất cam kết bị vỡ sát giờ |
+| Guardrail | Duplicate/over-contact rate | Booking nhận contact trùng/vượt cap hoặc có hơn một active follow-up owner | Chưa đo | Phải bằng 0 incident chưa xử lý trong pilot |
+| Guardrail | Contact opt-out/complaint rate | Opt-out hoặc complaint / booking đã nhận outbound care | Chưa đo | Theo dõi trust và dừng campaign/channel khi vượt threshold |
 
-Về nghiệp vụ, hai mẫu Lạc Hồng 900 LX và 900S là xe trưng bày, chưa mở bán và chưa cho lái thử, nên cố ý không nằm trong catalogue đặt lịch. Chỉ bật lên khi VinFast thực sự mở lái thử.
+### 6.3 Target và pilot gate đề xuất
 
-Về nguồn lực, nhóm dự án làm trong khuôn khổ chương trình đào tạo với thời lượng giới hạn.
+Các ngưỡng dưới đây là release criteria tạm thời, không phải dự báo business.
 
----
+| Gate metric | Ngưỡng đề xuất | Trạng thái bằng chứng |
+|---|---:|---|
+| Critical journey usability | ≥85% với `n ≥ 7` tự hoàn tất booking và nói đúng state/bước tiếp theo; 0 critical safety/privacy failure | **🔶 Assumption (Giả định)**; với n=7 tương đương ít nhất 6 người |
+| Manage journey | ≥85% với `n ≥ 7` tìm được entry point và hoàn tất lookup + một thao tác đổi/hủy không cần moderator | **🔶 Assumption (Giả định)** |
+| Booking invariants | 100% test concurrency/idempotency/hold-expiry/pass; 0 double-booking | Bắt buộc trước pilot |
+| Security/privacy red team | 0 unauthorized profile read, invitation issuance, token leak hoặc driver mutation | Bắt buộc trước pilot |
+| Contact guardrail | 100% opt-out/suppression honored; 0 duplicate contact hoặc nhiều active owner trong pilot chưa được xử lý | Bắt buộc trước khi bật outbound care |
+| Knowledge critical facts | 100% record được dùng ở production có trạng thái `approved`, còn hiệu lực và có provenance | Bắt buộc trước pilot |
+| AI safety-critical cases | 100% pass ở privacy, permission, booking truth, live-data boundary và harmful hallucination set | **🔶 Assumption (Giả định)** về bộ case; failure bất kỳ chặn release |
+| AI quality non-critical | ≥90% human-accepted grounded/relevant/actionable trên golden set; không dimension cốt lõi dưới 85% | **🔶 Assumption (Giả định)**; điều chỉnh sau calibration, không lấy từ ví dụ PDF |
+| Delivery | Confirmation/checklist email E2E bằng provider thật đạt ≥99% trong pre-pilot test window, không gửi reminder sau cancel | **🔶 Assumption (Giả định)**; cần SRE/Operations chốt window và sample |
+| State data quality | ≥98% logical appointment được đóng `completed`/`no_show` trong 24 giờ sau slot; phần còn lại có owner xử lý | **🔶 Assumption (Giả định)**; dưới gate thì không ra quyết định outcome |
+| CI | 100% required checks xanh; không còn test fail/skip không có waiver | Hiện chưa đạt |
 
-## 8. Kế hoạch phát hành
+### 6.4 Funnel và event taxonomy tối thiểu
 
-### 8.1 Phân kỳ
-
-**MVP v1.0 đã dựng xong và đang ở trạng thái demo nội bộ.** Luồng đặt lịch đầu cuối chạy được với dữ liệu thật trong database. Cụ thể đã có F1 trợ lý hội thoại, F2 slot và xe có thật kèm chống trùng, F5 đổi hủy một chạm, F6 phương án thay thế; đã tách hồ sơ người đặt với người lái ở mức dữ liệu; đã có OTP truy cập lịch qua Zalo, lịch nhắc trước 24 giờ và 2 giờ, dashboard đọc dữ liệu; và website đã đủ trang chủ, chi tiết xe, trạm sạc, hậu mãi, bản đồ showroom cùng 3D viewer. Điều kiện để gọi là sẵn sàng thí điểm là hoàn tất phần P0 còn thiếu ở v1.1.
-
-**Bản v1.1 nhắm tới trạng thái sẵn sàng thí điểm**, gồm các việc P0 còn thiếu: xây F10 tư vấn với knowledge base thật và RAG để thay hàm `search_knowledge` giả (US-12 đến US-16); làm link riêng cho người lái tự xác nhận và nạp giấy phép (AC-04.3); viết lại nội dung tin nhắc cho cụ thể kèm ba nút hành động (AC-06.2); cài analytics theo tracking plan ở mục 2.5; dựng endpoint production thật để bỏ `/api/v1/demo/action`; lưu draft đặt lịch phía server; và khóa bản đồ production cùng geocoding (DEP-5, DEP-6).
-
-**Phase 2 tập trung vào vận hành showroom**, gồm F8 với bàn làm việc tư vấn viên và duyệt khung VIP (US-09, US-10); hoàn chỉnh F7 check-in với màn hình nhân viên và mã QR (US-08); đồng bộ lead một nguồn để chống chia số cho nhiều sales (R-N3, R-O2); dashboard phễu đặt, đến, chốt đầy đủ (US-11); và kết nối tồn kho xe demo thời gian thực (DEP-1).
-
-**Phase 3 là mở rộng**, gồm kênh Zalo OA cho phép đặt lịch trực tiếp trong Zalo vì người dùng nghiêng về kênh này (OQ-6), so sánh xe nâng cao mở rộng từ F10.3, streaming câu trả lời của ViVi, gợi ý khung giờ tối ưu theo tải showroom, và thử nghiệm cơ chế tăng cam kết như giữ chỗ có điều kiện. Riêng việc cuối chỉ làm sau khi có dữ liệu trả lời OQ-1.
-
-### 8.2 Chiến lược rollout
-
-| Giai đoạn | Phạm vi | Điều kiện chuyển tiếp |
-|---|---|---|
-| 1. Nội bộ | Nhóm dự án và mentor, dùng dữ liệu giả | Chạy hết bộ kiểm thử, không còn lỗi P0 |
-| 2. Thí điểm một showroom | Một showroom, sau feature flag, khách thật | Ít nhất 2 tuần, M4 bằng 0, G3 bằng 0, có baseline cho M1 và M2 |
-| 3. Mở dần theo phần trăm | 10%, rồi 30%, 60% và 100% lưu lượng của showroom thí điểm | Mỗi bậc giữ ít nhất 3 ngày, không guardrail nào chạm ngưỡng đỏ |
-| 4. Nhân rộng | Thêm showroom theo cụm | Vận hành ổn định 4 tuần |
-
-Cần bốn feature flag bắt buộc: `booking_agent_enabled` để bật tắt toàn bộ luồng agent và trả về form cũ, `advisory_enabled` riêng cho F10, `zalo_reminders_enabled`, và `vip_approval_enabled`.
-
-Về A/B test, chỉ chạy khi đã có đủ lưu lượng. Thử nghiệm thứ nhất so nhịp nhắc hai tin với ba tin, giả thuyết là ba tin tăng show-rate mà không tăng tỷ lệ tắt nhận tin, quyết định dựa trên M1 tăng trong khi G1 và G2 không vượt ngưỡng. Thử nghiệm thứ hai so có với không có F10 ở điểm vào, giả thuyết là tư vấn trước làm tăng tỷ lệ hoàn tất đặt lịch, đo bằng M2 và M8. Thử nghiệm thứ ba so thời hạn giữ chỗ 2 phút với 5 phút, giả thuyết là thời hạn dài giảm tỷ lệ rớt ở bước điền thông tin mà chưa làm giảm suất khả dụng, đo bằng M2 tăng và tỷ lệ `hold_expired` giảm; việc này gắn với OQ-2.
-
-### 8.3 Migration dữ liệu
-
-Đây là sản phẩm mới nên không có dữ liệu lịch sử cần migrate. Nhưng cần chuẩn bị bốn nhóm dữ liệu nền trước khi thí điểm: danh mục showroom kèm địa chỉ, toạ độ và giờ mở cửa; danh mục xe demo theo từng showroom gồm mẫu, phiên bản, biển số, trạng thái và ngưỡng pin; lịch làm việc tư vấn viên để sinh khung suất; và knowledge base cho F10 theo mục 4.4.5.
-
-### 8.4 Kế hoạch UAT
-
-| Nhóm nghiệm thu | Kịch bản bắt buộc |
+| Giai đoạn | Events bắt buộc |
 |---|---|
-| Khách tự đặt (P1) | Đặt trọn luồng, nhận mã lịch, nhận nhắc, tự hủy, rồi xác nhận không có ai gọi lại |
-| Khách đặt hộ (P2) | Đặt cho người khác, người lái nhận link riêng và tự xác nhận, rồi check-in bằng tên người lái |
-| Người ngại công nghệ (P3) | Tìm được lối thoát về người thật ở mọi bước |
-| Tư vấn viên (P4) | Nhận handoff giữ nguyên ngữ cảnh, không phải hỏi lại khách |
-| Quản lý (P5) | Duyệt và từ chối khung VIP, đọc dashboard, xác nhận không có trùng lịch |
-| QA | Toàn bộ AC ở mục 4.3 và 4.4, cùng 20 edge case ở mục 4.5 |
+| Discover | `catalogue_impression`, `vehicle_detail_viewed`, `vehicle_media_interacted`, `booking_cta_clicked` |
+| Availability | `booking_started`, `location_method_selected`, `showroom_results_viewed`, `showroom_selected`, `slot_results_viewed` |
+| Hold/identity | `slot_hold_created`, `slot_hold_expired`, `slot_hold_released`, `participant_mode_selected`, `otp_requested`, `otp_delivered`, `otp_verified`, `otp_failed`, `otp_locked` |
+| Confirm | `booking_confirm_attempted`, `booking_confirmed`, `booking_confirm_failed`, `confirmation_viewed`, `manage_entry_clicked` |
+| Self-service | `booking_lookup_started`, `booking_lookup_completed`, `booking_edit_completed`, `reschedule_started`, `reschedule_completed`, `booking_cancelled` |
+| Care | `care_opened`, `care_message_sent`, `care_checklist_viewed`, `care_checklist_acknowledged`, `knowledge_retrieved`, `care_answer_feedback`, `care_handoff_offered`, `care_handoff_accepted` |
+| Invitation | `driver_invite_issued`, `driver_invite_delivered`, `driver_invite_opened`, `driver_invite_resolved`, `driver_invite_revoked`, `driver_invite_expired` |
+| Communication | `notification_queued`, `notification_sent`, `notification_delivered`, `notification_failed`, `notification_bounced`, `notification_suppressed`, `contact_opted_out`, `duplicate_contact_detected`, `first_contact_acknowledged` |
+| Operations | `booking_assigned`, `license_check_recorded`, `booking_checked_in`, `booking_completed`, `booking_no_show`, `ops_transition_failed` |
+| AI/runtime | `route_selected`, `tool_called`, `tool_blocked`, `profile_signal_rejected`, `profile_signal_persisted`, `profile_queue_failed`, `knowledge_miss`, `eval_sample_created` |
 
-Tiêu chí đạt gồm bốn điều: 100% acceptance criteria của story P0 pass; M4 bằng 0 trong toàn bộ UAT; không có lỗi bảo mật thuộc nhóm NFR ở mục 5.2; và G6, tức tỷ lệ bịa đặt của F10, không quá 2% trên bộ eval.
+Mỗi event phải có `event_id`, UTC timestamp, environment, app/version, correlation/trace ID, pseudonymous actor ID, participant role, booking state trước/sau nếu liên quan, channel, result/error code và latency. AI event bổ sung model, prompt, skill, tool và knowledge version. Analytics không được nhận tên, email, phone, exact GPS, message/token thô, GPLX hoặc profile free text.
 
-### 8.5 Tài liệu và đào tạo
+### 6.5 AI evaluation lifecycle
 
-Tư vấn viên cần tài liệu về cách nhận handoff, đọc ngữ cảnh và đặc biệt là không gọi lại khách đã hủy. Quản lý showroom cần tài liệu về duyệt khung VIP, đọc dashboard và cập nhật trạng thái xe demo. Lễ tân cần tài liệu về màn hình check-in và cách tra cứu bằng cả tên người đặt lẫn tên người lái. Đội kỹ thuật đã có một phần tài liệu qua README và RUN_LOCAL, còn thiếu tài liệu vận hành và xử lý sự cố.
+Nhóm vận hành evaluation theo vòng lặp sau:
 
-Điểm đào tạo quan trọng nhất, phải nhấn mạnh với mọi nhân viên: khách đã bấm hủy thì không được gọi lại để tư vấn thêm. Hành vi này phá thẳng lời hứa lõi của sản phẩm, và chính nó đã đẩy anh Duy đi ở E10.
+1. Product/AI Quality đọc trace đã redaction, user feedback và incident để lập failure taxonomy.
+2. Nhóm tạo golden dataset gồm happy path, edge case và failure thật, có nhãn người và version.
+3. Dataset phải phủ actor, booking state, self/book-for-other, driver invitation, mức đủ thông tin, độ mơ hồ, knowledge hit/miss/stale và tình huống tấn công.
+4. Offline eval chạy trước merge/release; regression ở dimension critical chặn release.
+5. LLM judge chỉ dùng sau khi được calibration với nhãn người. Dashboard phải theo dõi TPR, TNR, precision/recall theo failure class; accuracy tổng không đủ.
+6. Production monitoring lấy mẫu theo rủi ro, phát hiện drift và đưa failure mới trở lại golden set.
 
-### 8.6 Truyền thông tới người dùng
-
-Trên website đặt banner tại trang xe với thông điệp đặt lịch lái thử được xác nhận ngay trong ba phút. Trên Zalo OA gửi tin giới thiệu cho khách đã có lịch sử tương tác. Tại showroom đặt standee hướng dẫn quét mã đặt lịch. Với nhân viên, chuẩn bị kịch bản giới thiệu ngắn để dùng khi khách gọi hotline.
-
----
-
-## 9. Rủi ro, giả định và câu hỏi mở
-
-### 9.1 Giả định
-
-| Mã | Giả định | Mức rủi ro | Cách kiểm chứng |
-|---|---|---|---|
-| A1 | Khách Việt chịu đặt lái thử qua AI hội thoại thay vì gọi hoặc nhắn người thật, và tỷ lệ no-show cao chủ yếu đến từ ma sát khi đặt lịch chứ không phải vì ý định vốn thấp | Rất cao, đây là giả định rủi ro nhất của cả dự án | Dữ liệu từ thí điểm. Bằng chứng hiện có ở ca anh Duy nghiêng về cả hai: ý định vốn không cao (70%), nhưng chính trải nghiệm bất định kéo nó xuống 20% |
-| A2 | Showroom có sẵn dữ liệu xe demo và lịch tư vấn viên đủ chính xác để truy vấn thời gian thực | Cao | DEP-1, DEP-2 |
-| A3 | Tư vấn viên chấp nhận để agent tham gia vào việc sắp lịch của mình | Cao | Chưa phỏng vấn P4 và P5 |
-| A4 | Persona P3 ngại công nghệ sẽ dùng được sản phẩm nếu có lối thoát về người thật | Trung bình | Chưa phỏng vấn |
-| A5 | Zalo là kênh nhắc hiệu quả nhất | Thấp | Cả ba người phỏng vấn đều xác nhận |
-| A6 | Nhịp ba tin nhắc là đủ và không gây phiền | Trung bình | A/B test kèm guardrail G1 và G2 |
-| A7 | Knowledge base tĩnh đủ trả lời phần lớn câu hỏi tư vấn | Trung bình | Đo tỷ lệ "không biết" của F10 sau thí điểm |
-
-Giả định A1 có một hàm ý quan trọng cho sản phẩm. Vì câu trả lời nghiêng về "cả hai", ta phải vừa giảm ma sát bằng cơ chế đổi hủy một chạm, vừa tăng cam kết bằng lời nhắc cụ thể rằng xe đã sẵn sàng. Không được chọn một trong hai.
-
-### 9.2 Rủi ro và phương án giảm thiểu
-
-| Mã | Rủi ro | Ảnh hưởng | Khả năng | Giảm thiểu |
-|---|---|---|---|---|
-| R-01 | Dữ liệu xe demo không cập nhật thật, agent hứa có xe nhưng tới nơi không có | Chí mạng. Theo E18 thì việc này còn tệ hơn gọi sales vì khách không biết trách ai | Cao | Không phát hành khi chưa có DEP-1. Ràng buộc pin và tồn kho ở tầng dữ liệu. Cảnh báo sớm khi xe đổi trạng thái (EC-05) |
-| R-02 | ViVi bịa thông số, giá hoặc chính sách | Cao, vừa là rủi ro pháp lý vừa mất niềm tin | Cao nếu phát hành F10 mà chưa có RAG thật | R-T1 và R-T2, kèm bộ eval và guardrail G6. Thà nói không biết còn hơn đoán |
-| R-03 | Nhân viên showroom né hệ thống và quay lại chốt lịch tay | Cao, sản phẩm thành vô nghĩa | Trung bình | Phỏng vấn P4 và P5 trước khi thiết kế màn hình nội bộ, kèm đào tạo. Đo tỷ lệ lịch tạo ngoài hệ thống |
-| R-04 | Nhân viên gọi lại khách đã hủy | Cao, phá lời hứa lõi (E10) | Trung bình | R-N4 chặn ở tầng hệ thống, kèm đào tạo và guardrail G3 |
-| R-05 | Không có bản Figma hi-fi nên giao diện dễ trôi dạt và khó nghiệm thu thiết kế | Trung bình | Đang xảy ra | Chốt một trong hai hướng: hoặc dựng Figma, hoặc lấy bản đang chạy làm chuẩn rồi viết design tokens |
-| R-06 | Chi phí LLM và tin nhắn vượt ngân sách | Trung bình | Trung bình | Guardrail G4. Định tuyến ý định bằng model rẻ trước khi gọi LLM lớn. Luồng nút không tốn LLM |
-| R-07 | Rò rỉ PII hoặc giấy phép lái xe qua log và prompt | Cao, rủi ro pháp lý | Thấp vì đã có cơ chế | Yêu cầu ở mục 5.2, guardrail G8, kiểm thử bảo mật trước phát hành |
-| R-08 | Kết luận sản phẩm dựa trên mẫu n bằng 3 | Trung bình | Đang xảy ra | Mở rộng phỏng vấn (DEP-12). Ghi rõ giới hạn ở mọi tài liệu |
-| R-09 | Thời hạn giữ chỗ 2 phút quá ngắn, khách rớt ở bước điền thông tin | Trung bình | Trung bình đến cao | Đo tỷ lệ `hold_expired`. Chạy A/B test 2 phút với 5 phút (OQ-2) |
-| R-10 | Phụ thuộc một nhà cung cấp LLM | Trung bình | Trung bình | Luồng nút đã độc lập với LLM. Thiết kế cho phép đổi nhà cung cấp |
-| R-11 | Nút Hủy quá dễ làm tăng hủy sát giờ | Thấp đến trung bình | Thấp | Guardrail G5. Dù sao hủy sát giờ vẫn tốt hơn no-show im lặng, vì ít nhất còn giải phóng được chỗ |
-
-### 9.3 Câu hỏi mở
-
-Mỗi câu hỏi phải có người trả lời và hạn cụ thể, nếu không nó sẽ nằm im tới lúc sprint bắt đầu.
-
-| Mã | Câu hỏi | Người trả lời | Hạn | Chặn việc gì |
-|---|---|---|---|---|
-| OQ-1 | Có áp cơ chế giữ chỗ có điều kiện hoặc cọc nhẹ hoàn lại để tăng cam kết không? Câu này liên quan trực tiếp tới giả định A1 | PO, mentor, nghiệp vụ | Trước Phase 3 | Chiến lược giảm no-show |
-| OQ-2 | Thời hạn giữ chỗ nên là bao lâu? Code hiện cố định 120 giây trong khi Concept Spec đề xuất 15 phút, chênh nhau rất xa. Có cấu hình theo showroom không? | PO, backend, vận hành | Trước thí điểm | R-B3 và rủi ro R-09 |
-| OQ-3 | Ngưỡng pin tối thiểu để mở suất và để cho lái thử là bao nhiêu? | Vận hành showroom | Trước thí điểm | R-X3 |
-| OQ-4 | Chính sách lưu và xóa giấy phép lái xe ra sao: giữ bao lâu, ai được xem, xóa tự động khi nào? | Pháp chế | Trước v1.1 | Yêu cầu ở mục 5.3 và UX copy |
-| OQ-5 | Nếu người lái không xác nhận trước giờ hẹn thì có chặn lái không, hay cho check-in bằng bản gốc? | PO và vận hành | Trước Phase 2 | EC-03 |
-| OQ-6 | Kênh ưu tiên cho bản tiếp theo là web hay Zalo OA? Người dùng nghiêng về Zalo | PO và mentor | Trước Phase 3 | Phạm vi Phase 3 |
-| OQ-7 | Nhóm có được cấp quyền truy cập dữ liệu và khách thật của một showroom không? | Mentor và VinFast | Càng sớm càng tốt | Toàn bộ kế hoạch thí điểm và mọi baseline |
-| OQ-8 | Nguồn nội dung chính thống cho knowledge base F10 lấy từ đâu, ai duyệt, cập nhật thế nào? | PO, phía VinFast cung cấp | Trước v1.1 | Toàn bộ F10 |
-| OQ-9 | Khung giờ nào được coi là VIP hoặc đặc biệt cần quản lý duyệt tay? | Quản lý showroom | Trước Phase 2 | R-H2 |
-| OQ-10 | Chọn nền tảng analytics nào? | PO và kỹ thuật | Trước v1.1 | Toàn bộ mục 2.4 và 2.5 |
-
----
-
-## 10. Timeline và milestone
-
-Mốc thời gian tính theo tuần kể từ ngày phê duyệt PRD. Ngày cụ thể chốt sau khi có câu trả lời cho OQ-7, vì quyền truy cập dữ liệu showroom quyết định toàn bộ lịch thí điểm.
-
-| Mốc | Nội dung | Điều kiện hoàn thành | Dự kiến |
-|---|---|---|---|
-| M0. PRD approved | PRD v1.0 được mentor và đội kỹ thuật duyệt | Không còn câu hỏi chặn P0 | Tuần 0 |
-| M1. Design freeze | Chốt màn hình M6 link người lái, M8 mẫu nhắc, M12 tư vấn; chốt UX copy ở mục 6.4 | Sau mốc này không đổi thiết kế nếu không qua change request | Tuần 2 |
-| M2. Knowledge base ready | Nội dung F10 đã thu thập, làm sạch và index xong | OQ-8 đã trả lời, bộ eval có ít nhất 50 câu hỏi | Tuần 3 |
-| M3. Dev complete v1.1 | Toàn bộ phần P0 còn thiếu đã code xong | Mọi acceptance criteria của story P0 đều có test | Tuần 6 |
-| M4. Code freeze | Ngừng thêm tính năng, chỉ sửa lỗi | Không còn lỗi P0 hoặc P1 đang mở | Tuần 7 |
-| M5. UAT | Nghiệm thu theo mục 8.4 | 100% AC của P0 pass, M4 bằng 0, G6 không quá 2% | Tuần 8 |
-| M6. Pilot release | Thí điểm một showroom sau feature flag | Đã đào tạo nhân viên, analytics đã chạy | Tuần 9 |
-| M7. Baseline đo được | Có số thật cho M1, M2, M3, M6 | Ít nhất 2 tuần dữ liệu thí điểm | Tuần 11 |
-| M8. Go hoặc No-go mở rộng | Quyết định nhân rộng | Không guardrail nào chạm ngưỡng đỏ, M4 bằng 0 | Tuần 12 |
-
-Đường găng của kế hoạch đi từ OQ-7 (quyền truy cập dữ liệu showroom) sang DEP-1 (tồn kho xe demo) rồi tới M6. Nếu OQ-7 không được duyệt, kế hoạch chuyển sang thí điểm mô phỏng với dữ liệu giả, và khi đó mọi chỉ số ở mục 2.4 không được coi là đã kiểm chứng.
-
----
-
-## 11. Phụ lục
-
-### 11.1 Kết quả research đã dùng
-
-Về định tính, nhóm có ba bản chép phỏng vấn đầy đủ: anh Nguyên dài 22 phút 32 giây, anh Duy dài 28 phút 36 giây và chị Vy dài 29 phút 08 giây. Cả ba nằm trong file `docs/docs/User Empathy, Spec and PRD.pdf`, mục "ITVer 1/2/3".
-
-Kịch bản phỏng vấn đã dùng gồm bảy chặng từ T1 đến T7 và bảy nguyên tắc hỏi: hỏi chuyện đã xảy ra chứ không hỏi giả định, không dẫn dắt, mỗi câu chỉ một ý, đào "vì sao" hai đến ba lần, dùng im lặng như một công cụ, không bán hàng và không thanh minh cho sản phẩm, và ghi nguyên văn những câu cảm xúc mạnh.
-
-Về định lượng thứ cấp, nhóm dùng 10 phát hiện từ R1 đến R10 với nguồn ghi rõ ở mục 1.3.B.
-
-### 11.2 Phân tích đối thủ
-
-Mazda với mẫu CX-5 làm tốt hơn ở chỗ họ gọi xác nhận một lần và khi khách tới nơi thì có xe sẵn. Chị Vy kể rằng chồng chị vì thế mà có thiện cảm hơn, và kết quả là VF 7 bị đẩy xuống sau. Hyundai với mẫu Creta thì hưởng lợi từ việc anh Duy chuyển hướng sau trải nghiệm tồi (E14).
-
-Điều đáng suy nghĩ là đối thủ không thắng bằng công nghệ, họ thắng bằng việc giữ đúng lời hứa. Gọi xác nhận một lần và có xe sẵn khi khách tới, chỉ vậy thôi. Đây vừa là tin xấu vì rào cản cạnh tranh rất thấp, vừa là tin tốt vì ta hoàn toàn có thể vượt lên bằng cách làm đúng những điều cơ bản, ở quy mô lớn hơn và nhất quán hơn.
-
-### 11.3 Bảng thuật ngữ
-
-| Thuật ngữ | Nghĩa |
+| Dimension | Câu hỏi đánh giá |
 |---|---|
-| Booking | Một buổi hẹn lái thử, tức cam kết cụ thể về việc ai lái, xe gì, ở đâu, lúc nào. Đây là concept xương sống của sản phẩm |
-| Slot, hay suất lái thử | Tổ hợp gồm showroom, khung giờ và một xe demo cụ thể theo phiên bản. Còn chỗ với sales mà không có xe đúng bản thì không phải là suất hợp lệ |
-| Hold, hay giữ chỗ | Trạng thái tạm giữ một suất có thời hạn, chống người khác giành trong lúc khách điền thông tin |
-| Người đặt (booker) | Người khởi tạo và theo dõi booking, có thể không phải người lái |
-| Người lái (driver) | Người thật sự cầm lái. Ràng buộc giấy phép lái xe gắn vào đây chứ không gắn vào người đặt |
-| GPLX | Giấy phép lái xe, thuộc nhóm dữ liệu nhạy cảm |
-| No-show | Khách có lịch đã xác nhận nhưng không đến và cũng không báo |
-| Show-rate | Tỷ lệ khách đến thật trên số lịch đã xác nhận, đây là chỉ số North Star M1 |
-| HITL | Human-in-the-loop, tức đưa người thật vào đúng lúc cần, để tư vấn sâu hoặc duyệt khung đặc biệt |
-| Double-booking | Hai booking cùng chiếm một suất. Ràng buộc cứng là con số này phải bằng 0 |
-| Khóa giao dịch | Cơ chế database quyết định ai giữ chỗ trước khi có tranh chấp |
-| Idempotency | Gửi cùng một yêu cầu nhiều lần chỉ tạo ra một kết quả, dùng để chống double-click và mạng chập chờn |
-| Guardrail metric | Chỉ số bảo vệ, ngăn việc tối ưu một số làm hỏng số khác |
-| JTBD | Jobs-to-be-Done, tức công việc thật mà người dùng cần hoàn thành |
-| RAG | Retrieval-Augmented Generation, tức LLM trả lời dựa trên tài liệu truy xuất được thay vì dựa vào trí nhớ nội tại |
-| ViVi | Tên gọi trợ lý AI của sản phẩm |
-| B2B2C | Mô hình mà hãng hoặc showroom trả tiền (Customer), còn khách và nhân viên mới là người dùng thật (User) |
+| Routing | Booking/care/sensitive/out-of-scope có được chọn đúng theo state và participant không? |
+| Booking truth | Câu trả lời có đúng state, resource và quyền hiện tại không? |
+| Grounding | Mọi fact cần nguồn có được retrieval từ record approved/valid không? |
+| Relevance/actionability | Câu trả lời có giải quyết câu hỏi trước khi hỏi thêm và đưa bước tiếp theo hữu ích không? |
+| Permission/privacy | Driver có bị lộ dữ liệu/quyền booker không; profile có nhận dữ liệu cấm không? |
+| Profile quality | Direct/inferred/third-party, confidence và revise/retract có đúng không? |
+| Tone/accessibility | Ngôn ngữ có rõ, không ép buộc, không phỏng vấn và phù hợp người non-tech không? |
+| Fail-safe | Khi tool/knowledge/LLM lỗi, hệ thống có giữ booking transaction và đưa fallback đúng không? |
 
-### 11.4 Ma trận truy vết
+### 6.6 Dashboard và nhịp review
 
-Bảng này đảm bảo mọi tính năng đều bắt nguồn từ một nỗi đau thật, và ngược lại, mọi nỗi đau lớn đều có tính năng phụ trách. Nếu một tính năng không nối được về cột trái thì cần cân nhắc bỏ.
-
-| Nỗi đau hoặc nhu cầu | Bằng chứng | Tính năng | Quy tắc | Chỉ số |
-|---|---|---|---|---|
-| Chọn giờ nhưng chỉ nhận "đã tiếp nhận" | E1, E2 | F2, F4 | R-S1, R-B4 | M2, M3 |
-| Chờ xác nhận vô định, hết chỗ mới báo sau | E9, R3 | F6 | R-A1, R-A2 | M2 |
-| Ngại hủy nên no-show im lặng, rồi bị truy theo | E3, E10 | F5 | R-N4 | M5, M6 |
-| Web, SMS và sales lệch giờ nhau, nhắc nhầm người | E8 | F4 | R-B6, R-N1 | M1 |
-| Đặt hộ nhưng liên hệ dồn về người đặt, người lái vô hình | E5, E6 | F3 | R-K2, R-D4 | M1, M7 |
-| Lộ giấy phép lái xe qua Zalo cá nhân | E7 | F3 | R-G1, R-G2 | G8 |
-| Tới nơi như không có lịch, sai phiên bản hoặc pin yếu | E5, E9 | F7, F2 | R-D4, R-X1, R-X3 | M7 |
-| Cần hỏi sâu về pin, vay, bảo hiểm | E17 | F8, F10.5 | R-H1, R-T4 | Tải HITL |
-| Ý định tụt vì không được nhắc | E12, R2, R8 | F4 | R-N1, R-N2 | M1 |
-| Trùng lịch, đây là nỗi đau doanh nghiệp | Đề bài | F2 | R-B2, R-S1 | M4 |
-| Không biết chọn xe nào, cần được giải đáp | E15, E16 | F10.1 đến F10.3 | R-T1, R-T2 | M8 |
-| Bị đẩy chốt khi mới đang tìm hiểu | E11 | Ràng buộc của F10 | R-T3 | G2 |
-
-### 11.5 Cách mỗi vai đọc tài liệu này
-
-Dev đọc mục 4.2 để suy ra data model và bảng chuyển trạng thái, mục 4.3 và 4.4 để lấy acceptance criteria, mục 5 cho yêu cầu phi chức năng, và mục 7 cho phụ thuộc.
-
-QA đọc mục 4.3 và 4.4 vì acceptance criteria chính là test case, mục 4.5 cho edge case, mục 8.4 cho kế hoạch nghiệm thu, và mục 4.2 làm danh mục kiểm thử theo mã quy tắc.
-
-Design đọc mục 3 để hiểu persona và hành trình, mục 6 cho màn hình, trạng thái và UX copy, và mục 4.5 cho các error state.
-
-Vận hành showroom đọc mục 3.1 phần P4 và P5, mục 8.5 về đào tạo, và mục 4.2 để nắm những quy tắc ảnh hưởng tới công việc hằng ngày.
-
-Mentor và người phê duyệt đọc mục 1 cho bằng chứng, mục 2 cho mục tiêu và chỉ số, mục 9 cho rủi ro và câu hỏi mở, mục 10 cho timeline.
+- PO review funnel, Attendance và self-service hàng tuần trong pilot.
+- AI Quality Owner review grounded resolution, knowledge miss, profile reject và safety incidents ít nhất hàng tuần, đồng thời review ngay khi model/prompt/knowledge version đổi.
+- Operations review assignment/contact latency, notification failure, state closure và resource conflict hằng ngày trong pilot.
+- Security/Privacy nhận alert ngay cho unauthorized access, token leakage, raw PII logging hoặc data-rights failure.
+- Mỗi dashboard phải hiển thị sample size, denominator, time window, environment và data-quality warning; nhóm không công bố phần trăm không có denominator.
 
 ---
 
-Có một nguyên tắc xuyên suốt cả dự án, và nó đáng được nhắc lại ở cuối tài liệu này: đừng nhảy sang giai đoạn xây khi giai đoạn kiểm chứng chưa trả lời được giả định rủi ro nhất. Xây sớm quá thì rất dễ ra một sản phẩm mượt mà nhưng lại chữa nhầm bệnh.
+## 7. User Stories and Requirements
 
-Bản MVP hiện tại được dựng để kiểm chứng luồng và trải nghiệm, không phải để phát hành ngay. Giả định A1 và câu hỏi OQ-7 vẫn đang mở, và chính hai thứ đó quyết định sản phẩm này có chữa đúng bệnh hay không.
+### 7.1 Cách ưu tiên
+
+| Mức | Ý nghĩa |
+|---|---|
+| P0 | Bắt buộc để mở pilot; thiếu requirement này thì booking/care không an toàn, không đo được hoặc không giải quyết root problem |
+| P1 | Bắt buộc trước khi mở rộng nhiều showroom; có thể pilot giới hạn với workaround được phê duyệt |
+| P2 | Tối ưu/future capability sau khi P0/P1 chứng minh outcome |
+
+Một requirement được coi là **Done** khi code, automated test, telemetry, security/privacy evidence, content và acceptance evidence liên quan đều hoàn tất. Việc merge code hoặc demo happy path không đủ để đóng requirement.
+
+Với module có thể tắt độc lập như persistent profile hoặc driver invitation, “P0” nghĩa là bắt buộc trước khi module đó xuất hiện trong pilot. Nếu chưa đạt, server-side feature flag phải tắt route, worker, UI và outbound liên quan; team không được giữ endpoint công khai rồi gọi capability đó là “không nằm trong scope”.
+
+### 7.2 Functional requirement register
+
+| ID | Pri | Yêu cầu | Acceptance evidence tối thiểu |
+|---|---:|---|---|
+| FR-DIS-01 | P1 | Website phải hiển thị catalogue/chi tiết/CTA từ canonical API và phân biệt editorial fallback | Contract test, loading/error/empty, content owner sign-off |
+| FR-DIS-02 | P0 | Claim về giá, sạc, bảo hành, pháp lý và thời điểm phải có source/version/effective date | Content inventory; 100% claim nhạy cảm có owner/approval |
+| FR-DIS-03 | P1 | Showroom result phải giải thích khoảng cách, slot sớm nhất và tiêu chí xếp hạng | Usability test và ranking telemetry |
+| FR-DIS-04 | P0 | Catalogue/content vẫn hoạt động khi booking health hoặc AI lỗi; chỉ capability lỗi bị disable | Chaos/E2E degraded-mode test |
+| FR-DIS-05 | P1 | Gallery/model summary/booking CTA phải xuất hiện đủ sớm cho người mới; màu, zoom, section navigation và back-to-top phải dùng được | Usability + responsive/a11y evidence |
+| FR-DIS-06 | P1 | Mỗi state/màn hình phải có một primary action rõ; CTA/tag/highlight còn lại phải có hierarchy phụ | Design review + usability evidence |
+| FR-BK-01 | P0 | Availability chỉ trả slot có xe demo/capacity hợp lệ, dùng cùng nguồn với DriveOps và một horizon authoritative | Concurrency/inventory/horizon contract tests |
+| FR-BK-02 | P0 | Hold phải được tạo atomically, có expiry authoritative, idempotency và cơ chế giải phóng runtime | Concurrent hold + worker recovery + expiry E2E |
+| FR-BK-03 | P0 | UI phải trình bày `held` là chưa xác nhận và không sinh booking code trước commit | UI test, API/state assertion |
+| FR-BK-04 | P0 | Hệ thống phải tách self-booking với book-for-other, cùng booker/driver model chuẩn | API/UI/E2E cho cả hai nhánh |
+| FR-BK-05 | P0 | Consent tùy chọn phải mặc định tắt, có purpose/copy rõ, persist và audit đúng lựa chọn | UI test + DB/audit assertion |
+| FR-BK-06 | P0 | Mọi confirm/mutation nhạy cảm phải bắt buộc access token còn hạn, single-use, bind đúng booking, booker contact, participant role và purpose | Expiry/replay/attempt/rate-limit/cross-role/cross-booking E2E ở mọi endpoint |
+| FR-BK-07 | P0 | Confirm phải revalidate hold, version, xe, pin, capacity và chỉ commit một lần | Idempotency, stale state, concurrency tests |
+| FR-BK-08 | P0 | Success state phải hiển thị mã, state, resource đã hứa, showroom, giờ, participants, bước tiếp theo, manage CTA và SLA chỉ khi đã được Operations duyệt | Status comprehension ≥ gate mục 6.3 |
+| FR-BK-09 | P0 | Booker phải lookup/edit trường cho phép/reschedule/cancel qua access có scope và expiry | Critical E2E + authorization tests |
+| FR-BK-10 | P0 | Reschedule phải giữ lịch cũ đến khi lịch mới confirm; sau commit phải revoke reminder/invite cũ và tạo dữ liệu mới | Atomic reschedule + failure recovery test |
+| FR-BK-11 | P0 | Cancel phải giải phóng resource, dừng mọi notification cũ và đóng care/invite | Worker race/idempotency test |
+| FR-BK-12 | P0 | Booker phải sửa đúng contact/thay driver bằng re-verification; hệ thống phải revoke/reissue notification, invite và profile binding an toàn | Driver replace/decline/unactivated-invite E2E |
+| FR-BK-13 | P0 | Product phải chốt model, variant hay demo asset là resource được hứa; substitution chỉ xảy ra theo rule và consent rõ | API/UI/success/ops contract + OQ-19 |
+| FR-CARE-01 | P0 | Care chỉ active khi backend xác nhận state và participant; client không được tự bật | Route/state matrix tests |
+| FR-CARE-02 | P0 | Confirmation/T-24h/T-2h phải cung cấp checklist approved, đúng participant và state | Notification/copy/E2E evidence |
+| FR-CARE-03 | P0 | Fact phải lấy từ knowledge approved/valid hoặc live source; thiếu nguồn thì fail-safe | Retrieval + response validation + golden eval |
+| FR-CARE-04 | P0 | Mỗi lượt phải trả lời trước, hỏi tối đa một câu liên quan và đưa next step | Golden conversation evaluation |
+| FR-CARE-05 | P0 | Driver invitation phải private, expiring, revocable, authorized và không có booking mutation | Token lifecycle/permission/red-team tests |
+| FR-CARE-06 | P0 | Profile phải tách actor, phân loại certainty/source, chặn dữ liệu cấm và hỗ trợ control/data rights | Validator, boundary, export/delete/retract tests |
+| FR-CARE-07 | P0 | Khi LLM/tool/Redis/knowledge lỗi, booking/self-service vẫn dùng được và care đưa fallback an toàn | Fault injection và recovery test |
+| FR-CARE-08 | P1 | Người dùng phải có cách chuyển sang người thật với reason/context tối thiểu; chỉ hiển thị SLA đã được duyệt, nếu chưa thì dùng contact/operating hours không cam kết thời gian | Handoff E2E + Operations sign-off |
+| FR-CARE-09 | P0 | Success/care phải luôn có contact và operating hours deterministic; full ticket handoff có thể P1 nhưng người dùng không được rơi vào ngõ cụt | Content/API fallback + outage E2E |
+| FR-COM-01 | P0 | Mỗi booking chỉ có một owner follow-up active; mọi channel dùng frequency cap, dedupe, opt-out và suppression theo state | Contact-policy tests + duplicate/complaint guardrail |
+| FR-COM-02 | P0 | DriveOps hoặc integration phải ghi `first_contact_acknowledged` cùng actor/time/channel; không suy ra contact từ notification sent | Event/audit contract + portal/integration E2E |
+| FR-OPS-01 | P0 | Internal API phải enforce RBAC/scope ở backend; UI hiding không phải security control | Role/scope matrix tests |
+| FR-OPS-02 | P0 | Assignment, GPLX, check-in, completed/no-show/cancel phải theo state machine và audit | Transition/time-window/audit tests |
+| FR-OPS-03 | P0 | Showroom đối chiếu booking code, driver identity/contact được mask và GPLX bản gốc/đúng hạng/còn hạn; hệ thống không thu file/số GPLX | Data inventory + identity/GPLX UI/API test |
+| FR-OPS-04 | P1 | Authorized staff phải xem profile brief trong portal theo đúng booking/person và mức certainty | Scoped portal E2E; privacy sign-off |
+| FR-OPS-05 | P1 | Portal phải có URL route, search, pagination và deep link notification | UX/E2E ở dataset lớn |
+| FR-OPS-06 | P0 | Portal phải safe logout/reauth khi session hết hạn/revoked và critical portal journey phải có E2E trong CI | Revoked/expired-session + critical portal E2E |
+| FR-OPS-07 | P0 | Trạng thái “chưa cấu hình” không được tự biến thành giờ hoạt động/capacity mặc định; operating hours, vehicle block và fleet state phải ảnh hưởng availability có audit | Unconfigured/default/inventory propagation tests |
+| FR-OBS-01 | P0 | Critical funnel/care/ops events tại mục 6.4 phải được phát sinh với schema/version chung | Event contract tests + dashboard query |
+| FR-OBS-02 | P0 | AI trace phải redaction, có model/prompt/knowledge version và nối được với eval sample | Trace security review + replayable eval |
+| FR-OBS-03 | P0 | Alert phải bao phủ notification, hold cleanup, profile queue/DLQ, unauthorized access và state closure | Runbook + synthetic alert test |
+| FR-AI-01 | P0 | Post-booking loop phải có tool/LLM/cost/time budget và circuit breaker | Loop/budget/failure tests |
+| FR-AI-02 | P0 | Mọi thay đổi model/prompt/skill/knowledge phải chạy versioned offline eval trước release | CI evidence và eval report |
+| FR-AI-03 | P1 | LLM judge phải được calibration với nhãn người và báo TPR/TNR theo failure class | Calibration report + threshold decision |
+
+### 7.3 Epic A — Booking có thật và dễ hiểu
+
+**Epic hypothesis:** Nếu hệ thống chỉ hiển thị resource thực, giải thích đúng state và xác minh danh tính trong một journey nhanh, người dùng sẽ hoàn tất booking với mức tin tưởng cao hơn và showroom giảm conflict.
+
+#### US-A1 — Giữ một slot có thật
+
+Là người muốn lái thử, tôi muốn hệ thống giữ đúng xe và khung giờ tôi chọn trong một khoảng rõ ràng, để tôi có thể nhập thông tin mà không lo người khác lấy cùng slot.
+
+**Acceptance criteria**
+
+- **Given** slot còn đủ điều kiện và chưa bị chiếm, **when** người dùng chọn giữ chỗ, **then** booking service phải atomically tạo booking `held`, gắn slot/resource, trả server expiry và version.
+- **Given** hai request đồng thời chọn cùng resource, **when** transaction hoàn tất, **then** chỉ một request được giữ; request còn lại nhận lỗi có recovery option.
+- **Given** hold hết hạn, **when** expiry worker/reconciliation chạy hoặc request mới kiểm tra, **then** booking chuyển `expired`, slot trở lại khả dụng và UI không restore held state cũ.
+- **Given** hold còn hiệu lực, **when** người dùng refresh/khôi phục session, **then** UI phải đối chiếu server trước khi hiển thị countdown; client state không được là nguồn sự thật.
+- **Given** backend chỉ mở lịch trong một horizon, **when** người dùng điều hướng calendar, **then** UI chỉ cho xem/fetch đúng horizon đó và phân biệt “ngoài kỳ mở lịch” với “đã kín”; calendar không được hiển thị ngày 31–60 như không có slot nếu API chỉ trả 30 ngày.
+- **Given** backend trả model/variant/demo asset, **when** UI nhóm và hiển thị option, **then** UI không được bỏ mất cấp resource mà Product đã hứa; mọi substitution phải theo rule/consent của OQ-19.
+- **🔵 Open Question (Câu hỏi mở):** PO và Engineering phải chốt TTL sau khi đo p50/p95 form + email OTP. Hai phút hiện tại là implementation constraint, chưa phải target sản phẩm đã được chứng minh.
+
+#### US-A2 — Xác minh và xác nhận booking
+
+Là booker, tôi muốn xác minh contact ngay trong bước review và chỉ nhận mã khi lịch đã commit, để tôi biết mình thực sự có lịch.
+
+**Acceptance criteria**
+
+- **Given** held booking đủ dữ liệu, **when** booker yêu cầu OTP, **then** hệ thống gửi qua kênh được hỗ trợ, hiển thị contact đã mask, expiry/resend rõ và không lộ OTP ở production.
+- **Given** OTP sai, hết hạn, replay hoặc vượt giới hạn, **when** người dùng submit, **then** hệ thống từ chối với lỗi an toàn và không confirm booking.
+- **Given** OTP hợp lệ, **when** bất kỳ endpoint/tool nào confirm booking, **then** backend phải nhận và consume access token có permission `confirm_booking`, bind đúng booking/booker contact/participant role; frontend verify OTP nhưng bỏ token không được coi là enforcement.
+- **Given** driver khác booker hoặc contact chỉ thuộc driver, **when** actor xin `manage`, `reschedule` hoặc `cancel`, **then** backend phải từ chối trừ khi policy ownership riêng đã được chứng minh; shared contact không được tự động mở quyền cross-booking.
+- **Given** OTP hợp lệ nhưng hold/version/resource đã thay đổi, **when** confirm chạy, **then** hệ thống không commit và đưa người dùng về recovery phù hợp.
+- **Given** mọi invariant hợp lệ, **when** người dùng xác nhận rõ ràng, **then** hệ thống tạo đúng một booking code, chuyển `confirmed`, lập notification jobs và ghi event/audit.
+- **Given** request bị retry do network, **when** cùng idempotency key được gửi lại, **then** hệ thống trả cùng kết quả, không tạo booking hoặc notification trùng.
+
+#### US-A3 — Tách người đặt và người lái
+
+Là người đặt hộ, tôi muốn khai báo riêng người lái, để showroom liên hệ đúng người và cả hai chỉ nhận thông tin thuộc vai trò của mình.
+
+**Acceptance criteria**
+
+- **Given** booker chọn “đặt hộ”, **when** điền form, **then** UI giải thích vì sao cần dữ liệu từng người và tạo hai participant riêng.
+- **Given** driver khác booker, **when** booking confirm, **then** notification content, invitation và profile identity phải tách đúng người.
+- **Given** hai người dùng chung email/phone, **when** profile được promote/merge, **then** `person_id` và participant role phải ngăn hai profile bị hợp nhất chỉ vì shared contact; trường hợp mơ hồ cần verification/review.
+- **Given** booker hoặc driver xem care/profile, **when** hệ thống tạo context, **then** không lặp lại contact của người kia và không chuyển direct signal giữa hai profile.
+- **Given** P0 GPLX, **when** người dùng đặt lịch, **then** hệ thống chỉ thu cam kết đủ điều kiện; showroom xác minh bản gốc trước check-in và không lưu ảnh/số GPLX.
+- **Given** booker nhập sai contact, thay driver hoặc driver từ chối invitation, **when** thay đổi được xác minh, **then** hệ thống cập nhật participant theo policy, revoke link/notification/profile binding cũ, phát hành dữ liệu mới idempotently và giữ audit không lộ PII.
+
+#### US-A4 — Success state không mơ hồ
+
+Là người vừa hoàn tất booking, tôi muốn thấy một phiếu xác nhận rõ ràng, để tôi biết lịch có thật và làm gì tiếp theo.
+
+**Acceptance criteria**
+
+- **Given** confirm thành công, **when** success view hiển thị, **then** view phải có state label, booking code, resource đã hứa, showroom/address/map, start/end time, booker/driver, advisor nếu có, checklist và manage CTA; SLA chỉ xuất hiện khi Operations đã duyệt, nếu chưa thì UI hiển thị contact/giờ hoạt động và nói rõ chưa có cam kết thời gian phản hồi.
+- **Given** dữ liệu advisor hoặc map chưa có, **when** render, **then** UI hiển thị fallback có ý nghĩa; không hiện `undefined`, dữ liệu bịa hoặc màn hình trống.
+- **Given** booking chỉ đang `held` hoặc hệ thống mới nhận request, **when** UI/email render, **then** không dùng từ “đã xác nhận”.
+- **Given** người dùng dùng keyboard/screen reader/reduced motion, **when** success transition chạy, **then** nội dung chính vẫn truy cập được mà không phụ thuộc cinematic animation.
+
+### 7.4 Epic B — Self-service an toàn
+
+**Epic hypothesis:** Nếu booker tìm và quản lý lịch bằng OTP với hành động tách bạch, người dùng sẽ ít phải gọi showroom và resource được giải phóng sớm hơn.
+
+#### US-B1 — Tìm và xem lịch
+
+Là người dùng quay lại, tôi muốn tìm lịch bằng contact/mã và OTP, để tôi xem đúng lịch của mình mà không lộ lịch của người khác.
+
+**Acceptance criteria**
+
+- **Given** người dùng mở header hoặc success CTA, **when** chọn “Quản lý lịch”, **then** entry point không phụ thuộc query parameter ẩn hoặc chat copy.
+- **Given** contact có 0, 1 hoặc nhiều booking, **when** OTP hợp lệ, **then** UI hiển thị đúng empty/single/list state và không lộ PII vượt mức cần thiết.
+- **Given** access session có purpose/expiry, **when** người dùng thử action ngoài scope hoặc sau expiry, **then** backend từ chối và yêu cầu access mới.
+
+#### US-B2 — Đổi lịch mà không mất lịch cũ
+
+Là booker, tôi muốn chọn slot mới nhưng vẫn giữ lịch cũ cho đến khi đổi thành công, để lỗi mạng hoặc hết hold không làm tôi mất cả hai.
+
+**Acceptance criteria**
+
+- **Given** booking `confirmed`, **when** booker bắt đầu reschedule, **then** lịch cũ vẫn confirmed trong lúc slot mới ở `held`.
+- **Given** hold mới hết hạn hoặc confirm mới lỗi, **when** flow kết thúc, **then** lịch cũ không đổi và UI nói rõ kết quả.
+- **Given** reschedule commit, **when** transaction hoàn tất, **then** booking cũ thành `rescheduled`, booking mới `confirmed`, resource/reminder/invite cũ bị đóng và notification/link mới được tạo idempotently.
+
+#### US-B3 — Hủy lịch có chủ đích
+
+Là booker, tôi muốn hủy lịch sau một bước xác nhận rõ, để showroom giải phóng resource và tôi không nhận reminder sai.
+
+**Acceptance criteria**
+
+- **Given** access có quyền cancel, **when** người dùng chọn hủy, **then** UI hiển thị đúng lịch và hệ quả trước explicit confirmation.
+- **Given** cancellation commit, **when** worker chuẩn bị gửi bất kỳ message cũ, **then** worker recheck state và không delivery.
+- **Given** cancellation đã thành công, **when** request retry, **then** kết quả idempotent; slot được giải phóng một lần và care/invite đóng.
+
+### 7.5 Epic C — ViVi chăm sóc sau đặt lịch
+
+**Epic hypothesis:** Nếu ViVi giải thích trạng thái, đưa checklist và trả lời có nguồn đúng người sau confirmation, người dùng sẽ chuẩn bị tốt hơn và có khả năng đến hẹn cao hơn.
+
+#### US-C1 — Nhận checklist và hỗ trợ đúng thời điểm
+
+Là người có lịch confirmed, tôi muốn ViVi cho biết cần chuẩn bị gì ngay sau booking và trước buổi hẹn, để tôi không phải chờ cuộc gọi mới biết bước tiếp theo.
+
+**Acceptance criteria**
+
+- **Given** booking vừa chuyển `confirmed`, **when** success/confirmation được tạo, **then** UI/email deterministic hiển thị checklist approved và 2–3 hướng care phù hợp mà không cần người dùng gửi câu “mồi”; requirement này không giả định graph tự chuyển từ booking node sang post-booking node trong cùng lượt.
+- **Given** T-24h/T-2h và booking vẫn eligible, **when** notification trigger chạy, **then** content dùng state mới nhất, đúng participant và không chứa inference nhạy cảm.
+- **Given** participant đã nhận cùng purpose trong frequency window, opt-out hoặc booking có owner/contact đang xử lý, **when** channel khác chuẩn bị gửi, **then** hệ thống dedupe/suppress theo policy và ghi reason event.
+- **Given** booking cancelled/rescheduled/completed/no_show, **when** người dùng mở context cũ, **then** ViVi không tiếp tục care như một lịch sắp tới và đưa đường dẫn đúng.
+
+#### US-C2 — Hỏi về xe bằng nguồn tin cậy
+
+Là người sắp lái thử, tôi muốn hỏi điều nên quan sát trên mẫu xe của mình và nhận câu trả lời có nguồn, để tôi tận dụng buổi lái thử mà không bị tư vấn sai.
+
+**Acceptance criteria**
+
+- **Given** câu hỏi cần fact, **when** ViVi trả lời, **then** retrieval chỉ dùng record approved, còn hiệu lực và phù hợp market/model/trim/year.
+- **Given** câu hỏi cần dữ liệu live hoặc knowledge thiếu, **when** ViVi xử lý, **then** ViVi nói rõ chưa xác nhận, không nội suy và đưa contact/next step.
+- **Given** profile có preference liên quan, **when** ViVi cá nhân hóa, **then** ViVi dùng preference để chọn góc nhìn nhưng không dùng preference làm bằng chứng fact.
+- **Given** một lượt hội thoại, **when** ViVi cần thêm ngữ cảnh, **then** ViVi trả lời phần biết trước và chỉ hỏi tối đa một câu có lý do rõ.
+
+#### US-C3 — Driver invitation có giới hạn
+
+Là driver khác booker, tôi muốn mở link riêng để chuẩn bị, nhưng không muốn link đó làm lộ dữ liệu hoặc cho phép ai đó thay đổi lịch.
+
+**Acceptance criteria**
+
+- **Given** booking confirmed và actor có quyền phát hành, **when** invitation được tạo, **then** server chỉ lưu hash; raw token chỉ truyền qua TLS trong link/resolve/chat, không persist/log/analytics/referrer, và TTL/revocation/booking/driver binding được ghi.
+- **Given** confirmation có nhiều channel hoặc retry, **when** notification được render lại, **then** hệ thống reuse một active invitation cho đúng booking/driver thay vì issue rồi revoke link đã gửi; issue chỉ hợp lệ ở `confirmed`/`checked_in` và TTL được cap theo lịch.
+- **Given** client nhận fragment invitation, **when** trang mở, **then** client phải gọi server resolve trước khi hiện greeting/care active; state invalid/expired/revoked/rescheduled không được lộ booking hoặc participant.
+- **Given** token invalid, expired, revoked, booking cũ rescheduled hoặc không còn active, **when** client resolve, **then** backend từ chối mà không lộ participant/booking detail.
+- **Given** driver yêu cầu lookup/change/cancel/update, **when** classifier/tool guard xử lý, **then** hệ thống chặn ở backend và hướng dẫn booker dùng self-service.
+- **Given** booking rescheduled và driver vẫn khác booker, **when** lịch mới confirm, **then** link cũ bị revoke và link mới được phát hành theo consent/policy.
+
+#### US-C4 — Cá nhân hóa có quyền kiểm soát
+
+Là người dùng, tôi muốn biết ViVi đang nhớ gì và có thể sửa/xóa, để cá nhân hóa không trở thành theo dõi âm thầm.
+
+**Acceptance criteria**
+
+- **Given** message có durable signal hợp lệ, **when** ViVi đề xuất lưu, **then** validator loại PII/secret, actor/source/certainty/confidence được gắn đúng và persistence có outcome observable.
+- **Given** message chỉ chứa dữ liệu tạm thời hoặc về người thứ ba, **when** profile tool chạy, **then** dữ liệu bị chặn hoặc hạ mức third-party theo policy.
+- **Given** user yêu cầu xem/sửa/retract/export/delete/opt-out, **when** request được xác thực, **then** hệ thống thực hiện theo SLA/policy và giải thích phần audit buộc phải giữ nếu có.
+- **Given** Redis/worker lỗi, **when** profile update không persist, **then** hệ thống ghi metric/alert và không nói với người dùng rằng đã ghi nhớ thành công.
+
+### 7.6 Epic D — DriveOps và human service
+
+**Epic hypothesis:** Nếu Operations nhìn thấy cùng booking state và chỉ actor đúng scope mới được thao tác, showroom sẽ chuẩn bị resource tốt hơn và đóng dữ liệu attendance đầy đủ.
+
+#### US-D1 — Thao tác booking theo role/scope
+
+Là người vận hành showroom, tôi muốn chỉ thấy và thao tác booking thuộc trách nhiệm, để phục vụ nhanh mà vẫn bảo vệ dữ liệu.
+
+**Acceptance criteria**
+
+- **Given** staff, manager hoặc admin, **when** gọi Internal API trực tiếp, **then** backend enforce role/showroom/assignment; việc ẩn button không thay security.
+- **Given** booking ngoài scope, **when** actor đoán ID hoặc dùng deep link, **then** API trả lỗi không lộ dữ liệu.
+- **Given** mutation hợp lệ, **when** commit, **then** booking event và internal audit ghi actor, state trước/sau, reason và timestamp đã redaction.
+
+#### US-D2 — GPLX và check-in đúng quy trình
+
+Là người có quyền tại showroom, tôi muốn xác minh GPLX bản gốc trước check-in, để chỉ người đủ điều kiện lái xe được tham gia.
+
+**Acceptance criteria**
+
+- **Given** booking confirmed và người lái đến, **when** kiểm GPLX, **then** UI buộc người thao tác xác nhận từng điều kiện thay vì hard-code `true`; rejection cần reason.
+- **Given** người lái đến, **when** staff tìm/đối chiếu, **then** portal dùng booking code cùng driver name/contact đã mask theo policy và bản gốc GPLX; invitation token không phải giấy tờ định danh tại showroom.
+- **Given** GPLX chưa verified hoặc ngoài cửa sổ thời gian, **when** check-in, **then** backend từ chối và ghi error event phù hợp.
+- **Given** check-in/completion/no-show hợp lệ, **when** transition thành công, **then** timestamp/state/audit cập nhật và metric Attendance nhận đúng event.
+- **🔵 Open Question (Câu hỏi mở):** Operations phải chốt liệu assigned staff có quyền verify/check-in hay chỉ manager/admin. Policy hiện tại khiến staff gần như read-only.
+
+#### US-D3 — Chuyển sang người thật
+
+Là người dùng có câu hỏi ViVi không giải quyết được, tôi muốn biết ai sẽ tiếp nhận và khi nào, để tôi không rơi vào ngõ cụt.
+
+**Acceptance criteria**
+
+- **Given** knowledge miss, repeated failure hoặc user yêu cầu người thật, **when** handoff được offer, **then** UI nêu channel, operating hours/SLA và dữ liệu nào sẽ được chuyển.
+- **Given** user đồng ý, **when** handoff tạo, **then** ticket/context packet chỉ chứa booking state, câu hỏi và signal được phép; không chuyển full transcript/profile mặc định.
+- **Given** staff tiếp nhận/đóng, **when** status đổi, **then** user và dashboard nhận event để đo response/resolution.
+
+### 7.7 Non-functional requirements
+
+| ID | Nhóm | Requirement P0/P1 |
+|---|---|---|
+| NFR-01 | Availability | **🔶 Assumption:** booking transaction service đạt ≥99,5% trong pilot window; catalogue/content có degraded mode độc lập |
+| NFR-02 | Performance | **🔶 Assumption:** p95 catalogue/availability ≤2 giây và confirm mutation ≤3 giây, không tính platform cold start; UI luôn có timeout/retry state |
+| NFR-03 | AI latency | **🔶 Assumption:** UI phát acknowledgement ≤2 giây và care answer hoàn tất p95 ≤10 giây; timeout không giữ transaction lock |
+| NFR-04 | Concurrency | Hold/confirm/reschedule/cancel phải transaction-safe, idempotent và chống dirty write/version conflict |
+| NFR-05 | Worker durability | Notification, hold expiry và profile queue phải có retry/backoff, startup recovery, DLQ, idempotency, metric và operator runbook |
+| NFR-06 | Authentication | Public profile/invitation issuance/summary không được anonymous; internal API phải dùng scoped session; token không xuất hiện trong log/referrer/analytics |
+| NFR-07 | Application security | Chat renderer phải escape/sanitize output; CSP/dependency policy, rate limit, request limits và OWASP-focused tests phải đạt gate |
+| NFR-08 | Privacy | Data inventory, purpose, consent, minimization, retention, export/delete/retract và breach workflow phải được Security/Privacy phê duyệt |
+| NFR-09 | Accessibility | Critical public/portal journeys phải đạt WCAG 2.2 AA: keyboard, focus, dialog, labels, contrast, screen reader, reduced motion và no announcement storm |
+| NFR-10 | Responsive | Public flow phải pass 360/768/1024/1440 px; portal phải giữ customer/time/action context trên mobile hoặc cung cấp alternative view |
+| NFR-11 | Compatibility | Hai phiên bản gần nhất của Chrome, Safari, Edge và mobile Safari/Chrome phải pass critical E2E |
+| NFR-12 | Content | Mọi claim nhạy cảm phải có owner/review date/expiry; UI phải hiển thị error/retry thay vì bỏ trống im lặng |
+| NFR-13 | Observability | Trace/event/log có correlation ID, environment/version và redaction; alert/runbook phải được test trước pilot |
+| NFR-14 | Cost | Classifier/care/profile summary phải qua usage budget, per-turn tool cap và cost dashboard; budget failure có graceful fallback |
+| NFR-15 | Maintainability | Schema/contract change phải có migration/version, backward compatibility plan và test; production không dựa vào auto-create schema cho breaking change |
+
+### 7.8 Release readiness summary
+
+Bản audit chi tiết nằm ở mục 12.4 để phần thân PRD vẫn đọc được với người non-tech. Tại thời điểm viết, sản phẩm **chưa sẵn sàng pilot** vì còn blocker P0 ở sáu nhóm:
+
+| Nhóm blocker | Outcome bị đe dọa | Gate chịu trách nhiệm |
+|---|---|---|
+| Booking/identity | OTP chưa được backend enforce, access cross-role, hold expiry và resource/horizon chưa nhất quán | G1 |
+| Client/portal quality | XSS, local storage nhạy cảm, degraded mode, session recovery và thiếu automated E2E/a11y | G1 |
+| Privacy/profile | Anonymous profile APIs, shared-contact merge, raw context/log và thiếu data rights | G2 nếu capability bật |
+| Knowledge/AI | 100% record còn pending, citation chưa enforce, loop/summary chưa có budget đầy đủ | G2 |
+| Invitation/notification | Token lifecycle/reschedule/retry, provider truth, consent và over-contact | G2 nếu capability bật |
+| Content/operations | Claim hard-code chưa governance và portal capacity có thể dùng default giả | G1/G2 |
+
+Engineering dùng ledger mục 12.4 làm readiness backlog; PO dùng bảng requirement/user story ở phần này để đánh giá outcome và acceptance.
 
 ---
 
-*PRD v1.0, dự án P-053, ngày 13/08/2026, Nguyễn Hoàng Minh (Product Owner).*
+## 8. Out of Scope
+
+| Hạng mục ngoài v2 | Lý do | Điều kiện xem xét lại |
+|---|---|---|
+| Mua xe, đặt cọc, thanh toán, ký hợp đồng | Khác domain pháp lý/giao dịch; không cần để chứng minh booking/care outcome | Có sponsor, payment/legal architecture và discovery riêng |
+| Vay/trả góp, bảo hiểm, định giá/thu xe cũ | Cần đối tác và suitability/compliance riêng | PRD độc lập sau khi booking pilot thành công |
+| Đàm phán giá hoặc hứa khuyến mãi | Knowledge hiện không bảo đảm dữ liệu live | Có pricing source/API, owner và approval SLA |
+| Advisor chọn xe tổng quát trước booking ở P0 | Research ưu tiên hậu booking; code hiện chặn pre-booking vehicle advice | Booking/care đạt outcome; discovery chứng minh nhu cầu và knowledge coverage |
+| Full CRM, lead scoring và sales automation | Profile hiện chỉ hỗ trợ care; chưa có consent/process/CRM integration | Sales/Privacy discovery và integration contract riêng |
+| Chăm sóc tự động sau `completed` | Chưa có evidence, consent và workflow hậu lái thử | Research sau pilot; chốt post-drive outcome và owner |
+| Outbound tự trị dựa trên inference/profile | Rủi ro privacy và over-contact | Policy, consent, throttling, explainability và experiment được duyệt |
+| VIP approval/special queue | Không có evidence đủ mạnh; hướng nghiên cứu mới đề nghị bỏ | Operations chứng minh use case/tần suất/rule rõ |
+| Upload/lưu ảnh hoặc số GPLX | P0 dùng kiểm bản gốc tại showroom và data minimization | Legal/security/retention review cùng nhu cầu vận hành rõ |
+| Driver đổi/hủy/tra cứu booking qua invitation | Link chỉ cấp quyền care, không chứng minh ownership của booking | Không xem xét nếu không có identity model mới được Security duyệt |
+| SMS production | Repo chưa có SMS adapter thật | Có provider, consent, delivery receipt và E2E |
+| Two-way calendar synchronization | UI hiện chỉ mở Google Calendar template; `.ics` chưa được nối vào hành động | Có OAuth/integration owner và reschedule/cancel sync contract |
+| Vector database/semantic RAG như mục tiêu tự thân | Lexical retrieval đủ cho P0 nếu coverage/grounding đạt | Golden eval chứng minh lexical miss là bottleneck |
+| CMS đầy đủ cho mọi trang | Không cần để pilot một showroom, nhưng governance claim P0 vẫn bắt buộc | Content volume/frequency chứng minh ROI của CMS |
+| Mở rộng thêm trải nghiệm 3D/video | Không giải quyết root problem; bundle hiện đã lớn | Performance budget ổn và research chứng minh contribution |
+| Native mobile app | Responsive web đủ để kiểm chứng | Web metrics chứng minh hạn chế nền tảng |
+
+---
+
+## 9. Dependencies, Assumptions and Risks
+
+### 9.1 Dependencies
+
+| Dependency | Cần cho | Owner đề xuất | Điều kiện/SLA cần chốt |
+|---|---|---|---|
+| Inventory: model/variant/demo vehicle/slot/staff | Availability và confirm | Operations + Backend | Freshness, conflict owner, reconciliation và incident path |
+| PostgreSQL + migration discipline | Booking, access, profile, audit, checkpointer | Backend/Platform | Backup/restore, migration/rollback, connection/capacity SLO |
+| Redis hoặc durable queue thay thế | Profile update và transient coordination | Backend/Platform | Availability, recovery, DLQ, monitoring và fallback |
+| Email provider | OTP, confirmation, invitation và reminder | Platform/Operations | Sender domain, quota, bounce/delivery webhook và outage fallback |
+| Zalo Bot | Kênh tùy chọn | Operations/Platform | Linked identity, consent, template approval và rate limit |
+| Map/geocoding/tile/CDN | Search showroom và đường đi | Frontend/Platform | Key/domain restriction, CORS, error fallback và privacy |
+| LLM provider/classifier model | Routing, care và summary | AI/Platform | Data-processing terms, latency, budget, version/rollback và outage mode |
+| Knowledge/content owner | Fact sản phẩm, sạc, warranty và checklist | VinFast/Content Owner | Approval workflow, review cadence, expiry và escalation |
+| Security/Privacy/Legal | Identity, profile, invitation và data rights | Security/Privacy | Threat model, consent, retention, access review và incident SLA |
+| DriveOps adoption | State closure và Attendance data | Showroom Operations | Role policy, training, daily closure and support |
+| Product analytics platform | Funnel/cohort/eval monitoring | Data/Product | Event schema, pseudonymization, consent, dashboard và access |
+
+### 9.2 Assumption register
+
+| ID | Assumption | Mức rủi ro | Cách kiểm chứng | Owner | Hạn |
+|---|---|---:|---|---|---|
+| AS-01 | Status clarity + care làm tăng attendance | Cao | Baseline và controlled pilot/cohort analysis | PO + Data | Gate G4 |
+| AS-02 | UI cấu trúc nhanh hơn chat cho booking | Trung bình | Comparative usability, task time và error | Design Research | Gate G0 |
+| AS-03 | Showroom duy trì slot/resource đủ chính xác | Cao | Freshness/conflict audit và dry run | Operations | Gate G1 |
+| AS-04 | Người dùng hiểu và chấp nhận profile personalization có control | Cao | Consent comprehension test và opt-out behavior | Research + Privacy | Gate G1 |
+| AS-05 | Email là kênh đủ ổn định cho pilot | Cao | Provider E2E, delivery/bounce và OTP completion | Platform | Gate G2 |
+| AS-06 | Một pilot giới hạn đủ để kiểm chứng end-to-end | Trung bình | Sample/power review theo traffic thật | PO + Data | Gate G0 |
+| AS-07 | Lexical retrieval đủ cho scope knowledge P0 | Trung bình | Golden retrieval/grounding eval | AI Quality | Gate G2 |
+| AS-08 | Showroom có khả năng đóng state completed/no-show đúng hạn | Cao | Operational rehearsal và state-closure dashboard | Operations | Gate G2 |
+
+### 9.3 Risk register
+
+| ID | Loại | Rủi ro | Khả năng | Tác động | Mitigation/contingency | Owner | Trigger |
+|---|---|---|---:|---:|---|---|---|
+| R-01 | Value | Care engagement không làm tăng attendance | Trung bình | Cao | Đo cohort; phân tích checklist/handoff; dừng mở rộng nếu không có signal sau window đủ mẫu | PO/Data | Không uplift hoặc CI bao gồm 0 theo design đã chốt |
+| R-02 | Usability | Hold hết hạn trước khi email OTP tới | Cao | Cao | Đo delivery/task time; cấu hình TTL; giữ server truth; recovery không mất dữ liệu | PO/Backend | Hold expiry cao ở review/OTP |
+| R-03 | Usability | Agent làm journey dài và gây phiền | Trung bình | Cao | UI-first, one-question rule, opt-out, no profile interview | Design/AI | Time-on-task/negative feedback tăng |
+| R-04 | Feasibility | Slot/resource không fresh | Trung bình | Rất cao | Revalidate commit, reconciliation, Ops ownership, safe alternatives | Backend/Ops | Conflict, vehicle unavailable, manual override tăng |
+| R-05 | Reliability | Worker/Redis/email mất job hoặc gửi message cũ | Cao | Cao | Durable queue, state recheck, idempotency, DLQ, alert, runbook | Platform | Queue lag/DLQ/delivery mismatch vượt threshold |
+| R-06 | AI quality | Retrieval đúng record nhưng model tổng hợp sai | Trung bình | Cao | Approved KB, response validation, golden eval, safe fallback, human review | AI Quality | Grounded correctness regression |
+| R-07 | Privacy | Profile lưu/lộ PII hoặc inference sai người | Cao ở code hiện tại | Rất cao | RB-01/03/14, data rights, strict actor boundary, audit | Security/Privacy | PII in log/profile hoặc complaint |
+| R-08 | Security | Bearer invitation hoặc public profile route bị lạm dụng | Cao ở code hiện tại | Rất cao | Auth/scope/rate limit/token hygiene/revocation/red team | Security/Backend | Unauthorized read/issuance/resolve |
+| R-09 | Viability | Showroom không dùng DriveOps hoặc không đóng trạng thái | Trung bình | Cao | Co-design, training, minimal workflow, daily completeness review | Operations | Closure completeness dưới gate |
+| R-10 | Content | Giá/chính sách/warranty cũ | Cao | Cao | Inventory, owner, effective/expiry, default-deny stale claim | Content Owner | Review overdue/incorrect claim |
+| R-11 | Adoption | Driver không mở invitation hoặc thấy đó là spam | Trung bình | Trung bình | Consent/copy/sender trust, differentiated content, activation metric | Product/Ops | Delivery cao nhưng open/activation thấp |
+| R-12 | Accessibility | Animation/chat/modal ngăn người dùng hoàn tất | Cao ở code hiện tại | Cao | WCAG audit, reduced motion, focus/live-region fixes, assistive-tech E2E | Design/Frontend | Critical a11y failure |
+| R-13 | Cost | Tool loop/summary endpoint tạo chi phí ngoài kiểm soát | Cao ở code hiện tại | Trung bình | Budget/cap/auth/cache/circuit breaker/cost alert | AI/Platform | Cost/request hoặc loop count vượt limit |
+| R-14 | Delivery | Nhánh `testing` và `main` diverge; feature bị gọi nhầm là production | Cao | Cao | Release manifest, environment banner, feature flags, commit traceability | Tech Lead/PO | Status report không chỉ ra commit/environment |
+
+### 9.4 Nguyên tắc xử lý incident
+
+- Sev-1 gồm unauthorized data access, double-booking diện rộng, agent làm booking mutation sai quyền hoặc gửi hàng loạt notification sai. Nhóm phải tắt capability liên quan bằng kill switch, giữ booking core nếu an toàn, thông báo owner và mở incident review.
+- Sev-2 gồm knowledge sai có tác động người dùng, profile attribution sai, queue mất dữ liệu hoặc self-service không dùng được. Nhóm dừng rollout mới và sửa trước khi mở rộng.
+- Mỗi incident phải tạo regression case, cập nhật runbook/golden dataset và có owner/date; nhóm không chỉ sửa prompt nếu root cause nằm ở authorization, state hoặc data contract.
+
+---
+
+## 10. Open Questions
+
+Các câu hỏi dưới đây là phần của scope, không phải phụ lục để “hỏi sau”. Nếu đến deadline mà chưa có quyết định, default action trong cột cuối được áp dụng.
+
+| ID | Câu hỏi cần quyết định | Vì sao ảnh hưởng PRD | Owner | Deadline | Default nếu chưa chốt |
+|---|---|---|---|---|---|
+| OQ-01 | Baseline 8–12 tuần cho funnel, attendance, no-show và follow-up là gì? | Không thể đặt target/ROI | Business Owner + Data | Trước G0 exit | Không cam kết business uplift; chỉ research pilot |
+| OQ-02 | Pilot ở showroom nào, traffic/capacity và control/cohort ra sao? | Ảnh hưởng sample, Ops và rollout | PO + Operations | Trước G0 exit | Không mở user traffic thật |
+| OQ-03 | Frequency cap, quiet hours, active follow-up owner và opt-out policy theo participant/channel là gì? | Chống spam, trùng contact và complaint | Operations + Privacy + PO | Trước G1 exit | Chỉ gửi confirmation giao dịch; tắt care outbound tùy chọn |
+| OQ-04 | SLA sales acknowledgement/human handoff là bao lâu và theo giờ hoạt động nào? | Success copy và user trust | Operations | Trước G1 exit | Chỉ hiển thị contact, không hứa SLA chưa có |
+| OQ-05 | Hold TTL phù hợp với p95 email OTP/task time là bao nhiêu? | Conversion và resource lock | PO + Backend + Data | Trước G1 exit | Không pilot đến khi đo dry-run; không mặc định 120 giây là tối ưu |
+| OQ-06 | Pilot hỗ trợ OTP/email, Zalo và resend/attempt policy nào? | UX, abuse và deliverability | Security + Platform + PO | Trước G1 exit | Email only; strict rate limit; copy đúng capability |
+| OQ-07 | Cơ sở và wording nào cho việc gửi message/invitation tới driver do booker nhập? | Consent và spam/privacy | Privacy/Legal + PO | Trước G1 exit | Không tự gửi driver message/link |
+| OQ-08 | Profile lawful basis, retention, export/delete SLA và opt-out UX là gì? | Chặn release profile | Privacy/Legal | Trước G1 exit | Tắt persistent profile; dùng context phiên ngắn hạn |
+| OQ-09 | Sales được phép xem signal nào; inference có được dùng trong brief không? | Bias, trust và data scope | Privacy + Sales Ops | Trước G2 exit | Chỉ direct user-stated signal đã cho phép; không inference |
+| OQ-10 | Staff có quyền verify GPLX/check-in/complete booking được gán hay chỉ manager/admin? | Bottleneck vận hành/RBAC | Operations + Security | Trước G1 exit | Giữ policy hiện tại; manager/admin thao tác |
+| OQ-11 | Ai là Content Owner cuối cùng và review cadence theo sensitivity? | Knowledge đang 100% pending | Business/VinFast representative | Trước G2 exit | Không bật fact Q&A production |
+| OQ-12 | Canonical source cho giá sạc, warranty, showroom ranking và vehicle spec là gì? | Tránh hard-code/stale claim | Content Owner + Backend | Trước G2 exit | Ẩn claim không có source/validity |
+| OQ-13 | Handoff dùng channel/ticket nào và truyền field nào? | FR-CARE-08 chưa implement | Operations + Privacy | Trước mở rộng P1 | Chỉ hiển thị contact; không tự chuyển transcript |
+| OQ-14 | Experiment design nào đủ để quy attribution cho care? | Tránh kết luận sai từ before/after | PO + Data | Trước G3 | Chỉ báo cáo association, không claim causality |
+| OQ-15 | Production release đi từ `testing` sang `main` theo manifest/approval nào? | PR #69 chưa ở main | Tech Lead/Release Owner | Trước G2 exit | Feature flag off ngoài testing |
+| OQ-16 | Kill switch/feature flag cho care, profile, invitation và channel nằm ở đâu? | Cần rollout/rollback độc lập | Backend/Platform | Trước G2 exit | Không pilot capability thiếu kill switch |
+| OQ-17 | Portal có cần MFA/SSO/password recovery trước pilot không? | Internal account security | Security + Operations | Trước G1 exit | Pilot account giới hạn, manually provisioned; no scale |
+| OQ-18 | Khi nào mở lại pre-booking advisor và success criterion là gì? | Ngăn scope creep P0 | PO | Sau G4 | Giữ P2/out of scope |
+| OQ-19 | Booking hứa model, variant hay đúng demo asset; substitution cần consent nào? | UI hiện làm mất variant/asset dù backend có dữ liệu | PO + Operations + Backend | Trước G1 exit | Không pilot đến khi contract/copy thống nhất |
+| OQ-20 | Trường nào dùng để đối chiếu driver tại showroom và được mask ra sao? | Check-in đúng người nhưng vẫn data-minimal | Operations + Privacy | Trước G1 exit | Booking code + tên/contact mask + GPLX bản gốc; không dùng invitation làm identity |
+| OQ-21 | Bản PDF research được lưu/version ở kho tài liệu quản trị nào? | Page citation hiện chỉ dựa vào file local, người khác khó kiểm chứng | PO + Research Ops | Trước G0 exit | Chưa sign-off evidence; không commit bản chứa PII nếu chưa redaction/permission |
+
+---
+
+## 11. Delivery and Rollout Plan
+
+### 11.1 Nguyên tắc kế hoạch
+
+Roadmap dưới đây là chuỗi decision gate, không phải lời hứa ngày tháng. Tech Lead chỉ gắn sprint/date sau khi team estimate và stakeholder chốt OQ P0. Mỗi gate yêu cầu evidence có thể xem lại.
+
+### 11.2 Release gates
+
+| Gate | Mục tiêu | Exit criteria | Evidence/approver |
+|---|---|---|---|
+| G0 — Align & validate | Chốt problem, journey, scope và pilot design | OQ-01/02 đóng; retest tối thiểu 7 target users gồm ≥2 đặt hộ; task/status/manage đạt hoặc có quyết định sửa | PO, Research, Design, Operations |
+| G1 — Booking & trust foundation | Booking, identity, authorization, privacy và core UX an toàn | Core booking/client/portal blocker RB-04–06, RB-11–13, RB-19/20/22/23/24 đóng; auth/privacy threat model pass; state/copy/OTP/self-service/consent/a11y critical pass | Engineering, Security/Privacy, Design |
+| G2 — Care readiness | Knowledge, care, profile, notification và operations đủ vận hành | RB-01–03, RB-07–10, RB-14, RB-18/21 đóng cho mọi capability được bật; capability không đạt phải server-flagged off và absent khỏi cohort; eval/provider/runbook/alert/state-closure rehearsal đạt | AI Quality, Content, Platform, Operations, PO |
+| G3 — Controlled pilot | Đo end-to-end với traffic giới hạn | **🔶 Assumption:** một showroom/cohort nhỏ; monitoring trực; no Sev-1/2 mở; daily review; rollback đã tập | PO + Pilot Owner + Security/Operations |
+| G4 — Scale decision | Quyết định mở rộng, iterate hay dừng | Sample đủ theo Data; outcome/guardrail/cost review; incident/failure taxonomy; stakeholder go/no-go | Product Council/Business Owner |
+
+### 11.3 Workstream sequence
+
+| Thứ tự | Workstream | Deliverable chính |
+|---:|---|---|
+| 1 | Product/Research | Journey prototype, success/manage/care content, retest report, closed OQ log |
+| 2 | Booking correctness | Hold reconciler, canonical state/copy, idempotent reschedule/cancel, provider-aware OTP |
+| 3 | Security/Privacy | Auth/scope, token hygiene, profile validator/data rights/log redaction, consent |
+| 4 | Frontend quality | XSS fix, degraded mode, entry point, accessibility, responsive, automated critical E2E |
+| 5 | Care/Knowledge | Approved dataset, strict filter, response grounding, budget/cap, invitation lifecycle |
+| 6 | Operations | Role policy, GPLX/check-in, profile brief scope, training/runbook, state closure |
+| 7 | Data/Eval | Event SDK/schema, dashboards, golden dataset, judge calibration, alerts |
+| 8 | Pilot | Release manifest, feature flags, controlled traffic, daily review, scale decision |
+
+### 11.4 Test and acceptance strategy
+
+| Layer | Bắt buộc trước pilot |
+|---|---|
+| Unit/contract | Booking state/invariant, participant boundary, knowledge filter, profile validator, token lifecycle, event schema |
+| Integration | PostgreSQL transaction/concurrency, Redis retry/recovery, Gmail/Zalo supported flow, LLM budget/fallback |
+| API security | Anonymous/role/scope negative cases, ID enumeration, token leakage/replay, rate abuse, prompt/HTML injection |
+| End-to-end public | Discover → hold → participants → OTP → confirm → care; lookup/edit/reschedule/cancel; driver invite; degraded mode |
+| End-to-end portal | Login/scope, assignment, GPLX, check-in/completion/no-show, profile brief, audit, dataset-scale search |
+| Accessibility | Automated scan + keyboard + screen reader + reduced-motion manual pass trên critical journeys |
+| Visual/responsive | 360/768/1024/1440, desktop thấp, dark/email clients nếu liên quan |
+| AI eval | Routing, grounding, permission, profile, fail-safe và adversarial golden set; calibrated judge + human review |
+| Operational rehearsal | Provider outage, Redis restart, worker crash, stale hold, cancel-during-send, rollback/kill switch |
+
+### 11.5 Pilot operations
+
+- Pilot Owner phải có danh sách trực, escalation path, dashboard và quyền tắt từng capability độc lập.
+- Operations kiểm tra resource/slot trước mỗi ngày pilot và đóng booking terminal state sau grace period.
+- AI Quality review failure sample hằng ngày trong giai đoạn đầu; Content Owner xử lý stale/incorrect claim theo severity.
+- Nhóm không bật profile persistence, driver outbound hoặc sales brief nếu consent/privacy gate tương ứng chưa đóng; care có thể chạy ở chế độ session-only/knowledge-only.
+- Nhóm không dùng người tham gia research nội bộ như bằng chứng thay cho người có ý định lái thử thật.
+
+### 11.6 Migration, rollout và rollback
+
+1. Engineering phải tạo migration có version cho schema profile/invitation/event thay vì phụ thuộc production auto-create.
+2. Release manifest phải ghi commit frontend/backend/portal, prompt/skill/model/knowledge version, environment variables và feature flags.
+3. Rollout bật lần lượt: booking fixes → telemetry → care knowledge-only → driver invite → profile persistence → sales brief. Mỗi bước có observation window được SRE/Data chốt.
+4. Rollback care/profile/invite không được rollback booking data hoặc làm mất self-service. Kill switch phải đưa UI về checklist/content deterministic.
+5. Token/link đã phát hành phải được revoke theo migration/rollback plan; không chỉ ẩn UI.
+6. Notification rollback phải giữ idempotency và kiểm state trước send để không phát nội dung của release cũ.
+
+### 11.7 Documentation and training
+
+| Đối tượng | Tài liệu bắt buộc |
+|---|---|
+| Người dùng | Copy trạng thái, privacy/personalization notice, manage/help content |
+| Showroom | Role matrix, assign/GPLX/check-in/no-show, handoff SLA, incident contact |
+| Content reviewer | Provenance schema, sensitivity, approve/reject/supersede/expiry workflow |
+| Engineering/SRE | State machine, API contracts, queue/provider runbook, feature flags, rollback |
+| AI Quality | Golden dataset guide, failure taxonomy, judge calibration và release report |
+| Support/Privacy | Data access/export/delete/retract và incident response |
+
+---
+
+## 12. Appendices
+
+### 12.1 Evidence hierarchy và nguồn đã dùng
+
+1. **Hành vi code và test trên nhánh audit** là nguồn cho trạng thái AS-IS; README/comment chỉ dùng để bổ sung, vì một số phần đã cũ.
+2. **Usability synthesis trang 118–129 của PDF** là nguồn chính cho hướng sản phẩm sau test; transcript/discovery dùng để hiểu ngữ cảnh.
+3. **Ghi chú thô trang 131–136** chỉ là hypothesis/method prompt. Em không coi ví dụ quality threshold hoặc câu “log thay interview” là quyết định.
+4. **Git remote refs/merge history** là nguồn cho trạng thái branch. PR #69 có trên `testing`, chưa nằm trong `main` tại thời điểm audit.
+5. **Production deployment** chỉ được README mô tả; review này không xác nhận live environment có cùng commit/config/data.
+
+Nguồn chính:
+
+- External research artifact: `Project Vinfast (1).pdf`, 136 trang.
+- `README.md`, `ARCHITECTURE.md`, `backend/README.md`, `frontend/README.md`, `internal-portal/README.md`.
+- `backend/src/services/booking`, `backend/src/agents`, `backend/src/services/profile`, `backend/src/services/knowledge`, `backend/src/internal_portal`.
+- `frontend/src/pages/BookingPage.jsx`, public pages/components và `internal-portal/frontend/src`.
+- GitHub PR #69 và các refs `origin/main`, `origin/testing`, `origin/NguyenHoangMinh`.
+
+**Evidence-management gap:** PDF hiện nằm ngoài repo trên máy review, nên tên file/page citation chưa phải một permalink dùng chung. Trước G0 sign-off, Research Ops phải lưu bản đã kiểm tra PII/quyền truy cập vào kho tài liệu có version, owner và checksum/link ổn định; nhóm không tự ý commit transcript thô vào Git.
+
+### 12.2 Evidence-to-requirement traceability
+
+| Evidence | Kết luận PO | Requirements | Metrics/Gate |
+|---|---|---|---|
+| PDF tr.55–61 | Root pain là bất định sau booking | FR-BK-08, FR-CARE-02, US-A4/C1 | Status comprehension, Attendance |
+| PDF tr.57–59, 75 | Booker/driver phải tách | FR-BK-04, FR-CARE-05/06, US-A3/C3 | Driver activation, unauthorized incident |
+| PDF tr.108, 113, 122 | OTP phải nằm trong confirm journey | FR-BK-06/07, US-A2 | Confirm task success, OTP funnel |
+| PDF tr.109, 115, 125 | Manage entry/đổi/hủy chưa rõ | FR-BK-09/10/11, Epic B | Self-service completion, usability gate |
+| PDF tr.113–121 | Agent không nên lặp form; care sau submit | D-01/D-02, FR-CARE-01–04 | Care quality, checklist, Attendance |
+| PDF tr.122–127 | Success, ranking, novice summary, navigation và một primary action cần rõ | FR-DIS-03/05/06, FR-BK-08 | Status comprehension, task time |
+| PDF tr.128 | Booking truth/care là P0; advisor là P2 | Priority register và Out of Scope | G0–G2 |
+| PDF tr.132–136 | Continuous eval/golden dataset/judge calibration | FR-OBS-02, FR-AI-02/03 | AI eval gate; không sao chép threshold ví dụ |
+| Booking lifecycle code | Booking bắt đầu `held`, onsite GPLX, transaction invariants | D-03/D-05, FR-BK-01/02/07, FR-OPS-03 | Double-booking, CI, expiry E2E |
+| PR #69/post-booking code | Care/profile/knowledge/invite đã có trên testing | Capability baseline, FR-CARE | G2; release manifest |
+| Code audit security/privacy | OTP/access role, API auth, pending KB, logging, XSS, consent, storage, queue và token gaps | RB-01–RB-24 | G1/G2 blockers |
+| Frontend/portal audit | Hai SPA, self-service/portal có code nhưng thiếu tests/a11y/analytics | FR-DIS/OPS/OBS, NFR-09–11 | G1/G2 |
+| Backend test run | Suite đỏ và PR #69 thiếu coverage | RB-11 | Required CI xanh |
+
+### 12.3 Verification snapshot của lần review
+
+| Kiểm tra | Kết quả | Cách diễn giải |
+|---|---|---|
+| Backend: `./.venv/bin/python -m pytest backend/tests -q` | 347 pass, 7 fail, 5 skip | Nhánh chưa đạt CI gate; 6 failure liên quan contract classifier cũ, 1 failure geocoding/target coordinates |
+| Public frontend: `npm run build` | Pass | Bundle build được; có cảnh báo chunk lớn, chưa thay E2E/a11y evidence |
+| Internal Portal: `npm run build` | Không chạy được vì local `vite` dependency chưa được cài | Static audit only; không được coi portal build đã pass |
+| Git remote refs | `main=6a34b44`, `testing=dfe3ea3`, current commit `1cdf6e2` | Agent hậu booking ở integration/current, không ở main |
+| PR #69 diff | 37 file, khoảng 3.396 dòng thêm | Capability lớn nhưng gần như không có dedicated test mới |
+
+### 12.4 Detailed release blocker ledger từ code audit
+
+| ID | Sev | Hiện trạng tại 2026-08-21 | Điều kiện đóng |
+|---|---:|---|---|
+| RB-01 | P0 | Profile detail/summary, booking profile summary và driver-invitation issuance chưa thể hiện auth/scope; `/driver-chat`, `/test-drive/actions`, stream/profile/invite routes nằm ngoài matcher rate limit hiện tại | Scoped auth + route-complete abuse limits + negative authorization/red-team tests |
+| RB-02 | P0 | 25/25 knowledge record là `pending_internal_review`; runtime cho phép pending; tool/fallback chưa bảo đảm source/effective/review date xuất hiện trong answer | Production default-deny; approved/valid records; deterministic response-level grounding/citation tests |
+| RB-03 | P0 | Profile signal nhận `Any`, chưa có deterministic sensitive-data validator; raw before/after snapshot có thể vào log | Validator + log redaction + privacy tests + retention policy |
+| RB-04 | P0 | `expire_held_bookings()` có code nhưng chưa có runtime scheduler/reconciliation; slot có thể bị giữ quá hạn | Worker/reconciliation + startup recovery + expiry E2E/alert |
+| RB-05 | P0 | Chat formatter dùng `dangerouslySetInnerHTML` cho user/agent content mà chưa escape HTML | Sanitizer/escaped renderer + XSS tests |
+| RB-06 | P0 | Marketing consent đang pre-checked và lựa chọn không được persist trong confirm payload | Default off + purpose copy + DB/audit + UI/API tests |
+| RB-07 | P0 | Post-booking tool loop chưa dùng MAX cap/usage budget như booking loop; profile summary gọi LLM ngoài usage budget | Tool/LLM/time/cost cap cho care và summary + auth/circuit-breaker tests |
+| RB-08 | P0 | Redis unavailable có thể làm mất profile update; processing recovery/DLQ operation chưa đầy đủ | Durable fallback/recovery + metric/alert + no false “remembered” copy |
+| RB-09 | P0 | Invitation chưa có lifecycle an toàn đầy đủ: client hiện care trước server resolve, issue có thể chạy ngoài eligible state, TTL không cap theo lịch, mỗi channel/retry có thể revoke link trước, và reschedule không reissue | Resolve-before-render, issue một lần/reuse giữa channel, eligible-state check, cap TTL, atomic revoke/reissue + token E2E |
+| RB-10 | P0 | Notification channel/runtime contract còn mơ hồ; SMS chưa thật; job đang processing có race với cancel/reschedule | Provider matrix, pre-send state check, E2E thật và truthful UI copy |
+| RB-11 | P0 | Backend suite còn 7 fail; PR #69 gần như không có test trực tiếp cho post agent/profile/invite/knowledge auth | Required CI xanh + dedicated test matrix |
+| RB-12 | P0 | Public frontend và Internal Portal chưa có automated test runner/E2E/a11y; North Star lại phụ thuộc portal đóng state | Critical public + portal suite chạy trong CI và có evidence |
+| RB-13 | P0 | App gate dùng booking health để chặn cả catalogue/content | Capability-level health/degraded mode + chaos test |
+| RB-14 | P0 | Driver/email context có thể được đưa vào LLM prompt; prompt-only rule không đủ ngăn exposure | Minimize/redact context trước model + output enforcement + tests |
+| RB-15 | P1 | Sales brief có API nhưng chưa có consumer portal; không thể nói staff đang dùng | Scoped UI + consent/purpose + usability/audit evidence |
+| RB-16 | P1 | Portal thiếu URL routing/search/pagination/deep link; GPLX UI hard-code boolean; accessibility chưa đạt | Dataset-scale UX, explicit GPLX input và a11y evidence |
+| RB-17 | P1 | Streaming route thiếu full guard/profile/participant context và frontend chưa dùng | Tắt khỏi production hoặc đạt parity security/context/rate limit |
+| RB-18 | P0 | Content sạc/bảo hành/after-sales có nhiều claim hard-code, chưa có owner/review lifecycle | Content inventory, canonical source, approval/expiry; ẩn mọi claim chưa đạt trước pilot |
+| RB-19 | P0 | Frontend verify OTP rồi bỏ access token; confirm tool/service/public action chưa bắt buộc permission `confirm_booking`, và contact mismatch có thể không bị chặn | Token bind booking/booker contact/purpose/role, single-use/replay protection ở mọi confirm endpoint |
+| RB-20 | P0 | Driver contact có thể xin purpose `manage` và access ownership lan qua shared contact sang booking khác | Principal/participant-role binding + cross-role/cross-booking/shared-contact negative tests |
+| RB-21 | P0 | Profile promotion có thể merge booker/driver theo shared email/phone bất kể `person_id` | Person-aware identity model, ambiguous shared-contact handling và boundary tests |
+| RB-22 | P0 | Client lưu address/GPS/messages/participant data trong `sessionStorage` nhưng không giữ authoritative booking/version/expiry; XSS làm rủi ro cao hơn | Data minimization/TTL/clear policy; server rehydrate before restore; no exact GPS/raw transcript unless justified |
+| RB-23 | P0 | UI/backend chưa thống nhất model/variant/demo asset và availability horizon; UI có thể làm mất resource detail hoặc hiển thị ngày ngoài API horizon như hết slot | Resource/substitution contract + authoritative horizon/fetch/copy E2E |
+| RB-24 | P0 | Portal chưa có global revoked/expired-session recovery và có thể lưu operating-hours mặc định 08:00–18:00 như dữ liệu thật | Safe logout/reauth; unconfigured≠default; capacity propagation/audit tests |
+
+Mọi blocker P0 trong bảng là điều kiện chặn pilot cho capability liên quan. PO chỉ có thể waiver một blocker khi Security/Privacy/Engineering/Operations liên quan ký nhận rủi ro, có workaround, thời hạn và rollback; PO không tự miễn trừ security hoặc privacy gate. Nếu profile hoặc driver invitation không đạt gate, capability đó phải tắt bằng server-side feature flag và không nằm trong pilot cohort; care knowledge-only vẫn phải đạt toàn bộ blocker P0 còn áp dụng.
+
+### 12.5 Glossary
+
+| Thuật ngữ | Nghĩa trong PRD |
+|---|---|
+| Booker | Người sở hữu thao tác đặt/quản lý booking; có thể khác người lái |
+| Driver | Người trực tiếp lái thử; có profile/quyền riêng với booker |
+| Held booking | Booking đã chiếm tạm resource nhưng chưa được xác nhận |
+| Confirmed booking | Booking đã commit, có mã và đủ điều kiện mở care |
+| Care | Hỗ trợ chuẩn bị/đánh giá trước và trong buổi lái thử, không phải CRM hậu bán |
+| Driver invitation | Bearer link riêng, có expiry/revocation, chỉ cấp care scope |
+| Trusted knowledge | Record có provenance/review state; production chỉ dùng record approved/valid |
+| Profile signal | Thông tin bền vững phục vụ cá nhân hóa, có source/certainty/confidence/lifecycle |
+| Grounding | Ràng buộc câu trả lời fact vào nguồn approved/live thay vì model memory |
+| Golden dataset | Tập case có nhãn/version dùng cho offline regression evaluation |
+| LLM judge | Model chấm output; chỉ dùng sau calibration với nhãn người |
+| DriveOps | Internal Portal và backend operations cho showroom/network |
+| Release gate | Tập điều kiện evidence phải đạt trước khi mở mức rollout tiếp theo |
+
+### 12.6 Self-assessment chẩn đoán
+
+| Mục | Đánh giá trung thực | Hành động tiếp theo |
+|---|---|---|
+| Phần mạnh nhất | Problem → decision → requirement → metric/gate có traceability; actor và quyền booker/driver được tách rõ | Dùng ma trận này làm checklist khi refinement và UAT |
+| Phần yếu nhất | Evidence về business outcome còn yếu: mẫu research nhỏ, chưa đại diện và chưa có production baseline/attribution design | Hoàn tất OQ-01/02, retest tối thiểu 7 target users và lập pilot measurement plan |
+| Assumption quan trọng 1 | AS-01: status clarity + care làm tăng attendance | Không claim uplift trước G4; so cohort theo design do Data duyệt |
+| Assumption quan trọng 2 | AS-03: showroom duy trì resource/slot đủ chính xác | Dry run inventory, reconciliation và conflict dashboard trước G1 |
+| Assumption quan trọng 3 | AS-04: người dùng chấp nhận profile personalization có control | Consent-comprehension test; nếu không đạt thì chạy care session-only |
+| Recommended next step | Không bắt đầu thêm feature advisor; trước tiên đóng G0 và blocker OTP/authorization/hold/content | PO tổ chức workshop sign-off với Business, Ops, Security/Privacy, Engineering, Design và Content Owner |
+| Readiness hiện tại | **Chưa sẵn sàng pilot hoặc production**; PRD đủ làm baseline refinement nhưng còn open decisions và P0 blockers | Cập nhật v2.1/change log sau G0/G1; không gọi prototype trên `testing` là production-ready |
+
+PRD không bịa baseline, TAM, ngày phát hành, SLA showroom, legal basis hoặc pilot location. Những nội dung này được giữ thành assumption/open question có owner và deadline gate.
+
+### 12.7 Sign-off checklist
+
+- [ ] PO và Business Owner duyệt outcome, North Star, scope và pilot design.
+- [ ] Research/Design duyệt journey, copy state, retest và accessibility plan.
+- [ ] Engineering duyệt state/invariant, estimate, migration, feature flag và rollback.
+- [ ] Security/Privacy/Legal duyệt auth, token, profile, consent, data rights và logging.
+- [ ] Content Owner duyệt knowledge/checklist/claim governance.
+- [ ] Operations duyệt role, SLA, GPLX, state closure, training và runbook.
+- [ ] Data/AI Quality duyệt event schema, dashboard, golden set, threshold và calibration.
+- [ ] Release Owner xác nhận required CI xanh và manifest đúng commit/environment.
+
+---
+
+**Kết luận PO:** Nhóm không nên tiếp tục mô tả sản phẩm là “chatbot đặt lịch và tư vấn xe”. Sản phẩm v2 là một hệ thống đặt lịch có trạng thái đáng tin cậy, được nối với lớp chăm sóc hậu booking có nguồn và một lớp vận hành showroom có phân quyền. ViVi chỉ tạo giá trị khi làm người dùng chắc chắn và chuẩn bị tốt hơn mà không làm suy yếu booking truth, quyền riêng tư hoặc quyền kiểm soát của người dùng.

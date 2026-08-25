@@ -41,6 +41,7 @@ from src.services.booking.email_templates import (  # noqa: E402
     render_booking_dark_email,
     render_otp_email,
 )
+from src.services.booking.public_invitation import public_invitation_url  # noqa: E402
 
 OUT_DIR = _REPO / "docs" / "mockups"
 CDN = "https://pub-216eea433b9e4529979ce534d5ce0ae1.r2.dev"
@@ -155,6 +156,15 @@ def main() -> int:
     import os
 
     os.environ.setdefault("MEDIA_BASE_URL", CDN)
+    # Bản HTML xem trước phải mở thiệp MẪU của frontend hiện tại. Không dùng
+    # token production giả ở đây: token được ký bằng secret của máy sinh file,
+    # nên khi bấm sang một deployment khác nó không còn hợp lệ và dễ khiến người
+    # duyệt tưởng CTA đang trỏ nhầm về trang chủ. Email gửi thật không đi qua
+    # nhánh này và vẫn giữ URL /invitation/{token} cá nhân hoá.
+    invitation_preview_url = os.environ.get(
+        "INVITATION_PREVIEW_URL",
+        "http://localhost:3000/invitation-preview",
+    ).strip()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     # Mỗi loại thư ra HAI file: bản mẫu còn nguyên {{biến}} để đối chiếu danh sách
     # trường, và bản đã điền dữ liệu giả để xem mặt mũi.
@@ -170,6 +180,12 @@ def main() -> int:
             html = _browser_ready(render_booking_dark_email(kind, data).html)
             if data is PLACEHOLDER:
                 html = _mask_dates(html)
+            elif kind in {"booking_confirmation", "reschedule_confirmation"}:
+                signed_url = public_invitation_url(str(data["booking_code"]))
+                html = html.replace(
+                    f'href="{signed_url}"',
+                    f'href="{invitation_preview_url}"',
+                )
             target = OUT_DIR / f"{stem}{suffix}"
             target.write_text(HEADER_NOTE + html)
             print(f"  {target.relative_to(_REPO)}  {target.stat().st_size // 1024} KB")
