@@ -41,6 +41,12 @@ def test_production_cannot_disable_the_canonical_rate_limiter():
         )
 
 
+def test_floating_demo_defaults_to_disabled():
+    settings = Settings(_env_file=None, app_env="test")
+
+    assert settings.floating_demo_enabled is False
+
+
 def test_abuse_ban_defaults_to_three_strikes_and_twenty_four_hours():
     settings = Settings(_env_file=None, app_env="test")
 
