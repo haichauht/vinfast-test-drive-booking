@@ -23,7 +23,7 @@ import { commonMedia } from '../../media/assets'
 
 const vinfastLogo = commonMedia.vinfastLogo
 
-export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, userLocation, searchedLocation }) {
+export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, userLocation, searchedLocation, disabled = false }) {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
   const markersRef = useRef([])
@@ -70,10 +70,10 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
       const active = selectedId === showroom.id ? ' is-active' : ''
       const icon = L.divIcon({ html: `<div class="leaflet-showroom-marker${active}"><img src="${vinfastLogo}" alt="VinFast" /></div>`, className: '', iconSize: [32, 32], iconAnchor: [16, 16], popupAnchor: [0, -16] })
       const marker = L.marker([showroom.latitude, showroom.longitude], { icon }).bindPopup(`<strong>${showroom.name}</strong><br/><small>${showroom.address}</small>`).addTo(map)
-      marker.on('click', () => onSelect(showroom.id))
+      marker.on('click', () => { if (!disabled) onSelect(showroom.id) })
       return marker
     })
-  }, [showrooms, selectedId, onSelect, leafletLoaded])
+  }, [showrooms, selectedId, onSelect, leafletLoaded, disabled])
 
   useEffect(() => {
     const map = mapRef.current
@@ -138,7 +138,7 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
       <aside className="studio-map__list">
         <div className="studio-map__intro"><span>{showrooms.length} showroom còn lịch cho {car.name}</span><small>{hasLocation ? 'Sắp xếp theo khoảng cách từ vị trí bạn cung cấp.' : 'Đang hiển thị theo lịch trống phù hợp.'}</small></div>
         {showrooms.map((showroom, index) => (
-          <button type="button" key={showroom.id} className={selectedId === showroom.id ? 'is-active' : ''} onClick={() => onSelect(showroom.id)}>
+          <button type="button" key={showroom.id} className={selectedId === showroom.id ? 'is-active' : ''} onClick={() => onSelect(showroom.id)} disabled={disabled}>
             <span>{index + 1}</span><span><strong>{showroom.name}</strong><small>{showroom.address}</small>{showroom.available_slot_count ? <small>Còn {showroom.available_slot_count} lịch trống</small> : null}</span>{hasLocation && <em>{String(showroom.distance).replace('.', ',')} km</em>}
           </button>
         ))}
@@ -146,11 +146,11 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
       <div className="studio-map__canvas">
         <div ref={mapContainerRef} className="studio-map__leaflet-container" />
         <div className="studio-map__controls" aria-label="Điều khiển bản đồ">
-          <button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Phóng to"><Plus size={17} weight="regular" /></button>
-          <button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Thu nhỏ"><Minus size={17} weight="regular" /></button>
-          <button type="button" onClick={centerUser} disabled={!userLocation} aria-label="Vị trí của tôi"><Crosshair size={17} weight="regular" /></button>
+          <button type="button" onClick={() => mapRef.current?.zoomIn()} disabled={disabled} aria-label="Phóng to"><Plus size={17} weight="regular" /></button>
+          <button type="button" onClick={() => mapRef.current?.zoomOut()} disabled={disabled} aria-label="Thu nhỏ"><Minus size={17} weight="regular" /></button>
+          <button type="button" onClick={centerUser} disabled={disabled || !userLocation} aria-label="Vị trí của tôi"><Crosshair size={17} weight="regular" /></button>
         </div>
-        {selected && <div className="studio-map__preview"><span><strong>{selected.name}</strong><small>{selected.address}{selected.phone ? ` · SĐT: ${selected.phone}` : ''}{hasLocation && selected.distance !== undefined && selected.distance !== null ? ` · Cách bạn ${String(selected.distance).replace('.', ',')} km` : ''}</small></span><button type="button" onClick={() => onConfirm(selected)} className="studio-map__preview-confirm">Xem lịch</button></div>}
+        {selected && <div className="studio-map__preview"><span><strong>{selected.name}</strong><small>{selected.address}{selected.phone ? ` · SĐT: ${selected.phone}` : ''}{hasLocation && selected.distance !== undefined && selected.distance !== null ? ` · Cách bạn ${String(selected.distance).replace('.', ',')} km` : ''}</small></span><button type="button" onClick={() => onConfirm(selected)} disabled={disabled} className="studio-map__preview-confirm">Xem lịch</button></div>}
       </div>
     </section>
   )

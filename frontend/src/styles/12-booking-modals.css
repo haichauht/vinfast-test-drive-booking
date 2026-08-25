@@ -201,7 +201,13 @@
   padding: 10px 0;
 }
 
-.cancellation-confirm-modal dd { overflow-wrap: anywhere; }
+/* Cùng loại bảng nhãn/giá trị với phiếu hẹn nên cùng cách chống rớt chữ.
+   `anywhere` cắt giữa từ ngay khi thấy chật; `break-word` chỉ cắt khi một từ dài
+   hơn cả ô. `text-wrap: pretty` lo phần không bỏ lại một chữ lẻ ở hàng cuối. */
+.cancellation-confirm-modal dd {
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+}
 
 @media (max-width: 620px) {
   .cancellation-confirm-modal > div { padding: 24px; }
@@ -840,6 +846,20 @@
   outline: none;
 }
 .license-check strong { font-size: 0.68rem; font-weight: 520; line-height: 1.45; }
+
+/* Hai ô xác nhận chính được cân như một cụm, không dồn toàn bộ nội dung về mép trái. */
+.vivi-customer-form > .license-check {
+  grid-template-columns: 20px minmax(0, min(100%, 47ch));
+  justify-content: center;
+  padding-inline: clamp(12px, 3vw, 26px);
+}
+
+.vivi-customer-form > .license-check p {
+  margin-inline: 0;
+  text-align: left;
+  text-wrap: pretty;
+}
+
 .vivi-customer-form__license-error { display: block; margin: 0 0 9px 2px; }
 .vivi-customer-form > button { width: 100%; margin-top: 10px; }
 

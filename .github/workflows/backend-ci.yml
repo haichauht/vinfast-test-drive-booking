@@ -112,6 +112,22 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      # Cloud Run giữ lại biến môi trường của lần deploy trước, nên thiếu bước này
+      # service vẫn chạy nhưng APP_ENV rơi về "development". Khi đó bốn chốt chặn
+      # trong Settings.require_production_otp_secret im lặng tắt hết, và các khoá ký
+      # rơi về hằng số nằm sẵn trong repo. Chặn sớm ở đây để không deploy nhầm.
+      - name: Verify required deployment secrets
+        run: |
+          missing=""
+          [ -n "${{ secrets.BOOKING_ACCESS_OTP_SECRET }}" ] || missing="$missing BOOKING_ACCESS_OTP_SECRET"
+          [ -n "${{ secrets.CONVERSATION_SIGNING_SECRET }}" ] || missing="$missing CONVERSATION_SIGNING_SECRET"
+          if [ -n "$missing" ]; then
+            echo "::error::Thieu GitHub secret:$missing"
+            echo "Them cac secret nay trong Settings > Secrets and variables > Actions."
+            echo "Moi khoa phai dai it nhat 32 ky tu, sinh bang: openssl rand -base64 48"
+            exit 1
+          fi
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy vinfast-backend \
@@ -120,4 +136,7 @@ jobs:
             --allow-unauthenticated \
             --port 8000 \
             --memory 1Gi \
-            --cpu 1
+            --cpu 1 \
+            --set-env-vars "APP_ENV=production" \
+            --set-env-vars "BOOKING_ACCESS_OTP_SECRET=${{ secrets.BOOKING_ACCESS_OTP_SECRET }}" \
+            --set-env-vars "CONVERSATION_SIGNING_SECRET=${{ secrets.CONVERSATION_SIGNING_SECRET }}"
