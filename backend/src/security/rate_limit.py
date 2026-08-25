@@ -100,10 +100,28 @@ def route_class_for_path(path: str) -> str | None:
         return "chat"
     if path in {"/api/v1/demo/action", "/api/v1/test-drive/actions"}:
         return "demo_action"
+    # Endpoint thiệp mời không cần đăng nhập và nhận token tuỳ ý trên URL, nên nếu
+    # không chặn thì có thể dò mã lịch không giới hạn.
+    if path.startswith("/api/v1/invitations/"):
+        return "invitation"
     return None
 
 
 def rules_for_route(route_class: str, identity: ClientIdentity, settings: Settings) -> list[RateLimitRule]:
+    if route_class == "invitation":
+        # Chỉ khoá theo IP. Người nhận thiệp thường chưa có phiên nào trên site.
+        return [
+            RateLimitRule(
+                f"invitation:ip:minute:{identity.client_ip}",
+                settings.rate_limit_invitation_per_ip_per_minute,
+                60,
+            ),
+            RateLimitRule(
+                f"invitation:ip:hour:{identity.client_ip}",
+                settings.rate_limit_invitation_per_ip_per_hour,
+                3_600,
+            ),
+        ]
     if route_class == "chat":
         return [
             RateLimitRule(

@@ -56,20 +56,20 @@
  *  Trang này KHÔNG dùng AppShell — header riêng, gọn hơn, ở ~dòng 1488.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowRight,
-  ArrowsClockwise,
   CalendarBlank,
   CarProfile,
   CaretDown,
   CaretLeft,
   Check,
   CheckCircle,
+  ChatCircleDots,
   Clock,
   Crosshair,
-  MagnifyingGlass,
+  DotsThree,
   MapPin,
   Minus,
   NavigationArrow,
@@ -78,6 +78,7 @@ import {
   Prohibit,
   Plus,
   ShieldCheck,
+  SquaresFour,
   User,
   UserPlus,
   X,
@@ -98,10 +99,12 @@ import {
   holdVerifiedReschedule,
   getVerifiedBooking,
   getDriverInvitationContext,
+  getFloatingDemoCapabilities,
   listVerifiedBookings,
   requestBookingAccess,
   resetBookingConversation,
   saveBookingCustomer,
+  searchFloatingDemoOptions,
   sendDriverChatMessage,
   sendBookingMessage,
   searchBookingOptions,
@@ -134,9 +137,25 @@ import { getVehicle3dModel } from '../data/vehicle3d'
 import { RecipientModal, ResumeModal } from '../components/booking/BookingModalPrimitives'
 import { AgentMessage, ViviStatusTyping, ViViAvatar, ContextualChoices } from '../components/booking/BookingChatPrimitives'
 import { VehicleShot, VehicleSwitcher, VehiclePanel } from '../components/booking/VehicleWorkspace'
+import { BookingActionMenu } from '../components/booking/BookingActionMenu'
 import { BookingHeader } from '../components/booking/BookingHeader'
+import { FloatingDemoBar } from '../components/booking/FloatingDemoBar'
+import { useDialogFocus } from '../hooks/useDialogFocus'
+import { clearBookingReturnContext, takeBookingReturnContext } from '../utils/bookingReturnContext'
 
 const HOLD_TTL_MS = 5 * 60 * 1000
+const FLOATING_DEMO_STEP_DELAY_MS = 3500
+const DEMO_PERSONA = Object.freeze({
+  bookingName: 'Nguyễn Hải Đăng',
+  driverName: '',
+  phone: '0912 345 678',
+  email: 'haidang.vinfast@demo.vn',
+  driverSameContact: true,
+  driverPhone: '',
+  driverEmail: '',
+  hasLicense: true,
+  marketingConsent: false,
+})
 const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
 const BOOKING_UI_STATE_KEY = 'vinfast:booking-ui-state'
@@ -297,6 +316,7 @@ export function BookingPage() {
   // choose_slot -> collect_info -> review -> success. `lookup` is a side flow.
   // The browser may render optimistically, but inventory holds and terminal booking
   // state are always server-authoritative. Full transition table: BACKEND_HANDOFF.md.
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [driverInvitationToken] = useState(takeDriverInvitationToken)
   const isDriverChat = Boolean(driverInvitationToken)
@@ -349,11 +369,24 @@ export function BookingPage() {
   )
   const stage = toLegacyStage(interaction)
   const activeView = interaction.activeView
+  // Mobile luôn bắt đầu ở ViVi. `activeView` chỉ quyết định nội dung nào được chuẩn bị
+  // trong workspace; nó không được tự ý điều hướng người dùng khỏi cuộc hội thoại.
+  // Trên desktop hai bề mặt vẫn cùng hiện nên thay đổi này không tác động bố cục cũ.
+  const [mobileSurface, setMobileSurface] = useState('assistant')
   const setStage = useCallback((nextStage) => {
     dispatchInteraction({ type: InteractionEvent.SET_PHASE, stage: nextStage })
   }, [])
   const setActiveView = useCallback((nextView) => {
     dispatchInteraction({ type: InteractionEvent.SET_ACTIVE_VIEW, activeView: nextView })
+  }, [])
+  // Hai hàm này chỉ đổi bề mặt đang thấy ở breakpoint mobile. Desktop vẫn render
+  // workspace và ViVi song song nên không có thay đổi bố cục hay thứ tự thao tác.
+  const showMobileWorkspace = useCallback((nextView) => {
+    setActiveView(nextView)
+    setMobileSurface('workspace')
+  }, [setActiveView])
+  const showMobileAssistant = useCallback(() => {
+    setMobileSurface('assistant')
   }, [])
   const [messages, setMessages] = useState(isDriverChat
     ? [{ id: 'driver-invitation-greeting', role: 'assistant', text: driverGreeting({}) }]
@@ -385,6 +418,8 @@ export function BookingPage() {
   const [pendingSlot, setPendingSlot] = useState(null)
   const [selectedSlot, setSelectedSlot] = useState(confirmedUiRestore?.slot || null)
   const [confirmSlotOpen, setConfirmSlotOpen] = useState(false)
+  const closeSlotDialog = useCallback(() => setConfirmSlotOpen(false), [])
+  const slotDialogRef = useDialogFocus({ active: confirmSlotOpen, onClose: closeSlotDialog })
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [workspaceHidden, setWorkspaceHidden] = useState(false)
   const [person, setPerson] = useState(confirmedUiRestore?.person || {
@@ -403,6 +438,7 @@ export function BookingPage() {
   const [bookingAdvisor, setBookingAdvisor] = useState(confirmedUiRestore?.advisor || null)
   const [submitting, setSubmitting] = useState(false)
   const [successCinematic, setSuccessCinematic] = useState(false)
+  const [actionMenuOpen, setActionMenuOpen] = useState(false)
   const [accessFlow, setAccessFlow] = useState(null)
   const [accessValue, setAccessValue] = useState({ bookingCode: '', email: '', otpCode: '' })
   const [accessError, setAccessError] = useState('')
@@ -424,6 +460,8 @@ export function BookingPage() {
   const [userLocation, setUserLocation] = useState(restoredUi.userLocation || null)
   const [searchedLocation, setSearchedLocation] = useState(null)
   const messagesRef = useRef(null)
+  const composerRef = useRef(null)
+  const lastMessageScrollIntentAtRef = useRef(0)
   const timersRef = useRef([])
   const holdActionIdsRef = useRef(new Map())
   // Đếm lượt tìm khung giờ. Bấm showroom A rồi bấm nhanh sang B sẽ có 2 request cùng bay;
@@ -444,12 +482,66 @@ export function BookingPage() {
   const [inlineOtpBusy, setInlineOtpBusy] = useState(false)
   const [inlineOtpMock, setInlineOtpMock] = useState('')
   const [inlineOtpChallengeId, setInlineOtpChallengeId] = useState('')
+  const [floatingDemoEnabled, setFloatingDemoEnabled] = useState(false)
+  const [floatingDemoStep, setFloatingDemoStep] = useState(0)
+  const [floatingDemoRunning, setFloatingDemoRunning] = useState(false)
+  const [floatingDemoPaused, setFloatingDemoPaused] = useState(false)
+  const [floatingDemoBusy, setFloatingDemoBusy] = useState(false)
+  // Make the optional showcase discoverable on first arrival at /booking.
+  // The presenter can still collapse it immediately, and Reset returns it to
+  // its compact state for the next run.
+  const [floatingDemoCollapsed, setFloatingDemoCollapsed] = useState(false)
+  const [floatingDemoPosition, setFloatingDemoPosition] = useState(null)
+  const [floatingDemoStatus, setFloatingDemoStatus] = useState('')
+  const [floatingDemoLogs, setFloatingDemoLogs] = useState([])
+  const floatingDemoRunRef = useRef(0)
+  const floatingDemoContextRef = useRef({})
+  const floatingDemoPausedRef = useRef(false)
+  const floatingDemoPauseWaitersRef = useRef([])
+  const floatingDemoDelayWaitersRef = useRef([])
+  const floatingDemoMountedRef = useRef(true)
+
+  // Auto-play is intentionally cancellable.  Invalidating its run token and
+  // resolving pending pauses/delays means an unmounted page never continues a
+  // scripted turn or attempts a later state update.
+  useEffect(() => {
+    floatingDemoMountedRef.current = true
+    return () => {
+      floatingDemoMountedRef.current = false
+      floatingDemoRunRef.current += 1
+      floatingDemoPausedRef.current = false
+      floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
+      floatingDemoDelayWaitersRef.current.splice(0).forEach((resolve) => resolve())
+    }
+  }, [])
 
   const selectedCar = getCar(selectedCarId)
+  const leaveRecipientModal = useCallback(() => {
+    const returnContext = takeBookingReturnContext()
+    if (returnContext) {
+      navigate(returnContext.href, {
+        replace: true,
+        state: { restoreScrollY: returnContext.scrollY },
+      })
+      return
+    }
+
+    // Truy cập thẳng /booking không có trang nguồn: nếu URL mang mã xe thì quay về đúng
+    // trang xe đó; còn lại trở về trang chủ thay vì để nút không làm gì.
+    const fallbackCarId = routeCar?.id || selectedCar?.id || searchParams.get('car')
+    navigate(fallbackCarId ? `/models/${encodeURIComponent(fallbackCarId)}` : '/', { replace: true })
+  }, [navigate, routeCar?.id, searchParams, selectedCar?.id])
+  const leaveResumeModal = useCallback(() => {
+    clearBookingReturnContext()
+    navigate('/', { replace: true })
+  }, [navigate])
   // ĐÃ XONG: showroom và khung giờ lấy thật từ backend qua searchBookingOptions().
   // Mỗi slot đã mang id thật của backend; cặp ngày/giờ trong UI chỉ để hiển thị.
   const selectedShowroom = nearbyShowrooms.find((showroom) => showroom.id === showroomId)
-  const composerDisabled = isSending || agentTyping
+  // Once a guided run has started, controls stay locked even if the panel is
+  // collapsed. Collapsing is presentation-only, not an escape from the flow.
+  const floatingDemoMode = floatingDemoEnabled && (floatingDemoRunning || floatingDemoBusy || floatingDemoStep > 0)
+  const composerDisabled = isSending || agentTyping || floatingDemoMode
   const allowedActions = useMemo(() => (isDriverChat ? [] : selectAllowedActions(interaction, {
     allowedBookingActions: accessProfile?.allowedActions || [],
   })), [interaction, accessProfile?.allowedActions, isDriverChat])
@@ -457,6 +549,24 @@ export function BookingPage() {
   const composerMode = useMemo(() => selectComposerMode(interaction), [interaction])
   const hasWorkspaceContent = Boolean(selectedCar || accessProfile)
   const workspaceVisible = workspaceModel.visible && hasWorkspaceContent && !workspaceHidden
+
+  useEffect(() => {
+    let active = true
+    getFloatingDemoCapabilities()
+      .then((capabilities) => { if (active) setFloatingDemoEnabled(Boolean(capabilities?.enabled)) })
+      .catch(() => { if (active) setFloatingDemoEnabled(false) })
+    return () => { active = false }
+  }, [])
+
+  // Keep a small on-screen trace for demos: it makes a failed API call
+  // diagnosable without asking the presenter to open DevTools.
+  useEffect(() => {
+    if (!floatingDemoStatus) return
+    setFloatingDemoLogs((current) => [
+      ...current.slice(-7),
+      { id: `${Date.now()}-${Math.random()}`, time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), text: floatingDemoStatus },
+    ])
+  }, [floatingDemoStatus])
 
   /**
    * Kết thúc cinematic → quay về khung chat, KHÔNG chuyển sang trang tĩnh.
@@ -473,6 +583,39 @@ export function BookingPage() {
     setSuccessCinematic(false)
     setStage('success')
     setActiveView('ticket')
+    showMobileAssistant()
+
+    // Floating demo still shows the completion guidance, but tags it as step 7
+    // so pressing Back removes it together with the confirmation stage.
+    if (floatingDemoContextRef.current.isSimulated) {
+      const demoName = (person.bookingName || person.driverName || '').trim().split(/\s+/).pop() || ''
+      const demoGreeting = demoName ? `${demoName.charAt(0).toUpperCase()}${demoName.slice(1)} ơi, ` : ''
+      setMessages((current) => [
+        ...current,
+        {
+          id: `${Date.now()}-${current.length}-demo-success`,
+          role: 'assistant',
+          text: `${demoGreeting}ViVi đã hoàn tất lượt trình diễn lái thử của bạn.`,
+          emphasis: true,
+          floatingDemoStep: 7,
+        },
+        {
+          id: `${Date.now()}-${current.length + 1}-demo-next-steps`,
+          role: 'assistant',
+          type: 'next_steps',
+          text: '',
+          floatingDemoStep: 7,
+        },
+        {
+          id: `${Date.now()}-${current.length + 2}-demo-preparation`,
+          role: 'assistant',
+          text: BOOKING_PREPARATION_GREETING,
+          floatingDemoStep: 7,
+        },
+      ])
+      setFloatingDemoStatus('Phiếu demo đã hoàn tất · có thể lùi để trình diễn lại')
+      return
+    }
 
     const rawName = (person.bookingName || person.driverName || '').trim().split(/\s+/).pop() || ''
     const firstName = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1) : ''
@@ -504,6 +647,10 @@ export function BookingPage() {
   useEffect(() => {
     const config = getVehicle3dModel(selectedCarId)
     if (!config) return undefined
+
+    const mobileOrConstrained = window.matchMedia('(max-width: 900px)').matches
+      || navigator.connection?.saveData === true
+    if (mobileOrConstrained) return undefined
 
     // Người dùng thường mất vài phút để chọn showroom và điền form. Tận dụng quãng
     // đó để browser cache GLB + runtime, tránh màn chờ ngay sau nút xác nhận cuối.
@@ -661,7 +808,7 @@ export function BookingPage() {
           setAgentTyping(false)
           if (showrooms.length) {
             setStage('choose_showroom')
-            setActiveView('map')
+            showMobileWorkspace('map')
             addMessage('assistant', `ViVi đã định vị vị trí và tìm thấy ${showrooms.length} showroom gần bạn nhất còn lịch cho ${selectedCar.name}. Mời bạn chọn showroom hiển thị trên bản đồ để tiếp tục đặt lịch.`)
           } else {
             setStage('need_address')
@@ -865,6 +1012,10 @@ export function BookingPage() {
       const formattedBookings = (bookings.data || bookings || []).map(formatBookingSummary)
       setAccessibleBookings(formattedBookings)
       setActiveView('bookings')
+      if (formattedBookings.length > 0) {
+        setWorkspaceHidden(false)
+        setMobileSurface('workspace')
+      }
       const isCancellation = accessPurpose === 'cancel'
 
       if (formattedBookings.length > 1) {
@@ -913,7 +1064,9 @@ export function BookingPage() {
         bookerName: booking.booker?.full_name || '',
         driverName: booking.driver?.full_name || '',
         phone: booking.driver?.phone || booking.booker?.phone || '',
-        email: booking.driver?.email || booking.booker?.email || '',
+        // This form edits the booker. Keep the contact that completed OTP
+        // verification instead of pre-filling a different driver's email.
+        email: accessValue.email || booking.booker?.email || '',
         permissions: verified.permissions || [],
         allowedActions: booking.allowed_actions || [],
         vehicleName: booking.vehicle?.name || '',
@@ -970,13 +1123,14 @@ export function BookingPage() {
           setLocationSuggestions([])
           setNearbyShowrooms(mapped)
           setStage('choose_showroom')
-          setActiveView('map')
+          showMobileWorkspace('map')
         } else {
           setAddress({ province: '', detail: queriedAddress })
           setNearbyShowrooms([])
           setLocationSuggestions([])
           setStage('need_address')
           setActiveView('car')
+          showMobileAssistant()
         }
         return
       }
@@ -994,6 +1148,7 @@ export function BookingPage() {
         setAddress({ province: '', detail: queriedAddress })
         setStage('need_address')
         setActiveView('car')
+        showMobileAssistant()
         return
       }
 
@@ -1015,7 +1170,7 @@ export function BookingPage() {
           setServerHighlightedDates([])
         }
         setStage('choose_slot')
-        setActiveView('schedule')
+        showMobileWorkspace('schedule')
       }
       return
     }
@@ -1044,7 +1199,7 @@ export function BookingPage() {
         setSelectedSlot(null)
         setConfirmSlotOpen(false)
         setStage('choose_slot')
-        setActiveView('schedule')
+        showMobileWorkspace('schedule')
         addMessage('assistant', 'ViVi đã giữ tạm khung giờ này, nhưng chưa đọc lại được chính xác ngày và giờ của nó. Bạn chọn giúp tôi khung giờ trong danh sách bên cạnh để tôi xác nhận đúng thời gian nhé.')
         return true
       }
@@ -1052,7 +1207,7 @@ export function BookingPage() {
       setPendingSlot(targetSlot)
       setSelectedSlot(targetSlot)
       setConfirmSlotOpen(true)
-      setActiveView('schedule')
+      showMobileWorkspace('schedule')
       return
     }
 
@@ -1111,7 +1266,7 @@ export function BookingPage() {
           setPendingSlot(null)
           setSelectedSlot(null)
           setConfirmSlotOpen(false)
-          setActiveView('schedule')
+          showMobileWorkspace('schedule')
           setStage('choose_slot')
           addMessage('assistant', 'ViVi chưa đọc lại được chính xác ngày giờ của khung giờ đang giữ. Bạn chọn giúp ViVi một khung giờ trong danh sách bên cạnh nhé.')
           return true
@@ -1120,7 +1275,7 @@ export function BookingPage() {
         setPendingSlot(targetSlot)
         setSelectedSlot(targetSlot)
         setConfirmSlotOpen(true)
-        setActiveView('schedule')
+        showMobileWorkspace('schedule')
         setStage('choose_slot')
         return
       }
@@ -1129,9 +1284,11 @@ export function BookingPage() {
       if (isComplete) {
         setStage('review')
         setActiveView('ticket')
+        showMobileAssistant()
       } else {
         setStage('collect_info')
         setActiveView('schedule')
+        showMobileAssistant()
       }
       return
     }
@@ -1157,32 +1314,73 @@ export function BookingPage() {
       setAgentTyping(false)
       if (showrooms.length) {
         setStage('choose_showroom')
-        setActiveView('map')
+        showMobileWorkspace('map')
         reply(`Đã tìm thấy ${showrooms.length} showroom gần “${detail}” còn lịch cho ${car.name}. Hãy chọn một showroom để xem chi tiết khung giờ.`)
       } else {
         setStage('need_address')
         setActiveView('car')
+        showMobileAssistant()
         reply(`ViVi chưa tìm thấy showroom còn lịch cho ${car.name} gần “${detail}”. Bạn hãy nhập địa chỉ khác, kèm phường/xã và tỉnh/thành phố.`)
       }
     } catch (error) {
       setAgentTyping(false)
       setStage('need_address')
       setActiveView('car')
+      showMobileAssistant()
       reply(`Không tìm được showroom từ địa chỉ này: ${error.message}`)
     }
   }
 
   useEffect(() => () => timersRef.current.forEach((timer) => window.clearTimeout(timer)), [])
+
+  const markMessageScrollIntent = useCallback(() => {
+    lastMessageScrollIntentAtRef.current = Date.now()
+  }, [])
+
+  const revealCompletedAssistantMessage = useCallback((messageId) => {
+    if (!window.matchMedia('(max-width: 900px)').matches) return
+    if (Date.now() - lastMessageScrollIntentAtRef.current < 3000) return
+
+    window.requestAnimationFrame(() => {
+      if (Date.now() - lastMessageScrollIntentAtRef.current < 3000) return
+      const container = messagesRef.current
+      if (!container) return
+      const target = Array.from(container.querySelectorAll('[data-message-id]'))
+        .find((element) => element.dataset.messageId === String(messageId))
+      if (!target) return
+
+      const containerRect = container.getBoundingClientRect()
+      const targetRect = target.getBoundingClientRect()
+      const top = Math.max(0, container.scrollTop + targetRect.top - containerRect.top - 12)
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      container.scrollTo({ top, behavior: reduceMotion ? 'auto' : 'smooth' })
+    })
+  }, [])
+
   useEffect(() => {
     // Tin nhắn, typing indicator và workspace thường đổi trong cùng một lượt render.
     // Chờ layout hoàn tất rồi đặt scrollTop trực tiếp; smooth scrolling có thể bị
     // một render kế tiếp huỷ giữa chừng và khiến tin nhắn mới nằm ngoài khung nhìn.
     const frame = window.requestAnimationFrame(() => {
       const container = messagesRef.current
-      if (container) container.scrollTop = container.scrollHeight
+      const userRecentlyScrolled = window.matchMedia('(max-width: 900px)').matches
+        && Date.now() - lastMessageScrollIntentAtRef.current < 3000
+      if (container && !userRecentlyScrolled) container.scrollTop = container.scrollHeight
     })
     return () => window.cancelAnimationFrame(frame)
   }, [messages, agentTyping])
+
+  useEffect(() => {
+    // Ở mobile, các thẻ chọn xe / showroom nằm phía trên ô nhập trong một vùng cuộn
+    // riêng. Mỗi khi bước đặt lịch đổi hoặc người dùng quay lại tab ViVi, đưa vùng đó
+    // về cuối để ô nhập hiện ngay — không focus cưỡng bức vì sẽ tự bật bàn phím ảo.
+    if (mobileSurface !== 'assistant' || !window.matchMedia('(max-width: 900px)').matches) return undefined
+    const frame = window.requestAnimationFrame(() => {
+      const composer = composerRef.current
+      if (composer) composer.scrollTop = composer.scrollHeight
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [mobileSurface, stage, composerMode, selectedCarId, nearbyShowrooms.length, slots.length, upsellCars.length, accessFlow?.phase])
 
   useEffect(() => {
     if (!holdExpiresAt || (stage !== 'collect_info' && stage !== 'review')) {
@@ -1225,7 +1423,7 @@ export function BookingPage() {
           setInlineOtpMock('')
           setInlineOtpBusy(false)
           setStage('choose_slot')
-          setActiveView('schedule')
+          showMobileWorkspace('schedule')
           addMessage('assistant', 'Khung giờ ViVi giữ tạm cho bạn đã hết hạn. Bạn chọn lại một khung giờ khác để tôi tiếp tục đặt lịch nhé.')
         }
         return
@@ -1265,6 +1463,8 @@ export function BookingPage() {
   const beginConversation = (choice) => {
     // TODO [BACKEND/SESSION]: Create/resume an anonymous booking draft here and
     // persist recipientType + selectedVehicleId. Return draftId and expiresAt.
+    dismissFloatingDemoForRealFlow()
+    clearBookingReturnContext()
     setRecipient(choice)
     const car = selectedCar
     addMessage(
@@ -1288,6 +1488,7 @@ export function BookingPage() {
       clearManagementContext({ event: InteractionEvent.VIEW_VEHICLE })
     }
     setSelectedCarId(car.id)
+    setMobileSurface('assistant')
     setWorkspaceHidden(false)
     if (!fromPrompt) addMessage('user', `Tôi muốn lái thử ${car.name}.`)
     resetSelectionForVehicleChange()
@@ -1307,6 +1508,7 @@ export function BookingPage() {
     }
 
     setSelectedCarId(car.id)
+    setMobileSurface('assistant')
     addMessage('user', `Tôi muốn đổi sang ${car.name}.`)
     resetSelectionForVehicleChange()
     setStage('need_address')
@@ -1337,6 +1539,7 @@ export function BookingPage() {
 
     setWorkspaceHidden(false)
     setShowroomId(showroom.id)
+    setMobileSurface('workspace')
     // Dọn khung giờ của showroom TRƯỚC khi hỏi showroom mới. Nếu để nguyên, trong lúc chờ
     // mạng người dùng vẫn thấy danh sách giờ của showroom cũ trong khi tên showroom đã đổi
     // — bấm vào là giữ chỗ ở showroom này nhưng phiếu ghi showroom kia.
@@ -1351,7 +1554,7 @@ export function BookingPage() {
       const grouped = groupSlots(result.slots || [])
       setSlots(grouped)
       setStage('choose_slot')
-      setActiveView('schedule')
+      showMobileWorkspace('schedule')
       setAgentTyping(false)
       reply(`${showroom.name} đã được chọn. ViVi đã tìm thấy ${result.slots?.length || 0} khung giờ trống cho bạn.`)
     } catch (error) {
@@ -1362,7 +1565,7 @@ export function BookingPage() {
       setShowroomId('')
       setSlots([])
       setStage('choose_showroom')
-      setActiveView('map')
+      showMobileWorkspace('map')
       reply(`Không tải được lịch trống của ${showroom.name}: ${error.message}. Bạn chọn lại showroom giúp tôi nhé.`)
     }
   }
@@ -1379,6 +1582,7 @@ export function BookingPage() {
       if (bookingId && selectedSlot && selectedSlot.slotId === pendingSlot.slotId) {
         setConfirmSlotOpen(false)
         setStage('collect_info')
+        showMobileAssistant()
         setAgentTyping(false)
         return
       }
@@ -1414,6 +1618,7 @@ export function BookingPage() {
       setConfirmSlotOpen(false)
       addMessage('user', `Tôi xác nhận ${pendingSlot.time}, ${pendingSlot.dateLabel}.`)
       setStage('collect_info')
+      showMobileAssistant()
       setAgentTyping(false)
       reply('ViVi đã giữ tạm khung giờ này cho bạn trong 5 phút. Bạn vui lòng điền thông tin để tiếp tục nhé.')
     } catch (error) {
@@ -1516,6 +1721,7 @@ export function BookingPage() {
     // (OTP gửi bằng email). Chỉ sau khi xác thực mới mở được sửa/huỷ/đổi lịch.
     // TODO [BACKEND/ENDPOINT — P0]: các action này vẫn đi qua /api/v1/demo/action;
     // cần endpoint mang tên thật cho nghiệp vụ production.
+    dismissFloatingDemoForRealFlow()
     if (addUserMessage) addMessage('user', 'Tôi muốn tra cứu lịch đã đặt.')
     dispatchInteraction({ type: InteractionEvent.START_LOOKUP })
     setWorkspaceHidden(false)
@@ -1670,6 +1876,7 @@ export function BookingPage() {
       setAccessibleBookings(formattedBookings)
       setWorkspaceHidden(false)
       setActiveView('bookings')
+      if (formattedBookings.length > 0) setMobileSurface('workspace')
       const accessPurpose = accessFlow?.purpose || 'manage'
       const isCancellation = accessPurpose === 'cancel'
 
@@ -1734,7 +1941,8 @@ export function BookingPage() {
         bookerName: booking.booker?.full_name || '',
         driverName: booking.driver?.full_name || '',
         phone: booking.driver?.phone || booking.booker?.phone || '',
-        email: booking.driver?.email || booking.booker?.email || '',
+        // The verified email is the intended pre-fill value for booker edits.
+        email: accessValue.email || booking.booker?.email || '',
         permissions: verified.permissions || [],
         allowedActions: booking.allowed_actions || [],
         vehicleName: booking.vehicle?.name || '',
@@ -1772,6 +1980,12 @@ export function BookingPage() {
     if (!recipient) setRecipient('self')
     if (restoredUi.selectedCarId) setSelectedCarId(restoredUi.selectedCarId)
     if (restoredUi.activeView) setActiveView(restoredUi.activeView)
+    if (['map', 'schedule'].includes(restoredUi.activeView || activeView)
+      && ['choose_showroom', 'choose_slot'].includes(stage)) {
+      setMobileSurface('workspace')
+    } else {
+      setMobileSurface('assistant')
+    }
     setResumePending(false)
   }
   const restartConversation = () => {
@@ -1785,7 +1999,7 @@ export function BookingPage() {
     setAccessBusy(true); setAccessError('')
     try {
       const booking = await getVerifiedBooking({ accessToken: accessProfile.accessToken, bookingId: summary.id })
-      const selectedProfile = { ...accessProfile, bookingId: booking.id, bookingCode: booking.booking_code || '', bookerName: booking.booker?.full_name || '', driverName: booking.driver?.full_name || '', phone: booking.driver?.phone || booking.booker?.phone || '', email: booking.driver?.email || booking.booker?.email || '', allowedActions: booking.allowed_actions || [], vehicleName: booking.vehicle?.name || '', vehicleModelId: booking.vehicle?.id || '', showroomName: booking.showroom?.name || '', showroomId: booking.showroom?.id || '', showroomAddress: booking.showroom?.address || '', advisorName: booking.advisor?.full_name || 'Chưa phân công', advisorPhone: booking.advisor?.phone || '', slotTime: booking.slot_time || '', slotDate: booking.slot_date || '' }
+      const selectedProfile = { ...accessProfile, bookingId: booking.id, bookingCode: booking.booking_code || '', bookerName: booking.booker?.full_name || '', driverName: booking.driver?.full_name || '', phone: booking.driver?.phone || booking.booker?.phone || '', email: accessProfile.email || accessValue.email || booking.booker?.email || '', allowedActions: booking.allowed_actions || [], vehicleName: booking.vehicle?.name || '', vehicleModelId: booking.vehicle?.id || '', showroomName: booking.showroom?.name || '', showroomId: booking.showroom?.id || '', showroomAddress: booking.showroom?.address || '', advisorName: booking.advisor?.full_name || 'Chưa phân công', advisorPhone: booking.advisor?.phone || '', slotTime: booking.slot_time || '', slotDate: booking.slot_date || '' }
       setAccessProfile(selectedProfile)
       setExpandedBookingId(booking.id)
       setAccessFlow({ phase: accessProfile.accessPurpose === 'cancel' ? 'confirm_cancel' : 'edit', purpose: accessProfile.accessPurpose || 'lookup', challengeId: '', expiresAt: 0 })
@@ -1834,12 +2048,16 @@ export function BookingPage() {
   }
 
   const changeAccessProfile = (field, value) => setAccessProfile((current) => ({ ...current, [field]: value }))
+  const openRescheduleConfirmation = () => {
+    if (rescheduleState?.step !== 'pending') return
+    setRescheduleState((current) => ({ ...current, step: 'confirm' }))
+    dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
+  }
   const saveAccessProfile = async (event) => {
     event.preventDefault()
     if (!accessProfile) return
     if (rescheduleState?.step === 'pending') {
-      setRescheduleState((current) => ({ ...current, step: 'confirm' }))
-      dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
+      openRescheduleConfirmation()
       return
     }
     setAccessBusy(true); setAccessError('')
@@ -1895,6 +2113,7 @@ export function BookingPage() {
     if (car && targetProfile?.showroomId) {
       setSelectedCarId(car.id)
       setWorkspaceHidden(false)
+      setMobileSurface('workspace')
       setAccessFlow((current) => current ? { ...current, phase: 'edit', purpose: 'reschedule' } : { phase: 'edit', purpose: 'reschedule', challengeId: '', expiresAt: 0 })
       dispatchInteraction({ type: InteractionEvent.START_RESCHEDULE })
       loadRescheduleSlots(car, { id: targetProfile.showroomId, name: targetProfile.showroomName })
@@ -1916,6 +2135,7 @@ export function BookingPage() {
       setRescheduleState((current) => ({ ...current, step: 'pending', slot, newBookingId: held.booking_id }))
       setRescheduleSecondsLeft(Math.max(0, Math.ceil((new Date(held.hold_expires_at).getTime() - Date.now()) / 1000)))
       setExpandedBookingId(accessProfile.bookingId)
+      setMobileSurface('workspace')
       dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
       addMessage('assistant', 'ViVi đã giữ tạm khung giờ mới và cập nhật trên phiếu. Bạn bấm “Cập nhật thông tin” để kiểm tra, xác nhận toàn bộ lịch.')
     } catch (error) { setAccessError(error.message) } finally { setAccessBusy(false) }
@@ -2084,7 +2304,7 @@ export function BookingPage() {
         setBookingId('')
         setBookingVersion(0)
         setStage('choose_slot')
-        setActiveView('schedule')
+        showMobileWorkspace('schedule')
         addMessage('assistant', 'Thời gian giữ tạm khung giờ này đã hết hạn. Bạn vui lòng chọn lại một khung giờ khác nhé.')
         return
       }
@@ -2166,6 +2386,451 @@ export function BookingPage() {
     }
   }
 
+  const ensureFloatingDemoRun = (runId) => {
+    if (!floatingDemoMountedRef.current || floatingDemoRunRef.current !== runId) {
+      throw new Error('Demo đã được bắt đầu lại.')
+    }
+  }
+
+  // A short beat makes each visual change perceptible, while the controller keeps
+  // moving without requiring another click from the presenter.
+  const waitFloatingDemo = (runId, milliseconds = FLOATING_DEMO_STEP_DELAY_MS) => new Promise((resolve) => {
+    const finish = () => {
+      window.clearTimeout(timer)
+      floatingDemoDelayWaitersRef.current = floatingDemoDelayWaitersRef.current.filter((waiter) => waiter !== finish)
+      resolve()
+    }
+    const timer = window.setTimeout(finish, milliseconds)
+    floatingDemoDelayWaitersRef.current.push(finish)
+  }).then(() => ensureFloatingDemoRun(runId))
+
+  const getFloatingDemoLocation = () => new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve({ location: null, reason: 'Trình duyệt không hỗ trợ vị trí' })
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => resolve({ location: { latitude: coords.latitude, longitude: coords.longitude }, reason: '' }),
+      (error) => {
+        const reason = error.code === error.PERMISSION_DENIED
+          ? 'Quyền vị trí đang bị chặn'
+          : error.code === error.TIMEOUT
+            ? 'Lấy vị trí bị quá thời gian chờ'
+            : 'Không xác định được vị trí hiện tại'
+        resolve({ location: null, reason })
+      },
+      { enableHighAccuracy: false, maximumAge: 5 * 60 * 1000, timeout: 8000 },
+    )
+  })
+
+  const waitForFloatingDemoResume = async (runId) => {
+    while (floatingDemoPausedRef.current) {
+      await new Promise((resolve) => floatingDemoPauseWaitersRef.current.push(resolve))
+      ensureFloatingDemoRun(runId)
+    }
+  }
+
+  // Deterministic demo copy, not an LLM request. The visible composer and
+  // typing state make each scripted step read like a genuine chat exchange.
+  const beginFloatingDemoTurn = async (step, text, runId) => {
+    setDraft(text)
+    await waitFloatingDemo(runId, 850)
+    setDraft('')
+    addMessage('user', text, { floatingDemoStep: step })
+    setAgentTyping(true)
+    await waitFloatingDemo(runId, 700)
+  }
+
+  const finishFloatingDemoTurn = (step, text) => {
+    setAgentTyping(false)
+    addMessage('assistant', text, { floatingDemoStep: step })
+  }
+
+  const runFloatingDemoStep = async (step, runId) => {
+    ensureFloatingDemoRun(runId)
+    if (step === 1) {
+      await beginFloatingDemoTurn(step, 'Tôi đặt lịch lái thử cho chính tôi.', runId)
+      setRecipient('self')
+      setResumePending(false)
+      setWorkspaceHidden(false)
+      setFloatingDemoStatus('Đã chọn người đặt: chính tôi')
+      finishFloatingDemoTurn(step, 'Được rồi, ViVi sẽ đồng hành cùng bạn chọn mẫu xe và lịch lái thử phù hợp.')
+      return
+    }
+
+    if (step === 2) {
+      await beginFloatingDemoTurn(step, 'Tôi muốn lái thử VF 9.', runId)
+      const car = cars.find((item) => item.id === 'vf9')
+      if (!car) throw new Error('Catalog hiện chưa có mẫu VF 9 để trình diễn.')
+      setSelectedCarId(car.id)
+      resetSelectionForVehicleChange()
+      setStage('need_address')
+      setActiveView('car')
+      finishFloatingDemoTurn(step, 'ViVi đã chọn VF 9. Mình sẽ tìm showroom còn lịch cho buổi lái thử.')
+      setFloatingDemoStatus('Đã chọn VF 9')
+      floatingDemoContextRef.current = { car }
+      return
+    }
+
+    const context = floatingDemoContextRef.current
+    if (!context.car) throw new Error('Hãy chạy bước chọn VF 9 trước.')
+
+    if (step === 3) {
+      await beginFloatingDemoTurn(step, 'Dùng vị trí hiện tại để tìm showroom gần tôi.', runId)
+      setFloatingDemoStatus('Đang lấy vị trí hiện tại')
+      const locationResult = await getFloatingDemoLocation()
+      const location = locationResult.location
+      ensureFloatingDemoRun(runId)
+      let result
+      if (location) {
+        result = await searchFloatingDemoOptions({
+          vehicleModel: context.car.name,
+          showroomLimit: 12,
+          ...location,
+        })
+      } else {
+        // Không có quyền vị trí thì không thể nói showroom nào là "gần nhất".
+        // Demo ưu tiên Landmark 81 để luôn có một phương án dễ nhận biết.
+        try {
+          result = await searchFloatingDemoOptions({ vehicleModel: context.car.name, showroomQuery: 'Landmark 81', showroomLimit: 12 })
+        } catch (error) {
+          if (error.code !== 'SHOWROOM_NOT_FOUND') throw error
+          result = await searchFloatingDemoOptions({ vehicleModel: context.car.name, showroomLimit: 12 })
+        }
+      }
+      ensureFloatingDemoRun(runId)
+      const showrooms = mapShowrooms(result.showrooms || [], context.car.id)
+      if (!showrooms.length) throw new Error('Không tìm thấy showroom có VF 9 để trình diễn.')
+      context.showrooms = showrooms
+      context.location = location
+      setNearbyShowrooms(showrooms)
+      setUserLocation(location)
+      setAddress({ province: '', detail: location ? 'Vị trí hiện tại' : 'Chưa cấp quyền vị trí' })
+      setStage('choose_showroom')
+      setActiveView('map')
+      setFloatingDemoStatus(location ? `Đã tìm thấy ${showrooms.length} showroom gần bạn` : `${locationResult.reason} · ưu tiên Landmark 81`)
+      finishFloatingDemoTurn(step, location
+        ? `ViVi đã lấy vị trí hiện tại và tìm thấy ${showrooms.length} showroom còn lịch.`
+        : `${locationResult.reason}. ViVi ưu tiên Landmark 81 cho lượt demo này.`)
+      return
+    }
+
+    if (step === 4) {
+      const showroom = context.showrooms[0]
+      if (!showroom) throw new Error('Hãy lấy vị trí hiện tại trước.')
+      await beginFloatingDemoTurn(step, 'Chọn showroom gần nhất có lịch lái thử VF 9.', runId)
+      const result = await searchFloatingDemoOptions({ vehicleModel: context.car.name, showroomId: showroom.id })
+      ensureFloatingDemoRun(runId)
+      const groupedSlots = groupSlots(result.slots || [])
+      const rawSlot = (result.slots || [])
+        .filter((slot) => slot.status === 'available' && new Date(slot.start_at).getTime() > Date.now())
+        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())[0]
+      const earliestSlot = rawSlot ? findSlotById(groupedSlots, rawSlot.id) : null
+      if (!earliestSlot) throw new Error(`${showroom.name} hiện chưa có khung giờ trống.`)
+      context.showroom = showroom
+      context.slots = groupedSlots
+      context.slot = earliestSlot
+      setShowroomId(showroom.id)
+      setSlots(groupedSlots)
+      setPendingSlot(null)
+      setSelectedSlot(null)
+      setStage('choose_slot')
+      setActiveView('schedule')
+      setFloatingDemoStatus(`Đã chọn ${showroom.name} · đã tải ${result.slots?.length || 0} khung giờ`)
+      finishFloatingDemoTurn(step, `ViVi đã chọn showroom gần nhất: ${showroom.name}. Lịch trống đã được hiển thị.`)
+      return
+    }
+
+    if (step === 5) {
+      if (!context.slot || !context.showroom) throw new Error('Hãy chọn showroom trước.')
+      await beginFloatingDemoTurn(step, 'Chọn giúp tôi khung giờ trống sớm nhất.', runId)
+      setNearbyShowrooms(context.showrooms)
+      setShowroomId(context.showroom.id)
+      setSlots(context.slots || [])
+      setPendingSlot(context.slot)
+      setSelectedSlot(null)
+      setConfirmSlotOpen(false)
+      setStage('choose_slot')
+      setActiveView('schedule')
+      // The floating bar is a showcase, not a booking channel: never lock a
+      // real slot or create a record that later needs destructive cleanup.
+      context.isSimulated = true
+      context.bookingId = `floating-demo-${runId}`
+      context.bookingVersion = 1
+      setBookingId(context.bookingId)
+      setBookingVersion(1)
+      setHoldExpiresAt(null)
+      setSelectedSlot(context.slot)
+      setPendingSlot(null)
+      setFloatingDemoStatus('Đã chọn giờ gần nhất và mô phỏng giữ chỗ')
+      finishFloatingDemoTurn(step, `ViVi đã chọn ${context.slot.time} · ${context.slot.dateLabel} và mô phỏng giữ chỗ. Không có lịch thật nào được tạo.`)
+      return
+    }
+
+    if (step === 6) {
+      if (!context.bookingId || !context.bookingVersion) throw new Error('Hãy giữ chỗ trước khi lưu hồ sơ.')
+      await beginFloatingDemoTurn(step, 'Tôi đã điền xong thông tin người lái thử.', runId)
+      setFloatingDemoStatus('Đang điền hồ sơ mẫu')
+      setPerson(DEMO_PERSONA)
+      // Keep the actual form visible for a full demo beat. It is read-only in
+      // Demo mode, so the presenter can see the persona without submitting it.
+      setStage('collect_info')
+      setActiveView('schedule')
+      finishFloatingDemoTurn(step, 'ViVi đã điền hồ sơ người lái mẫu. Bạn có thể xem thông tin và xác nhận GPLX ngay bên dưới.')
+      setFloatingDemoStatus('Đã điền hồ sơ người lái mẫu')
+      return
+    }
+
+    if (step === 7) {
+      if (!context.bookingId || !context.bookingVersion) throw new Error('Phiếu demo chưa sẵn sàng để xác nhận.')
+      await beginFloatingDemoTurn(step, 'Xác nhận phiếu demo.', runId)
+      setFloatingDemoStatus('Đang xác nhận phiếu demo')
+      const demoCode = `DEMO-${String(Date.now()).slice(-6)}`
+      setBookingCode(demoCode)
+      setBookingAdvisor(null)
+      setSuccessCinematic(true)
+      finishFloatingDemoTurn(step, 'ViVi đang hoàn tất phiếu demo của bạn.')
+      setFloatingDemoStatus('Hoàn tất trình diễn · không tạo lịch thật')
+      return
+    }
+  }
+
+  const advanceFloatingDemo = async () => {
+    if (floatingDemoBusy || (floatingDemoRunning && !floatingDemoPaused) || floatingDemoStep >= 7) return
+    if (floatingDemoRunning && floatingDemoPaused) {
+      floatingDemoRunRef.current += 1
+      floatingDemoPausedRef.current = false
+      floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
+      setFloatingDemoRunning(false)
+      setFloatingDemoPaused(false)
+    }
+    const runId = floatingDemoRunRef.current || 1
+    if (!floatingDemoRunRef.current) floatingDemoRunRef.current = runId
+    const nextStep = floatingDemoStep + 1
+    setFloatingDemoBusy(true)
+    try {
+      await runFloatingDemoStep(nextStep, runId)
+      ensureFloatingDemoRun(runId)
+      setFloatingDemoStep(nextStep)
+    } catch (error) {
+      if (floatingDemoRunRef.current === runId) setFloatingDemoStatus(`${error.message || 'Demo chưa hoàn tất, bạn thử lại nhé.'}${error.code ? ` · ${error.code}` : ''}`)
+    } finally {
+      if (floatingDemoRunRef.current === runId) {
+        setFloatingDemoBusy(false)
+        setAgentTyping(false)
+      }
+    }
+  }
+
+  const autoPlayFloatingDemo = async () => {
+    if (floatingDemoRunning) return
+    // Resume after Lùi/Tiến keeps the visual checkpoint and its transcript.
+    // A completed run is the only case where the primary button starts fresh.
+    const startsFresh = floatingDemoStep === 0 || floatingDemoStep >= 7
+    const startingStep = startsFresh ? 0 : floatingDemoStep
+    const runId = floatingDemoRunRef.current + 1
+    floatingDemoRunRef.current = runId
+    if (startsFresh) {
+      // A brand-new showcase must not inherit a visitor conversation, but a
+      // resume must never erase its already-presented scenes.
+      resetBookingConversation()
+      setMessages([])
+      setFloatingDemoLogs([])
+      setFloatingDemoStep(0)
+      floatingDemoContextRef.current = {}
+    }
+    floatingDemoPausedRef.current = false
+    setFloatingDemoPaused(false)
+    setFloatingDemoRunning(true)
+    setFloatingDemoStatus(startsFresh ? 'Đang bắt đầu luồng chuẩn' : `Đang tiếp tục từ chặng ${startingStep + 1}`)
+    try {
+      let step = startingStep + 1
+      let retriesForStep = 0
+      while (step <= 7) {
+        await waitForFloatingDemoResume(runId)
+        setFloatingDemoBusy(true)
+        try {
+          await runFloatingDemoStep(step, runId)
+        } catch (error) {
+          ensureFloatingDemoRun(runId)
+          const code = String(error?.code || '')
+          const slotChanged = step >= 5 && (
+            code === 'SLOT_UNAVAILABLE'
+            || code === 'SLOT_NO_LONGER_AVAILABLE'
+            || code === 'HOLD_EXPIRED'
+          )
+
+          // A real-time slot can disappear between the search and hold/confirm
+          // calls. Re-select the nearest available slot and continue automatically
+          // instead of leaving the presenter at a dead end.
+          if (slotChanged) {
+            setFloatingDemoStatus('Khung giờ vừa thay đổi · đang chọn giờ gần nhất khác')
+            await runFloatingDemoStep(5, runId)
+            ensureFloatingDemoRun(runId)
+            setFloatingDemoStep(5)
+            retriesForStep = 0
+            step = 5
+            setFloatingDemoBusy(false)
+            await waitFloatingDemo(runId)
+            continue
+          }
+
+          // Network and service errors are normally transient. Retry each current
+          // step once before surfacing the failure in the demo bar.
+          if (error?.retryable && retriesForStep < 1) {
+            retriesForStep += 1
+            setFloatingDemoStatus('Kết nối chậm · đang thử lại tự động')
+            setFloatingDemoBusy(false)
+            await waitFloatingDemo(runId, 1200)
+            continue
+          }
+          throw error
+        }
+        ensureFloatingDemoRun(runId)
+        setFloatingDemoStep(step)
+        setFloatingDemoBusy(false)
+        if (step < 7) await waitFloatingDemo(runId)
+        step += 1
+        retriesForStep = 0
+      }
+    } catch (error) {
+      if (floatingDemoRunRef.current === runId) setFloatingDemoStatus(`${error.message || 'Demo chưa hoàn tất, bạn thử lại nhé.'}${error.code ? ` · ${error.code}` : ''}`)
+    } finally {
+      if (floatingDemoRunRef.current === runId) {
+        setFloatingDemoBusy(false)
+        setFloatingDemoRunning(false)
+        setFloatingDemoPaused(false)
+        setAgentTyping(false)
+      }
+    }
+  }
+
+  const toggleFloatingDemoPause = () => {
+    if (!floatingDemoRunning) return autoPlayFloatingDemo()
+    floatingDemoPausedRef.current = !floatingDemoPausedRef.current
+    setFloatingDemoPaused(floatingDemoPausedRef.current)
+    setFloatingDemoStatus(floatingDemoPausedRef.current ? 'Đã tạm dừng sau thao tác hiện tại' : 'Đang tiếp tục luồng chuẩn')
+    if (!floatingDemoPausedRef.current) {
+      floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
+    }
+  }
+
+  const rewindFloatingDemo = async () => {
+    if (floatingDemoBusy || (floatingDemoRunning && !floatingDemoPaused) || floatingDemoStep <= 0) return
+    if (floatingDemoRunning && floatingDemoPaused) {
+      floatingDemoRunRef.current += 1
+      floatingDemoPausedRef.current = false
+      floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
+      setFloatingDemoRunning(false)
+      setFloatingDemoPaused(false)
+    }
+    const targetStep = floatingDemoStep - 1
+    const heldBookingId = bookingId || floatingDemoContextRef.current.bookingId
+    if (targetStep < 5 && heldBookingId && !bookingCode && !floatingDemoContextRef.current.isSimulated) {
+      try { await releaseBookingHold(heldBookingId) } catch { /* Expired holds are already released server-side. */ }
+      setBookingId('')
+      setBookingVersion(0)
+      setHoldExpiresAt(null)
+      floatingDemoContextRef.current.bookingId = ''
+      floatingDemoContextRef.current.bookingVersion = 0
+    }
+    const viewByStep = ['agent', 'agent', 'car', 'map', 'schedule', 'schedule', 'ticket', 'ticket']
+    const stageByStep = ['idle', 'idle', 'need_address', 'choose_showroom', 'choose_slot', 'choose_slot', 'review', 'review']
+    setFloatingDemoStep(targetStep)
+    setMessages((current) => current.filter((message) => {
+      const isLaterDemoMessage = message.floatingDemoStep && message.floatingDemoStep > targetStep
+      const isLegacySuccessMessage = floatingDemoContextRef.current.isSimulated && (
+        message.type === 'next_steps'
+        || message.text === BOOKING_PREPARATION_GREETING
+        || (message.emphasis && String(message.text || '').includes('ViVi và showroom đều đã nhận được lịch đặt'))
+      )
+      return !isLaterDemoMessage && !isLegacySuccessMessage
+    }))
+    setStage(stageByStep[targetStep])
+    setActiveView(viewByStep[targetStep])
+    setFloatingDemoStatus(`Đã quay lại chặng ${targetStep || 1}.`)
+  }
+
+  const resetFloatingDemo = async () => {
+    const hasStartedDemo = floatingDemoStep > 0 || floatingDemoRunning || floatingDemoBusy || Boolean(floatingDemoContextRef.current.car)
+    floatingDemoRunRef.current += 1
+    floatingDemoPausedRef.current = false
+    floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
+    setFloatingDemoRunning(false)
+    setFloatingDemoPaused(false)
+    setFloatingDemoBusy(true)
+    setAgentTyping(false)
+    setDraft('')
+    const heldBookingId = bookingId || floatingDemoContextRef.current.bookingId
+    try {
+      if (heldBookingId && !bookingCode && !floatingDemoContextRef.current.isSimulated) await releaseBookingHold(heldBookingId)
+    } catch {
+      // Backend cleanup may already have released an expired hold; reset stays usable.
+    } finally {
+      timersRef.current.forEach((timer) => window.clearTimeout(timer))
+      timersRef.current = []
+      holdActionIdsRef.current.clear()
+      confirmActionIdsRef.current.clear()
+      floatingDemoContextRef.current = {}
+      if (!hasStartedDemo) {
+        setFloatingDemoStep(0)
+        setFloatingDemoLogs([])
+        setFloatingDemoStatus('')
+        setFloatingDemoCollapsed(true)
+        setFloatingDemoBusy(false)
+        return
+      }
+      window.sessionStorage.removeItem(BOOKING_UI_STATE_KEY)
+      resetBookingConversation()
+      setResumePending(false)
+      setRecipient('')
+      setSelectedCarId('')
+      setNearbyShowrooms([])
+      setShowroomId('')
+      setSlots([])
+      setPendingSlot(null)
+      setSelectedSlot(null)
+      setBookingId('')
+      setBookingVersion(0)
+      setHoldExpiresAt(null)
+      setTimeLeft('')
+      setBookingCode('')
+      setBookingAdvisor(null)
+      setPerson({ ...DEMO_PERSONA, bookingName: '', phone: '', email: '', hasLicense: false, marketingConsent: true })
+      setMessages([])
+      setStage('idle')
+      setActiveView('agent')
+      setFloatingDemoStep(0)
+      setFloatingDemoLogs([])
+      setFloatingDemoStatus('Đã sẵn sàng cho lượt demo mới')
+      setFloatingDemoCollapsed(true)
+      setFloatingDemoBusy(false)
+    }
+  }
+
+  const toggleFloatingDemo = () => {
+    setFloatingDemoCollapsed((value) => !value)
+  }
+
+  // Real booking and lookup flows must take back control immediately. This is
+  // intentionally lighter than Reset: it cancels the demo run without wiping
+  // the new conversation the visitor has just chosen to start.
+  const dismissFloatingDemoForRealFlow = () => {
+    floatingDemoRunRef.current += 1
+    floatingDemoPausedRef.current = false
+    floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
+    floatingDemoContextRef.current = {}
+    setFloatingDemoRunning(false)
+    setFloatingDemoPaused(false)
+    setFloatingDemoBusy(false)
+    setFloatingDemoStep(0)
+    setFloatingDemoLogs([])
+    setFloatingDemoStatus('')
+    setFloatingDemoCollapsed(true)
+    setAgentTyping(false)
+    setDraft('')
+  }
+
   // Đặt lịch xong thì thanh tab chỉ còn ĐÚNG 1 nút "Phiếu lịch".
   // Ba tab kia (Đổi mẫu xe, Showroom, Lịch trống) là công cụ của lúc đang đặt; giữ lại sau khi
   // đã có mã lịch thì thanh vừa dài vừa mời khách bấm vào những thứ không còn tác dụng, trong
@@ -2204,9 +2869,88 @@ export function BookingPage() {
   })()
 
   const highlightedDates = serverHighlightedDates || []
+  const mobileWorkspaceLabel = activeView === 'map'
+    ? 'Chọn showroom'
+    : activeView === 'schedule'
+      ? 'Chọn lịch'
+      : activeView === 'ticket'
+        ? 'Phiếu lịch'
+        : activeView === 'bookings'
+          ? 'Lịch đã đặt'
+          : 'Mẫu xe'
 
   const renderWorkspace = () => {
-    if (activeView === 'bookings' && accessProfile) return <section className="booking-history"><div className="booking-history__list">{accessibleBookings.map((booking) => { const expanded = expandedBookingId === booking.id; const details = booking.id === accessProfile.bookingId ? accessProfile : null; const bookingCodeLabel = booking.booking_code || 'Lịch lái thử'; return <div key={booking.id} className={expanded ? 'is-active is-expanded' : ''}><button type="button" onClick={() => { setExpandedBookingId(expanded ? '' : booking.id); if (!expanded) selectAccessibleBooking(booking) }}><strong>{bookingCodeLabel}</strong><small>{booking.display_time || (booking.start_at ? new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(booking.start_at)) : 'Lịch lái thử')}</small></button>{expanded && details && <div className="booking-history__details"><p><span>Mẫu xe</span>{details.vehicleName}</p><p><span>Showroom</span>{details.showroomName}<small>{details.showroomAddress}</small></p><p><span>Thời gian</span>{details.slotTime} · {details.slotDate}</p>{rescheduleState?.step === 'pending' && <p className="booking-history__hold"><span>Khung giờ mới đang được giữ</span>Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}</p>}<p><span>Tư vấn viên</span>{details.advisorName}<small>{details.advisorPhone || 'Chưa có số điện thoại'}</small></p><div className="booking-history__actions"><span className="booking-history__actions-main">{allowedActions.includes('reschedule') && <button type="button" className="booking-history__action" onClick={() => beginAccessibleReschedule(booking)} aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}><PencilSimple size={13} weight="bold" /> Đổi giờ</button>}{details.allowedActions?.includes('cancel') && <button type="button" className="booking-history__action booking-history__action--danger" onClick={() => beginAccessibleCancellation(booking)} aria-label={`Huỷ lịch ${bookingCodeLabel}`}><Prohibit size={13} weight="bold" /> Huỷ lịch</button>}</span></div></div>}</div> })}</div></section>
+    if (activeView === 'bookings' && accessProfile) {
+      return (
+        <section className="booking-history">
+          <div className="booking-history__list">
+            {accessibleBookings.map((booking) => {
+              const expanded = expandedBookingId === booking.id
+              const details = booking.id === accessProfile.bookingId ? accessProfile : null
+              const bookingCodeLabel = booking.booking_code || 'Lịch lái thử'
+              const displayTime = booking.display_time || (booking.start_at
+                ? new Intl.DateTimeFormat('vi-VN', {
+                  weekday: 'long',
+                  day: '2-digit',
+                  month: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }).format(new Date(booking.start_at))
+                : 'Lịch lái thử')
+
+              return (
+                <div key={booking.id} className={expanded ? 'is-active is-expanded' : ''}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExpandedBookingId(expanded ? '' : booking.id)
+                      if (!expanded) selectAccessibleBooking(booking)
+                    }}
+                  >
+                    <strong>{bookingCodeLabel}</strong>
+                    <small>{displayTime}</small>
+                  </button>
+
+                  {expanded && details && (
+                    <div className="booking-history__details">
+                      <p><span>Mẫu xe</span>{details.vehicleName}</p>
+                      <p><span>Showroom</span>{details.showroomName}<small>{details.showroomAddress}</small></p>
+                      <p><span>Thời gian</span>{details.slotTime} · {details.slotDate}</p>
+                      {rescheduleState?.step === 'pending' && (
+                        <p className="booking-history__hold">
+                          <span>Khung giờ mới đang được giữ</span>
+                          Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}
+                        </p>
+                      )}
+                      <p><span>Tư vấn viên</span>{details.advisorName}<small>{details.advisorPhone || 'Chưa có số điện thoại'}</small></p>
+                      <div className="booking-history__actions">
+                        <span className="booking-history__actions-main">
+                          {allowedActions.includes('reschedule') && (
+                            <button type="button" className="booking-history__action" onClick={() => beginAccessibleReschedule(booking)} aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}>
+                              <PencilSimple size={13} weight="bold" /> Đổi giờ
+                            </button>
+                          )}
+                          {details.allowedActions?.includes('cancel') && (
+                            <button type="button" className="booking-history__action booking-history__action--danger" onClick={() => beginAccessibleCancellation(booking)} aria-label={`Huỷ lịch ${bookingCodeLabel}`}>
+                              <Prohibit size={13} weight="bold" /> Huỷ lịch
+                            </button>
+                          )}
+                        </span>
+                        {rescheduleState?.step === 'pending' && (
+                          <button type="button" className="booking-history__update-mobile" onClick={openRescheduleConfirmation}>
+                            Cập nhật thông tin <ArrowRight size={14} weight="bold" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )
+    }
     if (rescheduleState?.step === 'showroom') return <section className="studio-schedule"><div className="reschedule-left-grid">{rescheduleState.showrooms.map((showroom) => <button type="button" key={showroom.id} onClick={() => loadRescheduleSlots(rescheduleState.car, showroom)}><strong>{showroom.name}</strong><small>{showroom.address}</small></button>)}</div></section>
     if (rescheduleState?.step === 'schedule') return <SchedulePanel compact onBack={exitReschedule} car={rescheduleState.car} showroom={rescheduleState.showroom} slots={groupSlots(rescheduleState.slots)} pendingSlot={null} highlightedDates={highlightedDates} onPick={(picked) => holdReschedule(rescheduleState.slots.find((slot) => slot.id === picked.slotId))} />
     if (rescheduleState?.step === 'pending') return <SchedulePanel compact onBack={exitReschedule} car={rescheduleState.car} showroom={rescheduleState.showroom} slots={groupSlots(rescheduleState.slots)} pendingSlot={{ slotId: rescheduleState.slot.id }} highlightedDates={highlightedDates} onPick={(picked) => holdReschedule(rescheduleState.slots.find((slot) => slot.id === picked.slotId))} />
@@ -2220,8 +2964,8 @@ export function BookingPage() {
         </div>
       )
     }
-    if (activeView === 'map') return <BookingShowroomMap car={selectedCar} showrooms={nearbyShowrooms} selectedId={showroomId} onSelect={setShowroomId} onConfirm={chooseShowroom} userLocation={userLocation} searchedLocation={searchedLocation} />
-    if (activeView === 'schedule' && selectedShowroom) return <SchedulePanel car={selectedCar} showroom={selectedShowroom} slots={slots} pendingSlot={pendingSlot} highlightedDates={highlightedDates} onPick={chooseSlot} />
+    if (activeView === 'map') return <BookingShowroomMap car={selectedCar} showrooms={nearbyShowrooms} selectedId={showroomId} onSelect={setShowroomId} onConfirm={chooseShowroom} userLocation={userLocation} searchedLocation={searchedLocation} disabled={floatingDemoMode} />
+    if (activeView === 'schedule' && selectedShowroom) return <SchedulePanel car={selectedCar} showroom={selectedShowroom} slots={slots} pendingSlot={pendingSlot} highlightedDates={highlightedDates} onPick={chooseSlot} disabled={floatingDemoMode} />
     if (activeView === 'ticket' && selectedShowroom && selectedSlot) return <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} advisor={bookingAdvisor} />
     return <VehiclePanel car={selectedCar} />
   }
@@ -2246,6 +2990,25 @@ export function BookingPage() {
   return (
     <main id="main-content" className={`agent-booking-page ${workspaceVisible ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''} ${successCinematic ? 'is-cinematic' : ''}`}>
       <BookingHeader />
+
+      {floatingDemoEnabled && !isDriverChat && !successCinematic && !confirmSlotOpen && !switcherOpen && !accessFlow && !rescheduleState && (
+        <FloatingDemoBar
+          step={floatingDemoStep}
+          running={floatingDemoRunning}
+          paused={floatingDemoPaused}
+          busy={floatingDemoBusy}
+          collapsed={floatingDemoCollapsed}
+          position={floatingDemoPosition}
+          logs={floatingDemoLogs}
+          onAutoPlay={autoPlayFloatingDemo}
+          onPause={toggleFloatingDemoPause}
+          onNext={advanceFloatingDemo}
+          onBack={rewindFloatingDemo}
+          onExit={resetFloatingDemo}
+          onToggle={toggleFloatingDemo}
+          onPositionChange={setFloatingDemoPosition}
+        />
+      )}
 
       {workspaceModel.visible && hasWorkspaceContent && workspaceHidden && (
         <button
@@ -2291,16 +3054,24 @@ export function BookingPage() {
 
       {!recipient && !resumePending && (
         <RecipientModal
+          onBack={leaveRecipientModal}
           onSelect={beginConversation}
           onLookup={() => {
             // Chọn 'self' chỉ để đóng modal (modal hiện khi chưa có recipient); người dùng
             // đi nhánh tra cứu nên câu "đặt cho ai" chưa cần trả lời lúc này.
+            clearBookingReturnContext()
             setRecipient('self')
             startLookup({ addUserMessage: false })
           }}
         />
       )}
-      {resumePending && <ResumeModal onContinue={resumeConversation} onRestart={restartConversation} />}
+      {resumePending && (
+        <ResumeModal
+          onBack={leaveResumeModal}
+          onContinue={resumeConversation}
+          onRestart={restartConversation}
+        />
+      )}
       {successCinematic && selectedCar && (
         <BookingSuccessCinematic car={selectedCar} onComplete={completeBookingSuccess} />
       )}
@@ -2312,9 +3083,12 @@ export function BookingPage() {
           Nay dùng đúng bố cục 2 màn quen thuộc: TRÁI giữ phiếu lịch (tab "Phiếu lịch" đã có
           sẵn trong viewOptions cho stage success), PHẢI vẫn là khung chat để ViVi tiếp tục
           hướng dẫn và trả lời. Xem completeBookingSuccess() và successActions bên dưới. */}
-      <div className={`booking-studio ${workspaceVisible ? 'booking-studio--split' : 'booking-studio--agent'}`}>
+      <div
+        className={`booking-studio ${workspaceVisible ? 'booking-studio--split' : 'booking-studio--agent'}`}
+        data-mobile-surface={mobileSurface}
+      >
           {workspaceVisible && (
-            <section className="booking-workspace">
+            <section id="booking-mobile-workspace" className="booking-workspace" aria-label="Thông tin lịch lái thử">
               {/* Hàng công cụ = viên pill chứa các nút + tiêu đề đứng cạnh, cùng một trục ngang. */}
               <div className="workspace-toolbar">
               <div className="workspace-switcher" role="tablist" aria-label="Nội dung hỗ trợ đặt lịch">
@@ -2383,14 +3157,41 @@ export function BookingPage() {
             </section>
           )}
 
-          <section className="vivi-studio">
+          <section
+            id="booking-mobile-assistant"
+            className="vivi-studio"
+            aria-label="Trợ lý ViVi"
+            onTouchMove={markMessageScrollIntent}
+            onWheel={markMessageScrollIntent}
+          >
             <div className="vivi-studio__head">
               <ViViAvatar />
               <div><strong>ViVi</strong><small><span /> {isDriverChat ? 'Hỗ trợ chuẩn bị lái thử' : 'Trợ lý đặt lịch lái thử'}</small></div>
-              {allowedActions.includes('start_lookup') && <button type="button" onClick={startLookup}>Tra cứu lịch</button>}
+              <div className="vivi-studio__head-actions">
+                <Link className="vivi-studio__home-link" to="/" aria-label="Quay về trang chủ">
+                  <ArrowLeft size={16} weight="bold" aria-hidden="true" />
+                  <span>Trang chủ</span>
+                </Link>
+                {!isDriverChat && (
+                  <button
+                    type="button"
+                    className="vivi-studio__menu-button"
+                    onClick={() => setActionMenuOpen(true)}
+                    aria-haspopup="dialog"
+                    aria-expanded={actionMenuOpen}
+                  >
+                    <DotsThree size={18} weight="bold" aria-hidden="true" />
+                    <span>Menu</span>
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="vivi-studio__messages" ref={messagesRef} aria-live="polite">
+            <div
+              className="vivi-studio__messages"
+              ref={messagesRef}
+              aria-live="polite"
+            >
               {resumePending ? (
                 <div className="vivi-studio__empty"><ViViAvatar /><p>Bạn đang có một phiên đặt lịch đang dở.</p></div>
               ) : messages.length ? messages.map((message, index) => message.type === 'next_steps' ? (
@@ -2399,7 +3200,12 @@ export function BookingPage() {
                   <BookingNextSteps slot={selectedSlot} person={person} recipient={recipient} />
                 </div>
               ) : (
-                <AgentMessage key={message.id} message={message} isLatest={index === messages.length - 1} />
+                <AgentMessage
+                  key={message.id}
+                  message={message}
+                  isLatest={index === messages.length - 1}
+                  onTypingComplete={revealCompletedAssistantMessage}
+                />
               )) : (
                 <div className="vivi-studio__empty"><ViViAvatar /><p>Chọn người lái thử để ViVi bắt đầu.</p></div>
               )}
@@ -2411,7 +3217,7 @@ export function BookingPage() {
               )}
             </div>
 
-            <div className="vivi-studio__composer">
+            <div className="vivi-studio__composer" ref={composerRef}>
               {backendError && <p className="booking-api-error" role="alert">{backendError}</p>}
               {resumePending ? (
                 null
@@ -2457,66 +3263,36 @@ export function BookingPage() {
                 slots={slots}
                 pendingSlot={pendingSlot}
                 highlightedDates={highlightedDates}
+                disabled={floatingDemoMode}
                 onResolveArea={resolveSuggestedArea}
                 onShowroom={chooseShowroom}
                 onSlot={chooseSlot}
               />
 
-              {/*
-                Hành động sau khi đặt lịch xong.
-                Chọn theo đúng thứ một người vừa đặt lịch thật sự cần, KHÔNG phải thứ nghe hay:
-                - "Thêm vào lịch" đứng đầu vì bỏ quên buổi hẹn là vấn đề lõi của dự án
-                  (nghiên cứu người dùng có một ca no-show thật). Tạo .ics ngay ở frontend nên
-                  không phụ thuộc email/OTP.
-                - "Đổi hoặc huỷ lịch" vì lo lắng lớn thứ hai là "lỡ bận thì sao".
-                - "Đặt thêm mẫu xe khác" cho người đang so sánh nhiều xe.
-                KHÔNG thêm nút kiểu "Tôi tới trễ thì sao?" hay "Có mất phí không?" — không có
-                API nào trả lời được, mà bịa chính sách cho khách là điều tuyệt đối không làm.
-                Những câu đó người dùng vẫn gõ tự do cho ViVi được, và thẻ hướng dẫn phía trên
-                đã đưa sẵn hotline + số showroom.
-              */}
-              {stage === 'success' && (
-                <div className="vivi-capabilities vivi-capabilities--success">
-                  <button type="button" onClick={addBookingToCalendar}>
-                    <CalendarBlank size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                    Thêm vào lịch của tôi
-                  </button>
-                  <button type="button" onClick={() => startLookup({ addUserMessage: false })}>
-                    <ArrowsClockwise size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                    Đổi hoặc huỷ lịch
-                  </button>
-                  <button type="button" onClick={bookAnotherVehicle}>
-                    <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                    Đặt thêm mẫu xe khác
-                  </button>
-                </div>
-              )}
-
               {/* Hàng nút nhanh ngay trên ô nhập.
-                  ĐÃ GỠ 2 nút vì trùng nguyên si với thứ đã có sẵn trên màn hình:
-                  - "Tra cứu lịch đã đặt"  → trùng nút "Tra cứu lịch" ở header ViVi (cùng
-                    handler startLookup, cùng điều kiện allowedActions.includes('start_lookup')).
+                  Các thao tác quản lý lịch và hậu đặt lịch đã được gom vào menu ở header:
+                  không lặp lại chúng trong vùng composer để giữ không gian trò chuyện.
                   - "Đổi mẫu xe khác"      → trùng tab "Đổi mẫu xe" ở panel trái, bấm vào cũng
                     mở đúng bảng chọn xe đó.
-                  Đừng thêm lại: hai nút này từng làm màn agent có 2 bản của cùng một hành động. */}
+                  Đừng thêm lại: mỗi hành động chỉ có một điểm truy cập rõ ràng. */}
               {(allowedActions.some((action) => (
                 action === 'choose_vehicle' ? !showVehicleChoices : ['use_geolocation', 'view_vehicle'].includes(action)
               )) || stage === 'need_address' || stage === 'choose_showroom') && (
                 <div className="vivi-capabilities">
                   {(stage === 'need_address' || stage === 'choose_showroom' || allowedActions.includes('use_geolocation')) && (
-                    <button type="button" onClick={requestUserLocation}>
+                    <button className="vivi-capabilities__location" type="button" onClick={requestUserLocation} disabled={floatingDemoMode}>
                       <NavigationArrow size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
                       Định vị hiện tại
                     </button>
                   )}
                   {allowedActions.includes('choose_vehicle') && !showVehicleChoices && (
-                    <button type="button" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">
+                    <button type="button" onClick={() => setSwitcherOpen(true)} disabled={floatingDemoMode} aria-haspopup="dialog">
                       <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
                       Xem tất cả {cars.length} mẫu
                     </button>
                   )}
                   {allowedActions.includes('view_vehicle') && (
-                    <button type="button" onClick={() => setSwitcherOpen(true)} aria-haspopup="dialog">
+                    <button type="button" onClick={() => setSwitcherOpen(true)} disabled={floatingDemoMode} aria-haspopup="dialog">
                       <CarProfile size={14} weight="light" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
                       Xem mẫu xe khác
                     </button>
@@ -2540,6 +3316,7 @@ export function BookingPage() {
                   recipient={recipient}
                   value={person}
                   errors={formErrors}
+                  disabled={floatingDemoMode}
                   onChange={changePerson}
                   onSubmit={submitPerson}
                   onBack={async () => {
@@ -2569,7 +3346,7 @@ export function BookingPage() {
                     setPendingSlot(null)
                     setSelectedSlot(null)
                     setStage('choose_slot')
-                    setActiveView('schedule')
+                    showMobileWorkspace('schedule')
                     reply('Đã hủy giữ chỗ và giải phóng khung giờ. Bạn có thể chọn lại ngay khung giờ này hoặc chọn giờ khác nhé.')
                   }}
                 />
@@ -2642,7 +3419,7 @@ export function BookingPage() {
                 <form className="vivi-prompt" onSubmit={handlePrompt} aria-busy={composerDisabled}>
                   <label htmlFor="vivi-booking-prompt">Nhắn cho ViVi</label>
                   <div>
-                    <textarea id="vivi-booking-prompt" rows="2" value={draft} maxLength={CHAT_MESSAGE_MAX_LENGTH} disabled={composerDisabled} onChange={(event) => setDraft(event.target.value)} placeholder={composerDisabled ? 'ViVi đang thực hiện tác vụ cho bạn' : isDriverChat ? 'Chia sẻ điều bạn muốn chuẩn bị cho buổi lái thử…' : stage === 'need_address' || stage === 'need_ward' ? 'Ví dụ: Phường Bến Nghé, TP. Hồ Chí Minh' : 'Nhập mẫu xe, địa chỉ, showroom hoặc thời gian…'} onKeyDown={(event) => {
+                    <textarea id="vivi-booking-prompt" rows="2" value={draft} maxLength={CHAT_MESSAGE_MAX_LENGTH} disabled={composerDisabled} onChange={(event) => setDraft(event.target.value)} placeholder={floatingDemoMode ? 'Demo đang mở — dùng điều khiển demo để tiếp tục' : composerDisabled ? 'ViVi đang thực hiện tác vụ cho bạn' : isDriverChat ? 'Chia sẻ điều bạn muốn chuẩn bị cho buổi lái thử…' : stage === 'need_address' || stage === 'need_ward' ? 'Ví dụ: Phường Bến Nghé, TP. Hồ Chí Minh' : 'Nhập mẫu xe, địa chỉ, showroom hoặc thời gian…'} onKeyDown={(event) => {
                       if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault()
                         if (!composerDisabled) event.currentTarget.form?.requestSubmit()
@@ -2659,6 +3436,41 @@ export function BookingPage() {
           </section>
         </div>
 
+      {workspaceVisible && (
+        <nav className="booking-mobile-tabs" role="tablist" aria-label="Chuyển nội dung đặt lịch">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileSurface === 'assistant'}
+            aria-controls="booking-mobile-assistant"
+            onClick={() => setMobileSurface('assistant')}
+          >
+            <ChatCircleDots size={19} weight="light" aria-hidden="true" />
+            <span>ViVi</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileSurface === 'workspace'}
+            aria-controls="booking-mobile-workspace"
+            onClick={() => setMobileSurface('workspace')}
+          >
+            <SquaresFour size={19} weight="light" aria-hidden="true" />
+            <span>{mobileWorkspaceLabel}</span>
+          </button>
+        </nav>
+      )}
+
+      <BookingActionMenu
+        open={actionMenuOpen}
+        onClose={() => setActionMenuOpen(false)}
+        hasConfirmedBooking={Boolean(bookingCode)}
+        onAddToCalendar={addBookingToCalendar}
+        onManageBooking={() => startLookup({ addUserMessage: false })}
+        onBookAnother={bookAnotherVehicle}
+        onLookup={startLookup}
+      />
+
       {switcherOpen && (
         <VehicleSwitcher
           cars={cars}
@@ -2669,7 +3481,7 @@ export function BookingPage() {
       )}
 
       {confirmSlotOpen && selectedCar && selectedShowroom && pendingSlot && (
-        <div className="slot-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="slot-confirm-title">
+        <div ref={slotDialogRef} className="slot-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="slot-confirm-title" tabIndex={-1}>
           <div>
             <button type="button" onClick={() => setConfirmSlotOpen(false)} aria-label="Đóng"><X size={17} weight="light" /></button>
             <div className="slot-confirm-summary" aria-hidden="true">
