@@ -43,8 +43,10 @@
   transition: color 0.2s var(--ease-soft), background 0.2s var(--ease-soft);
 }
 
-.floating-demo-bar__panel-actions { position: absolute; top: 3px; right: 3px; display: flex; gap: 4px; }
-.floating-demo-bar__panel-actions .floating-demo-bar__toggle { position: static; width: 32px; height: 32px; min-height: 32px; }
+.floating-demo-bar__controls { position: absolute; z-index: 1; top: 3px; right: 3px; left: 3px; display: flex; align-items: center; gap: 4px; }
+.floating-demo-bar__controls .floating-demo-bar__primary { flex: 1 1 auto; min-width: 0; min-height: 32px; padding: 0 12px; font-size: 0.68rem; white-space: nowrap; }
+.floating-demo-bar__controls .floating-demo-bar__icon-button,
+.floating-demo-bar__controls .floating-demo-bar__toggle { flex: 0 0 32px; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; }
 .floating-demo-bar__exit { display: inline-grid; width: 32px; height: 32px; padding: 0; border: none; place-items: center; color: var(--muted); background: rgba(23, 26, 32, 0.06); border-radius: 50%; cursor: pointer; transition: color 0.2s var(--ease-soft), background 0.2s var(--ease-soft); }
 .floating-demo-bar__exit:hover { color: var(--danger); background: rgba(210, 65, 65, 0.1); }
 .floating-demo-bar__toggle:hover { color: var(--ink); background: rgba(23, 26, 32, 0.12); }
@@ -52,25 +54,23 @@
 /* Thanh demo là lớp overlay độc lập: tuyệt đối không thay đổi chiều cao của
    composer/chat. Người trình diễn có thể thu gọn nó bất kỳ lúc nào. */
 .floating-demo-bar.is-collapsed {
-  width: max-content;
+  width: min(390px, calc(100vw - 54px));
   border-radius: 999px;
 }
-.floating-demo-bar__compact-actions { display: flex; align-items: center; gap: 4px; padding: 3px 75px 3px 3px; }
-.floating-demo-bar__primary--compact { padding: 0 10px; font-size: 0.66rem; }
-.floating-demo-bar.is-collapsed .floating-demo-bar__icon-button { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; }
+.floating-demo-bar.is-collapsed { height: 38px; }
 
 .floating-demo-bar__content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    "head head"
-    "steps actions"
-    "context context"
-    "logs logs";
+    "head"
+    "steps"
+    "context"
+    "logs";
   gap: 4px 8px;
-  padding: 8px 9px 7px;
+  padding: 46px 9px 7px;
 }
-.floating-demo-bar__head { grid-area: head; display: flex; align-items: end; justify-content: space-between; gap: 14px; padding: 2px 76px 4px 2px; }
+.floating-demo-bar__head { grid-area: head; display: flex; align-items: end; justify-content: space-between; gap: 14px; padding: 2px 2px 4px; }
 .floating-demo-bar__head > div { display: grid; gap: 3px; }
 .floating-demo-bar__head span { color: var(--blue); font-size: 0.62rem; font-weight: 750; letter-spacing: 0.14em; text-transform: uppercase; }
 .floating-demo-bar__head strong { font-family: var(--font-display); font-size: 0.78rem; letter-spacing: -0.025em; }
@@ -82,9 +82,6 @@
 .floating-demo-bar__steps .is-active > span { color: var(--surface); background: var(--blue); box-shadow: 0 0 0 5px rgba(20, 100, 244, 0.12); transform: scale(1.08); }
 .floating-demo-bar__steps .is-complete { color: var(--ink-soft); }
 .floating-demo-bar__steps .is-complete > span { color: var(--surface); background: var(--success); }
-.floating-demo-bar__actions { grid-area: actions; align-self: center; display: grid; grid-template-columns: minmax(0, 1fr) 34px 34px; gap: 6px; margin: 0; }
-.floating-demo-bar:not(.is-collapsed) .floating-demo-bar__actions > button { min-height: 34px; padding: 0; }
-.floating-demo-bar:not(.is-collapsed) .floating-demo-bar__actions .floating-demo-bar__primary { gap: 4px; padding-inline: 6px; font-size: 0.62rem; white-space: nowrap; }
 .floating-demo-bar__current-step { grid-area: context; display: flex; align-items: baseline; gap: 7px; min-height: 27px; padding: 5px 7px 3px; margin: 0; color: var(--ink-soft); font-size: 0.75rem; font-weight: 520; line-height: 1.4; }
 .floating-demo-bar__current-step strong { flex: 0 0 auto; color: var(--blue); font-size: 0.68rem; font-weight: 780; letter-spacing: 0.02em; text-transform: uppercase; }
 .floating-demo-bar__current-step span { min-width: 0; }
