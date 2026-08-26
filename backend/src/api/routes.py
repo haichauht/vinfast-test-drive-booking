@@ -452,21 +452,6 @@ async def send_driver_invitation(booking_id: str) -> dict[str, Any]:
         ) from exc
 
 
-@router.get("/bookings/{booking_id}/profile-summary.md", response_class=PlainTextResponse)
-async def booking_profile_summary(booking_id: str) -> PlainTextResponse:
-    """Return the booking's booker/driver profile summary as Markdown."""
-    try:
-        source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
-        markdown = await summarize_user_profile(source)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Booking not found") from exc
-    except RuntimeError as exc:
-        if str(exc) == "LLM_NOT_CONFIGURED":
-            raise HTTPException(status_code=503, detail="Profile summary LLM is not configured") from exc
-        raise
-    return PlainTextResponse(markdown, media_type="text/markdown; charset=utf-8")
-
-
 @router.get("/status")
 async def agent_status():
     """Kiểm tra trạng thái agent."""
