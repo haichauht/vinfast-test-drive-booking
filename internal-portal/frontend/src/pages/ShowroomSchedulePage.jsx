@@ -93,7 +93,7 @@ export function ShowroomSchedulePage({ token, user }) {
     <PageState loading={showrooms.loading || hoursState.loading || vehicles.loading || unavailable.loading} error={showrooms.error || hoursState.error || vehicles.error || unavailable.error}>
       <div className="page-heading">
         <div><h2>Lịch vận hành showroom</h2><p>Giờ mở cửa và các khoảng khóa xe demo đều được kiểm tra theo scope showroom.</p></div>
-        {user.role === 'operations_admin' && <select className="heading-select" value={showroomId} onChange={(event) => setShowroomId(event.target.value)}><option value="">Chọn showroom</option>{(showrooms.data || []).filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
+        {user.role === 'operations_admin' && <select className="heading-select" value={showroomId} onChange={(event) => setShowroomId(event.target.value)} aria-label="Chọn showroom cần quản lý lịch"><option value="">Chọn showroom</option>{(showrooms.data || []).filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
       </div>
       {message && <div className="form-success banner-message">{message}</div>}
       {formError && <div className="form-error banner-message">{formError}</div>}

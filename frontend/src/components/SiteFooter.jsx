@@ -17,7 +17,7 @@
  */
 import { Link } from 'react-router-dom'
 
-export function SiteFooter() {
+export function SiteFooter({ showLearningNotice = false }) {
   return (
     <footer className="site-footer">
       <div className="section-frame site-footer__inner">
@@ -39,6 +39,19 @@ export function SiteFooter() {
         </nav>
         <p className="site-footer__legal">
           Thông số được tổng hợp từ brochure chính thức và có thể thay đổi theo phiên bản, điều kiện vận hành hoặc chính sách của nhà sản xuất.
+          {showLearningNotice && (
+            <span className="site-footer__learning-notice">
+              Website thử nghiệm phục vụ mục đích học tập.{' '}
+              <a
+                href="https://vinfastauto.com/vn_vi"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Truy cập website chính thức của VinFast (mở trong tab mới)"
+              >
+                Truy cập website chính thức của VinFast
+              </a>.
+            </span>
+          )}
         </p>
       </div>
     </footer>

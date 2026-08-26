@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { PageState } from '../components/PageState.jsx'
 import { StatusBadge } from '../components/StatusBadge.jsx'
-import { useRemote } from '../hooks.js'
+import { useDialogFocus, useRemote } from '../hooks.js'
 import { formatDateTime } from '../utils.js'
 
 const statuses = ['', 'held', 'confirmed', 'checked_in', 'completed', 'no_show', 'cancelled', 'rescheduled']
@@ -146,6 +146,7 @@ export function BookingsPage({ token, user }) {
   const [profileSummaryError, setProfileSummaryError] = useState('')
   const [profileSummaryLoading, setProfileSummaryLoading] = useState(false)
   const canViewProfileSummary = selected && ['confirmed', 'cancelled'].includes(selected.status)
+  const drawerRef = useDialogFocus({ active: Boolean(selected), onClose: () => setSelected(null) })
   const bookingState = useRemote(
     () => api.bookings(token, {
       status,
@@ -289,24 +290,24 @@ export function BookingsPage({ token, user }) {
       </div>
       <div className="filter-bar">
         <Funnel size={20} />
-        <select value={status} onChange={(event) => setStatus(event.target.value)}>
+        <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Lọc theo trạng thái">
           <option value="">Tất cả trạng thái</option>
           {statuses.slice(1).map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
         {user.role === 'operations_admin' && (
-          <select value={showroom} onChange={(event) => { setShowroom(event.target.value); setStaffId(''); setVehicleId('') }}>
+          <select value={showroom} onChange={(event) => { setShowroom(event.target.value); setStaffId(''); setVehicleId('') }} aria-label="Lọc theo showroom">
             <option value="">Tất cả showroom</option>
             {(showroomState.data || []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
         )}
-        <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+        <input type="date" value={date} onChange={(event) => setDate(event.target.value)} aria-label="Lọc theo ngày lái thử" />
         {canManage && (
           <>
-            <select value={staffId} onChange={(event) => setStaffId(event.target.value)}>
+            <select value={staffId} onChange={(event) => setStaffId(event.target.value)} aria-label="Lọc theo nhân viên">
               <option value="">Tất cả nhân viên</option>
               {(staffState.data || []).map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}
             </select>
-            <select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)}>
+            <select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)} aria-label="Lọc theo xe demo">
               <option value="">Tất cả xe demo</option>
               {(vehicleState.data || []).map((item) => <option key={item.id} value={item.id}>{item.asset_code}</option>)}
             </select>
@@ -322,11 +323,11 @@ export function BookingsPage({ token, user }) {
             <div className="data-table__head"><span>Mã lịch</span><span>Khách hàng</span><span>Xe & showroom</span><span>Thời gian</span><span>Trạng thái</span></div>
             {(bookingState.data?.items || []).map((booking) => (
               <button className="data-table__row" key={booking.id} onClick={() => openBooking(booking)}>
-                <span><strong>{booking.booking_code || 'Draft'}</strong><small>{booking.assigned_staff_name || 'Chưa phân công'}</small></span>
-                <span><strong>{booking.driver_name || 'Chưa cập nhật'}</strong><small>{booking.driver_phone || booking.booker_phone || '—'}</small></span>
-                <span><strong>{booking.vehicle_model} · {booking.vehicle_variant}</strong><small>{booking.showroom_name}</small></span>
-                <span><strong>{formatDateTime(booking.start_at)}</strong><small>{booking.asset_code}</small></span>
-                <span><StatusBadge status={booking.status} /></span>
+                <span data-label="Mã lịch"><strong>{booking.booking_code || 'Draft'}</strong><small>{booking.assigned_staff_name || 'Chưa phân công'}</small></span>
+                <span data-label="Khách hàng"><strong>{booking.driver_name || 'Chưa cập nhật'}</strong><small>{booking.driver_phone || booking.booker_phone || '—'}</small></span>
+                <span data-label="Xe & showroom"><strong>{booking.vehicle_model} · {booking.vehicle_variant}</strong><small>{booking.showroom_name}</small></span>
+                <span data-label="Thời gian"><strong>{formatDateTime(booking.start_at)}</strong><small>{booking.asset_code}</small></span>
+                <span data-label="Trạng thái"><StatusBadge status={booking.status} /></span>
               </button>
             ))}
           </div>
@@ -336,10 +337,10 @@ export function BookingsPage({ token, user }) {
       {selected && (
         <div className="drawer-layer">
           <button className="drawer-backdrop" onClick={() => setSelected(null)} aria-label="Đóng chi tiết" />
-          <aside className="drawer booking-detail-modal" role="dialog" aria-modal="true" aria-label="Chi tiết booking">
-            <div className="drawer__header"><div><span className="eyebrow">Chi tiết booking</span><h3>{selected.booking_code || 'Booking draft'}</h3></div><button className="icon-button" onClick={() => setSelected(null)}><X size={20} /></button></div>
+          <aside ref={drawerRef} className="drawer booking-detail-modal" role="dialog" aria-modal="true" aria-labelledby="booking-drawer-title" tabIndex={-1}>
+            <div className="drawer__header"><div><span className="eyebrow">Chi tiết booking</span><h3 id="booking-drawer-title">{selected.booking_code || 'Booking draft'}</h3></div><button className="icon-button" onClick={() => setSelected(null)} aria-label="Đóng chi tiết booking"><X size={20} /></button></div>
             <div className="drawer__status"><StatusBadge status={selected.status} /><span>Version {selected.version}</span></div>
-            {profileError && <div className="form-error customer-profile-error">{profileError}</div>}
+            {profileError && <div className="form-error customer-profile-error" role="alert">{profileError}</div>}
             <ParticipantFacts profile={selected.customer_profile} customerNote={selected.customer_note} />
             <dl className="detail-list">
               <div><dt>Xe demo</dt><dd>{selected.vehicle_model} · {selected.vehicle_variant}<small>{selected.asset_code} · {selected.plate_number || 'Chưa có biển số'} · {selected.vehicle_operational_status} · pin {selected.vehicle_battery_soc ?? '—'}%</small></dd></div>
@@ -368,13 +369,13 @@ export function BookingsPage({ token, user }) {
             </section>}
             {!canViewProfileSummary && <div className="read-only-note">Brief cho sales chỉ khả dụng sau khi booking đã xác nhận, hoặc với booking đã xác nhận nhưng sau đó bị hủy.</div>}
             {user.role === 'staff' && <div className="read-only-note">Tài khoản Staff chỉ có quyền xem. Mọi thay đổi do quản lý showroom thực hiện.</div>}
-            {notice && <div className="form-success"><Check size={18} />{notice}</div>}
-            {actionError && <div className="form-error">{actionError}</div>}
+            {notice && <div className="form-success" role="status"><Check size={18} />{notice}</div>}
+            {actionError && <div className="form-error" role="alert">{actionError}</div>}
             {canManage && (
               <div className="drawer__actions">
                 <span className="section-label">Phân công nhân viên</span>
                 <div className="inline-action">
-                  <select value={assignment} onChange={(event) => setAssignment(event.target.value)}>
+                  <select value={assignment} onChange={(event) => setAssignment(event.target.value)} aria-label="Chọn nhân viên phụ trách">
                     <option value="">Chọn nhân viên</option>
                     {(staffState.data || []).map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}
                   </select>

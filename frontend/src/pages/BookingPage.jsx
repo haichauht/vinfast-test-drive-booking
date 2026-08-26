@@ -69,7 +69,7 @@ import {
   ChatCircleDots,
   Clock,
   Crosshair,
-  DotsThree,
+  List,
   MapPin,
   Minus,
   NavigationArrow,
@@ -145,6 +145,7 @@ import { clearBookingReturnContext, takeBookingReturnContext } from '../utils/bo
 
 const HOLD_TTL_MS = 5 * 60 * 1000
 const FLOATING_DEMO_STEP_DELAY_MS = 3500
+const BOOKING_MOBILE_MEDIA_QUERY = '(max-width: 900px)'
 const DEMO_PERSONA = Object.freeze({
   bookingName: 'Nguyễn Hải Đăng',
   driverName: '',
@@ -428,6 +429,20 @@ export function BookingPage() {
   // trong workspace; nó không được tự ý điều hướng người dùng khỏi cuộc hội thoại.
   // Trên desktop hai bề mặt vẫn cùng hiện nên thay đổi này không tác động bố cục cũ.
   const [mobileSurface, setMobileSurface] = useState('assistant')
+  const [isMobileBookingViewport, setIsMobileBookingViewport] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia(BOOKING_MOBILE_MEDIA_QUERY).matches
+  ))
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(BOOKING_MOBILE_MEDIA_QUERY)
+    const syncViewport = (event) => setIsMobileBookingViewport(event.matches)
+    setIsMobileBookingViewport(mediaQuery.matches)
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', syncViewport)
+      return () => mediaQuery.removeEventListener('change', syncViewport)
+    }
+    mediaQuery.addListener(syncViewport)
+    return () => mediaQuery.removeListener(syncViewport)
+  }, [])
   const setStage = useCallback((nextStage) => {
     dispatchInteraction({ type: InteractionEvent.SET_PHASE, stage: nextStage })
   }, [])
@@ -543,11 +558,9 @@ export function BookingPage() {
   const [floatingDemoRunning, setFloatingDemoRunning] = useState(false)
   const [floatingDemoPaused, setFloatingDemoPaused] = useState(false)
   const [floatingDemoBusy, setFloatingDemoBusy] = useState(false)
-  // Make the optional showcase discoverable on first arrival at /booking.
-  // The presenter can still collapse it immediately, and Reset returns it to
-  // its compact state for the next run.
+  // Desktop demo opens as a complete, shallow controller spanning the two
+  // header rows. It never participates in the ViVi header layout.
   const [floatingDemoCollapsed, setFloatingDemoCollapsed] = useState(false)
-  const [floatingDemoPosition, setFloatingDemoPosition] = useState(null)
   const [floatingDemoStatus, setFloatingDemoStatus] = useState('')
   const [floatingDemoLogs, setFloatingDemoLogs] = useState([])
   const floatingDemoRunRef = useRef(0)
@@ -2889,6 +2902,7 @@ export function BookingPage() {
   }
 
   const handleStartDemoFromModal = () => {
+    if (isMobileBookingViewport) return
     setRecipient('self')
     setFloatingDemoEnabled(true)
     setFloatingDemoCollapsed(false)
@@ -2969,7 +2983,7 @@ export function BookingPage() {
   // Real booking and lookup flows must take back control immediately. This is
   // intentionally lighter than Reset: it cancels the demo run without wiping
   // the new conversation the visitor has just chosen to start.
-  const dismissFloatingDemoForRealFlow = () => {
+  const dismissFloatingDemoForRealFlow = useCallback(() => {
     floatingDemoRunRef.current += 1
     floatingDemoPausedRef.current = false
     floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
@@ -2984,7 +2998,13 @@ export function BookingPage() {
     setFloatingDemoCollapsed(true)
     setAgentTyping(false)
     setDraft('')
-  }
+  }, [])
+
+  // Crossing from desktop into the mobile layout also stops the controller.
+  // Otherwise a hidden demo could keep the mobile composer and menu locked.
+  useEffect(() => {
+    if (isMobileBookingViewport && floatingDemoEnabled) dismissFloatingDemoForRealFlow()
+  }, [dismissFloatingDemoForRealFlow, isMobileBookingViewport, floatingDemoEnabled])
 
   // Đặt lịch xong thì thanh tab chỉ còn ĐÚNG 1 nút "Phiếu lịch".
   // Ba tab kia (Đổi mẫu xe, Showroom, Lịch trống) là công cụ của lúc đang đặt; giữ lại sau khi
@@ -3147,6 +3167,16 @@ export function BookingPage() {
   }
 
   const showVehicleChoices = allowedActions.includes('choose_vehicle') && !accessProfile && interaction.mode !== BookingMode.MANAGE_BOOKING
+  const showFloatingDemo = !isMobileBookingViewport
+    && floatingDemoEnabled
+    && Boolean(recipient)
+    && !demoCompletedModalOpen
+    && !isDriverChat
+    && !successCinematic
+    && !confirmSlotOpen
+    && !switcherOpen
+    && !accessFlow
+    && !rescheduleState
 
   if (bookingStatus === 'unavailable') {
     return (
@@ -3164,17 +3194,16 @@ export function BookingPage() {
   }
 
   return (
-    <main id="main-content" className={`agent-booking-page ${workspaceVisible ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''} ${successCinematic ? 'is-cinematic' : ''}`}>
+    <main id="main-content" className={`agent-booking-page ${workspaceVisible ? 'has-workspace' : 'is-agent-only'} ${showFloatingDemo ? 'has-floating-demo' : ''} ${stage === 'success' ? 'is-success' : ''} ${successCinematic ? 'is-cinematic' : ''}`}>
       <BookingHeader />
 
-      {floatingDemoEnabled && Boolean(recipient) && !demoCompletedModalOpen && !isDriverChat && !successCinematic && !confirmSlotOpen && !switcherOpen && !accessFlow && !rescheduleState && (
+      {showFloatingDemo && (
         <FloatingDemoBar
           step={floatingDemoStep}
           running={floatingDemoRunning}
           paused={floatingDemoPaused}
           busy={floatingDemoBusy}
           collapsed={floatingDemoCollapsed}
-          position={floatingDemoPosition}
           logs={floatingDemoLogs}
           onAutoPlay={autoPlayFloatingDemo}
           onPause={toggleFloatingDemoPause}
@@ -3182,7 +3211,6 @@ export function BookingPage() {
           onBack={rewindFloatingDemo}
           onExit={resetFloatingDemo}
           onToggle={toggleFloatingDemo}
-          onPositionChange={setFloatingDemoPosition}
         />
       )}
 
@@ -3240,7 +3268,7 @@ export function BookingPage() {
             setRecipient('self')
             startLookup({ addUserMessage: false })
           }}
-          onDemo={handleStartDemoFromModal}
+          onDemo={isMobileBookingViewport ? undefined : handleStartDemoFromModal}
         />
       )}
       {demoCompletedModalOpen && (
@@ -3340,7 +3368,7 @@ export function BookingPage() {
               </div>
               {workspaceTitle && <h2 className="workspace-toolbar__title">{workspaceTitle}</h2>}
               </div>
-              <div className="booking-workspace__content" key={activeView}>{renderWorkspace()}</div>
+              <div className={`booking-workspace__content${activeView === 'map' && !rescheduleState ? ' booking-workspace__content--map' : ''}`} key={activeView}>{renderWorkspace()}</div>
             </section>
           )}
 
@@ -3359,7 +3387,7 @@ export function BookingPage() {
                   <ArrowLeft size={16} weight="bold" aria-hidden="true" />
                   <span>Trang chủ</span>
                 </Link>
-                {!isDriverChat && (
+                {!isDriverChat && !floatingDemoEnabled && (
                   <button
                     type="button"
                     className="vivi-studio__menu-button"
@@ -3367,11 +3395,11 @@ export function BookingPage() {
                     disabled={floatingDemoMode}
                     aria-haspopup="dialog"
                     aria-expanded={actionMenuOpen}
+                    aria-label="Mở menu thao tác lịch"
                     style={floatingDemoMode ? { opacity: 0.38, cursor: 'not-allowed', pointerEvents: 'none' } : undefined}
                     title={floatingDemoMode ? 'Menu tạm khóa trong chế độ demo' : 'Menu'}
                   >
-                    <DotsThree size={18} weight="bold" aria-hidden="true" />
-                    <span>Menu</span>
+                    <List size={21} weight="bold" aria-hidden="true" />
                   </button>
                 )}
               </div>

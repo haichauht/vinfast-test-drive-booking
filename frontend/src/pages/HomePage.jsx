@@ -89,6 +89,7 @@ const findVehicleFact = (specs = [], pattern) => specs.find(
 const RAIL_COPIES = 4
 const RAIL_SLIDE_DURATION = 0.9
 const RAIL_SLIDE_GAP_MS = 3200
+const HOME_DETAIL_NAVIGATION_STATE = Object.freeze({ detailOrigin: 'home', detailDepth: 1 })
 
 function VehicleRail({ items, loading, error, onRetry, colorsById }) {
   const rail = useRef(null)
@@ -335,6 +336,7 @@ function VehicleRail({ items, loading, error, onRetry, colorsById }) {
               <Link
                 className="vehicle-tile__core"
                 to={detailPath}
+                state={HOME_DETAIL_NAVIGATION_STATE}
                 aria-label={`Xem chi tiết ${car.name}`}
                 onFocus={() => prefetchVehicle(car.id)}
                 {...cloneProps}
@@ -814,7 +816,7 @@ export function HomePage() {
         <section className="model-marquee" aria-label="Danh sách dòng xe">
           <div className="model-marquee__track">
             {[...cars, ...cars].map((car, index) => (
-              <span key={`${car.id}-${index}`}>{car.navName}</span>
+              <span key={`${car.id}-${index}`} aria-hidden={index >= cars.length ? 'true' : undefined}>{car.navName}</span>
             ))}
           </div>
         </section>
@@ -968,7 +970,7 @@ export function HomePage() {
               </Reveal>
 
               <Reveal className="bento-block bento-block--network" delay={0.14}>
-                <div className="double-bezel">
+                <Link to="/booking" className="double-bezel">
                   <div className="double-bezel__core bento-network">
                     <MapPin size={28} weight="light" />
                     <div>
@@ -977,7 +979,7 @@ export function HomePage() {
                     </div>
                     <span className="network-pulse" aria-hidden="true" />
                   </div>
-                </div>
+                </Link>
               </Reveal>
             </div>
           </div>
@@ -991,7 +993,7 @@ export function HomePage() {
               <p>
                 Mỗi trang mẫu xe tập hợp hình ảnh ngoại thất, khoang lái, công nghệ và thông số để bạn xem trước những điểm mình quan tâm.
               </p>
-              <IslandButton to="/models/vf8" variant="dark">
+              <IslandButton to="/models/vf8" state={HOME_DETAIL_NAVIGATION_STATE} variant="dark">
                 Xem trải nghiệm VF 8
               </IslandButton>
             </div>
@@ -1102,7 +1104,7 @@ export function HomePage() {
           </div>
         </section>
 
-        <SiteFooter />
+        <SiteFooter showLearningNotice />
       </main>
     </AppShell>
   )

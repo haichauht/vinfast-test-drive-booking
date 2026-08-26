@@ -20,7 +20,7 @@
  * vinfast-intro-seen:<id>. Muốn xem lại animation lần đầu: mở tab ẩn danh hoặc xoá khoá này.
  */
 import { useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
@@ -215,9 +215,23 @@ function DetailStorySection({ id, eyebrow, title, copy, car, chapters, extraImag
 
 export function CarDetailPage() {
   const { carId } = useParams()
+  const location = useLocation()
+  const navigate = useNavigate()
   const { car, loading, error, retry } = useVehicleDetail(carId)
   const { cars } = useVehicleCatalog()
   const root = useRef(null)
+  const detailDepth = Number(location.state?.detailDepth)
+  const hasHomeOrigin = location.state?.detailOrigin === 'home'
+    && Number.isInteger(detailDepth)
+    && detailDepth > 0
+
+  const returnToVehicleSource = () => {
+    if (hasHomeOrigin) {
+      navigate(-detailDepth)
+      return
+    }
+    navigate('/#models')
+  }
 
   useGSAP(
     () => {
@@ -496,10 +510,10 @@ export function CarDetailPage() {
           <div className="detail-hero__wash" aria-hidden="true" />
           <div className="detail-hero__model-word" aria-hidden="true">{car.name}</div>
           <div className="detail-hero__road" aria-hidden="true"><span /></div>
-          <Link className="detail-back" to="/#models" data-detail-copy>
+          <button className="detail-back" type="button" onClick={returnToVehicleSource} data-detail-copy>
             <ArrowLeft size={17} weight="light" />
             Tất cả ô tô
-          </Link>
+          </button>
           <div className="detail-hero__copy">
             <p data-detail-copy>{car.body}</p>
             <h1 id="detail-title" data-detail-copy>{car.name}</h1>
@@ -703,7 +717,11 @@ export function CarDetailPage() {
                   Đặt lịch lái thử
                 </IslandButton>
                 {nextCar && (
-                  <IslandButton to={`/models/${nextCar.id}`} variant="ghost-light">
+                  <IslandButton
+                    to={`/models/${nextCar.id}`}
+                    state={hasHomeOrigin ? { detailOrigin: 'home', detailDepth: detailDepth + 1 } : undefined}
+                    variant="ghost-light"
+                  >
                     Xem {nextCar.name}
                   </IslandButton>
                 )}
