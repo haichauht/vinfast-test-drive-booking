@@ -44,7 +44,7 @@
 }
 
 .floating-demo-bar__panel-actions { position: absolute; top: 3px; right: 3px; display: flex; gap: 4px; }
-.floating-demo-bar__panel-actions .floating-demo-bar__toggle { position: static; }
+.floating-demo-bar__panel-actions .floating-demo-bar__toggle { position: static; width: 32px; height: 32px; min-height: 32px; }
 .floating-demo-bar__exit { display: inline-grid; width: 32px; height: 32px; padding: 0; border: none; place-items: center; color: var(--muted); background: rgba(23, 26, 32, 0.06); border-radius: 50%; cursor: pointer; transition: color 0.2s var(--ease-soft), background 0.2s var(--ease-soft); }
 .floating-demo-bar__exit:hover { color: var(--danger); background: rgba(210, 65, 65, 0.1); }
 .floating-demo-bar__toggle:hover { color: var(--ink); background: rgba(23, 26, 32, 0.12); }
@@ -68,13 +68,12 @@
 
 .floating-demo-bar__content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 150px;
   grid-template-areas:
-    "head"
-    "steps"
-    "actions"
-    "context"
-    "logs";
+    "head head"
+    "steps actions"
+    "context context"
+    "logs logs";
   gap: 4px 8px;
   padding: 8px 9px 7px;
 }
@@ -90,7 +89,7 @@
 .floating-demo-bar__steps .is-active > span { color: var(--surface); background: var(--blue); box-shadow: 0 0 0 5px rgba(20, 100, 244, 0.12); transform: scale(1.08); }
 .floating-demo-bar__steps .is-complete { color: var(--ink-soft); }
 .floating-demo-bar__steps .is-complete > span { color: var(--surface); background: var(--success); }
-.floating-demo-bar__actions { grid-area: actions; justify-self: end; display: grid; grid-template-columns: minmax(0, 1fr) 34px 34px; gap: 6px; width: 206px; margin: 0; }
+.floating-demo-bar__actions { grid-area: actions; align-self: center; display: grid; grid-template-columns: minmax(0, 1fr) 34px 34px; gap: 6px; margin: 0; }
 .floating-demo-bar:not(.is-collapsed) .floating-demo-bar__actions > button { min-height: 34px; padding: 0; }
 .floating-demo-bar:not(.is-collapsed) .floating-demo-bar__actions .floating-demo-bar__primary { gap: 4px; padding-inline: 6px; font-size: 0.62rem; white-space: nowrap; }
 .floating-demo-bar__current-step { grid-area: context; display: flex; align-items: baseline; gap: 7px; min-height: 27px; padding: 5px 7px 3px; margin: 0; color: var(--ink-soft); font-size: 0.75rem; font-weight: 520; line-height: 1.4; }
