@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import logging
 import re
@@ -7,10 +5,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 
 from src.agents.state import AgentState
 from src.agents.tools import search_knowledge, update_user_profile
-from src.agents.trace import message_to_log, messages_to_log, trace_event
+from src.agents.trace import message_to_log, messages_to_log, trace_async_operation, trace_event, trace_node
 from src.agents.utils import get_system_prompt, window_messages
 from src.dependencies import profile_service
 from src.services.llm import extract_response_text, get_llm
@@ -42,7 +41,8 @@ def _requires_profile_capture(messages: Sequence[object]) -> bool:
     )
 
 
-async def post_booking_skill_node(state: AgentState) -> dict:
+@trace_node("post_booking_skill")
+async def post_booking_skill_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
     messages = list(state.get("messages") or [])
     metadata = state.get("metadata") or {}
     trace_id = metadata.get("trace_id", "")
@@ -70,7 +70,7 @@ async def post_booking_skill_node(state: AgentState) -> dict:
             query = str(state.get("query") or "")
             grounded = json.loads(
                 search_knowledge.invoke(
-                    {"query": query, "model_code": str(booking_context.get("model_code") or "")}
+                    {"query": query, "model_code": str(booking_context.get("model_code") or "")}, config=config
                 )
             )
             facts = grounded.get("facts") or []
@@ -84,7 +84,15 @@ async def post_booking_skill_node(state: AgentState) -> dict:
             )
             llm_messages = [SystemMessage(content=prompt)] + window_messages(messages)
             trace_event("llm.request", trace_id=trace_id, node="post_booking_skill", messages=messages_to_log(llm_messages), tools=[search_knowledge.name, update_user_profile.name])
-            response = await bound.ainvoke(llm_messages)
+            response = await trace_async_operation(
+                "llm.post_booking_skill",
+                trace_id=trace_id,
+                input={
+                    "messages": messages_to_log(llm_messages),
+                    "tools": [search_knowledge.name, update_user_profile.name],
+                },
+                awaitable=bound.ainvoke(llm_messages, config=config),
+            )
     except Exception as exc:
         logging.getLogger(__name__).exception("Post booking skill failed")
         response = AIMessage(content="ViVi chưa lấy được nguồn thông tin phù hợp lúc này. Bạn có thể hỏi về checklist lái thử, pin/sạc, ADAS hoặc không gian sử dụng.")

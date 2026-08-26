@@ -3,6 +3,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 
 from src.agents.constants import (
@@ -17,7 +18,7 @@ from src.agents.constants import (
     SOVEREIGNTY_KEYWORDS,
 )
 from src.agents.state import AgentState
-from src.agents.trace import trace_event
+from src.agents.trace import trace_async_operation, trace_event, trace_node
 from src.dependencies import usage_budget_service
 from src.services.llm import extract_response_text, get_classifier_llm
 from src.services.usage_budget import (
@@ -102,7 +103,8 @@ class RouteSchema(BaseModel):
     )
 
 
-async def classifier_node(state: AgentState) -> dict:
+@trace_node("classifier")
+async def classifier_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
     query = state.get("query", "")
     context = state.get("context") or {}
     metadata = state.get("metadata") or {}
@@ -270,13 +272,19 @@ async def classifier_node(state: AgentState) -> dict:
             raise RuntimeError("LLM is not configured")
         structured_llm = llm.with_structured_output(RouteSchema)
         trace_event("llm.request", trace_id=trace_id, node="classifier", prompt=prompt)
-        result = await invoke_with_budget(
-            structured_llm,
-            prompt,
-            model=getattr(llm, "model_name", "") or "classifier",
-            metadata=metadata,
-            budget=usage_budget_service,
-            call_purpose="classifier",
+        result = await trace_async_operation(
+            "llm.classifier",
+            trace_id=trace_id,
+            input={"model": getattr(llm, "model_name", "") or "classifier", "prompt": prompt},
+            awaitable=invoke_with_budget(
+                structured_llm,
+                prompt,
+                model=getattr(llm, "model_name", "") or "classifier",
+                metadata=metadata,
+                budget=usage_budget_service,
+                call_purpose="classifier",
+                config=config,
+            ),
         )
         from typing import cast
 

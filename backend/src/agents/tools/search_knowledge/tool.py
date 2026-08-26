@@ -2,9 +2,11 @@ import json
 
 from langchain_core.tools import tool
 from src.dependencies import knowledge_service
+from src.observability import trace_backend_operation
 
 
 @tool
+@trace_backend_operation("KnowledgeService.search")
 def search_knowledge(
     query: str,
     model_code: str = "",

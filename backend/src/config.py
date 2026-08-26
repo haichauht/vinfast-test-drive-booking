@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     llm_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "low"
 
+    # Use only the current LANGSMITH_* names. Keeping LANGCHAIN_* aliases here
+    # would make it ambiguous which local configuration is active.
+    langsmith_tracing: bool = False
+    langsmith_api_key: str = ""
+    langsmith_project: str = "vinfast-test-drive"
+    langsmith_event_logs: bool = False
+    langsmith_endpoint: str = Field(default="", validation_alias="LANGSMITH_ENDPOINT")
+    langsmith_workspace_id: str = Field(default="", validation_alias="LANGSMITH_WORKSPACE_ID")
+
     # Database
     database_url: str = "postgresql://vinfast:vinfast@localhost:5432/vinfast_booking"
     auto_load_eval_data: bool = True
