@@ -138,6 +138,7 @@ async def test_classifier_keeps_reschedule_for_confirmed_booking(monkeypatch):
             intent="domain",
             sub_intent="booking_reschedule",
             has_schedule_preference=True,
+            reschedule_date_type="explicit",
             reschedule_target_date="2026-08-28",
             reschedule_target_time="13:30",
         )
@@ -159,7 +160,8 @@ async def test_classifier_keeps_reschedule_for_confirmed_booking(monkeypatch):
     assert result["metadata"]["sub_intent"] == "booking_reschedule"
     assert result["intent_entities"]["reschedule_target_date"] == "2026-08-28"
     assert result["intent_entities"]["reschedule_target_time"] == "13:30"
-    assert result["intent_entities"]["reschedule_days_after_current_booking"] is None
+    assert result["intent_entities"]["reschedule_date_type"] == "explicit"
+    assert result["intent_entities"]["reschedule_day_offset"] is None
 
 
 # test case of Chau + kiểm tra classifier ưu tiên sensitive keyword và không phụ thuộc LLM

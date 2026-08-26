@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from src.services.booking.base import BookingBase
-from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
+from src.services.booking.common import iso, new_id, normalize_phone, parse_utc, person_patch_validation_error
 from src.services.booking.errors import BookingError
 
 _id = new_id
 
 
 class ManagementService(BookingBase):
+    RESCHEDULE_AUTO_HOLD_MAX_DIFF_MINUTES = 60
     @staticmethod
     def _delete_unreferenced_person(c, person_id: str | None) -> None:
         """Remove a transient clone only when no booking or notification needs it."""
@@ -26,6 +29,10 @@ class ManagementService(BookingBase):
         self, booking_id: str, access_session_token: str, *, booker_patch=None, driver_patch=None, driver_same_as_booker: bool = False
     ) -> dict:
         """Edit people data of an existing booking after OTP verification."""
+        for patch in (booker_patch, None if driver_same_as_booker else driver_patch):
+            validation_error = person_patch_validation_error(patch)
+            if validation_error:
+                raise BookingError("INVALID_INPUT", validation_error)
         with self.db.transaction(immediate=True) as c:
             self._require_access(c, access_session_token, booking_id, "update_details")
             booking = c.execute("SELECT * FROM bookings WHERE id=?", (booking_id,)).fetchone()
@@ -69,6 +76,141 @@ class ManagementService(BookingBase):
             self._create_transactional_notification_jobs(c, booking_id, "booking_update")
             self._event(c, booking_id, "booking_details_updated", "user")
             return self._draft(c, booking_id, require_held=False)
+
+    def search_reschedule_options(
+        self,
+        current_booking_id: str,
+        access_session_token: str,
+        *,
+        date_type: str | None = None,
+        target_date: str | None = None,
+        day_offset: int | None = None,
+        target_time: str | None = None,
+    ) -> dict:
+        """Resolve a conversational target against the authenticated booking.
+
+        The LLM extracts temporal meaning; this service owns calendar arithmetic,
+        showroom timezone, inventory filtering and the auto-hold safety policy.
+        It never selects a slot from a different date as a silent fallback.
+        """
+        with self.db.connect() as c:
+            self._require_access(c, access_session_token, current_booking_id, "search_reschedule")
+            current = c.execute(
+                "SELECT b.status,s.start_at AS current_start_at,s.showroom_id,"
+                "sr.name AS showroom_name,sr.timezone AS showroom_timezone,vm.name AS vehicle_model_name "
+                "FROM bookings b "
+                "JOIN test_drive_slots s ON s.id=b.slot_id "
+                "JOIN showrooms sr ON sr.id=s.showroom_id "
+                "JOIN demo_vehicles d ON d.id=s.demo_vehicle_id "
+                "JOIN vehicle_variants v ON v.id=d.variant_id "
+                "JOIN vehicle_models vm ON vm.id=v.model_id "
+                "WHERE b.id=?",
+                (current_booking_id,),
+            ).fetchone()
+        if not current or current["status"] != "confirmed":
+            raise BookingError("BOOKING_NOT_EDITABLE", "Booking không thể dời lịch.")
+
+        timezone_name = current["showroom_timezone"] or "Asia/Ho_Chi_Minh"
+        try:
+            showroom_timezone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            timezone_name = "Asia/Ho_Chi_Minh"
+            showroom_timezone = ZoneInfo(timezone_name)
+
+        missing_fields: list[str] = []
+        resolved_date = None
+        if date_type == "explicit":
+            if target_date:
+                try:
+                    resolved_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+                except ValueError as exc:
+                    raise BookingError("INVALID_INPUT", "Ngày đổi lịch không hợp lệ.") from exc
+            else:
+                missing_fields.append("target_date")
+        elif date_type in {"relative_to_today", "relative_to_booking"}:
+            if day_offset is None or not isinstance(day_offset, int) or not 0 <= day_offset <= 60:
+                raise BookingError("INVALID_INPUT", "Độ lệch ngày đổi lịch không hợp lệ.")
+            reference = (
+                self.now().astimezone(showroom_timezone)
+                if date_type == "relative_to_today"
+                else parse_utc(current["current_start_at"]).astimezone(showroom_timezone)
+            )
+            resolved_date = reference.date() + timedelta(days=day_offset)
+        elif date_type == "ambiguous":
+            missing_fields.append("target_date")
+        else:
+            missing_fields.append("target_date")
+
+        normalized_time = None
+        if target_time:
+            try:
+                normalized_time = datetime.strptime(target_time, "%H:%M").strftime("%H:%M")
+            except ValueError as exc:
+                raise BookingError("INVALID_INPUT", "Giờ đổi lịch phải theo định dạng HH:MM.") from exc
+        else:
+            missing_fields.append("target_time")
+
+        resolved_target = {
+            "date": resolved_date.isoformat() if resolved_date else None,
+            "time": normalized_time,
+            "timezone": timezone_name,
+        }
+        if missing_fields:
+            return {
+                "status": "clarification_required",
+                "missing_fields": list(dict.fromkeys(missing_fields)),
+                "resolved_target": resolved_target,
+                "showroom": {"id": current["showroom_id"], "name": current["showroom_name"]},
+                "slots": [],
+                "alternatives": [],
+            }
+
+        result = self.search_options(
+            vehicle_model=current["vehicle_model_name"],
+            showroom_id=current["showroom_id"],
+            preferred_date=resolved_target["date"],
+            preferred_time=normalized_time,
+        )
+        slots = [slot for slot in result.get("slots", []) if slot.get("status") == "available"]
+        if not slots:
+            fallback = self.search_options(
+                vehicle_model=current["vehicle_model_name"],
+                showroom_id=current["showroom_id"],
+                slot_limit=12,
+            )
+            return {
+                "status": "no_slots_on_requested_date",
+                "missing_fields": [],
+                "resolved_target": resolved_target,
+                "showroom": {"id": current["showroom_id"], "name": current["showroom_name"]},
+                "slots": [],
+                "alternatives": fallback.get("slots", []),
+            }
+
+        best_slot = slots[0]
+        best_start = parse_utc(best_slot["start_at"]).astimezone(showroom_timezone)
+        requested_minutes = int(normalized_time[:2]) * 60 + int(normalized_time[3:])
+        actual_minutes = best_start.hour * 60 + best_start.minute
+        difference_minutes = abs(actual_minutes - requested_minutes)
+        if difference_minutes == 0:
+            status = "exact_match"
+        elif difference_minutes <= self.RESCHEDULE_AUTO_HOLD_MAX_DIFF_MINUTES:
+            status = "nearest_match"
+        else:
+            status = "confirmation_required"
+        return {
+            "status": status,
+            "missing_fields": [],
+            "resolved_target": resolved_target,
+            "showroom": {"id": current["showroom_id"], "name": current["showroom_name"]},
+            "match": {
+                "slot": best_slot,
+                "difference_minutes": difference_minutes,
+                "auto_hold_allowed": status in {"exact_match", "nearest_match"},
+            },
+            "slots": slots,
+            "alternatives": [],
+        }
 
     def hold_reschedule_slot(
         self, current_booking_id: str, new_slot_id: str, access_session_token: str, ui_action_id: str
