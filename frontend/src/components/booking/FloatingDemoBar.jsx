@@ -67,7 +67,9 @@ export function FloatingDemoBar({
       left,
       top,
       width,
+      height,
       side: left + (width / 2) < window.innerWidth / 2 ? 'left' : 'right',
+      vSide: top + (height / 2) < window.innerHeight / 2 ? 'top' : 'bottom',
     })
   }
 
@@ -90,14 +92,22 @@ export function FloatingDemoBar({
   const primaryIcon = busy ? <CircleNotch size={16} className="is-spinning" /> : running && !paused ? <Pause size={16} /> : <Play size={16} weight="fill" />
   const disableStepControls = busy || (running && !paused)
 
+  const isTopAnchored = position?.vSide === 'top'
   const positionedStyle = position
-    ? (position.side === 'left'
-      ? { left: position.left, top: position.top, right: 'auto', bottom: 'auto' }
-      : { right: Math.max(8, window.innerWidth - position.left - position.width), top: position.top, left: 'auto', bottom: 'auto' })
+    ? {
+        ...(position.side === 'left'
+          ? { left: position.left, right: 'auto' }
+          : { right: Math.max(8, window.innerWidth - position.left - position.width), left: 'auto' }),
+        ...(isTopAnchored
+          ? { top: position.top, bottom: 'auto' }
+          : { bottom: Math.max(8, window.innerHeight - position.top - (position.height || 42)), top: 'auto' }),
+      }
     : undefined
 
+  const anchorClass = `${position?.side === 'left' ? 'is-anchored-left' : 'is-anchored-right'} ${isTopAnchored ? 'is-anchored-top' : 'is-anchored-bottom'}`
+
   return (
-    <aside className={`floating-demo-bar ${collapsed ? 'is-collapsed' : ''} ${position?.side === 'left' ? 'is-anchored-left' : position?.side === 'right' ? 'is-anchored-right' : ''}`} style={positionedStyle} aria-label="Điều khiển demo đặt lịch mô phỏng">
+    <aside className={`floating-demo-bar ${collapsed ? 'is-collapsed' : ''} ${position ? anchorClass : ''}`} style={positionedStyle} aria-label="Điều khiển demo đặt lịch mô phỏng">
       {collapsed ? (
         <div className="floating-demo-bar__compact-actions">
           <button type="button" className="floating-demo-bar__primary floating-demo-bar__primary--compact" onClick={primaryAction} disabled={busy}>
@@ -106,7 +116,9 @@ export function FloatingDemoBar({
           </button>
           <button type="button" className="floating-demo-bar__icon-button" onClick={onBack} disabled={disableStepControls || step <= 0} aria-label="Quay lại chặng trước" title="Quay lại chặng trước"><CaretLeft size={16} weight="bold" /></button>
           <button type="button" className="floating-demo-bar__icon-button" onClick={onNext} disabled={disableStepControls || step >= steps.length} aria-label="Chạy bước tiếp theo" title="Chạy bước tiếp theo"><CaretRight size={16} weight="bold" /></button>
-          <button type="button" className="floating-demo-bar__toggle" onClick={toggle} aria-expanded="false" aria-label="Mở rộng bảng điều khiển demo" title="Mở rộng bảng điều khiển demo"><CaretUp size={15} weight="bold" /></button>
+          <button type="button" className="floating-demo-bar__toggle" onClick={toggle} aria-expanded="false" aria-label="Mở rộng bảng điều khiển demo" title="Mở rộng bảng điều khiển demo">
+            {isTopAnchored ? <CaretDown size={15} weight="bold" /> : <CaretUp size={15} weight="bold" />}
+          </button>
           <button type="button" className="floating-demo-bar__compact-exit" onClick={onExit} disabled={busy} aria-label="Thoát chế độ demo" title="Thoát chế độ demo"><X size={15} weight="bold" /></button>
           <button
             type="button"
@@ -123,7 +135,9 @@ export function FloatingDemoBar({
         </div>
       ) : (
         <div className="floating-demo-bar__panel-actions">
-          <button type="button" className="floating-demo-bar__toggle" onClick={toggle} aria-expanded="true" aria-label="Thu gọn bảng điều khiển demo" title="Thu gọn bảng điều khiển demo"><CaretDown size={15} weight="bold" /></button>
+          <button type="button" className="floating-demo-bar__toggle" onClick={toggle} aria-expanded="true" aria-label="Thu gọn bảng điều khiển demo" title="Thu gọn bảng điều khiển demo">
+            {isTopAnchored ? <CaretUp size={15} weight="bold" /> : <CaretDown size={15} weight="bold" />}
+          </button>
           <button type="button" className="floating-demo-bar__exit" onClick={onExit} disabled={busy} aria-label="Thoát chế độ demo" title="Thoát chế độ demo"><X size={15} weight="bold" /></button>
         </div>
       )}
