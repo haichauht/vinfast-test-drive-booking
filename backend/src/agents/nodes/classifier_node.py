@@ -41,6 +41,37 @@ _DRIVER_BLOCKED_SUB_INTENTS = frozenset({
     "booking_update_details", "booking_update_notifications",
 })
 
+_RESCHEDULE_DATE_FIELDS = (
+    "reschedule_date_type",
+    "reschedule_target_date",
+    "reschedule_day_offset",
+)
+
+
+def _merge_pending_reschedule(route_result: "RouteSchema", pending: dict) -> dict:
+    """Merge only structured extraction with the client-held pending target.
+
+    The classifier interprets the current message only; deterministic code
+    preserves values from a prior turn. A date is atomic because a relative
+    expression must clear a previous explicit date.
+    """
+    current = {
+        "reschedule_date_type": route_result.reschedule_date_type,
+        "reschedule_target_date": route_result.reschedule_target_date,
+        "reschedule_day_offset": route_result.reschedule_day_offset,
+        "reschedule_target_time": route_result.reschedule_target_time,
+    }
+    if route_result.sub_intent != "booking_reschedule" or not pending:
+        return current
+
+    date_was_supplied = any(current[field] is not None for field in _RESCHEDULE_DATE_FIELDS)
+    if not date_was_supplied:
+        for field in _RESCHEDULE_DATE_FIELDS:
+            current[field] = pending.get(field)
+    if current["reschedule_target_time"] is None:
+        current["reschedule_target_time"] = pending.get("reschedule_target_time")
+    return current
+
 
 def _driver_scope_block(state: AgentState, query: str, *, sub_intent: str) -> dict:
     metadata = state.get("metadata") or {}
@@ -275,8 +306,8 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
         "Vietnamese booking speech, '1h30' means 13:30 unless 'sáng' is explicit. Do not infer a date "
         "or time the user did not state. Set all reschedule fields to null for other intents.\n"
         "When Pending reschedule context is present and the user supplies a missing/corrected date or time, "
-        "classify the turn as booking_reschedule and return a complete merged reschedule target: preserve "
-        "the pending fields that the user did not change and replace only the corrected fields.\n"
+        "classify the turn as booking_reschedule. Extract ONLY the date/time fields stated in this message; "
+        "leave fields not stated here null. Application code merges them with the pending target.\n"
         "\n"
         f"UI context: channel={context.get('channel', '')}, "
         f"stage={context.get('stage', '')}.\n"
@@ -348,6 +379,7 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
             sub_intent=sub_intent,
             active_skill=active_skill,
         )
+        reschedule_entities = _merge_pending_reschedule(route_result, pending_reschedule)
         return {
             "intent": intent,
             "active_skill": active_skill,
@@ -356,10 +388,7 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
             "metadata": {**metadata, "sub_intent": sub_intent},
             "intent_entities": {
                 "contact_value": route_result.contact_value,
-                "reschedule_target_date": route_result.reschedule_target_date,
-                "reschedule_target_time": route_result.reschedule_target_time,
-                "reschedule_date_type": route_result.reschedule_date_type,
-                "reschedule_day_offset": route_result.reschedule_day_offset,
+                **reschedule_entities,
             },
             "tool_call_count": 0,
         }
