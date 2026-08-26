@@ -1,9 +1,11 @@
 from langchain_core.tools import tool
 
 from src.dependencies import booking_service
+from src.observability import trace_backend_operation
 
 
 @tool
+@trace_backend_operation("BookingService.search_options")
 def search_test_drive_options(
     vehicle_model: str,
     vehicle_variant: str | None = None,

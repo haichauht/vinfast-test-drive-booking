@@ -11,6 +11,7 @@ from decimal import Decimal
 from typing import Any
 
 from langchain_core.messages import BaseMessage
+from langchain_core.runnables import RunnableConfig
 
 from src.config import Settings
 from src.database import Database
@@ -254,6 +255,7 @@ async def invoke_with_budget(
     metadata: dict[str, Any] | None,
     budget: UsageBudgetService,
     call_purpose: str = "chat",
+    config: RunnableConfig | None = None,
 ):
     metadata = metadata if metadata is not None else {}
     call_count = int(metadata.get("llm_call_count") or 0)
@@ -267,7 +269,7 @@ async def invoke_with_budget(
     estimate = budget.estimate(model=model, payload=estimate_payload)
     reservation_id = budget.reserve(identity=identity, estimate=estimate, call_purpose=call_purpose)
     try:
-        response = await llm.ainvoke(payload)
+        response = await llm.ainvoke(payload, config=config)
     except Exception as exc:
         if _is_ambiguous_provider_error(exc):
             budget.mark_unknown(reservation_id=reservation_id, identity=identity, call_purpose=call_purpose)
