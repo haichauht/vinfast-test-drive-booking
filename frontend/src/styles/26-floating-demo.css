@@ -83,13 +83,18 @@
 .floating-demo-bar__icon-button { color: var(--ink-soft); background: rgba(23, 26, 32, 0.07); }
 .floating-demo-bar__primary:hover,.floating-demo-bar__icon-button:hover { transform: translateY(-2px); }
 .floating-demo-bar__primary:disabled,.floating-demo-bar__icon-button:disabled { cursor: not-allowed; opacity: 0.5; transform: none; }
+.floating-demo-bar__primary { color: var(--surface); background: var(--blue); font-size: 0.74rem; font-weight: 720; }
+.floating-demo-bar__icon-button { color: var(--ink-soft); background: rgba(23, 26, 32, 0.07); }
+.floating-demo-bar__primary:hover,.floating-demo-bar__icon-button:hover { transform: translateY(-2px); }
+.floating-demo-bar__primary:disabled,.floating-demo-bar__icon-button:disabled { cursor: not-allowed; opacity: 0.5; transform: none; }
 .floating-demo-bar button:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 .is-spinning { animation: floating-demo-spin 0.9s linear infinite; }
 @keyframes floating-demo-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 767px) {
   /* Demo controls are desktop-only; mobile keeps the booking chat uncluttered. */
-  .floating-demo-bar { display: none; }
+  .floating-demo-bar,
+  .recipient-modal__choice--demo { display: none !important; }
   .floating-demo-bar { right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); left: 10px; width: auto; border-radius: 20px; }
   .floating-demo-bar__head p { display: none; }
   .floating-demo-bar__steps small { font-size: 0.53rem; }
