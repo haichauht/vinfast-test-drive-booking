@@ -55,16 +55,9 @@
   width: max-content;
   border-radius: 999px;
 }
-.floating-demo-bar__compact-actions { display: flex; align-items: center; gap: 4px; padding: 3px; }
+.floating-demo-bar__compact-actions { display: flex; align-items: center; gap: 4px; padding: 3px 75px 3px 3px; }
 .floating-demo-bar__primary--compact { padding: 0 10px; font-size: 0.66rem; }
-.floating-demo-bar.is-collapsed .floating-demo-bar__icon-button,
-.floating-demo-bar.is-collapsed .floating-demo-bar__exit { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; }
-.floating-demo-bar.is-collapsed .floating-demo-bar__toggle {
-  width: 32px;
-  height: 32px;
-  min-height: 32px;
-  position: static;
-}
+.floating-demo-bar.is-collapsed .floating-demo-bar__icon-button { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; }
 
 .floating-demo-bar__content {
   display: grid;
