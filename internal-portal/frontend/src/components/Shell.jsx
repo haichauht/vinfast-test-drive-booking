@@ -11,7 +11,8 @@ import {
   UsersThree,
   X,
 } from '@phosphor-icons/react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useDialogFocus } from '../hooks.js'
 import { roleLabels } from '../utils.js'
 import { NotificationCenter } from './NotificationCenter.jsx'
 
@@ -32,6 +33,8 @@ const allNav = [
 
 export function Shell({ token, user, page, onNavigate, onLogout, children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const sidebarRef = useDialogFocus({ active: mobileOpen, onClose: () => setMobileOpen(false) })
+  const contentRef = useRef(null)
   const nav = useMemo(() => allNav.filter((item) => item.roles.includes(user.role)), [user.role])
   const active = nav.find((item) => item.id === page) || nav[0]
   const today = new Intl.DateTimeFormat('vi-VN', {
@@ -46,9 +49,14 @@ export function Shell({ token, user, page, onNavigate, onLogout, children }) {
     setMobileOpen(false)
   }
 
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => contentRef.current?.focus({ preventScroll: true }))
+    return () => window.cancelAnimationFrame(frame)
+  }, [page])
+
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${mobileOpen ? 'sidebar--open' : ''}`}>
+      <aside ref={sidebarRef} className={`sidebar ${mobileOpen ? 'sidebar--open' : ''}`} role={mobileOpen ? 'dialog' : undefined} aria-modal={mobileOpen ? 'true' : undefined} aria-label={mobileOpen ? 'Điều hướng portal' : undefined} tabIndex={mobileOpen ? -1 : undefined}>
         <div className="brand">
           <div className="brand__mark">V</div>
           <div>
@@ -62,7 +70,7 @@ export function Shell({ token, user, page, onNavigate, onLogout, children }) {
         <div className="sidebar__label">Không gian làm việc</div>
         <nav className="nav-list">
           {nav.map(({ id, label, icon: Icon }) => (
-            <button key={id} className={page === id ? 'nav-item nav-item--active' : 'nav-item'} onClick={() => navigate(id)}>
+            <button key={id} className={page === id ? 'nav-item nav-item--active' : 'nav-item'} onClick={() => navigate(id)} aria-current={page === id ? 'page' : undefined}>
               <Icon size={21} weight={page === id ? 'fill' : 'regular'} />
               <span>{label}</span>
             </button>
@@ -75,7 +83,7 @@ export function Shell({ token, user, page, onNavigate, onLogout, children }) {
               <strong>{user.display_name}</strong>
               <span>{roleLabels[user.role]}</span>
             </div>
-            <button className="icon-button icon-button--dark" onClick={onLogout} title="Đăng xuất">
+            <button className="icon-button icon-button--dark" onClick={onLogout} title="Đăng xuất" aria-label="Đăng xuất">
               <SignOut size={20} />
             </button>
           </div>
@@ -98,7 +106,7 @@ export function Shell({ token, user, page, onNavigate, onLogout, children }) {
             <NotificationCenter token={token} onNavigate={navigate} />
           </div>
         </header>
-        <section className="page-content">{children}</section>
+        <section ref={contentRef} id="portal-content" className="page-content" tabIndex={-1}>{children}</section>
       </main>
     </div>
   )

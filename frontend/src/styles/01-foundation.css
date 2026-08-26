@@ -366,7 +366,8 @@ svg {
 .home-action :focus-visible,
 .detail-action :focus-visible,
 .menu-overlay nav a:focus-visible,
-.site-footer nav a:focus-visible {
+.site-footer nav a:focus-visible,
+.site-footer__learning-notice a:focus-visible {
   outline: 2px solid var(--surface);
   outline-offset: 3px;
 }

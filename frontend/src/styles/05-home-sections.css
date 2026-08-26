@@ -450,3 +450,21 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.38);
 }
+
+.site-footer__learning-notice {
+  display: block;
+  margin-top: 10px;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.site-footer__learning-notice a {
+  color: var(--surface);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: color 180ms ease;
+}
+
+.site-footer__learning-notice a:hover {
+  color: #c9ddff;
+}
