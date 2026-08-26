@@ -161,6 +161,30 @@ const driveCars = []
 const BOOKING_UI_STATE_KEY = 'vinfast:booking-ui-state'
 const DRIVER_INVITATION_HISTORY_KEY = 'vinfastDriverInvitationToken'
 const BOOKING_PREPARATION_GREETING = 'ViVi sẽ đồng hành cùng bạn chuẩn bị cho buổi lái thử. Mình có thể giúp Anh/Chị chuẩn bị những nội dung nên ưu tiên trải nghiệm trên xe, các điểm cần trao đổi với tư vấn viên và checklist trước giờ hẹn. Anh/Chị có thể chia sẻ thêm về nhu cầu và cách mình dự định sử dụng xe trong thực tế; từ đó, ViVi sẽ gợi ý những tình huống và tiêu chí nên tập trung kiểm tra trong buổi lái thử để sát với nhu cầu của Anh/Chị hơn.'
+const VIETNAM_SLOT_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Ho_Chi_Minh',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+const getVietnamSlotDateTime = (value) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const values = Object.fromEntries(
+    VIETNAM_SLOT_DATE_TIME_FORMATTER.formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  )
+  if (!values.year || !values.month || !values.day || values.hour === undefined || !values.minute) return null
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    minutes: Number(values.hour) * 60 + Number(values.minute),
+  }
+}
 
 const driverGreeting = ({ driver, booking }) => {
   const name = driver?.name || 'bạn'
@@ -2159,12 +2183,8 @@ export function BookingPage() {
         const targetDate = targetIntent.reschedule_target_date
         const targetTime = targetIntent.reschedule_target_time
         const dateSlots = availableSlots.filter((s) => {
-          const raw = s.start_at || s.startAt
-          if (!raw) return false
-          const d = new Date(raw)
-          if (Number.isNaN(d.getTime())) return false
-          const sDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(d)
-          return sDate === targetDate
+          const slotDateTime = getVietnamSlotDateTime(s.start_at || s.startAt)
+          return slotDateTime?.date === targetDate
         })
 
         if (dateSlots.length > 0) {
@@ -2172,10 +2192,11 @@ export function BookingPage() {
           if (targetTime) {
             const [tH, tM] = targetTime.split(':').map(Number)
             const targetMinutes = (tH || 0) * 60 + (tM || 0)
-            let minDiff = Infinity
-            for (const s of dateSlots) {
-              const dateObj = new Date(s.start_at || s.startAt)
-              const sMinutes = dateObj.getHours() * 60 + dateObj.getMinutes()
+          let minDiff = Infinity
+          for (const s of dateSlots) {
+            const slotDateTime = getVietnamSlotDateTime(s.start_at || s.startAt)
+            if (!slotDateTime) continue
+            const sMinutes = slotDateTime.minutes
               const diff = Math.abs(sMinutes - targetMinutes)
               if (diff < minDiff) {
                 minDiff = diff
