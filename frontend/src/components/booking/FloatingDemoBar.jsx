@@ -62,9 +62,16 @@ export function FloatingDemoBar({
             {primaryIcon}
             <span>{running && !paused ? 'Dừng demo' : paused ? 'Tiếp demo' : 'Chạy demo'}</span>
           </button>
+          <button type="button" className="floating-demo-bar__icon-button" onClick={onBack} disabled={disableStepControls || step <= 0} aria-label="Quay lại chặng trước" title="Quay lại chặng trước">
+            <CaretLeft size={16} weight="bold" />
+          </button>
+          <button type="button" className="floating-demo-bar__icon-button" onClick={onNext} disabled={disableStepControls || step >= steps.length} aria-label="Chạy bước tiếp theo" title="Chạy bước tiếp theo">
+            <CaretRight size={16} weight="bold" />
+          </button>
           <button type="button" className="floating-demo-bar__toggle" onClick={onToggle} aria-expanded="false" aria-label="Mở rộng bảng điều khiển demo" title="Mở rộng bảng điều khiển demo">
             <CaretDown size={15} weight="bold" />
           </button>
+          <button type="button" className="floating-demo-bar__exit" onClick={onExit} disabled={busy} aria-label="Thoát chế độ demo" title="Thoát chế độ demo"><X size={15} weight="bold" /></button>
         </div>
       ) : (
         <div className="floating-demo-bar__panel-actions">
