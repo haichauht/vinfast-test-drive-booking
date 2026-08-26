@@ -1748,6 +1748,7 @@ export function BookingPage() {
         })),
         userLocation,
         bookingId: bookingId || null,
+        pendingReschedule: pendingRescheduleIntentRef.current,
         channel: 'booking',
         })
       if (isDriverChat) {
@@ -1757,10 +1758,13 @@ export function BookingPage() {
       }
       const extractedReschedule = extractRescheduleIntent(value, result.intent_entities)
       if (result.intent === 'booking_reschedule' || extractedReschedule.targetDate || extractedReschedule.targetTime || extractedReschedule.bookingCode || /đổi\s*lịch|dời\s*lịch|chuyển\s*lịch/i.test(value)) {
+        const previousIntent = pendingRescheduleIntentRef.current || {}
         pendingRescheduleIntentRef.current = {
-          reschedule_target_date: extractedReschedule.targetDate || result.intent_entities?.reschedule_target_date || '',
-          reschedule_target_time: extractedReschedule.targetTime || result.intent_entities?.reschedule_target_time || '',
-          bookingCode: extractedReschedule.bookingCode || result.intent_entities?.booking_code || '',
+          reschedule_date_type: result.intent_entities?.reschedule_date_type ?? previousIntent.reschedule_date_type ?? '',
+          reschedule_day_offset: result.intent_entities?.reschedule_day_offset ?? previousIntent.reschedule_day_offset ?? null,
+          reschedule_target_date: extractedReschedule.targetDate || result.intent_entities?.reschedule_target_date || previousIntent.reschedule_target_date || '',
+          reschedule_target_time: extractedReschedule.targetTime || result.intent_entities?.reschedule_target_time || previousIntent.reschedule_target_time || '',
+          bookingCode: extractedReschedule.bookingCode || result.intent_entities?.booking_code || previousIntent.bookingCode || '',
         }
       }
       if (mentionedCar && result.intent === 'vehicle_info') {

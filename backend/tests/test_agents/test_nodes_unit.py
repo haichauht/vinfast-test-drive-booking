@@ -164,6 +164,46 @@ async def test_classifier_keeps_reschedule_for_confirmed_booking(monkeypatch):
     assert result["intent_entities"]["reschedule_day_offset"] is None
 
 
+@pytest.mark.asyncio
+async def test_classifier_merges_pending_reschedule_in_code_not_in_llm(monkeypatch):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        return_value=RouteSchema(
+            intent="domain",
+            sub_intent="booking_reschedule",
+            has_schedule_preference=True,
+            reschedule_target_time="15:30",
+        )
+    )
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+
+    result = await classifier_node(
+        {
+            "query": "đổi thành 15h30",
+            "context": {
+                "pendingReschedule": {
+                    "reschedule_date_type": "explicit",
+                    "reschedule_target_date": "2026-08-28",
+                    "reschedule_day_offset": None,
+                    "reschedule_target_time": "13:30",
+                }
+            },
+            "post_booking_context": {"active": True},
+        }
+    )
+
+    assert result["intent_entities"] == {
+        "contact_value": None,
+        "reschedule_date_type": "explicit",
+        "reschedule_target_date": "2026-08-28",
+        "reschedule_day_offset": None,
+        "reschedule_target_time": "15:30",
+    }
+
+
 # test case of Chau + kiểm tra classifier ưu tiên sensitive keyword và không phụ thuộc LLM
 @pytest.mark.asyncio
 async def test_classifier_sensitive_keyword_bypasses_llm(monkeypatch):
