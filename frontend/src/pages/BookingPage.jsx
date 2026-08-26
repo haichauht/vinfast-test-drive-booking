@@ -134,7 +134,7 @@ import { CancellationConfirmModal, RescheduleConfirmModal } from '../components/
 import { BookingSuccessVehicleModel, preloadVehicle3dRuntime } from '../components/Vehicle3DExperience'
 import { BookingSuccessCinematic } from '../components/BookingSuccessCinematic'
 import { getVehicle3dModel } from '../data/vehicle3d'
-import { RecipientModal, ResumeModal } from '../components/booking/BookingModalPrimitives'
+import { DemoCompletionModal, RecipientModal, ResumeModal } from '../components/booking/BookingModalPrimitives'
 import { AgentMessage, ViviStatusTyping, ViViAvatar, ContextualChoices } from '../components/booking/BookingChatPrimitives'
 import { VehicleShot, VehicleSwitcher, VehiclePanel } from '../components/booking/VehicleWorkspace'
 import { BookingActionMenu } from '../components/booking/BookingActionMenu'
@@ -167,6 +167,35 @@ const driverGreeting = ({ driver, booking }) => {
   const vehicle = booking?.vehicle_model || 'xe VinFast'
   const showroom = booking?.showroom_name || 'showroom VinFast'
   return `Chào ${name}, ViVi rất vui được hỗ trợ bạn chuẩn bị cho buổi lái thử ${vehicle} tại ${showroom}. Mình có thể giúp Anh/Chị chuẩn bị những nội dung nên ưu tiên trải nghiệm trên xe, các điểm cần trao đổi với tư vấn viên và checklist trước giờ hẹn. Anh/Chị có thể chia sẻ thêm về nhu cầu và cách mình dự định sử dụng xe trong thực tế; từ đó, ViVi sẽ gợi ý những tình huống và tiêu chí nên tập trung kiểm tra trong buổi lái thử để sát với nhu cầu của Anh/Chị hơn.`
+}
+
+const extractRescheduleIntent = (text = '', intentEntities = null) => {
+  let targetDate = intentEntities?.reschedule_target_date || ''
+  let targetTime = intentEntities?.reschedule_target_time || ''
+  if (!targetDate || !targetTime) {
+    const lower = (text || '').toLowerCase()
+    const dateMatch = lower.match(/(?:sang|ngày|ngay|vao|vào)\s+(\d{1,2})(?:[\/\-\.](\d{1,2}))?/)
+      || lower.match(/(\d{1,2})[\/\-](\d{1,2})/)
+    if (dateMatch && !targetDate) {
+      const day = dateMatch[1].padStart(2, '0')
+      const month = (dateMatch[2] || '08').padStart(2, '0')
+      targetDate = `2026-${month}-${day}`
+    }
+    const timeMatch = lower.match(/(\d{1,2})(?:h|:| giờ\s*)(\d{1,2})?\s*(sáng|chiều|tối|pm|am)?/)
+      || lower.match(/(\d{1,2})\s*giờ\s*(chiều|tối|sáng)?/)
+    if (timeMatch && !targetTime) {
+      let hours = parseInt(timeMatch[1], 10)
+      const minutes = parseInt(timeMatch[2] || '0', 10)
+      const period = (timeMatch[3] || timeMatch[2] || '').toLowerCase()
+      if ((period.includes('chiều') || period.includes('tối') || period.includes('pm')) && hours < 12) {
+        hours += 12
+      } else if (hours >= 1 && hours <= 6 && !period.includes('sáng') && !period.includes('am')) {
+        hours += 12
+      }
+      targetTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+    }
+  }
+  return { targetDate, targetTime }
 }
 
 const takeDriverInvitationToken = () => {
@@ -482,6 +511,7 @@ export function BookingPage() {
   const [inlineOtpBusy, setInlineOtpBusy] = useState(false)
   const [inlineOtpMock, setInlineOtpMock] = useState('')
   const [inlineOtpChallengeId, setInlineOtpChallengeId] = useState('')
+  const [demoCompletedModalOpen, setDemoCompletedModalOpen] = useState(false)
   const [floatingDemoEnabled, setFloatingDemoEnabled] = useState(false)
   const [floatingDemoStep, setFloatingDemoStep] = useState(0)
   const [floatingDemoRunning, setFloatingDemoRunning] = useState(false)
@@ -500,6 +530,7 @@ export function BookingPage() {
   const floatingDemoPauseWaitersRef = useRef([])
   const floatingDemoDelayWaitersRef = useRef([])
   const floatingDemoMountedRef = useRef(true)
+  const pendingRescheduleIntentRef = useRef(null)
 
   // Auto-play is intentionally cancellable.  Invalidating its run token and
   // resolving pending pauses/delays means an unmounted page never continues a
@@ -551,11 +582,8 @@ export function BookingPage() {
   const workspaceVisible = workspaceModel.visible && hasWorkspaceContent && !workspaceHidden
 
   useEffect(() => {
-    let active = true
-    getFloatingDemoCapabilities()
-      .then((capabilities) => { if (active) setFloatingDemoEnabled(Boolean(capabilities?.enabled)) })
-      .catch(() => { if (active) setFloatingDemoEnabled(false) })
-    return () => { active = false }
+    // Keep floating demo disabled by default; only activate if user clicks Demo in RecipientModal
+    setFloatingDemoEnabled(false)
   }, [])
 
   // Keep a small on-screen trace for demos: it makes a failed API call
@@ -613,7 +641,12 @@ export function BookingPage() {
           floatingDemoStep: 7,
         },
       ])
-      setFloatingDemoStatus('Phiếu demo đã hoàn tất · có thể lùi để trình diễn lại')
+      setFloatingDemoStatus('Phiếu demo đã hoàn tất')
+      window.setTimeout(() => {
+        if (floatingDemoMountedRef.current) {
+          setDemoCompletedModalOpen(true)
+        }
+      }, 3000)
       return
     }
 
@@ -1694,6 +1727,13 @@ export function BookingPage() {
         addMessage('assistant', result.response)
         return
       }
+      const extractedReschedule = extractRescheduleIntent(value, result.intent_entities)
+      if (result.intent === 'booking_reschedule' || extractedReschedule.targetDate || extractedReschedule.targetTime || /đổi\s*lịch|dời\s*lịch|chuyển\s*lịch/i.test(value)) {
+        pendingRescheduleIntentRef.current = {
+          reschedule_target_date: extractedReschedule.targetDate || result.intent_entities?.reschedule_target_date || '',
+          reschedule_target_time: extractedReschedule.targetTime || result.intent_entities?.reschedule_target_time || '',
+        }
+      }
       if (mentionedCar && result.intent === 'vehicle_info') {
         if (interaction.mode === BookingMode.MANAGE_BOOKING) {
           clearManagementContext({ event: InteractionEvent.VIEW_VEHICLE })
@@ -1895,7 +1935,12 @@ export function BookingPage() {
         return
       }
 
-      if (formattedBookings.length > 1) {
+      const enteredCode = (accessValue.bookingCode || '').trim().toLowerCase()
+      const targetByCode = enteredCode ? formattedBookings.find((b) => (b.bookingCode || '').toLowerCase() === enteredCode) : null
+      const targetById = verified.booking_id ? formattedBookings.find((b) => b.id === verified.booking_id) : null
+      const specificTarget = targetByCode || targetById
+
+      if (formattedBookings.length > 1 && !specificTarget) {
         setAccessProfile({
           accessToken: verified.access_session_token,
           accessPurpose,
@@ -1932,8 +1977,9 @@ export function BookingPage() {
         return
       }
 
-      const booking = await getVerifiedBooking({ accessToken: verified.access_session_token, bookingId: formattedBookings[0]?.id || verified.booking_id })
-      setAccessProfile({
+      const targetBookingId = specificTarget?.id || formattedBookings[0]?.id || verified.booking_id
+      const booking = await getVerifiedBooking({ accessToken: verified.access_session_token, bookingId: targetBookingId })
+      const targetProfile = {
         accessToken: verified.access_session_token,
         accessPurpose,
         bookingId: booking.id,
@@ -1954,7 +2000,8 @@ export function BookingPage() {
         advisorPhone: booking.advisor?.phone || '',
         slotTime: booking.slot_time || '',
         slotDate: booking.slot_date || '',
-      })
+      }
+      setAccessProfile(targetProfile)
       setExpandedBookingId(booking.id)
       setAccessFlow({ phase: isCancellation ? 'confirm_cancel' : 'edit', purpose: accessPurpose, challengeId: '', expiresAt: 0 })
       dispatchInteraction({
@@ -1962,7 +2009,12 @@ export function BookingPage() {
       })
       otpChallengeIdRef.current = ''
       otpCodeRef.current = ''
-      addMessage('assistant', isCancellation ? 'Xác thực thành công. Vui lòng kiểm tra phiếu bên dưới và xác nhận nếu bạn muốn hủy lịch.' : 'Bạn đã xác thực thành công. Bạn có thể cập nhật thông tin lịch đã đặt ngay bên dưới.')
+      const isReschedule = accessPurpose === 'reschedule' || Boolean(pendingRescheduleIntentRef.current?.reschedule_target_date || pendingRescheduleIntentRef.current?.reschedule_target_time)
+      if (isReschedule) {
+        beginTimeReschedule(targetProfile)
+      } else {
+        addMessage('assistant', isCancellation ? 'Xác thực thành công. Vui lòng kiểm tra phiếu bên dưới và xác nhận nếu bạn muốn hủy lịch.' : 'Bạn đã xác thực thành công. Bạn có thể cập nhật thông tin lịch đã đặt ngay bên dưới.')
+      }
     } catch (error) { setAccessError(''); addMessage('assistant', error.message) } finally { setAccessBusy(false) }
   }
 
@@ -2091,11 +2143,55 @@ export function BookingPage() {
     } catch (error) { setAccessError(error.message) } finally { setAccessBusy(false) }
   }
 
-  const loadRescheduleSlots = async (car, showroom) => {
+  const loadRescheduleSlots = async (car, showroom, targetProfile = accessProfile) => {
     setAccessBusy(true); setAccessError('')
     try {
       const result = await searchBookingOptions({ vehicleModel: car.name, showroomId: showroom.id })
       const slots = result.slots || []
+      const availableSlots = slots.filter((slot) => slot.status === 'available')
+      const targetIntent = pendingRescheduleIntentRef.current
+
+      if (targetIntent?.reschedule_target_date && availableSlots.length > 0 && targetProfile?.bookingId && targetProfile?.accessToken) {
+        const targetDate = targetIntent.reschedule_target_date
+        const targetTime = targetIntent.reschedule_target_time
+        const dateSlots = availableSlots.filter((s) => {
+          const sDate = (s.start_at || s.startAt || s.date || '').slice(0, 10)
+          return sDate === targetDate
+        })
+        const candidatePool = dateSlots.length > 0 ? dateSlots : availableSlots
+
+        let bestSlot = candidatePool[0]
+        if (targetTime) {
+          const [tH, tM] = targetTime.split(':').map(Number)
+          const targetMinutes = (tH || 0) * 60 + (tM || 0)
+          let minDiff = Infinity
+          for (const s of candidatePool) {
+            const dateObj = new Date(s.start_at || s.startAt)
+            const sMinutes = dateObj.getHours() * 60 + dateObj.getMinutes()
+            const diff = Math.abs(sMinutes - targetMinutes)
+            if (diff < minDiff) {
+              minDiff = diff
+              bestSlot = s
+            }
+          }
+        }
+
+        if (bestSlot) {
+          pendingRescheduleIntentRef.current = null
+          const held = await holdVerifiedReschedule({ bookingId: targetProfile.bookingId, slotId: bestSlot.id, accessToken: targetProfile.accessToken })
+          setRescheduleState({ step: 'pending', car, showroom, slots, slot: bestSlot, newBookingId: held.booking_id })
+          setRescheduleSecondsLeft(Math.max(0, Math.ceil((new Date(held.hold_expires_at).getTime() - Date.now()) / 1000)))
+          setExpandedBookingId(targetProfile.bookingId)
+          setMobileSurface('workspace')
+          dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
+          const startsAt = new Date(bestSlot.start_at || bestSlot.startAt)
+          const timeStr = startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+          const dateStr = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(startsAt)
+          addMessage('assistant', `ViVi đã tìm thấy khung giờ ${timeStr} (${dateStr}) phù hợp nhất với yêu cầu và đã giữ tạm trong 5 phút. Bạn kiểm tra phiếu bên cạnh và bấm “Xác nhận đổi lịch” nhé!`)
+          return
+        }
+      }
+
       if (slots.some((slot) => slot.status === 'available')) {
         setRescheduleState({ step: 'schedule', car, showroom, slots })
         dispatchInteraction({ type: InteractionEvent.RESCHEDULE_SLOT })
@@ -2116,7 +2212,7 @@ export function BookingPage() {
       setMobileSurface('workspace')
       setAccessFlow((current) => current ? { ...current, phase: 'edit', purpose: 'reschedule' } : { phase: 'edit', purpose: 'reschedule', challengeId: '', expiresAt: 0 })
       dispatchInteraction({ type: InteractionEvent.START_RESCHEDULE })
-      loadRescheduleSlots(car, { id: targetProfile.showroomId, name: targetProfile.showroomName })
+      loadRescheduleSlots(car, { id: targetProfile.showroomId, name: targetProfile.showroomName }, targetProfile)
     } else setAccessError('ViVi chưa xác định được mẫu xe hoặc showroom của lịch này, nên tạm thời chưa đổi lịch được cho bạn.')
   }
   const beginAccessibleReschedule = async (summary) => {
@@ -2751,6 +2847,23 @@ export function BookingPage() {
     setFloatingDemoStatus(`Đã quay lại chặng ${targetStep || 1}.`)
   }
 
+  const handleStartDemoFromModal = () => {
+    setRecipient('self')
+    setFloatingDemoEnabled(true)
+    setFloatingDemoCollapsed(false)
+    window.setTimeout(() => {
+      autoPlayFloatingDemo()
+    }, 300)
+  }
+
+  const handleRestartRealSessionAfterDemo = () => {
+    setDemoCompletedModalOpen(false)
+    resetFloatingDemo()
+    setRecipient('')
+    setStage('idle')
+    setActiveView('agent')
+  }
+
   const resetFloatingDemo = async () => {
     const hasStartedDemo = floatingDemoStep > 0 || floatingDemoRunning || floatingDemoBusy || Boolean(floatingDemoContextRef.current.car)
     floatingDemoRunRef.current += 1
@@ -2820,6 +2933,7 @@ export function BookingPage() {
     floatingDemoPausedRef.current = false
     floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
     floatingDemoContextRef.current = {}
+    setFloatingDemoEnabled(false)
     setFloatingDemoRunning(false)
     setFloatingDemoPaused(false)
     setFloatingDemoBusy(false)
@@ -2991,7 +3105,7 @@ export function BookingPage() {
     <main id="main-content" className={`agent-booking-page ${workspaceVisible ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''} ${successCinematic ? 'is-cinematic' : ''}`}>
       <BookingHeader />
 
-      {floatingDemoEnabled && !isDriverChat && !successCinematic && !confirmSlotOpen && !switcherOpen && !accessFlow && !rescheduleState && (
+      {floatingDemoEnabled && Boolean(recipient) && !demoCompletedModalOpen && !isDriverChat && !successCinematic && !confirmSlotOpen && !switcherOpen && !accessFlow && !rescheduleState && (
         <FloatingDemoBar
           step={floatingDemoStep}
           running={floatingDemoRunning}
@@ -3052,17 +3166,25 @@ export function BookingPage() {
         </button>
       )}
 
-      {!recipient && !resumePending && (
+      {!recipient && !resumePending && !demoCompletedModalOpen && (
         <RecipientModal
           onBack={leaveRecipientModal}
           onSelect={beginConversation}
           onLookup={() => {
             // Chọn 'self' chỉ để đóng modal (modal hiện khi chưa có recipient); người dùng
             // đi nhánh tra cứu nên câu "đặt cho ai" chưa cần trả lời lúc này.
+            dismissFloatingDemoForRealFlow()
             clearBookingReturnContext()
             setRecipient('self')
             startLookup({ addUserMessage: false })
           }}
+          onDemo={handleStartDemoFromModal}
+        />
+      )}
+      {demoCompletedModalOpen && (
+        <DemoCompletionModal
+          onRestartRealSession={handleRestartRealSessionAfterDemo}
+          onClose={() => setDemoCompletedModalOpen(false)}
         />
       )}
       {resumePending && (
@@ -3115,9 +3237,12 @@ export function BookingPage() {
                       key={id}
                       aria-selected={active}
                       aria-haspopup={isCarTab ? 'dialog' : undefined}
-                      title={isCarTab ? 'Bấm lần nữa để đổi mẫu xe' : undefined}
+                      title={floatingDemoMode ? 'Đang trong chế độ demo' : isCarTab ? 'Bấm lần nữa để đổi mẫu xe' : undefined}
                       className={`${active ? 'is-active' : ''} ${isCarTab ? 'is-car-tab' : ''}`.trim()}
+                      disabled={floatingDemoMode}
+                      style={floatingDemoMode ? { cursor: 'default' } : undefined}
                       onClick={() => {
+                        if (floatingDemoMode) return
                         if (isCarTab && active) setSwitcherOpen(true)
                         else setActiveView(id)
                       }}
@@ -3176,9 +3301,12 @@ export function BookingPage() {
                   <button
                     type="button"
                     className="vivi-studio__menu-button"
-                    onClick={() => setActionMenuOpen(true)}
+                    onClick={() => !floatingDemoMode && setActionMenuOpen(true)}
+                    disabled={floatingDemoMode}
                     aria-haspopup="dialog"
                     aria-expanded={actionMenuOpen}
+                    style={floatingDemoMode ? { opacity: 0.38, cursor: 'not-allowed', pointerEvents: 'none' } : undefined}
+                    title={floatingDemoMode ? 'Menu tạm khóa trong chế độ demo' : 'Menu'}
                   >
                     <DotsThree size={18} weight="bold" aria-hidden="true" />
                     <span>Menu</span>
