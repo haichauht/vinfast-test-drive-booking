@@ -194,6 +194,16 @@ non-technical sales staff.
 
 ---
 
+### Bối cảnh buổi lái thử
+
+- [Summarize only the supplied `test_drive_context`: attendance, who will drive,
+  evaluation or purchase involvement, guests, and logistics. Keep the stated
+  certainty and participant source clear. Do not expose raw signal fields,
+  IDs, confidence scores, or source-system details. Write "Chưa có thông tin"
+  when no relevant context was supplied.]
+
+---
+
 ### 👤 {booker_name} – Người đặt (booker)
 
 **Thông tin tự cung cấp (đã xác nhận):**

@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
@@ -470,39 +470,6 @@ async def send_driver_invitation(booking_id: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=400, detail={"code": code, "message": messages.get(code, "Unable to create driver invitation")}
         ) from exc
-
-
-@router.get("/bookings/{booking_id}/profile-summary.md", response_class=PlainTextResponse)
-async def booking_profile_summary(booking_id: str, refresh: bool = False) -> PlainTextResponse:
-    """Return a stored booking sales brief, or generate and cache one when needed."""
-    try:
-        source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
-        source["test_drive_context"] = await asyncio.to_thread(profile_service.booking_context_signals, booking_id)
-        if source["booking"]["status"] not in {"confirmed", "cancelled"}:
-            raise HTTPException(
-                status_code=409,
-                detail="Profile summary is available only for confirmed or cancelled bookings",
-            )
-        cached = await asyncio.to_thread(profile_service.booking_profile_summary, booking_id)
-        if cached and not refresh:
-            return PlainTextResponse(
-                cached["summary"],
-                media_type="text/markdown; charset=utf-8",
-                headers={"X-Profile-Summary-Source": "cache", "X-Profile-Summary-Generated-At": cached["generated_at"]},
-            )
-        markdown = await summarize_user_profile(source)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Booking not found") from exc
-    except RuntimeError as exc:
-        if str(exc) == "LLM_NOT_CONFIGURED":
-            raise HTTPException(status_code=503, detail="Profile summary LLM is not configured") from exc
-        raise
-    stored = await asyncio.to_thread(profile_service.save_booking_profile_summary, booking_id, markdown)
-    return PlainTextResponse(
-        stored["summary"],
-        media_type="text/markdown; charset=utf-8",
-        headers={"X-Profile-Summary-Source": "generated", "X-Profile-Summary-Generated-At": stored["generated_at"]},
-    )
 
 
 @router.get("/status")

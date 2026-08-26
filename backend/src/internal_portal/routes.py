@@ -277,6 +277,7 @@ async def booking_sales_brief(
             headers={"X-Profile-Summary-Source": "cache", "X-Profile-Summary-Generated-At": cached["generated_at"]},
         )
     source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
+    source["test_drive_context"] = await asyncio.to_thread(profile_service.booking_context_signals, booking_id)
     markdown = await summarize_user_profile(source)
     stored = await asyncio.to_thread(profile_service.save_booking_profile_summary, booking_id, markdown)
     return PlainTextResponse(
