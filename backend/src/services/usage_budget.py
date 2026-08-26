@@ -10,9 +10,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from langchain_core.runnables import RunnableConfig
-
 from langchain_core.messages import BaseMessage
+from langchain_core.runnables import RunnableConfig
 
 from src.config import Settings
 from src.database import Database

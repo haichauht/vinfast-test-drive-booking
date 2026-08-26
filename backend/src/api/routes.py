@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
