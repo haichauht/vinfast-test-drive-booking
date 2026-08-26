@@ -83,55 +83,90 @@
 }
 
 .recipient-modal__panel {
-  width: min(100%, 680px);
-  padding: 42px;
+  position: relative;
+  width: min(100%, 620px);
+  max-height: min(94vh, 820px);
+  overflow-y: auto;
+  padding: 28px 36px 24px;
   border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 30px;
+  border-radius: 26px;
   background: #f8f9f8;
   box-shadow: inset 0 1px 0 #fff, 0 34px 90px -44px rgba(18, 24, 32, 0.6);
   animation: studio-panel-in 0.55s var(--ease-heavy) both;
+}
+
+.recipient-modal__back {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 28px -20px rgba(18, 24, 32, 0.7);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: color 0.2s var(--ease-soft), border-color 0.2s var(--ease-soft), background 0.2s var(--ease-soft), transform 0.2s var(--ease-soft);
+}
+
+.recipient-modal__back:hover {
+  border-color: rgba(20, 100, 244, 0.4);
+  color: var(--blue);
+  background: #fff;
+  transform: translateX(-2px);
+}
+
+.recipient-modal__back:active { transform: scale(0.96); }
+
+.recipient-modal__back:focus-visible {
+  outline: 3px solid rgba(20, 100, 244, 0.28);
+  outline-offset: 3px;
 }
 
 .recipient-modal__mark,
 .slot-confirm-modal > div > span {
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
-  margin-bottom: 24px;
-  border-radius: 18px;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 12px;
+  border-radius: 14px;
   color: #fff;
   background: var(--blue);
 }
 
 .recipient-modal__panel > p,
 .slot-confirm-modal > div > p {
-  margin: 0 0 10px;
+  margin: 0 0 4px;
   color: var(--blue);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .recipient-modal h1 {
   max-width: 560px;
-  margin: 0 0 28px;
-  font-size: clamp(2.1rem, 5vw, 3.5rem);
+  margin: 0 0 16px;
+  font-size: clamp(1.85rem, 4vw, 2.5rem);
   font-weight: 560;
-  letter-spacing: -0.055em;
-  line-height: 0.98;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
 }
 
 /*
  * MỘT cột, không phải hai.
- * Trước đây là lưới 2 cột, hợp khi chỉ có 2 lựa chọn. Từ khi thêm "Tra cứu lịch đã đặt"
- * thành 3 lựa chọn thì hàng dưới chỉ có 1 ô, chừa hẳn một khoảng trống bên phải — lệch hẳn.
- * Xếp dọc thì ba lựa chọn cùng bề ngang, cùng trọng số, và cũng đúng thứ tự đọc.
+ * Xếp dọc thì các lựa chọn cùng bề ngang, cùng trọng số, và đúng thứ tự đọc.
  */
 .recipient-modal__choices {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .recipient-modal__choices button {
@@ -139,15 +174,29 @@
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 16px;
-  min-height: 112px;
-  padding: 20px;
+  min-height: 76px;
+  padding: 13px 18px;
   border: 1px solid var(--line);
-  border-radius: 20px;
+  border-radius: 16px;
   color: var(--ink);
   background: #fff;
   text-align: left;
   cursor: pointer;
-  transition: transform 0.35s var(--ease-soft), border-color 0.35s var(--ease-soft), background 0.35s var(--ease-soft);
+  transition: transform 0.25s var(--ease-soft), border-color 0.25s var(--ease-soft), background 0.25s var(--ease-soft);
+}
+
+.booking-resume-modal.recipient-modal__panel {
+  padding: 38px 42px 34px;
+}
+
+.booking-resume-modal .recipient-modal__choices button {
+  min-height: 104px;
+  padding: 18px 22px;
+  border-radius: 18px;
+}
+
+.booking-resume-modal h1 {
+  margin-bottom: 24px;
 }
 
 .recipient-modal__choices button:hover {
@@ -344,6 +393,14 @@
   height: 100%;
   padding: 92px clamp(20px, 4vw, 48px) 32px;
   overflow: auto;
+  font-family: var(--font-body);
+}
+
+.booking-history button,
+.booking-history p,
+.booking-history small,
+.booking-history span {
+  font-family: var(--font-body);
 }
 
 .booking-history__list {
@@ -459,6 +516,11 @@
   /* 12px chứ không phải 8px: "Đổi giờ" và "Huỷ lịch" là hai việc trái ngược nhau,
      đứng sát quá thì dễ bấm nhầm cái không quay lại được. */
   gap: 12px;
+}
+
+/* Mobile mở bước xác nhận đổi giờ ngay trên phiếu. Desktop giữ nguyên luồng cũ. */
+.booking-history__update-mobile {
+  display: none;
 }
 
 .booking-history__back,
@@ -823,7 +885,20 @@
   text-transform: uppercase;
 }
 
-.vivi-studio__head > button {
+.vivi-studio__head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vivi-studio__home-link {
+  display: none;
+}
+
+.vivi-studio__head > button,
+.vivi-studio__head-actions > button {
   padding: 9px 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -832,6 +907,183 @@
   font-size: 0.68rem;
   font-weight: 650;
   cursor: pointer;
+}
+
+.vivi-studio__menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/*
+ * Menu thao tác lịch dùng cùng token, bán kính và nhịp chữ của agent hiện tại.
+ * Trên desktop là dialog giữa màn hình; mobile đổi thành bottom sheet ở file hardening.
+ */
+.booking-action-menu {
+  position: fixed;
+  z-index: 10010;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(12, 14, 18, 0.48);
+  backdrop-filter: blur(12px);
+  animation: studio-fade-in 0.2s ease both;
+}
+
+.booking-action-menu__panel {
+  width: min(100%, 560px);
+  max-height: min(760px, calc(100dvh - 48px));
+  padding: 26px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 24px;
+  outline: 0;
+  color: var(--ink);
+  background: #f6f7f6;
+  box-shadow: 0 28px 80px rgba(10, 14, 20, 0.28), inset 0 1px 0 #fff;
+  font-family: var(--font-body);
+}
+
+.booking-action-menu__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.booking-action-menu__header > div {
+  display: grid;
+  gap: 7px;
+}
+
+.booking-action-menu__header span {
+  color: var(--blue);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.booking-action-menu__header h2 {
+  max-width: 420px;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.55rem, 3vw, 2.15rem);
+  font-weight: 560;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+.booking-action-menu__header > button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--ink-soft);
+  background: var(--surface);
+  cursor: pointer;
+  transition: color 0.2s var(--ease-soft), border-color 0.2s var(--ease-soft), transform 0.2s var(--ease-soft);
+}
+
+.booking-action-menu__header > button:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+  transform: rotate(4deg);
+}
+
+.booking-action-menu__list {
+  display: grid;
+  gap: 9px;
+}
+
+.booking-action-menu__list > button {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 76px;
+  padding: 11px 14px 11px 11px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  color: var(--ink);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.22s var(--ease-soft), border-color 0.22s var(--ease-soft),
+    background 0.22s var(--ease-soft), transform 0.22s var(--ease-soft);
+}
+
+.booking-action-menu__list > button:hover:not(:disabled) {
+  border-color: var(--ink);
+  color: var(--surface);
+  background: var(--ink);
+  transform: translateY(-1px);
+}
+
+.booking-action-menu__list > button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
+.booking-action-menu__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: var(--blue);
+  background: #f5f6f5;
+}
+
+.booking-action-menu__list > button:hover:not(:disabled) .booking-action-menu__icon {
+  border-color: rgba(255, 255, 255, 0.28);
+  color: var(--surface);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.booking-action-menu__copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.booking-action-menu__copy strong {
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.booking-action-menu__copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+}
+
+.booking-action-menu__list > button:hover:not(:disabled) .booking-action-menu__copy small {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.booking-action-menu__panel > p {
+  margin: 16px 2px 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.booking-action-menu button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
 }
 
 .vivi-studio__messages {
