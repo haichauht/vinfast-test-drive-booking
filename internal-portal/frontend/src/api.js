@@ -1,5 +1,4 @@
 const API_BASE = import.meta.env.VITE_INTERNAL_API_BASE_URL || '/api/v1/internal'
-const PUBLIC_API_BASE = API_BASE.replace(/\/internal\/?$/, '')
 
 function messageFrom(payload, fallback) {
   return payload?.detail?.message || payload?.message || fallback
@@ -66,7 +65,7 @@ export const api = {
   bookings: (token, query) => request('/bookings', { token, query }),
   booking: (token, bookingId) => request(`/bookings/${bookingId}`, { token }),
   profileSummary: (token, bookingId, { refresh = false } = {}) => requestText(
-    `${PUBLIC_API_BASE}/bookings/${encodeURIComponent(bookingId)}/profile-summary.md${refresh ? '?refresh=true' : ''}`,
+    `${API_BASE}/bookings/${encodeURIComponent(bookingId)}/sales-brief.md${refresh ? '?refresh=true' : ''}`,
     { token },
   ),
   assignBooking: (token, bookingId, staffId) =>
