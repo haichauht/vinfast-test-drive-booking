@@ -11,7 +11,14 @@ from src.database.redis_client import redis_client
 from src.database.rows import DbRow
 from src.security.rate_limit import consume_rate_limit_counter
 from src.services.booking.base import BookingBase
-from src.services.booking.common import is_valid_customer_email, is_valid_customer_phone, iso, new_id, normalize_phone, parse_utc
+from src.services.booking.common import (
+    is_valid_customer_email,
+    is_valid_customer_phone,
+    iso,
+    new_id,
+    normalize_phone,
+    parse_utc,
+)
 from src.services.booking.errors import BookingError
 
 _id = new_id
