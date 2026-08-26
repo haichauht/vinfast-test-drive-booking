@@ -57,10 +57,6 @@ export function FloatingDemoBar({
   return (
     <aside className={`floating-demo-bar ${collapsed ? 'is-collapsed' : ''}`} aria-label="Điều khiển demo đặt lịch mô phỏng">
       <div className="floating-demo-bar__controls">
-        <button type="button" className="floating-demo-bar__primary" onClick={primaryAction} disabled={busy} aria-label={primaryLabel} title={primaryLabel}>
-          {primaryIcon}
-          <span>{primaryLabel}</span>
-        </button>
         <button type="button" className="floating-demo-bar__icon-button" onClick={onBack} disabled={disableStepControls || step <= 0} aria-label="Quay lại chặng trước" title="Quay lại chặng trước">
           <CaretLeft size={16} weight="bold" />
         </button>
@@ -79,6 +75,14 @@ export function FloatingDemoBar({
         </button>
         <button type="button" className="floating-demo-bar__exit" onClick={onExit} disabled={busy} aria-label="Thoát chế độ demo" title="Thoát chế độ demo"><X size={15} weight="bold" /></button>
       </div>
+      {collapsed && (
+        <div className="floating-demo-bar__compact-actions">
+          <button type="button" className="floating-demo-bar__primary floating-demo-bar__primary--compact" onClick={primaryAction} disabled={busy}>
+            {primaryIcon}
+            <span>{running && !paused ? 'Dừng demo' : paused ? 'Tiếp demo' : 'Chạy demo'}</span>
+          </button>
+        </div>
+      )}
 
       {!collapsed && (
         <div className="floating-demo-bar__content">
@@ -101,6 +105,13 @@ export function FloatingDemoBar({
               )
             })}
           </ol>
+
+          <div className="floating-demo-bar__actions">
+            <button type="button" className="floating-demo-bar__primary" onClick={primaryAction} disabled={busy} aria-label={primaryLabel} title={primaryLabel}>
+              {primaryIcon}
+              <span>{primaryLabel}</span>
+            </button>
+          </div>
 
           <p className="floating-demo-bar__current-step" aria-live="polite">
             {step > 0 && <strong>Bước {currentStepNumber}/{steps.length}</strong>}
