@@ -53,12 +53,12 @@
 /* Thanh demo là lớp overlay độc lập: tuyệt đối không thay đổi chiều cao của
    composer/chat. Người trình diễn có thể thu gọn nó bất kỳ lúc nào. */
 .floating-demo-bar.is-collapsed {
-  width: min(390px, calc(100vw - 54px));
+  width: max-content;
   border-radius: 999px;
 }
 .floating-demo-bar.is-collapsed { height: 38px; }
 .floating-demo-bar__compact-actions { padding: 3px 147px 3px 3px; }
-.floating-demo-bar__primary--compact { width: 100%; min-height: 32px; padding: 0 12px; font-size: 0.68rem; }
+.floating-demo-bar__primary--compact { width: 112px; min-height: 32px; padding: 0 10px; font-size: 0.68rem; }
 
 .floating-demo-bar__content {
   display: grid;
