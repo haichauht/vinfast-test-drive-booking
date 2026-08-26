@@ -11,7 +11,14 @@ from src.database.redis_client import redis_client
 from src.database.rows import DbRow
 from src.security.rate_limit import consume_rate_limit_counter
 from src.services.booking.base import BookingBase
-from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
+from src.services.booking.common import (
+    is_valid_customer_email,
+    is_valid_customer_phone,
+    iso,
+    new_id,
+    normalize_phone,
+    parse_utc,
+)
 from src.services.booking.errors import BookingError
 
 _id = new_id
@@ -99,6 +106,10 @@ class AccessService(BookingBase):
         normalized = contact.lower() if preferred_channel == "email" else normalize_phone(contact)
         if not normalized or (preferred_channel == "email") != ("@" in normalized):
             raise BookingError("INVALID_INPUT", "Thông tin liên hệ không phù hợp với kênh OTP.")
+        if preferred_channel == "email" and not is_valid_customer_email(contact):
+            raise BookingError("INVALID_INPUT", "Email phải đúng định dạng, tối đa 30 ký tự trước @ và 20 ký tự sau @.")
+        if preferred_channel != "email" and not is_valid_customer_phone(contact):
+            raise BookingError("INVALID_INPUT", "Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng 0.")
         destination_hash = self._hash(normalized, "destination")
         self._check_rate_counter(
             bucket_key=f"otp_request:contact:{destination_hash}",

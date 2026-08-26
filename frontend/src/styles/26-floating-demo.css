@@ -1,6 +1,7 @@
 /* 26-floating-demo.css — Floating Demo Bar cho môi trường demo, dùng token chung. */
 .floating-demo-bar { 
   position: fixed;
+  position: fixed;
   z-index: 90;
   right: 24px;
   bottom: calc(22px + env(safe-area-inset-bottom));
@@ -15,35 +16,37 @@
 }
 .floating-demo-bar.is-anchored-left { transform-origin: left bottom; }
 .floating-demo-bar.is-anchored-right { transform-origin: right bottom; }
+.floating-demo-bar.is-anchored-top.is-anchored-left { transform-origin: left top; }
+.floating-demo-bar.is-anchored-top.is-anchored-right { transform-origin: right top; }
 
 .floating-demo-bar__toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  position: absolute;
-  top: 11px;
-  right: 11px;
+  display: inline-grid;
+  place-items: center;
   width: 30px;
   height: 30px;
   padding: 0;
+  border: none;
   color: var(--muted);
   background: rgba(23, 26, 32, 0.06);
   border-radius: 50%;
   cursor: pointer;
+  transition: color 0.2s var(--ease-soft), background 0.2s var(--ease-soft);
 }
 
 .floating-demo-bar__panel-actions { position: absolute; top: 11px; right: 11px; display: flex; gap: 5px; }
 .floating-demo-bar__panel-actions .floating-demo-bar__toggle { position: static; }
 .floating-demo-bar__exit,
 .floating-demo-bar__compact-exit,
-.floating-demo-bar__drag-handle { display: inline-grid; width: 30px; height: 30px; padding: 0; place-items: center; color: var(--muted); background: rgba(23, 26, 32, 0.06); border-radius: 50%; cursor: pointer; }
+.floating-demo-bar__drag-handle { display: inline-grid; width: 30px; height: 30px; padding: 0; border: none; place-items: center; color: var(--muted); background: rgba(23, 26, 32, 0.06); border-radius: 50%; cursor: pointer; transition: color 0.2s var(--ease-soft), background 0.2s var(--ease-soft); }
 .floating-demo-bar__exit:hover,
 .floating-demo-bar__compact-exit:hover { color: var(--danger); background: rgba(210, 65, 65, 0.1); }
+.floating-demo-bar__toggle:hover,
+.floating-demo-bar__drag-handle:hover { color: var(--ink); background: rgba(23, 26, 32, 0.12); }
 
 /* Thanh demo là lớp overlay độc lập: tuyệt đối không thay đổi chiều cao của
    composer/chat. Người trình diễn có thể thu gọn nó bất kỳ lúc nào. */
 .floating-demo-bar.is-collapsed { width: max-content; border-radius: 999px; }
-.floating-demo-bar__compact-actions { display: flex; align-items: center; gap: 4px; padding: 4px; }
+.floating-demo-bar__compact-actions { display: flex; align-items: center; gap: 5px; padding: 4px; }
 .floating-demo-bar__drag-handle {
   color: var(--ink-soft);
   cursor: grab;
@@ -52,8 +55,15 @@
 }
 .floating-demo-bar__drag-handle:active { cursor: grabbing; }
 .floating-demo-bar__primary--compact { min-height: 34px; padding: 0 11px; font-size: 0.68rem; }
-.floating-demo-bar.is-collapsed .floating-demo-bar__icon-button { width: 34px; min-height: 34px; }
-.floating-demo-bar.is-collapsed .floating-demo-bar__compact-exit { width: 34px; height: 34px; }
+.floating-demo-bar.is-collapsed .floating-demo-bar__icon-button,
+.floating-demo-bar.is-collapsed .floating-demo-bar__toggle,
+.floating-demo-bar.is-collapsed .floating-demo-bar__compact-exit,
+.floating-demo-bar.is-collapsed .floating-demo-bar__drag-handle {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  position: static;
+}
 
 .floating-demo-bar__content { padding: 11px; }
 .floating-demo-bar__head { display: flex; align-items: end; justify-content: space-between; gap: 14px; padding: 1px 3px 10px; }
