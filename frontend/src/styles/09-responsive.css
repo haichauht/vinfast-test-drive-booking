@@ -9,10 +9,6 @@
     padding-inline: 0;
   }
 
-  .site-nav__links a:nth-child(3) {
-    display: none;
-  }
-
   .home-hero {
     grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
   }
