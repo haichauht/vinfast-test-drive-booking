@@ -95,6 +95,7 @@
 .floating-demo-bar__logs li span { display: grid; gap: 1px; }
 .floating-demo-bar__logs li b { color: var(--ink); font-size: 0.58rem; font-weight: 750; letter-spacing: 0.03em; text-transform: uppercase; }
 .floating-demo-bar__primary,.floating-demo-bar__icon-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px; border-radius: 999px; cursor: pointer; transition: transform 0.35s var(--ease-heavy), background 0.35s var(--ease-heavy); }
+.floating-demo-bar.is-collapsed .floating-demo-bar__primary--compact { height: 32px; min-height: 32px; }
 .floating-demo-bar__primary { color: var(--surface); background: var(--blue); font-size: 0.74rem; font-weight: 720; }
 .floating-demo-bar__icon-button { color: var(--ink-soft); background: rgba(23, 26, 32, 0.07); }
 .floating-demo-bar__primary:hover,.floating-demo-bar__icon-button:hover { transform: translateY(-2px); }
