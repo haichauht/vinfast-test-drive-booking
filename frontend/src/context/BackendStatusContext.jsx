@@ -6,7 +6,7 @@
  *
  * Trạng thái trả về (bookingStatus): 'checking' → 'ready' hoặc 'unavailable'.
  * Ai đang dùng:
- * - App.jsx: 'checking' hiện màn đang kết nối, 'unavailable' chặn toàn site.
+ * - App.jsx: cung cấp trạng thái chung mà không chặn nội dung marketing.
  * - AppShell.jsx: 'unavailable' hiện dải băng vàng cảnh báo trên đầu trang.
  * - BookingPage.jsx: khoá các nút đặt lịch khi backend chết.
  *
