@@ -2,8 +2,8 @@
 .floating-demo-bar { 
   position: fixed;
   z-index: 90;
-  top: 82px;
-  right: 18px;
+  top: 20px;
+  right: 34px;
   bottom: auto;
   width: min(390px, calc(100vw - 54px));
   border: 1px solid rgba(23, 26, 32, 0.1);
@@ -52,9 +52,6 @@
 /* Thanh demo là lớp overlay độc lập: tuyệt đối không thay đổi chiều cao của
    composer/chat. Người trình diễn có thể thu gọn nó bất kỳ lúc nào. */
 .floating-demo-bar.is-collapsed {
-  /* Header card starts at 4px and is 68px tall; this centres the compact
-     controller on the same baseline as the “Trang chủ” label. */
-  top: 20px;
   width: max-content;
   border-radius: 999px;
 }
