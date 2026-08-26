@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 from src.services.booking import BookingError
 
@@ -129,6 +131,21 @@ def test_search_reschedule_never_silently_selects_another_date(booking_service, 
     assert result["status"] == "no_slots_on_requested_date"
     assert result["slots"] == []
     assert result["alternatives"]
+
+
+def test_search_reschedule_interprets_a_naive_clock_as_utc(booking_service, access_factory):
+    access = access_factory("reschedule")
+    booking_service.now = lambda: datetime(2026, 8, 5, 18, 0)
+
+    result = booking_service.search_reschedule_options(
+        access["booking"]["booking_id"],
+        access["session"]["access_session_token"],
+        date_type="relative_to_today",
+        day_offset=0,
+        target_time="17:00",
+    )
+
+    assert result["resolved_target"]["date"] == "2026-08-06"
 
 
 def test_search_reschedule_requires_clarification_for_ambiguous_date(booking_service, access_factory):

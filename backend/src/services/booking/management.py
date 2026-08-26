@@ -131,7 +131,10 @@ class ManagementService(BookingBase):
             if day_offset is None or not isinstance(day_offset, int) or not 0 <= day_offset <= 60:
                 raise BookingError("INVALID_INPUT", "Độ lệch ngày đổi lịch không hợp lệ.")
             reference = (
-                self.now().astimezone(showroom_timezone)
+                # Production uses an aware UTC clock, but tests/custom clocks
+                # may be naive.  Persisted booking timestamps and a naive clock
+                # both follow the application's UTC convention.
+                parse_utc(self.now()).astimezone(showroom_timezone)
                 if date_type == "relative_to_today"
                 else parse_utc(current["current_start_at"]).astimezone(showroom_timezone)
             )
