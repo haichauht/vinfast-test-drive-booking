@@ -373,7 +373,8 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             for key in (
                 "reschedule_target_date",
                 "reschedule_target_time",
-                "reschedule_days_after_current_booking",
+                "reschedule_date_type",
+                "reschedule_day_offset",
             )
             if raw_intent_entities.get(key) is not None
         }
@@ -386,6 +387,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             action_data=protected.action_data,
             action_error=protected.action_error,
             intent=str(result.get("intent") or ""),
+            sub_intent=str((result.get("metadata") or {}).get("sub_intent") or ""),
             intent_entities=public_intent_entities,
             ui=_chat_ui_directive(result),
         )
@@ -637,6 +639,7 @@ async def demo_action(body: DemoActionRequest, request: Request):
         "get_details": ("get_booking_details", lambda **kw: get_booking_details.invoke(kw)),
         "list_bookings": ("list_bookings", booking_service.list_bookings),
         "update_details": ("UpdateBookingDetailsCommand", booking_service.update_booking_details),
+        "search_reschedule": ("SearchRescheduleOptionsQuery", booking_service.search_reschedule_options),
         "hold_reschedule": ("HoldRescheduleSlotCommand", booking_service.hold_reschedule_slot),
         "confirm_reschedule": ("ConfirmRescheduleCommand", booking_service.confirm_reschedule),
         "cancel_booking": ("CancelBookingCommand", booking_service.cancel_booking),

@@ -16,6 +16,27 @@ def test_update_booking_details_with_correct_permission(booking_service, access_
     assert result["booker"]["email"] == "chau@example.com"
 
 
+@pytest.mark.parametrize(
+    "booker_patch",
+    [
+        {"full_name": "A" * 31},
+        {"email": f"{'a' * 31}@example.com"},
+        {"phone": "09012345678"},
+    ],
+)
+def test_update_booking_details_rejects_customer_fields_over_limits(booking_service, access_factory, booker_patch):
+    access = access_factory("update_details")
+
+    with pytest.raises(BookingError) as error:
+        booking_service.update_booking_details(
+            access["booking"]["booking_id"],
+            access["session"]["access_session_token"],
+            booker_patch=booker_patch,
+        )
+
+    assert error.value.code == "INVALID_INPUT"
+
+
 # test case of Chau + kiểm tra token lookup không được sửa thông tin Booker Driver
 def test_update_booking_details_rejects_wrong_permission(booking_service, access_factory):
     access = access_factory("lookup")
@@ -48,6 +69,81 @@ def test_hold_reschedule_slot_copies_booking_data(booking_service, access_factor
     assert draft["driver_person_id"] == access["booking"]["draft"]["driver_person_id"]
     assert draft["license_declaration"]["has_driving_license"] is True
     assert draft["is_ready_to_confirm"] is True
+
+
+def test_search_reschedule_returns_exact_match_on_requested_date(booking_service, access_factory):
+    access = access_factory("reschedule")
+
+    result = booking_service.search_reschedule_options(
+        access["booking"]["booking_id"],
+        access["session"]["access_session_token"],
+        date_type="explicit",
+        target_date="2026-08-05",
+        target_time="17:00",
+    )
+
+    assert result["status"] == "exact_match"
+    assert result["match"]["difference_minutes"] == 0
+    assert result["match"]["auto_hold_allowed"] is True
+    assert result["match"]["slot"]["start_at"].startswith("2026-08-05T17:00")
+
+
+def test_search_reschedule_allows_nearest_match_only_within_threshold(booking_service, access_factory):
+    access = access_factory("reschedule")
+
+    near = booking_service.search_reschedule_options(
+        access["booking"]["booking_id"],
+        access["session"]["access_session_token"],
+        date_type="explicit",
+        target_date="2026-08-05",
+        target_time="18:30",
+    )
+    far = booking_service.search_reschedule_options(
+        access["booking"]["booking_id"],
+        access["session"]["access_session_token"],
+        date_type="explicit",
+        target_date="2026-08-05",
+        target_time="22:00",
+    )
+
+    assert near["status"] == "nearest_match"
+    assert near["match"]["difference_minutes"] == 30
+    assert near["match"]["auto_hold_allowed"] is True
+    assert far["status"] == "confirmation_required"
+    assert far["match"]["difference_minutes"] == 180
+    assert far["match"]["auto_hold_allowed"] is False
+
+
+def test_search_reschedule_never_silently_selects_another_date(booking_service, access_factory):
+    access = access_factory("reschedule")
+
+    result = booking_service.search_reschedule_options(
+        access["booking"]["booking_id"],
+        access["session"]["access_session_token"],
+        date_type="relative_to_booking",
+        day_offset=1,
+        target_time="17:00",
+    )
+
+    assert result["resolved_target"]["date"] == "2026-08-06"
+    assert result["status"] == "no_slots_on_requested_date"
+    assert result["slots"] == []
+    assert result["alternatives"]
+
+
+def test_search_reschedule_requires_clarification_for_ambiguous_date(booking_service, access_factory):
+    access = access_factory("reschedule")
+
+    result = booking_service.search_reschedule_options(
+        access["booking"]["booking_id"],
+        access["session"]["access_session_token"],
+        date_type="ambiguous",
+        target_time="14:00",
+    )
+
+    assert result["status"] == "clarification_required"
+    assert result["missing_fields"] == ["target_date"]
+    assert "match" not in result
 
 
 # test case of Chau + kiểm tra xác nhận dời lịch đóng booking cũ mở booking mới và chuyển slot

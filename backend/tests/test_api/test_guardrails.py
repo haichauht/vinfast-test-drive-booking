@@ -282,6 +282,7 @@ async def test_chat_replaces_system_prompt_leak_at_public_api(client, monkeypatc
         "verify_access",
         "get_details",
         "update_details",
+        "search_reschedule",
         "hold_reschedule",
         "confirm_reschedule",
         "cancel_booking",
