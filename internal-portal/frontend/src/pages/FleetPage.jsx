@@ -54,10 +54,10 @@ export function FleetPage({ token, user }) {
       <div className="page-heading"><div><h2>Đội xe demo</h2><p>Quản lý trạng thái vận hành; điều chuyển showroom chỉ có ở tài khoản Operations Admin.</p></div></div>
       <div className="filter-bar">
         <Funnel size={20} />
-        {user.role === 'operations_admin' && <select value={showroomId} onChange={(event) => setShowroomId(event.target.value)}><option value="">Tất cả showroom</option>{(showrooms.data || []).filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
-        <select value={modelId} onChange={(event) => { setModelId(event.target.value); setVariantId('') }}><option value="">Tất cả model</option>{models.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <select value={variantId} onChange={(event) => setVariantId(event.target.value)}><option value="">Tất cả phiên bản</option>{variants.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Tất cả trạng thái</option>{vehicleStatuses.slice(1).map((item) => <option key={item} value={item}>{item}</option>)}</select>
+        {user.role === 'operations_admin' && <select value={showroomId} onChange={(event) => setShowroomId(event.target.value)} aria-label="Lọc xe theo showroom"><option value="">Tất cả showroom</option>{(showrooms.data || []).filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
+        <select value={modelId} onChange={(event) => { setModelId(event.target.value); setVariantId('') }} aria-label="Lọc xe theo model"><option value="">Tất cả model</option>{models.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <select value={variantId} onChange={(event) => setVariantId(event.target.value)} aria-label="Lọc xe theo phiên bản"><option value="">Tất cả phiên bản</option>{variants.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Lọc xe theo trạng thái"><option value="">Tất cả trạng thái</option>{vehicleStatuses.slice(1).map((item) => <option key={item} value={item}>{item}</option>)}</select>
         {(modelId || variantId || status || (showroomId && user.role === 'operations_admin')) && <button className="text-button" onClick={clearFilters}>Xóa bộ lọc</button>}
       </div>
       {message && <div className="form-success banner-message">{message}</div>}{error && <div className="form-error banner-message">{error}</div>}

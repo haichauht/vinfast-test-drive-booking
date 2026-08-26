@@ -12,6 +12,8 @@ export function NotificationCenter({ token, onNavigate }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const rootRef = useRef(null)
+  const triggerRef = useRef(null)
+  const panelRef = useRef(null)
 
   const loadNotifications = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true)
@@ -43,8 +45,23 @@ export function NotificationCenter({ token, onNavigate }) {
     const closeOnOutsideClick = (event) => {
       if (!rootRef.current?.contains(event.target)) setOpen(false)
     }
+    const closeOnEscape = (event) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setOpen(false)
+      triggerRef.current?.focus({ preventScroll: true })
+    }
+    const focusFrame = window.requestAnimationFrame(() => {
+      const firstAction = panelRef.current?.querySelector('button:not([disabled])')
+      ;(firstAction || panelRef.current)?.focus({ preventScroll: true })
+    })
     document.addEventListener('pointerdown', closeOnOutsideClick)
-    return () => document.removeEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
   }, [open])
 
   const openPanel = () => {
@@ -83,11 +100,13 @@ export function NotificationCenter({ token, onNavigate }) {
   return (
     <div className="notification-center" ref={rootRef}>
       <button
+        ref={triggerRef}
         className={`icon-button notification-trigger ${open ? 'notification-trigger--active' : ''}`}
         type="button"
         onClick={openPanel}
         aria-label="Thông báo"
         aria-expanded={open}
+        aria-controls="internal-notification-panel"
         title="Thông báo"
       >
         <Bell size={20} weight={unreadCount ? 'fill' : 'regular'} />
@@ -95,7 +114,7 @@ export function NotificationCenter({ token, onNavigate }) {
       </button>
 
       {open && (
-        <div className="notification-panel" role="dialog" aria-label="Thông báo nội bộ">
+        <div ref={panelRef} id="internal-notification-panel" className="notification-panel" role="dialog" aria-label="Thông báo nội bộ" tabIndex={-1}>
           <div className="notification-panel__header">
             <div>
               <strong>Thông báo</strong>
