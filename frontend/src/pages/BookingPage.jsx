@@ -161,6 +161,30 @@ const driveCars = []
 const BOOKING_UI_STATE_KEY = 'vinfast:booking-ui-state'
 const DRIVER_INVITATION_HISTORY_KEY = 'vinfastDriverInvitationToken'
 const BOOKING_PREPARATION_GREETING = 'ViVi sẽ đồng hành cùng bạn chuẩn bị cho buổi lái thử. Mình có thể giúp Anh/Chị chuẩn bị những nội dung nên ưu tiên trải nghiệm trên xe, các điểm cần trao đổi với tư vấn viên và checklist trước giờ hẹn. Anh/Chị có thể chia sẻ thêm về nhu cầu và cách mình dự định sử dụng xe trong thực tế; từ đó, ViVi sẽ gợi ý những tình huống và tiêu chí nên tập trung kiểm tra trong buổi lái thử để sát với nhu cầu của Anh/Chị hơn.'
+const VIETNAM_SLOT_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Ho_Chi_Minh',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+const getVietnamSlotDateTime = (value) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const values = Object.fromEntries(
+    VIETNAM_SLOT_DATE_TIME_FORMATTER.formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  )
+  if (!values.year || !values.month || !values.day || values.hour === undefined || !values.minute) return null
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    minutes: Number(values.hour) * 60 + Number(values.minute),
+  }
+}
 
 const driverGreeting = ({ driver, booking }) => {
   const name = driver?.name || 'bạn'
@@ -172,6 +196,8 @@ const driverGreeting = ({ driver, booking }) => {
 const extractRescheduleIntent = (text = '', intentEntities = null) => {
   let targetDate = intentEntities?.reschedule_target_date || ''
   let targetTime = intentEntities?.reschedule_target_time || ''
+  const codeMatch = (text || '').toUpperCase().match(/\b(VF[A-Z0-9]{6,16})\b/)
+  const bookingCode = intentEntities?.booking_code || (codeMatch ? codeMatch[1] : '')
   if (!targetDate || !targetTime) {
     const lower = (text || '').toLowerCase()
     const dateMatch = lower.match(/(?:sang|ngày|ngay|vao|vào)\s+(\d{1,2})(?:[\/\-\.](\d{1,2}))?/)
@@ -195,7 +221,7 @@ const extractRescheduleIntent = (text = '', intentEntities = null) => {
       targetTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
     }
   }
-  return { targetDate, targetTime }
+  return { targetDate, targetTime, bookingCode }
 }
 
 const takeDriverInvitationToken = () => {
@@ -778,6 +804,7 @@ export function BookingPage() {
       : 'Lịch lái thử'
     return {
       ...booking,
+      bookingCode: booking.booking_code || booking.bookingCode || '',
       display_time: displayTime,
       display_label: `${index + 1}. ${booking.booking_code || 'Lịch lái thử'} - ${displayTime}${booking.vehicle_name ? ` - ${booking.vehicle_name}` : ''}${booking.showroom_name ? ` tại ${booking.showroom_name}` : ''}`,
     }
@@ -1005,9 +1032,10 @@ export function BookingPage() {
         setAccessError('')
         setAccessSecondsLeft(0)
         setResendSecondsLeft(0)
+        const prefilledCode = pendingRescheduleIntentRef.current?.bookingCode || toolInput.booking_code || ''
         setAccessValue((current) => ({
           ...current,
-          bookingCode: '',
+          bookingCode: prefilledCode || current.bookingCode || '',
           email: '',
           otpCode: '',
         }))
@@ -1720,6 +1748,7 @@ export function BookingPage() {
         })),
         userLocation,
         bookingId: bookingId || null,
+        pendingReschedule: pendingRescheduleIntentRef.current,
         channel: 'booking',
         })
       if (isDriverChat) {
@@ -1728,10 +1757,14 @@ export function BookingPage() {
         return
       }
       const extractedReschedule = extractRescheduleIntent(value, result.intent_entities)
-      if (result.intent === 'booking_reschedule' || extractedReschedule.targetDate || extractedReschedule.targetTime || /đổi\s*lịch|dời\s*lịch|chuyển\s*lịch/i.test(value)) {
+      if (result.intent === 'booking_reschedule' || extractedReschedule.targetDate || extractedReschedule.targetTime || extractedReschedule.bookingCode || /đổi\s*lịch|dời\s*lịch|chuyển\s*lịch/i.test(value)) {
+        const previousIntent = pendingRescheduleIntentRef.current || {}
         pendingRescheduleIntentRef.current = {
-          reschedule_target_date: extractedReschedule.targetDate || result.intent_entities?.reschedule_target_date || '',
-          reschedule_target_time: extractedReschedule.targetTime || result.intent_entities?.reschedule_target_time || '',
+          reschedule_date_type: result.intent_entities?.reschedule_date_type ?? previousIntent.reschedule_date_type ?? '',
+          reschedule_day_offset: result.intent_entities?.reschedule_day_offset ?? previousIntent.reschedule_day_offset ?? null,
+          reschedule_target_date: extractedReschedule.targetDate || result.intent_entities?.reschedule_target_date || previousIntent.reschedule_target_date || '',
+          reschedule_target_time: extractedReschedule.targetTime || result.intent_entities?.reschedule_target_time || previousIntent.reschedule_target_time || '',
+          bookingCode: extractedReschedule.bookingCode || result.intent_entities?.booking_code || previousIntent.bookingCode || '',
         }
       }
       if (mentionedCar && result.intent === 'vehicle_info') {
@@ -1935,10 +1968,9 @@ export function BookingPage() {
         return
       }
 
-      const enteredCode = (accessValue.bookingCode || '').trim().toLowerCase()
-      const targetByCode = enteredCode ? formattedBookings.find((b) => (b.bookingCode || '').toLowerCase() === enteredCode) : null
-      const targetById = verified.booking_id ? formattedBookings.find((b) => b.id === verified.booking_id) : null
-      const specificTarget = targetByCode || targetById
+      const enteredCode = (accessValue.bookingCode || pendingRescheduleIntentRef.current?.bookingCode || '').trim().toLowerCase()
+      const targetByCode = enteredCode ? formattedBookings.find((b) => ((b.booking_code || b.bookingCode || '')).toLowerCase() === enteredCode) : null
+      const specificTarget = targetByCode
 
       if (formattedBookings.length > 1 && !specificTarget) {
         setAccessProfile({
@@ -2155,39 +2187,48 @@ export function BookingPage() {
         const targetDate = targetIntent.reschedule_target_date
         const targetTime = targetIntent.reschedule_target_time
         const dateSlots = availableSlots.filter((s) => {
-          const sDate = (s.start_at || s.startAt || s.date || '').slice(0, 10)
-          return sDate === targetDate
+          const slotDateTime = getVietnamSlotDateTime(s.start_at || s.startAt)
+          return slotDateTime?.date === targetDate
         })
-        const candidatePool = dateSlots.length > 0 ? dateSlots : availableSlots
 
-        let bestSlot = candidatePool[0]
-        if (targetTime) {
-          const [tH, tM] = targetTime.split(':').map(Number)
-          const targetMinutes = (tH || 0) * 60 + (tM || 0)
+        if (dateSlots.length > 0) {
+          let bestSlot = dateSlots[0]
+          if (targetTime) {
+            const [tH, tM] = targetTime.split(':').map(Number)
+            const targetMinutes = (tH || 0) * 60 + (tM || 0)
           let minDiff = Infinity
-          for (const s of candidatePool) {
-            const dateObj = new Date(s.start_at || s.startAt)
-            const sMinutes = dateObj.getHours() * 60 + dateObj.getMinutes()
-            const diff = Math.abs(sMinutes - targetMinutes)
-            if (diff < minDiff) {
-              minDiff = diff
-              bestSlot = s
+          for (const s of dateSlots) {
+            const slotDateTime = getVietnamSlotDateTime(s.start_at || s.startAt)
+            if (!slotDateTime) continue
+            const sMinutes = slotDateTime.minutes
+              const diff = Math.abs(sMinutes - targetMinutes)
+              if (diff < minDiff) {
+                minDiff = diff
+                bestSlot = s
+              }
             }
           }
-        }
 
-        if (bestSlot) {
+          if (bestSlot) {
+            pendingRescheduleIntentRef.current = null
+            const held = await holdVerifiedReschedule({ bookingId: targetProfile.bookingId, slotId: bestSlot.id, accessToken: targetProfile.accessToken })
+            setRescheduleState({ step: 'pending', car, showroom, slots, slot: bestSlot, newBookingId: held.booking_id })
+            setRescheduleSecondsLeft(Math.max(0, Math.ceil((new Date(held.hold_expires_at).getTime() - Date.now()) / 1000)))
+            setExpandedBookingId(targetProfile.bookingId)
+            setMobileSurface('workspace')
+            dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
+            const startsAt = new Date(bestSlot.start_at || bestSlot.startAt)
+            const timeStr = startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+            const dateStr = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(startsAt)
+            addMessage('assistant', `ViVi đã tìm thấy khung giờ ${timeStr} (${dateStr}) phù hợp nhất với yêu cầu và đã giữ tạm trong 5 phút. Bạn kiểm tra phiếu bên cạnh và bấm “Xác nhận đổi lịch” nhé!`)
+            return
+          }
+        } else {
           pendingRescheduleIntentRef.current = null
-          const held = await holdVerifiedReschedule({ bookingId: targetProfile.bookingId, slotId: bestSlot.id, accessToken: targetProfile.accessToken })
-          setRescheduleState({ step: 'pending', car, showroom, slots, slot: bestSlot, newBookingId: held.booking_id })
-          setRescheduleSecondsLeft(Math.max(0, Math.ceil((new Date(held.hold_expires_at).getTime() - Date.now()) / 1000)))
-          setExpandedBookingId(targetProfile.bookingId)
-          setMobileSurface('workspace')
-          dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
-          const startsAt = new Date(bestSlot.start_at || bestSlot.startAt)
-          const timeStr = startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
-          const dateStr = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(startsAt)
-          addMessage('assistant', `ViVi đã tìm thấy khung giờ ${timeStr} (${dateStr}) phù hợp nhất với yêu cầu và đã giữ tạm trong 5 phút. Bạn kiểm tra phiếu bên cạnh và bấm “Xác nhận đổi lịch” nhé!`)
+          setRescheduleState({ step: 'schedule', car, showroom, slots })
+          dispatchInteraction({ type: InteractionEvent.RESCHEDULE_SLOT })
+          const [, tMonth, tDay] = targetDate.split('-')
+          addMessage('assistant', `Ngày ${tDay}/${tMonth} hiện chưa có khung giờ trống tại ${showroom.name}. ViVi đã mở bảng lịch các ngày lân cận để bạn dễ dàng chọn lại khung giờ phù hợp nhé!`)
           return
         }
       }
@@ -3029,32 +3070,53 @@ export function BookingPage() {
                     <div className="booking-history__details">
                       <p><span>Mẫu xe</span>{details.vehicleName}</p>
                       <p><span>Showroom</span>{details.showroomName}<small>{details.showroomAddress}</small></p>
-                      <p><span>Thời gian</span>{details.slotTime} · {details.slotDate}</p>
-                      {rescheduleState?.step === 'pending' && (
-                        <p className="booking-history__hold">
-                          <span>Khung giờ mới đang được giữ</span>
-                          Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}
-                        </p>
-                      )}
+                      <p><span>Thời gian hiện tại</span>{details.slotTime} · {details.slotDate}</p>
+                      {rescheduleState?.step === 'pending' && rescheduleState.slot && (() => {
+                        const startsAt = new Date(rescheduleState.slot.start_at || rescheduleState.slot.startAt)
+                        const timeStr = startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+                        const dateStr = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(startsAt)
+                        return (
+                          <div className="booking-history__hold">
+                            <p style={{ display: 'flex', justifyContent: 'space-between', margin: 0 }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Khung giờ mới đang giữ tạm</span>
+                              <small style={{ fontSize: '0.78rem', fontWeight: 600 }}>Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}</small>
+                            </p>
+                            <strong style={{ fontSize: '0.94rem', fontWeight: 600 }}>{timeStr} · {dateStr}</strong>
+                          </div>
+                        )
+                      })()}
                       <p><span>Tư vấn viên</span>{details.advisorName}<small>{details.advisorPhone || 'Chưa có số điện thoại'}</small></p>
                       <div className="booking-history__actions">
                         <span className="booking-history__actions-main">
-                          {allowedActions.includes('reschedule') && (
-                            <button type="button" className="booking-history__action" onClick={() => beginAccessibleReschedule(booking)} aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}>
-                              <PencilSimple size={13} weight="bold" /> Đổi giờ
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            className="booking-history__action"
+                            onClick={() => {
+                              if (rescheduleState?.car && rescheduleState?.showroom && rescheduleState?.slots) {
+                                setRescheduleState((current) => ({ ...current, step: 'schedule' }))
+                                dispatchInteraction({ type: InteractionEvent.RESCHEDULE_SLOT })
+                              } else {
+                                beginAccessibleReschedule(booking)
+                              }
+                            }}
+                            aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}
+                          >
+                            <PencilSimple size={13} weight="bold" aria-hidden="true" />
+                            <span>{rescheduleState?.step === 'pending' ? 'Đổi sang ngày giờ khác' : 'Đổi giờ'}</span>
+                          </button>
+
                           {details.allowedActions?.includes('cancel') && (
-                            <button type="button" className="booking-history__action booking-history__action--danger" onClick={() => beginAccessibleCancellation(booking)} aria-label={`Huỷ lịch ${bookingCodeLabel}`}>
-                              <Prohibit size={13} weight="bold" /> Huỷ lịch
+                            <button
+                              type="button"
+                              className="booking-history__action booking-history__action--danger"
+                              onClick={() => beginAccessibleCancellation(booking)}
+                              aria-label={`Huỷ lịch ${bookingCodeLabel}`}
+                            >
+                              <Prohibit size={13} weight="bold" aria-hidden="true" />
+                              <span>Huỷ lịch</span>
                             </button>
                           )}
                         </span>
-                        {rescheduleState?.step === 'pending' && (
-                          <button type="button" className="booking-history__update-mobile" onClick={openRescheduleConfirmation}>
-                            Cập nhật thông tin <ArrowRight size={14} weight="bold" aria-hidden="true" />
-                          </button>
-                        )}
                       </div>
                     </div>
                   )}

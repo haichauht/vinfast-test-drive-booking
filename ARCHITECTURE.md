@@ -209,6 +209,8 @@ Nhóm này đi qua `/test-drive/actions`, không cần LLM. Form quản lý dùn
 
 Reschedule được thực hiện bằng cách hold một slot mới thành draft booking, sau đó confirm chuyển lịch và giữ booking code theo chuỗi lịch hiện hành. Cancel/reschedule chỉ áp dụng cho trạng thái được phép và đều ghi audit/idempotency. Access session mang permission theo purpose; xác thực OTP không tự cấp mọi quyền quản lý.
 
+Với yêu cầu đổi lịch qua chat, classifier chỉ trích xuất biểu thức thời gian có cấu trúc (`explicit`, `relative_to_today`, `relative_to_booking`, hoặc `ambiguous`) và giờ địa phương 24h. Sau OTP, `ManagementService.search_reschedule_options()` mới resolve ngày theo timezone của showroom, truy vấn inventory đúng ngày và áp dụng policy: chỉ auto-hold khi khớp chính xác hoặc lệch tối đa 60 phút; lệch xa, thiếu dữ kiện hoặc hết slot trong ngày đều yêu cầu người dùng chọn/xác nhận và không tự chuyển sang ngày khác. Frontend không parse ngôn ngữ hay tự xếp hạng slot; pending intent chỉ được lưu trong `sessionStorage` để phục hồi UX và không có quyền quyết định inventory.
+
 ### Profile, người đặt và người lái
 
 Mỗi booking có thể có hai `people`: booker và driver. Nếu đặt hộ, frontend gửi contact của driver riêng thay vì tự sao chép contact của booker. Sau confirm, profile ẩn danh được promote từ booking; sau OTP, profile được promote từ verified identity. Driver invitation dùng token ngẫu nhiên chỉ lưu hash trong DB, revoke lời mời active cũ, có TTL và chỉ resolve khi driver vẫn gắn với booking `confirmed`/`checked_in`.
