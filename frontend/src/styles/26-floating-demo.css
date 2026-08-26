@@ -2,7 +2,7 @@
 .floating-demo-bar { 
   position: fixed;
   z-index: 90;
-  top: 10px;
+  top: 82px;
   right: 18px;
   bottom: auto;
   width: min(390px, calc(100vw - 54px));
@@ -52,6 +52,9 @@
 /* Thanh demo là lớp overlay độc lập: tuyệt đối không thay đổi chiều cao của
    composer/chat. Người trình diễn có thể thu gọn nó bất kỳ lúc nào. */
 .floating-demo-bar.is-collapsed {
+  /* Header card starts at 4px and is 68px tall; this centres the compact
+     controller on the same baseline as the “Trang chủ” label. */
+  top: 20px;
   width: max-content;
   border-radius: 999px;
 }
@@ -111,9 +114,10 @@
 @keyframes floating-demo-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 900px) {
-  /* React omits both elements on mobile; these rules are a defensive fallback
-     while the viewport is crossing the responsive breakpoint. */
-  .floating-demo-bar,
+  /* A new mobile session never exposes the demo entry point. If a desktop
+     demo crosses the breakpoint, React keeps this compact controller visible
+     so the presenter can still pause or exit instead of losing the flow. */
+  .floating-demo-bar:not(.is-collapsed),
   .recipient-modal__choice--demo { display: none !important; }
 }
 
