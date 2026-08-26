@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from src.dependencies import internal_portal_service
+from src.dependencies import internal_portal_service, profile_service
+from src.services.llm import summarize_user_profile
 
 from .auth import InternalPrincipal
 from .errors import InternalPortalError
@@ -253,6 +256,34 @@ def booking_detail(
     service: Annotated[InternalPortalService, Depends(get_internal_portal_service)],
 ):
     return service.get_booking(principal, booking_id)
+
+
+@router.get("/bookings/{booking_id}/sales-brief.md", response_class=PlainTextResponse)
+async def booking_sales_brief(
+    booking_id: str,
+    principal: Annotated[InternalPrincipal, Depends(current_principal)],
+    service: Annotated[InternalPortalService, Depends(get_internal_portal_service)],
+    refresh: bool = False,
+) -> PlainTextResponse:
+    """Return a scoped cached sales brief, regenerating it only when requested."""
+    booking = service.get_booking(principal, booking_id)
+    if booking["status"] not in {"confirmed", "cancelled"}:
+        raise HTTPException(status_code=409, detail="Sales brief is available only for confirmed or cancelled bookings")
+    cached = await asyncio.to_thread(profile_service.booking_profile_summary, booking_id)
+    if cached and not refresh:
+        return PlainTextResponse(
+            cached["summary"],
+            media_type="text/markdown; charset=utf-8",
+            headers={"X-Profile-Summary-Source": "cache", "X-Profile-Summary-Generated-At": cached["generated_at"]},
+        )
+    source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
+    markdown = await summarize_user_profile(source)
+    stored = await asyncio.to_thread(profile_service.save_booking_profile_summary, booking_id, markdown)
+    return PlainTextResponse(
+        stored["summary"],
+        media_type="text/markdown; charset=utf-8",
+        headers={"X-Profile-Summary-Source": "generated", "X-Profile-Summary-Generated-At": stored["generated_at"]},
+    )
 
 
 @router.get("/staff")

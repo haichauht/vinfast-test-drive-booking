@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
@@ -461,21 +461,6 @@ async def send_driver_invitation(booking_id: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=400, detail={"code": code, "message": messages.get(code, "Unable to create driver invitation")}
         ) from exc
-
-
-@router.get("/bookings/{booking_id}/profile-summary.md", response_class=PlainTextResponse)
-async def booking_profile_summary(booking_id: str) -> PlainTextResponse:
-    """Return the booking's booker/driver profile summary as Markdown."""
-    try:
-        source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
-        markdown = await summarize_user_profile(source)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Booking not found") from exc
-    except RuntimeError as exc:
-        if str(exc) == "LLM_NOT_CONFIGURED":
-            raise HTTPException(status_code=503, detail="Profile summary LLM is not configured") from exc
-        raise
-    return PlainTextResponse(markdown, media_type="text/markdown; charset=utf-8")
 
 
 @router.get("/status")

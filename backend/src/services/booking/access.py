@@ -212,12 +212,13 @@ class AccessService(BookingBase):
             provider_status = getattr(delivery, "provider_status", "unknown")
             retryable = bool(getattr(delivery, "retryable", True))
             logger.warning(
-                "otp.delivery_failed challenge_id=%s channel=%s provider=%s provider_status=%s retryable=%s",
+                "otp.delivery_failed challenge_id=%s channel=%s provider=%s provider_status=%s retryable=%s provider_response=%s",
                 challenge_id,
                 preferred_channel,
                 provider,
                 provider_status,
                 retryable,
+                getattr(delivery, "sanitized_response", {}),
             )
             self._invalidate_failed_delivery(challenge_id, booking["id"], preferred_channel, provider_status)
             raise BookingError(
