@@ -40,6 +40,7 @@ from zoneinfo import ZoneInfo
 
 from src.config import get_settings
 from src.services.booking.common import parse_utc
+from src.services.booking.public_invitation import public_invitation_url
 
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 WEEKDAYS_VI = ("Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật")
@@ -285,7 +286,7 @@ def _html_document(
         else ""
     )
 
-    return f"""<!doctype html>
+    document = f"""<!doctype html>
 <html lang="vi">
 <head>
 <meta charset="utf-8">
@@ -329,6 +330,7 @@ def _html_document(
 </table>
 </body>
 </html>"""
+    return document.replace("\n    \n", "\n\n")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -667,6 +669,12 @@ _CONFIRM_STYLE = """<style>
     .row-first { padding-top: 0 !important; }
     .btn-text { font-size: 11.5px !important; letter-spacing: 0.8px !important; }
     .btn-pad  { padding-left: 18px !important; padding-right: 18px !important; }
+    .dual-btn-cell-left  { padding-right: 3px !important; }
+    .dual-btn-cell-right { padding-left: 3px !important; }
+    .dual-btn-pad { padding: 13px 5px !important; }
+    .dual-btn-text { font-size: 11px !important; letter-spacing: 0.15px !important; white-space: nowrap !important; }
+    .dual-btn-full { display: none !important; }
+    .dual-btn-short { display: inline !important; }
     /* Căn đều ở bề ngang hẹp làm chữ giãn thưa loang lổ, trả về căn trái. */
     .just { text-align: left !important; }
     /* Card hẹp lại thì nửa chiếc xe chiếm gần hết nền, phải thu nhỏ. */
@@ -752,6 +760,55 @@ def _gold_button(url: str, label: str) -> str:
         f"font-size:13.5px;line-height:18px;font-weight:700;color:{_G_BLACK};letter-spacing:1.6px;"
         f'text-transform:uppercase;text-decoration:none;">{escape(label)}</a>'
         "</td></tr></table>"
+    )
+
+
+def _invitation_action_buttons(site_url: str, invitation_url: str) -> str:
+    """Two compact, email-safe CTAs that remain side by side on mobile."""
+
+    def button(
+        url: str,
+        full_label: str,
+        short_label: str,
+        *,
+        primary: bool,
+    ) -> str:
+        background = _G_GOLD_BTN if primary else _G_CARD
+        color = _G_BLACK if primary else _G_GOLD_BTN
+        pulse = " btn-pulse" if primary else ""
+        background_class = "bg-gold" if primary else "bg-card"
+        return (
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            f'bgcolor="{background}" class="{background_class}{pulse}" style="width:100%;background-color:{background};'
+            f'border:1px solid {_G_GOLD_BTN};border-radius:4px;">'
+            f'<tr><td class="dual-btn-pad" align="center" style="padding:15px 8px;font-family:{_G_BODY};">'
+            f'<a href="{escape(url)}" class="dual-btn-text" style="display:block;font-family:{_G_BODY};'
+            f'font-size:12px;line-height:18px;font-weight:700;color:{color};letter-spacing:0.25px;'
+            f'text-decoration:none;mso-line-height-rule:exactly;">'
+            f'<span class="dual-btn-full" style="font-family:{_G_BODY};">{escape(full_label)}</span>'
+            f'<span class="dual-btn-short" style="display:none;font-family:{_G_BODY};">{escape(short_label)}</span>'
+            '</a></td></tr></table>'
+        )
+
+    return (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        'style="width:100%;table-layout:fixed;"><tr>'
+        '<td class="dual-btn-cell-left" width="45%" valign="middle" style="width:45%;padding-right:5px;">'
+        f'{button(site_url, "Đến trang đặt lịch VinFast", "Trang đặt lịch", primary=False)}'
+        '</td>'
+        '<td class="dual-btn-cell-right" width="55%" valign="middle" style="width:55%;padding-left:5px;">'
+        f'{button(invitation_url, "Xem thiệp mời của bạn", "Xem thiệp mời", primary=True)}'
+        '</td></tr></table>'
+    )
+
+
+def _driver_preparation_link(url: str) -> str:
+    """Preserve the private driver-chat capability without adding a third button."""
+    return (
+        f'<div class="t-body" align="center" style="padding:0 0 18px;font-family:{_G_BODY};'
+        f'font-size:12px;line-height:19px;color:{_G_TEXT};">'
+        f'<a href="{escape(url)}" class="t-gold" style="color:{_G_GOLD};text-decoration:underline;">'
+        'Chuẩn bị riêng cho buổi lái thử cùng ViVi</a></div>'
     )
 
 
@@ -984,7 +1041,7 @@ def _dark_document(
     )
     site = get_settings().public_site_url.rstrip("/")
 
-    return f"""<!doctype html>
+    document = f"""<!doctype html>
 <html lang="vi" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
 <meta charset="utf-8">
@@ -1038,6 +1095,7 @@ def _dark_document(
 </table>
 </body>
 </html>"""
+    return document.replace("\n    \n", "\n\n")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1317,6 +1375,19 @@ def render_booking_dark_email(
     primary_button_label = (
         "Chuẩn bị lái thử cùng ViVi" if driver_invite_url else copy.button_label
     )
+    invitation_url = (
+        public_invitation_url(f["code"])
+        if notification_type in {
+            "booking_confirmation",
+            "reschedule_confirmation",
+            "reminder",
+            "reminder_24h",
+            "reminder_2h",
+            "booking_update",
+        }
+        and f["code"] != "-"
+        else ""
+    )
 
     address_html = (
         f'<a href="{escape(_maps_url(row))}" class="t-body" style="color:{_G_TEXT};'
@@ -1362,12 +1433,18 @@ def render_booking_dark_email(
             f'    <tr><td class="px a3" align="center" style="padding:28px 24px 0;">'
             f'{_gold_button(f"{site}/booking", "Kiểm tra thông tin lịch của bạn")}</td></tr>'
         )
+    card_buttons = _gold_button(primary_button_url, primary_button_label)
+    if invitation_url:
+        card_buttons = (
+            (_driver_preparation_link(driver_invite_url) if driver_invite_url else "")
+            + _invitation_action_buttons(f"{site}/", invitation_url)
+        )
     blocks.append(
         _card_block(
             title_lines=copy.card_title,
             rows_html=rows_html,
             note_html=copy.note,
-            button_html=_gold_button(primary_button_url, primary_button_label),
+            button_html=card_buttons,
             watermark_url=_watermark_url(row["model_code"]),
         )
     )
@@ -1393,27 +1470,30 @@ def render_booking_dark_email(
         year=f["start"].year,
     )
 
-    plain = "\n".join(
-        (
-            f"{copy.headline[0]} {copy.headline[1]}".upper(),
-            f"Khách: {f['recipient_name']}",
-            "",
-            f"Mã lịch hẹn: {f['code']}",
-            f"Thời gian hẹn: {f['when']}",
-            f"Xe lái thử: {f['model']} {row['variant_name'] or ''}".strip(),
-            "",
-            f"Showroom: {f['showroom']}",
-            f"Địa chỉ: {row['showroom_address'] or '-'}",
-            f"Bản đồ: {_maps_url(row)}",
-            "",
-            f"Email: {f['recipient_email'] or '-'}",
-            f"Điện thoại: {f['recipient_phone'] or '-'}",
-            _plain_staff_line(f),
-            "",
-            f"Trang đặt lịch VinFast: {site}/",
-            "Đây là thư gửi tự động, bạn vui lòng không trả lời thư này.",
-        )
-    )
+    plain_lines = [
+        f"{copy.headline[0]} {copy.headline[1]}".upper(),
+        f"Khách: {f['recipient_name']}",
+        "",
+        f"Mã lịch hẹn: {f['code']}",
+        f"Thời gian hẹn: {f['when']}",
+        f"Xe lái thử: {f['model']} {row['variant_name'] or ''}".strip(),
+        "",
+        f"Showroom: {f['showroom']}",
+        f"Địa chỉ: {row['showroom_address'] or '-'}",
+        f"Bản đồ: {_maps_url(row)}",
+        "",
+        f"Email: {f['recipient_email'] or '-'}",
+        f"Điện thoại: {f['recipient_phone'] or '-'}",
+        _plain_staff_line(f),
+        "",
+        f"Trang đặt lịch VinFast: {site}/",
+    ]
+    if invitation_url:
+        plain_lines.append(f"Xem thiệp mời của bạn: {invitation_url}")
+    if driver_invite_url:
+        plain_lines.append(f"Chuẩn bị riêng cùng ViVi: {driver_invite_url}")
+    plain_lines.append("Đây là thư gửi tự động, bạn vui lòng không trả lời thư này.")
+    plain = "\n".join(plain_lines)
     sms = (
         f"{copy.sms_lead} Mã {f['code']}, {f['when']}, {f['model']} tại {f['showroom']}. "
         "Chi tiết đầy đủ đã gửi vào email của bạn."
