@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from src.services.booking import BookingError
+from src.services.booking.common import iso
 
 
 # test case of Chau + kiểm tra token update_details được sửa thông tin Booker của booking confirmed
@@ -133,9 +134,18 @@ def test_search_reschedule_never_silently_selects_another_date(booking_service, 
     assert result["alternatives"]
 
 
-def test_search_reschedule_interprets_a_naive_clock_as_utc(booking_service, access_factory):
+def test_search_reschedule_interprets_a_naive_clock_as_utc(booking_service, booking_db, access_factory):
     access = access_factory("reschedule")
-    booking_service.now = lambda: datetime(2026, 8, 5, 18, 0)
+    test_now = datetime(2026, 8, 5, 18, 0)
+    booking_service.now = lambda: test_now
+    # The access fixture is created at FIXED_NOW (03/08), whereas this test
+    # intentionally advances the clock to inspect a timezone boundary.
+    # Keep the access gate valid so the assertion below reaches date handling.
+    with booking_db.transaction() as c:
+        c.execute(
+            "UPDATE booking_access_sessions SET expires_at=? WHERE booking_id=?",
+            (iso(test_now.replace(tzinfo=UTC) + timedelta(minutes=5)), access["booking"]["booking_id"]),
+        )
 
     result = booking_service.search_reschedule_options(
         access["booking"]["booking_id"],

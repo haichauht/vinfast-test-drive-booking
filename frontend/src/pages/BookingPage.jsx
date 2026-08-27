@@ -385,11 +385,15 @@ export function BookingPage() {
   const upsellCars = upsell.vehicleIds.map(getCar).filter(Boolean)
   const routeCar = getCar(searchParams.get('car'))
   const initialCar = routeCar || null
+  const restoredFloatingDemo = restoredUi.floatingDemo?.enabled && Number(restoredUi.floatingDemo?.step) > 0
+    ? restoredUi.floatingDemo
+    : null
   const shouldOfferResume = !isDriverChat && Boolean(
     !initialCar && (
       (restoredUi.stage && restoredUi.stage !== 'idle') ||
       (restoredUi.interaction?.phase && restoredUi.interaction.phase !== 'idle') ||
-      (Array.isArray(restoredUi.messages) && restoredUi.messages.length)
+      (Array.isArray(restoredUi.messages) && restoredUi.messages.length) ||
+      restoredFloatingDemo
     ),
   )
   const restoredLastConfirmed = useMemo(() => {
@@ -553,18 +557,18 @@ export function BookingPage() {
   const [inlineOtpMock, setInlineOtpMock] = useState('')
   const [inlineOtpChallengeId, setInlineOtpChallengeId] = useState('')
   const [demoCompletedModalOpen, setDemoCompletedModalOpen] = useState(false)
-  const [floatingDemoEnabled, setFloatingDemoEnabled] = useState(false)
-  const [floatingDemoStep, setFloatingDemoStep] = useState(0)
+  const [floatingDemoEnabled, setFloatingDemoEnabled] = useState(Boolean(restoredFloatingDemo))
+  const [floatingDemoStep, setFloatingDemoStep] = useState(() => Number(restoredFloatingDemo?.step) || 0)
   const [floatingDemoRunning, setFloatingDemoRunning] = useState(false)
   const [floatingDemoPaused, setFloatingDemoPaused] = useState(false)
   const [floatingDemoBusy, setFloatingDemoBusy] = useState(false)
   // Desktop demo opens as a complete, shallow controller spanning the two
   // header rows. It never participates in the ViVi header layout.
-  const [floatingDemoCollapsed, setFloatingDemoCollapsed] = useState(false)
-  const [floatingDemoStatus, setFloatingDemoStatus] = useState('')
+  const [floatingDemoCollapsed, setFloatingDemoCollapsed] = useState(Boolean(restoredFloatingDemo?.collapsed))
+  const [floatingDemoStatus, setFloatingDemoStatus] = useState(restoredFloatingDemo ? 'Đã khôi phục lượt demo trước đó' : '')
   const [floatingDemoLogs, setFloatingDemoLogs] = useState([])
   const floatingDemoRunRef = useRef(0)
-  const floatingDemoContextRef = useRef({})
+  const floatingDemoContextRef = useRef(restoredFloatingDemo?.isSimulated ? { isSimulated: true } : {})
   const floatingDemoPausedRef = useRef(false)
   const floatingDemoPauseWaitersRef = useRef([])
   const floatingDemoDelayWaitersRef = useRef([])
@@ -619,11 +623,6 @@ export function BookingPage() {
   const composerMode = useMemo(() => selectComposerMode(interaction), [interaction])
   const hasWorkspaceContent = Boolean(selectedCar || accessProfile)
   const workspaceVisible = workspaceModel.visible && hasWorkspaceContent && !workspaceHidden
-
-  useEffect(() => {
-    // Keep floating demo disabled by default; only activate if user clicks Demo in RecipientModal
-    setFloatingDemoEnabled(false)
-  }, [])
 
   // Keep a small on-screen trace for demos: it makes a failed API call
   // diagnosable without asking the presenter to open DevTools.
@@ -741,7 +740,7 @@ export function BookingPage() {
     if (isDriverChat) return
     const safeMessages = messages
       .filter((message) => !isSensitiveChatText(message.text || ''))
-      .map(({ id, role, text, type, emphasis }) => ({ id, role, text, type, emphasis }))
+      .map(({ id, role, text, type, emphasis, floatingDemoStep }) => ({ id, role, text, type, emphasis, floatingDemoStep }))
       .slice(-30)
     window.sessionStorage.setItem(BOOKING_UI_STATE_KEY, JSON.stringify({
       recipient,
@@ -753,8 +752,16 @@ export function BookingPage() {
       userLocation,
       messages: safeMessages,
       interaction: serializeInteractionState(interaction),
+      floatingDemo: floatingDemoEnabled && floatingDemoStep > 0
+        ? {
+            enabled: true,
+            step: floatingDemoStep,
+            collapsed: floatingDemoCollapsed,
+            isSimulated: Boolean(floatingDemoContextRef.current.isSimulated),
+          }
+        : null,
     }))
-  }, [recipient, selectedCarId, showroomId, nearbyShowrooms, slots, address, userLocation, messages, interaction, isDriverChat])
+  }, [recipient, selectedCarId, showroomId, nearbyShowrooms, slots, address, userLocation, messages, interaction, isDriverChat, floatingDemoEnabled, floatingDemoStep, floatingDemoCollapsed])
 
   useEffect(() => {
     if (selectedCarId || !cars.length) return
@@ -2083,6 +2090,13 @@ export function BookingPage() {
     } else {
       setMobileSurface('assistant')
     }
+    if (restoredFloatingDemo) {
+      setFloatingDemoEnabled(true)
+      setFloatingDemoStep(Number(restoredFloatingDemo.step) || 0)
+      setFloatingDemoCollapsed(Boolean(restoredFloatingDemo.collapsed))
+      floatingDemoContextRef.current = restoredFloatingDemo.isSimulated ? { isSimulated: true } : {}
+      setFloatingDemoStatus('Đã tiếp tục lượt demo ở chặng trước đó')
+    }
     setResumePending(false)
   }
   const restartConversation = () => {
@@ -2977,6 +2991,10 @@ export function BookingPage() {
   }
 
   const toggleFloatingDemo = () => {
+    if (isMobileBookingViewport) {
+      setFloatingDemoCollapsed(true)
+      return
+    }
     setFloatingDemoCollapsed((value) => !value)
   }
 
@@ -3000,11 +3018,11 @@ export function BookingPage() {
     setDraft('')
   }, [])
 
-  // Crossing from desktop into the mobile layout also stops the controller.
-  // Otherwise a hidden demo could keep the mobile composer and menu locked.
+  // A demo that began on desktop remains controllable after a resize. New
+  // mobile sessions still never expose a Demo entry point.
   useEffect(() => {
-    if (isMobileBookingViewport && floatingDemoEnabled) dismissFloatingDemoForRealFlow()
-  }, [dismissFloatingDemoForRealFlow, isMobileBookingViewport, floatingDemoEnabled])
+    if (isMobileBookingViewport && floatingDemoEnabled) setFloatingDemoCollapsed(true)
+  }, [isMobileBookingViewport, floatingDemoEnabled])
 
   // Đặt lịch xong thì thanh tab chỉ còn ĐÚNG 1 nút "Phiếu lịch".
   // Ba tab kia (Đổi mẫu xe, Showroom, Lịch trống) là công cụ của lúc đang đặt; giữ lại sau khi
@@ -3167,9 +3185,10 @@ export function BookingPage() {
   }
 
   const showVehicleChoices = allowedActions.includes('choose_vehicle') && !accessProfile && interaction.mode !== BookingMode.MANAGE_BOOKING
-  const showFloatingDemo = !isMobileBookingViewport
-    && floatingDemoEnabled
+  const showFloatingDemo = floatingDemoEnabled
+    && (!isMobileBookingViewport || floatingDemoMode)
     && Boolean(recipient)
+    && !resumePending
     && !demoCompletedModalOpen
     && !isDriverChat
     && !successCinematic
