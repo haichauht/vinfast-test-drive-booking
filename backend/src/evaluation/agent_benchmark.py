@@ -1791,6 +1791,12 @@ def _resolve_eval_turn_content(
     return str(_resolve_eval_value(content, bindings or {}, booking_service))
 
 
+def _eval_fixture_email(case_id: Any) -> str:
+    """Return a stable fixture email that satisfies the product length limits."""
+    case_digest = hashlib.sha256(str(case_id).encode("utf-8")).hexdigest()[:16]
+    return f"eval-{case_digest}@bench.test"
+
+
 def _prepare_eval_case(database: Any, booking_service: Any, case: Mapping[str, Any]) -> dict[str, Any]:
     setup = case.get("evaluation_setup")
     if not isinstance(setup, Mapping):
@@ -1943,7 +1949,7 @@ def _prepare_eval_case(database: Any, booking_service: Any, case: Mapping[str, A
         return bindings
 
     safe_case_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(case["case_id"])).casefold()
-    email = f"{safe_case_id}@benchmark.example.test"
+    email = _eval_fixture_email(case["case_id"])
     held = booking_service.hold_slot(slot_id, f"hold:setup-{safe_case_id}", source_channel="evaluation")
     draft = booking_service.update_booking_draft(
         held["booking_id"],

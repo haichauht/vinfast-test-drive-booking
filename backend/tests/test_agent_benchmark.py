@@ -21,6 +21,7 @@ from src.evaluation.agent_benchmark import (
     _arguments_with_tool_evidence,
     _backup_sqlite_database,
     _deterministic_behavior_checks,
+    _eval_fixture_email,
     _evaluate_slot_availability,
     _redact,
     _resolve_eval_turn_content,
@@ -34,6 +35,7 @@ from src.evaluation.agent_benchmark import (
     score_evaluation,
 )
 from src.evaluation.stability import aggregate_stability
+from src.services.booking.common import is_valid_customer_email
 
 
 def _small_dataset(tmp_path):
@@ -46,6 +48,16 @@ def _small_dataset(tmp_path):
     path = tmp_path / "golden.json"
     path.write_text(json.dumps(dataset, ensure_ascii=False), encoding="utf-8")
     return dataset, path
+
+
+def test_eval_fixture_email_is_valid_stable_and_unique():
+    long_case_id = "V1X-FLOW-RESCHEDULE-001-" + ("very-long-case-id-" * 20)
+
+    first = _eval_fixture_email(long_case_id)
+
+    assert first == _eval_fixture_email(long_case_id)
+    assert first != _eval_fixture_email(f"{long_case_id}-different")
+    assert is_valid_customer_email(first)
 
 
 def test_score_evaluation_reports_behavioral_and_operational_metrics(tmp_path):
