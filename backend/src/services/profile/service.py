@@ -335,9 +335,14 @@ class ProfileService:
     def participant_context(self, booking_id: str, role: str) -> dict[str, Any]:
         """Project active booking signals into a stable prompt-facing view."""
         signals = self.booking_context_signals(booking_id)
+        with self.db.connect() as c:
+            booking = c.execute(
+                "SELECT booker_person_id,driver_person_id FROM bookings WHERE id=?", (booking_id,)
+            ).fetchone()
         values = {(item["subject"], item["key"]): item["value"] for item in signals}
         own = role if role in {"booker", "driver"} else "booker"
         other = "driver" if own == "booker" else "booker"
+        same_person = bool(booking and booking["booker_person_id"] and booking["booker_person_id"] == booking["driver_person_id"])
         participation = {
             "attending": values.get((own, f"{own}_attending"), "unknown"),
             "will_drive": values.get((own, f"{own}_will_drive"), "unknown"),
@@ -346,12 +351,22 @@ class ProfileService:
         }
         other_participant = {"role": other, "attending": values.get((other, f"{other}_attending"), "unknown")}
         guests = {
-            "count": values.get(("group", "additional_guest_count"), 0),
+            "count": values.get(("group", "additional_guest_count"), "unknown"),
             "context": values.get(("group", "additional_guest_context"), []),
         }
+        participant_roles = ["booker"] if same_person else ["booker", "driver"]
+        missing = [
+            f"{participant}_{field}"
+            for participant in participant_roles
+            for field in ("attending", "will_drive", "evaluation_involvement", "purchase_involvement")
+            if values.get((participant, f"{participant}_{field}"), "unknown") == "unknown"
+        ]
+        if guests["count"] == "unknown":
+            missing.append("additional_guest_count")
         known = {"booker_attending", "driver_attending", "booker_will_drive", "driver_will_drive", "booker_evaluation_involvement", "driver_evaluation_involvement", "booker_purchase_involvement", "driver_purchase_involvement", "additional_guest_count", "additional_guest_context"}
-        return {"role": own, "booking_id": booking_id, "booking_participation": participation,
+        return {"role": own, "booking_id": booking_id, "same_person": same_person, "booking_participation": participation,
                 "other_participant": other_participant, "additional_attendees": guests,
+                "participant_discovery_missing": missing,
                 "other_booking_context": [item for item in signals if item["key"] not in known]}
 
     def apply_booking_signals(self, booking_id: str, candidates: list[BookingSignalCandidate], *, source_participant: str, source_ref: str) -> None:

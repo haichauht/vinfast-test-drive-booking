@@ -386,6 +386,20 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             )
             if raw_intent_entities.get(key) is not None
         }
+        raw_follow_ups = result.get("follow_ups") or []
+        public_follow_ups = []
+        if (
+            result.get("active_skill") == "post_booking"
+            and not result.get("action_tool")
+            and result.get("action_result") is None
+            and _chat_ui_directive(result) is None
+            and not result.get("action_error")
+        ):
+            for item in raw_follow_ups[:2]:
+                text = str(item.get("text") or "") if isinstance(item, dict) else ""
+                safe_text = guardrails.protect_output({"response": text}).response
+                if safe_text:
+                    public_follow_ups.append({"text": safe_text})
         response = ChatResponse(
             response=protected.response,
             analysis=protected.analysis,
@@ -397,6 +411,9 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             intent=str(result.get("intent") or ""),
             intent_entities=public_intent_entities,
             ui=_chat_ui_directive(result),
+            # Suggestions are exclusive to a completed conversational Post-Booking
+            # turn. Booking tools and UI workflows own the next interaction.
+            follow_ups=public_follow_ups,
         )
         trace_event(
             "chat.response",
