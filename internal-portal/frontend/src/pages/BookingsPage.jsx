@@ -1,9 +1,9 @@
-import { CaretDown, Check, ClockCounterClockwise, EnvelopeSimple, Funnel, IdentificationCard, Phone, SignIn, UserFocus, UserMinus, X } from '@phosphor-icons/react'
+import { Check, CircleNotch, ClockCounterClockwise, EnvelopeSimple, Funnel, IdentificationCard, Phone, SignIn, Sparkle, UserMinus, X } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { PageState } from '../components/PageState.jsx'
 import { StatusBadge } from '../components/StatusBadge.jsx'
-import { useRemote } from '../hooks.js'
+import { useDialogFocus, useRemote } from '../hooks.js'
 import { formatDateTime } from '../utils.js'
 
 const statuses = ['', 'held', 'confirmed', 'checked_in', 'completed', 'no_show', 'cancelled', 'rescheduled']
@@ -58,6 +58,75 @@ function CustomerProfile({ profile, customerNote }) {
   )
 }
 
+function ParticipantFacts({ profile, customerNote }) {
+  if (!profile) return <div className="customer-profile__empty">Đang tải thông tin người tham gia…</div>
+  const summary = profile.summary || {}
+  const license = profile.license || {}
+  const driverChannel = channelLabels[profile.preferred_channel] || profile.preferred_channel || 'Chưa chọn'
+  const booker = profile.booker || {}
+  const bookerChannel = channelLabels[booker.preferred_channel] || booker.preferred_channel || 'Chưa chọn'
+  const samePerson = profile.booker_is_driver
+  return (
+    <section className="participant-facts" aria-label="Thông tin người tham gia">
+      <div className="participant-facts__header"><span className="section-label">Thông tin người tham gia</span><small>Dữ liệu factual từ hồ sơ và lịch sử booking được phép xem</small></div>
+      <div className="participant-facts__people">
+        {!samePerson && <article className="participant-card">
+          <span className="section-label">Người đặt</span>
+          <strong>{booker.full_name || 'Chưa cập nhật'}</strong>
+          <small>Ưu tiên {bookerChannel}</small>
+          <div className="participant-card__contacts"><span><Phone size={15} />{booker.phone || 'Chưa có số điện thoại'}</span><span><EnvelopeSimple size={15} />{booker.email || 'Chưa có email'}</span></div>
+        </article>}
+        <article className="participant-card">
+          <span className="section-label">{samePerson ? 'Người tham gia' : 'Người lái'}</span>
+          <strong>{profile.full_name || 'Chưa cập nhật'}</strong>
+          <small>{summary.total_bookings > 1 ? 'Khách quay lại' : 'Hồ sơ khách mới'} · Ưu tiên {driverChannel}</small>
+          <div className="participant-card__contacts"><span><Phone size={15} />{profile.phone || 'Chưa có số điện thoại'}</span><span><EnvelopeSimple size={15} />{profile.email || 'Chưa có email'}</span></div>
+          <small>GPLX: {license.declared_license_class || 'Chưa khai báo'} · {license.check_status || 'Chưa kiểm tra'}</small>
+        </article>
+      </div>
+      <div className="customer-profile__metrics">
+        <div><strong>{summary.total_bookings || 0}</strong><span>Tổng booking</span></div><div><strong>{summary.completed_bookings || 0}</strong><span>Đã hoàn tất</span></div><div><strong>{(summary.cancelled_bookings || 0) + (summary.no_show_bookings || 0)}</strong><span>Hủy / no-show</span></div>
+      </div>
+      <div className="customer-profile__context"><span className="section-label">Thông tin giúp sale chuẩn bị</span><ul><li>Mẫu xe từng quan tâm: <strong>{profile.vehicle_interests?.map((item) => item.model).join(', ') || 'Chưa có dữ liệu'}</strong>.</li>{customerNote && <li>Ghi chú khách hàng: <strong>{customerNote}</strong>.</li>}</ul></div>
+      <div className="customer-profile__history"><div className="customer-profile__history-title"><span className="section-label">Lịch sử booking được phép xem</span><ClockCounterClockwise size={17} /></div>{(profile.history || []).map((item) => <div className="customer-profile__history-row" key={item.id}><div><strong>{item.vehicle_model} · {item.vehicle_variant}</strong><small>{item.showroom_name} · {formatDateTime(item.start_at)}</small></div><StatusBadge status={item.status} /></div>)}{!profile.history?.length && <p>Chưa có booking đã xác nhận trong phạm vi của bạn.</p>}</div>
+    </section>
+  )
+}
+
+function ProfileSummary({ markdown }) {
+  const lines = markdown.split(/\r?\n/)
+  const blocks = []
+  let listItems = []
+  const flushList = () => {
+    if (!listItems.length) return
+    blocks.push(<ul key={`list-${blocks.length}`}>{listItems}</ul>)
+    listItems = []
+  }
+  const formatInline = (text) => text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => (
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={index}>{part.slice(2, -2)}</strong>
+      : part
+  ))
+  lines.forEach((line, index) => {
+    const trimmed = line.trim()
+    if (!trimmed) { flushList(); return }
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/)
+    const listItem = trimmed.match(/^[-*]\s+(.+)$/)
+    if (heading) {
+      flushList()
+      const Tag = `h${heading[1].length}`
+      blocks.push(<Tag key={`heading-${index}`}>{formatInline(heading[2])}</Tag>)
+    } else if (listItem) {
+      listItems.push(<li key={`item-${index}`}>{formatInline(listItem[1])}</li>)
+    } else {
+      flushList()
+      blocks.push(<p key={`text-${index}`}>{formatInline(trimmed)}</p>)
+    }
+  })
+  flushList()
+  return <div className="profile-summary__content">{blocks}</div>
+}
+
 export function BookingsPage({ token, user }) {
   const canManage = user.role !== 'staff'
   const [status, setStatus] = useState('')
@@ -70,9 +139,14 @@ export function BookingsPage({ token, user }) {
   const [notice, setNotice] = useState('')
   const [actionError, setActionError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [profileOpen, setProfileOpen] = useState(false)
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileError, setProfileError] = useState('')
+  const [profileSummary, setProfileSummary] = useState('')
+  const [profileSummaryMeta, setProfileSummaryMeta] = useState(null)
+  const [profileSummaryError, setProfileSummaryError] = useState('')
+  const [profileSummaryLoading, setProfileSummaryLoading] = useState(false)
+  const canViewProfileSummary = selected && ['confirmed', 'cancelled'].includes(selected.status)
+  const drawerRef = useDialogFocus({ active: Boolean(selected), onClose: () => setSelected(null) })
   const bookingState = useRemote(
     () => api.bookings(token, {
       status,
@@ -107,31 +181,39 @@ export function BookingsPage({ token, user }) {
     setAssignment(booking.assigned_staff_id || '')
     setNotice('')
     setActionError('')
-    setProfileOpen(false)
     setProfileLoading(false)
     setProfileError('')
+    setProfileSummary('')
+    setProfileSummaryMeta(null)
+    setProfileSummaryError('')
+    void loadParticipantFacts(booking.id)
   }
 
-  const toggleCustomerProfile = async () => {
-    if (profileOpen) {
-      setProfileOpen(false)
-      return
-    }
-    if (selected.customer_profile !== undefined) {
-      setProfileOpen(true)
-      return
-    }
-    const bookingId = selected.id
+  const loadParticipantFacts = async (bookingId) => {
     setProfileLoading(true)
     setProfileError('')
     try {
       const detail = await api.booking(token, bookingId)
       setSelected((current) => current?.id === bookingId ? { ...current, ...detail } : current)
-      setProfileOpen(true)
     } catch (error) {
       setProfileError(error.message)
     } finally {
       setProfileLoading(false)
+    }
+  }
+
+  const loadProfileSummary = async ({ refresh = false } = {}) => {
+    if (!selected || profileSummaryLoading) return
+    setProfileSummaryLoading(true)
+    setProfileSummaryError('')
+    try {
+      const result = await api.profileSummary(token, selected.id, { refresh })
+      setProfileSummary(result.text)
+      setProfileSummaryMeta(result)
+    } catch (error) {
+      setProfileSummaryError(error.message)
+    } finally {
+      setProfileSummaryLoading(false)
     }
   }
 
@@ -208,24 +290,24 @@ export function BookingsPage({ token, user }) {
       </div>
       <div className="filter-bar">
         <Funnel size={20} />
-        <select value={status} onChange={(event) => setStatus(event.target.value)}>
+        <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Lọc theo trạng thái">
           <option value="">Tất cả trạng thái</option>
           {statuses.slice(1).map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
         {user.role === 'operations_admin' && (
-          <select value={showroom} onChange={(event) => { setShowroom(event.target.value); setStaffId(''); setVehicleId('') }}>
+          <select value={showroom} onChange={(event) => { setShowroom(event.target.value); setStaffId(''); setVehicleId('') }} aria-label="Lọc theo showroom">
             <option value="">Tất cả showroom</option>
             {(showroomState.data || []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
         )}
-        <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+        <input type="date" value={date} onChange={(event) => setDate(event.target.value)} aria-label="Lọc theo ngày lái thử" />
         {canManage && (
           <>
-            <select value={staffId} onChange={(event) => setStaffId(event.target.value)}>
+            <select value={staffId} onChange={(event) => setStaffId(event.target.value)} aria-label="Lọc theo nhân viên">
               <option value="">Tất cả nhân viên</option>
               {(staffState.data || []).map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}
             </select>
-            <select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)}>
+            <select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)} aria-label="Lọc theo xe demo">
               <option value="">Tất cả xe demo</option>
               {(vehicleState.data || []).map((item) => <option key={item.id} value={item.id}>{item.asset_code}</option>)}
             </select>
@@ -241,11 +323,11 @@ export function BookingsPage({ token, user }) {
             <div className="data-table__head"><span>Mã lịch</span><span>Khách hàng</span><span>Xe & showroom</span><span>Thời gian</span><span>Trạng thái</span></div>
             {(bookingState.data?.items || []).map((booking) => (
               <button className="data-table__row" key={booking.id} onClick={() => openBooking(booking)}>
-                <span><strong>{booking.booking_code || 'Draft'}</strong><small>{booking.assigned_staff_name || 'Chưa phân công'}</small></span>
-                <span><strong>{booking.driver_name || 'Chưa cập nhật'}</strong><small>{booking.driver_phone || booking.booker_phone || '—'}</small></span>
-                <span><strong>{booking.vehicle_model} · {booking.vehicle_variant}</strong><small>{booking.showroom_name}</small></span>
-                <span><strong>{formatDateTime(booking.start_at)}</strong><small>{booking.asset_code}</small></span>
-                <span><StatusBadge status={booking.status} /></span>
+                <span data-label="Mã lịch"><strong>{booking.booking_code || 'Draft'}</strong><small>{booking.assigned_staff_name || 'Chưa phân công'}</small></span>
+                <span data-label="Khách hàng"><strong>{booking.driver_name || 'Chưa cập nhật'}</strong><small>{booking.driver_phone || booking.booker_phone || '—'}</small></span>
+                <span data-label="Xe & showroom"><strong>{booking.vehicle_model} · {booking.vehicle_variant}</strong><small>{booking.showroom_name}</small></span>
+                <span data-label="Thời gian"><strong>{formatDateTime(booking.start_at)}</strong><small>{booking.asset_code}</small></span>
+                <span data-label="Trạng thái"><StatusBadge status={booking.status} /></span>
               </button>
             ))}
           </div>
@@ -255,33 +337,45 @@ export function BookingsPage({ token, user }) {
       {selected && (
         <div className="drawer-layer">
           <button className="drawer-backdrop" onClick={() => setSelected(null)} aria-label="Đóng chi tiết" />
-          <aside className="drawer">
-            <div className="drawer__header"><div><span className="eyebrow">Chi tiết booking</span><h3>{selected.booking_code || 'Booking draft'}</h3></div><button className="icon-button" onClick={() => setSelected(null)}><X size={20} /></button></div>
+          <aside ref={drawerRef} className="drawer booking-detail-modal" role="dialog" aria-modal="true" aria-labelledby="booking-drawer-title" tabIndex={-1}>
+            <div className="drawer__header"><div><span className="eyebrow">Chi tiết booking</span><h3 id="booking-drawer-title">{selected.booking_code || 'Booking draft'}</h3></div><button className="icon-button" onClick={() => setSelected(null)} aria-label="Đóng chi tiết booking"><X size={20} /></button></div>
             <div className="drawer__status"><StatusBadge status={selected.status} /><span>Version {selected.version}</span></div>
-            <button className={`customer-profile-trigger ${profileOpen ? 'customer-profile-trigger--open' : ''}`} onClick={toggleCustomerProfile} disabled={profileLoading} aria-expanded={profileOpen}>
-              <span className="customer-profile-trigger__icon"><UserFocus size={21} /></span>
-              <span><strong>{profileLoading ? 'Đang tải hồ sơ...' : 'Xem hồ sơ khách hàng'}</strong><small>Thông tin liên hệ, lịch sử và sở thích xe</small></span>
-              <CaretDown className="customer-profile-trigger__caret" size={18} />
-            </button>
-            {profileError && <div className="form-error customer-profile-error">{profileError}</div>}
-            {profileOpen && <CustomerProfile profile={selected.customer_profile} customerNote={selected.customer_note} />}
+            {profileError && <div className="form-error customer-profile-error" role="alert">{profileError}</div>}
+            <ParticipantFacts profile={selected.customer_profile} customerNote={selected.customer_note} />
             <dl className="detail-list">
-              <div><dt>Người lái</dt><dd>{selected.driver_name || 'Chưa cập nhật'}<small>{selected.driver_phone || selected.booker_phone || 'Không có số liên hệ'} · {selected.driver_email || selected.booker_email || 'Không có email'}</small></dd></div>
               <div><dt>Xe demo</dt><dd>{selected.vehicle_model} · {selected.vehicle_variant}<small>{selected.asset_code} · {selected.plate_number || 'Chưa có biển số'} · {selected.vehicle_operational_status} · pin {selected.vehicle_battery_soc ?? '—'}%</small></dd></div>
               <div><dt>Showroom</dt><dd>{selected.showroom_name}</dd></div>
               <div><dt>Thời gian</dt><dd>{formatDateTime(selected.start_at)}<small>Đến {formatDateTime(selected.end_at)}</small></dd></div>
               <div><dt>Phụ trách</dt><dd>{selected.assigned_staff_name || 'Chưa phân công'}</dd></div>
-              <div><dt>GPLX</dt><dd>{selected.license_check_status || 'Chưa khai báo'}</dd></div>
               <div><dt>Ghi chú</dt><dd>{selected.customer_note || 'Không có ghi chú khách hàng'}<small>{selected.internal_note || 'Không có ghi chú nội bộ'}</small></dd></div>
             </dl>
+            {canViewProfileSummary && <section className="profile-summary" aria-live="polite">
+              <div className="profile-summary__header">
+                <div>
+                  <span className="section-label">Brief cho sales</span>
+                  <p>Tóm tắt thông tin người đặt và người lái để chuẩn bị hỗ trợ buổi lái thử.</p>
+                </div>
+                <div className="profile-summary__actions">
+                  <button className="secondary-button" disabled={profileSummaryLoading} onClick={() => loadProfileSummary()}>
+                    {profileSummaryLoading ? <CircleNotch className="spin" size={18} /> : <Sparkle size={18} />}
+                    {profileSummaryLoading ? 'Đang tạo brief…' : 'Tạo brief'}
+                  </button>
+                  <button className="secondary-button" disabled={profileSummaryLoading} onClick={() => loadProfileSummary({ refresh: true })}>Reload</button>
+                </div>
+              </div>
+              {profileSummaryLoading && <div className="profile-summary__loading"><CircleNotch className="spin" size={18} />Hệ thống đang tạo brief cho sales. Việc này có thể mất vài giây.</div>}
+              {profileSummaryError && <div className="form-error">{profileSummaryError}</div>}
+              {profileSummary && !profileSummaryLoading && <><div className="profile-summary__meta">{profileSummaryMeta?.source === 'cache' ? 'Đang hiển thị bản đã lưu' : 'Đã cập nhật bản tóm tắt mới nhất'}{profileSummaryMeta?.generatedAt ? ` · ${new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(profileSummaryMeta.generatedAt))}` : ''}</div><ProfileSummary markdown={profileSummary} /></>}
+            </section>}
+            {!canViewProfileSummary && <div className="read-only-note">Brief cho sales chỉ khả dụng sau khi booking đã xác nhận, hoặc với booking đã xác nhận nhưng sau đó bị hủy.</div>}
             {user.role === 'staff' && <div className="read-only-note">Tài khoản Staff chỉ có quyền xem. Mọi thay đổi do quản lý showroom thực hiện.</div>}
-            {notice && <div className="form-success"><Check size={18} />{notice}</div>}
-            {actionError && <div className="form-error">{actionError}</div>}
+            {notice && <div className="form-success" role="status"><Check size={18} />{notice}</div>}
+            {actionError && <div className="form-error" role="alert">{actionError}</div>}
             {canManage && (
               <div className="drawer__actions">
                 <span className="section-label">Phân công nhân viên</span>
                 <div className="inline-action">
-                  <select value={assignment} onChange={(event) => setAssignment(event.target.value)}>
+                  <select value={assignment} onChange={(event) => setAssignment(event.target.value)} aria-label="Chọn nhân viên phụ trách">
                     <option value="">Chọn nhân viên</option>
                     {(staffState.data || []).map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}
                   </select>
