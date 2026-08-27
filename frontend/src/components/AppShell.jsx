@@ -18,11 +18,12 @@
  * Style tương ứng: mục "Floating navigation" trong index.css.
  */
 import { useEffect, useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { ArrowUpRight, Buildings, CaretDown, CarProfile } from '@phosphor-icons/react'
 import { Brand } from './Brand'
 import { IslandButton } from './IslandButton'
 import { useBackendStatus } from '../context/BackendStatusContext'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 
 // KHÔNG thêm mục nào dẫn về /booking vào mảng này: nút "Đặt lịch lái thử" bên phải
 // header luôn hiển thị (site-nav là position:fixed) nên một mục menu cùng đích chỉ làm
@@ -42,6 +43,7 @@ const productGroups = [
 export function AppShell({ children, navTheme = 'light' }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [productsOpen, setProductsOpen] = useState(false)
+  const menuDialogRef = useDialogFocus({ active: menuOpen, onClose: () => setMenuOpen(false) })
   const location = useLocation()
   // Đang đứng ở trang chi tiết xe thì nút đặt lịch phải mang theo đúng mẫu xe đó.
   // Trước đây href cố định là '/booking' nên nút nổi bật nhất trang lại là nút DUY NHẤT
@@ -57,13 +59,8 @@ export function AppShell({ children, navTheme = 'light' }) {
 
   useEffect(() => {
     if (!menuOpen) return undefined
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') setMenuOpen(false)
-    }
-    document.addEventListener('keydown', onKeyDown)
     document.body.classList.add('menu-is-open')
     return () => {
-      document.removeEventListener('keydown', onKeyDown)
       document.body.classList.remove('menu-is-open')
     }
   }, [menuOpen])
@@ -110,19 +107,19 @@ export function AppShell({ children, navTheme = 'light' }) {
                 </div>
                 <div className="vehicle-mega__links">
                   {productGroups.map(({ label, copy, to, icon: Icon }) => (
-                    <a href={to} key={label} onClick={() => setProductsOpen(false)}>
+                    <Link to={to} key={label} tabIndex={productsOpen ? 0 : -1} onClick={() => setProductsOpen(false)}>
                       <Icon size={24} weight="light" />
                       <span><strong>{label}</strong><small>{copy}</small></span>
                       <ArrowUpRight size={17} weight="light" />
-                    </a>
+                    </Link>
                   ))}
                 </div>
               </div>
             </div>
             {links.map((link) => (
-              <a key={link.label} href={link.to}>
+              <Link key={link.label} to={link.to}>
                 {link.label}
-              </a>
+              </Link>
             ))}
           </nav>
 
@@ -153,34 +150,39 @@ export function AppShell({ children, navTheme = 'light' }) {
       )}
 
       <div
+        ref={menuDialogRef}
         id="mobile-navigation"
         className={`menu-overlay ${menuOpen ? 'is-open' : ''}`}
         aria-hidden={!menuOpen}
+        aria-label="Điều hướng di động"
+        aria-modal={menuOpen ? 'true' : undefined}
+        role="dialog"
+        tabIndex={-1}
       >
         <div className="menu-overlay__inner">
           <p className="menu-overlay__intro">Khám phá VinFast</p>
           <nav aria-label="Điều hướng di động">
             {productGroups.map(({ label, to }, index) => (
-              <a
-                href={to}
+              <Link
+                to={to}
                 key={label}
                 style={{ '--menu-index': index }}
                 tabIndex={menuOpen ? 0 : -1}
               >
                 <span>Ô tô · {label}</span>
                 <ArrowUpRight size={26} weight="light" />
-              </a>
+              </Link>
             ))}
             {links.map((link, index) => (
-              <a
-                href={link.to}
+              <Link
+                to={link.to}
                 key={link.label}
                 style={{ '--menu-index': index + productGroups.length }}
                 tabIndex={menuOpen ? 0 : -1}
               >
                 <span>{link.label}</span>
                 <ArrowUpRight size={26} weight="light" />
-              </a>
+              </Link>
             ))}
             <NavLink
               to={bookingHref}

@@ -6,8 +6,8 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import ToolNode
 
-from src.config import Settings, get_settings
 from src.agents.trace import trace_node
+from src.config import Settings, get_settings
 from src.guardrails.models import GuardrailDecision
 from src.guardrails.policies import (
     CONFIRMATION_ACTION_BY_TOOL,

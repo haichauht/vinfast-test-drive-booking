@@ -29,10 +29,11 @@
  *                  Dùng nó ở đây xe sẽ như bị lộn đầu đuôi giữa chừng.
  * Mạch đúng: hông lướt ngang → tới giữa thì đuôi xoay vào mắt người xem → lùi vào chiều sâu.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
 import { showcaseImage, vehicleImage } from '../media/assets'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import './BookingSuccessCinematic.css'
 
 const vinfastWordmark = vehicleImage('Vinfast-logo-new_NO_Tagline -2D-Horizontal black.png')
@@ -218,6 +219,11 @@ const useTyreSmoke = (canvasRef, rootRef, vehicleRef, controlRef, vehicleId) => 
 
 export function BookingSuccessCinematic({ car, onComplete }) {
   const root = useRef(null)
+  const dialogRef = useDialogFocus({ onClose: onComplete })
+  const setRootNode = useCallback((node) => {
+    root.current = node
+    dialogRef.current = node
+  }, [dialogRef])
   const vehicle = useRef(null)
   const canvas = useRef(null)
   const smoke = useRef({ intensity: 0, rearMix: 0, skid: 0 })
@@ -377,7 +383,7 @@ export function BookingSuccessCinematic({ car, onComplete }) {
   if (!car) return null
 
   return (
-    <div className="booking-film" ref={root} role="dialog" aria-modal="true" aria-label="Lịch lái thử đã được xác nhận">
+    <div className="booking-film" ref={setRootNode} role="dialog" aria-modal="true" aria-label="Lịch lái thử đã được xác nhận" tabIndex={-1}>
       <button type="button" className="booking-film__skip" onClick={onComplete} autoFocus>
         Bỏ qua chuyển động
       </button>

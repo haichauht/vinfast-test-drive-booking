@@ -1,3 +1,7 @@
+# ruff: noqa: E402
+#
+# LangSmith must be configured before importing graph/routes so LangChain and
+# LangGraph receive the canonical LANGSMITH_* variables during initialization.
 import asyncio
 import logging
 import time
@@ -14,8 +18,6 @@ from fastapi.staticfiles import StaticFiles
 from src.config import get_settings
 from src.observability import configure_langsmith
 
-# Configure before importing graph/routes so LangChain and LangGraph see the
-# canonical LANGSMITH_* variables during their initialization.
 settings = get_settings()
 configure_langsmith(settings)
 

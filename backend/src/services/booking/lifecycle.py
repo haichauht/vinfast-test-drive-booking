@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from src.database.redis_client import redis_client
 from src.services.booking.base import BookingBase
-from src.services.booking.common import iso, new_id, normalize_phone, parse_utc
+from src.services.booking.common import iso, new_id, normalize_phone, parse_utc, person_patch_validation_error
 from src.services.booking.errors import BookingError
 
 _id = new_id
@@ -293,6 +293,10 @@ class LifecycleService(BookingBase):
         notification_plan_patch=None,
         expected_version=None,
     ) -> dict:
+        for patch in (booker_patch, None if driver_same_as_booker else driver_patch):
+            validation_error = person_patch_validation_error(patch)
+            if validation_error:
+                raise BookingError("INVALID_INPUT", validation_error)
         if self._expire_hold_if_due(booking_id):
             raise BookingError("HOLD_EXPIRED", "Hold đã hết hạn.")
         with self.db.transaction(immediate=True) as c:

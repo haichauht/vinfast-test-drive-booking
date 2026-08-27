@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 import re
 import unicodedata
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -109,6 +110,38 @@ def _correct_discovery_route(
     return intent, sub_intent, None
 
 
+_RESCHEDULE_DATE_FIELDS = (
+    "reschedule_date_type",
+    "reschedule_target_date",
+    "reschedule_day_offset",
+)
+
+
+def _merge_pending_reschedule(route_result: "RouteSchema", pending: dict) -> dict:
+    """Merge only structured extraction with the client-held pending target.
+
+    The classifier interprets the current message only; deterministic code
+    preserves values from a prior turn. A date is atomic because a relative
+    expression must clear a previous explicit date.
+    """
+    current = {
+        "reschedule_date_type": route_result.reschedule_date_type,
+        "reschedule_target_date": route_result.reschedule_target_date,
+        "reschedule_day_offset": route_result.reschedule_day_offset,
+        "reschedule_target_time": route_result.reschedule_target_time,
+    }
+    if route_result.sub_intent != "booking_reschedule" or not pending:
+        return current
+
+    date_was_supplied = any(current[field] is not None for field in _RESCHEDULE_DATE_FIELDS)
+    if not date_was_supplied:
+        for field in _RESCHEDULE_DATE_FIELDS:
+            current[field] = pending.get(field)
+    if current["reschedule_target_time"] is None:
+        current["reschedule_target_time"] = pending.get("reschedule_target_time")
+    return current
+
+
 def _driver_scope_block(state: AgentState, query: str, *, sub_intent: str) -> dict:
     metadata = state.get("metadata") or {}
     return {
@@ -150,8 +183,8 @@ class RouteSchema(BaseModel):
     reschedule_target_date: str | None = Field(
         default=None,
         description=(
-            "For booking_reschedule only: the requested target date as YYYY-MM-DD. "
-            "Resolve explicit dates and dates relative to today; otherwise null."
+            "For booking_reschedule only: an explicit requested date as YYYY-MM-DD. "
+            "Keep null for relative or ambiguous expressions."
         ),
     )
     reschedule_target_time: str | None = Field(
@@ -162,11 +195,24 @@ class RouteSchema(BaseModel):
             "unless the user explicitly says morning. Otherwise null."
         ),
     )
-    reschedule_days_after_current_booking: int | None = Field(
+    reschedule_date_type: Literal[
+        "explicit", "relative_to_today", "relative_to_booking", "ambiguous"
+    ] | None = Field(
         default=None,
         description=(
-            "For booking_reschedule only: positive day offset when the target is relative to the "
-            "existing appointment, e.g. 'hôm sau' means 1. Use null for an explicit date."
+            "How to resolve the reschedule date. Use explicit for a concrete calendar date, "
+            "relative_to_today for today/tomorrow, relative_to_booking for phrases such as "
+            "'hôm sau' referring to the existing appointment, and ambiguous when clarification "
+            "is required (for example 'cuối tháng' without a specific day)."
+        ),
+    )
+    reschedule_day_offset: int | None = Field(
+        default=None,
+        ge=0,
+        le=60,
+        description=(
+            "Day offset for relative_to_today or relative_to_booking. For example tomorrow or "
+            "the day after the current appointment is 1. Null for explicit/ambiguous dates."
         ),
     )
 
@@ -184,6 +230,7 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
                 break
     trace_id = metadata.get("trace_id", "")
     previous_skill = state.get("active_skill", "")
+    pending_reschedule = context.get("pendingReschedule") or {}
     post_booking_active = bool((state.get("post_booking_context") or {}).get("active"))
     is_driver_invitation = (state.get("participant_context") or {}).get("role") == "driver"
     if state.get("requested_action"):
@@ -325,16 +372,22 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
         "If the query contains an email, copy it exactly to contact_value. "
         "Otherwise return null. Never invent contact_value.\n"
         "For booking_reschedule, extract the requested destination date/time into the reschedule fields. "
-        f"Today in Vietnam is {today_vietnam}. Return explicit/relative-to-today dates as YYYY-MM-DD. "
-        "If the user says 'hôm sau' relative to their current appointment, leave reschedule_target_date "
-        "null and set reschedule_days_after_current_booking=1. Use 24-hour showroom time; in normal "
+        f"Today in Vietnam is {today_vietnam}. For a concrete date (including an unambiguous weekday), "
+        "set date_type=explicit and return YYYY-MM-DD. For today/tomorrow set date_type=relative_to_today "
+        "with day_offset 0/1 and do not calculate the ISO date. If 'hôm sau' refers to the current "
+        "appointment, set date_type=relative_to_booking and day_offset=1. Use date_type=ambiguous and "
+        "leave the date null for expressions such as 'cuối tháng' that need clarification. Use 24-hour showroom time; in normal "
         "Vietnamese booking speech, '1h30' means 13:30 unless 'sáng' is explicit. Do not infer a date "
         "or time the user did not state. Set all reschedule fields to null for other intents.\n"
+        "When Pending reschedule context is present and the user supplies a missing/corrected date or time, "
+        "classify the turn as booking_reschedule. Extract ONLY the date/time fields stated in this message; "
+        "leave fields not stated here null. Application code merges them with the pending target.\n"
         "\n"
         f"UI context: channel={context.get('channel', '')}, "
         f"stage={context.get('stage', '')}.\n"
         f"Confirmed post-booking context active: {post_booking_active}.\n"
         f"Previous active skill: {previous_skill or '(none)'}.\n"
+        f"Pending reschedule context: {pending_reschedule or '(none)'}.\n"
         f"Previous ViVi message: {previous_assistant_message or '(none)'}\n"
         f"User query: {query}"
     )
@@ -423,6 +476,7 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
             sub_intent=sub_intent,
             active_skill=active_skill,
         )
+        reschedule_entities = _merge_pending_reschedule(route_result, pending_reschedule)
         return {
             "intent": intent,
             "active_skill": active_skill,
@@ -431,9 +485,7 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
             "metadata": {**metadata, "sub_intent": sub_intent},
             "intent_entities": {
                 "contact_value": route_result.contact_value,
-                "reschedule_target_date": route_result.reschedule_target_date,
-                "reschedule_target_time": route_result.reschedule_target_time,
-                "reschedule_days_after_current_booking": route_result.reschedule_days_after_current_booking,
+                **reschedule_entities,
             },
             "tool_call_count": 0,
         }

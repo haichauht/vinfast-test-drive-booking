@@ -13,6 +13,19 @@ import { TransfersPage } from './pages/TransfersPage.jsx'
 import { UsersPage } from './pages/UsersPage.jsx'
 
 const TOKEN_KEY = 'p053_internal_token'
+const PAGE_IDS = new Set(['dashboard', 'bookings', 'team', 'fleet', 'schedule', 'network', 'catalog', 'transfers', 'audit', 'users'])
+const PAGE_ACCESS = {
+  staff: new Set(['dashboard', 'bookings', 'team']),
+  showroom_manager: new Set(['dashboard', 'bookings', 'team', 'fleet', 'schedule', 'audit']),
+  operations_admin: PAGE_IDS,
+}
+
+const pageFromLocation = () => {
+  const candidate = window.location.pathname.replace(/^\/+|\/+$/g, '')
+  return PAGE_IDS.has(candidate) ? candidate : 'dashboard'
+}
+
+const pagePath = (page) => (page === 'dashboard' ? '/' : `/${page}`)
 
 export default function App() {
   const [token, setToken] = useState(() => {
@@ -22,7 +35,13 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(Boolean(token))
   const [sessionError, setSessionError] = useState('')
-  const [page, setPage] = useState('dashboard')
+  const [page, setPage] = useState(pageFromLocation)
+
+  useEffect(() => {
+    const syncFromHistory = () => setPage(pageFromLocation())
+    window.addEventListener('popstate', syncFromHistory)
+    return () => window.removeEventListener('popstate', syncFromHistory)
+  }, [])
 
   useEffect(() => {
     if (!token) { setLoading(false); setUser(null); return }
@@ -39,17 +58,35 @@ export default function App() {
     sessionStorage.setItem(TOKEN_KEY, session.access_token)
     setUser(session.user)
     setToken(session.access_token)
-    setPage('dashboard')
+    const requestedPage = pageFromLocation()
+    const nextPage = PAGE_ACCESS[session.user.role]?.has(requestedPage) ? requestedPage : 'dashboard'
+    setPage(nextPage)
+    if (nextPage !== requestedPage) window.history.replaceState(null, '', pagePath(nextPage))
   }
 
   const logout = async () => {
     try { await api.logout(token) } catch { /* Session may already be expired. */ }
     sessionStorage.removeItem(TOKEN_KEY)
     setToken(''); setUser(null); setPage('dashboard')
+    window.history.replaceState(null, '', '/')
+  }
+
+  useEffect(() => {
+    if (!user || PAGE_ACCESS[user.role]?.has(page)) return
+    setPage('dashboard')
+    window.history.replaceState(null, '', '/')
+  }, [page, user])
+
+  const navigate = (nextPage) => {
+    if (!PAGE_ACCESS[user?.role]?.has(nextPage)) return
+    if (nextPage !== page) window.history.pushState(null, '', pagePath(nextPage))
+    setPage(nextPage)
   }
 
   if (loading) return <div className="app-loading"><PageState loading /></div>
   if (!token || !user) return <><LoginPage onLogin={login} />{sessionError && <div className="session-toast">{sessionError}</div>}</>
+
+  const currentPage = PAGE_ACCESS[user.role]?.has(page) ? page : 'dashboard'
 
   const pages = {
     dashboard: <DashboardPage token={token} user={user} />,
@@ -64,5 +101,5 @@ export default function App() {
     users: <UsersPage token={token} />,
   }
 
-  return <Shell token={token} user={user} page={page} onNavigate={setPage} onLogout={logout}>{pages[page] || pages.dashboard}</Shell>
+  return <Shell token={token} user={user} page={currentPage} onNavigate={navigate} onLogout={logout}>{pages[currentPage]}</Shell>
 }

@@ -4,6 +4,7 @@ import { ArrowCounterClockwise, House, MapPin } from '@phosphor-icons/react'
 import gsap from 'gsap'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { apiGet } from '../api/client'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import { modelImage, showcaseImage, vehicleImage } from '../media/assets'
 import { vehicleMediaMap } from '../media/vehicle-media-map'
 
@@ -190,6 +191,12 @@ function InvitationExperience({ invitation }) {
     })
   }, [])
 
+  const introDialogRef = useDialogFocus({ active: !introDone, onClose: () => finishIntro(true) })
+  const setIntroNode = useCallback((node) => {
+    intro.current = node
+    introDialogRef.current = node
+  }, [introDialogRef])
+
   useGSAP(() => {
     if (introDone || !intro.current || !content.current) return undefined
 
@@ -273,7 +280,7 @@ function InvitationExperience({ invitation }) {
   return (
     <div ref={root} className="invitation-preview">
       {!introDone && (
-        <section ref={intro} className="invitation-film" aria-label="Phim mở đầu thiệp mời">
+        <section ref={setIntroNode} className="invitation-film" role="dialog" aria-modal="true" aria-label="Phim mở đầu thiệp mời" tabIndex={-1}>
           <button className="invitation-film__skip" type="button" onClick={() => finishIntro(true)}>
             Bỏ qua
           </button>
@@ -298,7 +305,7 @@ function InvitationExperience({ invitation }) {
         </section>
       )}
 
-      <div ref={content} className={`invitation-preview__content${introDone ? ' is-ready' : ''}`}>
+      <div ref={content} className={`invitation-preview__content${introDone ? ' is-ready' : ''}`} aria-hidden={!introDone} inert={!introDone ? '' : undefined}>
         <header className="invitation-header">
           <a
             className="invitation-header__home"

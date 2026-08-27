@@ -539,6 +539,14 @@
     border-color 0.2s var(--ease-soft);
 }
 
+.booking-history__back svg,
+.booking-history__back span,
+.booking-history__action svg,
+.booking-history__action span {
+  color: inherit;
+  fill: currentColor;
+}
+
 /* Quay lại danh sách: nút phụ, không tranh sự chú ý với hai thao tác chính. */
 .booking-history__back {
   border: 1px solid var(--line);
@@ -563,7 +571,7 @@
 
 .booking-history__action:hover {
   border-color: var(--ink);
-  color: var(--surface);
+  color: var(--surface) !important;
   background: var(--ink);
 }
 
@@ -578,7 +586,7 @@
 
 .booking-history__action--danger:hover {
   border-color: var(--danger);
-  color: var(--surface);
+  color: var(--surface) !important;
   background: var(--danger);
 }
 
@@ -609,6 +617,8 @@
 .booking-resume-prompt button:last-child { color: var(--ink); background: #fff; }
 /* Dòng "đang giữ khung giờ mới": cùng ngôn ngữ bo góc với các thẻ trong bảng. */
 .booking-history__hold {
+  display: grid;
+  gap: 4px;
   padding: 10px 13px;
   border: 1px solid rgba(163, 77, 0, 0.18);
   border-radius: var(--radius-md);
@@ -913,8 +923,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  white-space: nowrap;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 14px;
+}
+
+.vivi-studio__menu-button svg {
+  display: block;
 }
 
 /*

@@ -83,10 +83,7 @@ class OutputGuard:
         text = _CREDENTIAL_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}=[redacted]", text)
         text = _STANDALONE_SECRET_RE.sub("[redacted]", text)
         text = _EMAIL_RE.sub("[email]", text)
-        # A raw phone number can belong to a customer, employee or showroom.
-        # Do not leak it from free-form model text, but also do not show an
-        # unfinished placeholder to the customer.
-        text = _PHONE_RE.sub("hotline chính thức của showroom", text)
+        text = _PHONE_RE.sub("[phone]", text)
         text = _VIETNAM_ID_RE.sub("[personal-id]", text)
         if len(text) > self.max_output_chars:
             text = text[: self.max_output_chars] + "…[truncated]"

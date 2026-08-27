@@ -22,6 +22,13 @@ import { Crosshair, Minus, Plus } from '@phosphor-icons/react'
 import { commonMedia } from '../../media/assets'
 
 const vinfastLogo = commonMedia.vinfastLogo
+const distanceFormatter = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 })
+
+const formatDistance = (distance) => {
+  if (distance === null || distance === undefined || distance === '') return ''
+  const value = Number(distance)
+  return Number.isFinite(value) ? distanceFormatter.format(value) : ''
+}
 
 export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, userLocation, searchedLocation, disabled = false }) {
   const mapContainerRef = useRef(null)
@@ -136,10 +143,19 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
   return (
     <section className="studio-map studio-map--familiar" aria-label="Bản đồ showroom phù hợp">
       <aside className="studio-map__list">
-        <div className="studio-map__intro"><span>{showrooms.length} showroom còn lịch cho {car.name}</span><small>{hasLocation ? 'Sắp xếp theo khoảng cách từ vị trí bạn cung cấp.' : 'Đang hiển thị theo lịch trống phù hợp.'}</small></div>
+        <div className="studio-map__intro" aria-live="polite">
+          <strong><span className="studio-map__available-count">{showrooms.length}</span> showroom còn lịch cho {car.name}</strong>
+          <small>{hasLocation ? 'Sắp xếp theo khoảng cách từ vị trí bạn cung cấp.' : 'Đang hiển thị theo lịch trống phù hợp.'}</small>
+        </div>
         {showrooms.map((showroom, index) => (
           <button type="button" key={showroom.id} className={selectedId === showroom.id ? 'is-active' : ''} onClick={() => onSelect(showroom.id)} disabled={disabled}>
-            <span>{index + 1}</span><span><strong>{showroom.name}</strong><small>{showroom.address}</small>{showroom.available_slot_count ? <small>Còn {showroom.available_slot_count} lịch trống</small> : null}</span>{hasLocation && <em>{String(showroom.distance).replace('.', ',')} km</em>}
+            <span className="studio-map__rank">{String(index + 1).padStart(2, '0')}</span>
+            <span className="studio-map__showroom-copy">
+              <strong>{showroom.name}</strong>
+              <small>{showroom.address}</small>
+              {showroom.available_slot_count ? <small>Còn {showroom.available_slot_count} lịch trống</small> : null}
+            </span>
+            {hasLocation && formatDistance(showroom.distance) && <em>{formatDistance(showroom.distance)} km</em>}
           </button>
         ))}
       </aside>
@@ -150,7 +166,7 @@ export function ShowroomMap({ car, showrooms, selectedId, onSelect, onConfirm, u
           <button type="button" onClick={() => mapRef.current?.zoomOut()} disabled={disabled} aria-label="Thu nhỏ"><Minus size={17} weight="regular" /></button>
           <button type="button" onClick={centerUser} disabled={disabled || !userLocation} aria-label="Vị trí của tôi"><Crosshair size={17} weight="regular" /></button>
         </div>
-        {selected && <div className="studio-map__preview"><span><strong>{selected.name}</strong><small>{selected.address}{selected.phone ? ` · SĐT: ${selected.phone}` : ''}{hasLocation && selected.distance !== undefined && selected.distance !== null ? ` · Cách bạn ${String(selected.distance).replace('.', ',')} km` : ''}</small></span><button type="button" onClick={() => onConfirm(selected)} disabled={disabled} className="studio-map__preview-confirm">Xem lịch</button></div>}
+        {selected && <div className="studio-map__preview"><span><strong>{selected.name}</strong><small>{selected.address}{selected.phone ? ` · SĐT: ${selected.phone}` : ''}{hasLocation && formatDistance(selected.distance) ? ` · Cách bạn ${formatDistance(selected.distance)} km` : ''}</small></span><button type="button" onClick={() => onConfirm(selected)} disabled={disabled} className="studio-map__preview-confirm">Xem lịch</button></div>}
       </div>
     </section>
   )
