@@ -17,6 +17,7 @@ class AgentState(TypedDict, total=False):
     context: dict
     analysis: str
     response: str
+    follow_ups: list[dict[str, str]]
     error: str
     metadata: dict
     intent: str
