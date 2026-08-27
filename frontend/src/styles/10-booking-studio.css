@@ -84,10 +84,12 @@
 
 .recipient-modal__panel {
   position: relative;
-  width: min(100%, 680px);
-  padding: 42px;
+  width: min(100%, 620px);
+  max-height: min(94vh, 820px);
+  overflow-y: auto;
+  padding: 28px 36px 24px;
   border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 30px;
+  border-radius: 26px;
   background: #f8f9f8;
   box-shadow: inset 0 1px 0 #fff, 0 34px 90px -44px rgba(18, 24, 32, 0.6);
   animation: studio-panel-in 0.55s var(--ease-heavy) both;
@@ -95,13 +97,13 @@
 
 .recipient-modal__back {
   position: absolute;
-  top: 24px;
-  right: 24px;
+  top: 20px;
+  right: 20px;
   z-index: 2;
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 50%;
@@ -131,42 +133,40 @@
 .slot-confirm-modal > div > span {
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
-  margin-bottom: 24px;
-  border-radius: 18px;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 12px;
+  border-radius: 14px;
   color: #fff;
   background: var(--blue);
 }
 
 .recipient-modal__panel > p,
 .slot-confirm-modal > div > p {
-  margin: 0 0 10px;
+  margin: 0 0 4px;
   color: var(--blue);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .recipient-modal h1 {
   max-width: 560px;
-  margin: 0 0 28px;
-  font-size: clamp(2.1rem, 5vw, 3.5rem);
+  margin: 0 0 16px;
+  font-size: clamp(1.85rem, 4vw, 2.5rem);
   font-weight: 560;
-  letter-spacing: -0.055em;
-  line-height: 0.98;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
 }
 
 /*
  * MỘT cột, không phải hai.
- * Trước đây là lưới 2 cột, hợp khi chỉ có 2 lựa chọn. Từ khi thêm "Tra cứu lịch đã đặt"
- * thành 3 lựa chọn thì hàng dưới chỉ có 1 ô, chừa hẳn một khoảng trống bên phải — lệch hẳn.
- * Xếp dọc thì ba lựa chọn cùng bề ngang, cùng trọng số, và cũng đúng thứ tự đọc.
+ * Xếp dọc thì các lựa chọn cùng bề ngang, cùng trọng số, và đúng thứ tự đọc.
  */
 .recipient-modal__choices {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .recipient-modal__choices button {
@@ -174,15 +174,29 @@
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 16px;
-  min-height: 112px;
-  padding: 20px;
+  min-height: 76px;
+  padding: 13px 18px;
   border: 1px solid var(--line);
-  border-radius: 20px;
+  border-radius: 16px;
   color: var(--ink);
   background: #fff;
   text-align: left;
   cursor: pointer;
-  transition: transform 0.35s var(--ease-soft), border-color 0.35s var(--ease-soft), background 0.35s var(--ease-soft);
+  transition: transform 0.25s var(--ease-soft), border-color 0.25s var(--ease-soft), background 0.25s var(--ease-soft);
+}
+
+.booking-resume-modal.recipient-modal__panel {
+  padding: 38px 42px 34px;
+}
+
+.booking-resume-modal .recipient-modal__choices button {
+  min-height: 104px;
+  padding: 18px 22px;
+  border-radius: 18px;
+}
+
+.booking-resume-modal h1 {
+  margin-bottom: 24px;
 }
 
 .recipient-modal__choices button:hover {
@@ -525,6 +539,14 @@
     border-color 0.2s var(--ease-soft);
 }
 
+.booking-history__back svg,
+.booking-history__back span,
+.booking-history__action svg,
+.booking-history__action span {
+  color: inherit;
+  fill: currentColor;
+}
+
 /* Quay lại danh sách: nút phụ, không tranh sự chú ý với hai thao tác chính. */
 .booking-history__back {
   border: 1px solid var(--line);
@@ -549,7 +571,7 @@
 
 .booking-history__action:hover {
   border-color: var(--ink);
-  color: var(--surface);
+  color: var(--surface) !important;
   background: var(--ink);
 }
 
@@ -564,7 +586,7 @@
 
 .booking-history__action--danger:hover {
   border-color: var(--danger);
-  color: var(--surface);
+  color: var(--surface) !important;
   background: var(--danger);
 }
 
@@ -595,6 +617,8 @@
 .booking-resume-prompt button:last-child { color: var(--ink); background: #fff; }
 /* Dòng "đang giữ khung giờ mới": cùng ngôn ngữ bo góc với các thẻ trong bảng. */
 .booking-history__hold {
+  display: grid;
+  gap: 4px;
   padding: 10px 13px;
   border: 1px solid rgba(163, 77, 0, 0.18);
   border-radius: var(--radius-md);
@@ -899,8 +923,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  white-space: nowrap;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 14px;
+}
+
+.vivi-studio__menu-button svg {
+  display: block;
 }
 
 /*

@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from src.agents.graph import agent, get_agent
 from src.agents.tools import (
@@ -39,6 +39,7 @@ from src.models.schemas import (
     CsvImportRequest,
     DatasetImportRequest,
     DemoActionRequest,
+    FloatingDemoOptionsRequest,
     UiDirective,
 )
 from src.services.booking import BookingError
@@ -366,6 +367,17 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                     action_data.get("booking_id"),
                 )
         protected = guardrails.protect_output(result)
+        raw_intent_entities = result.get("intent_entities") or {}
+        public_intent_entities = {
+            key: raw_intent_entities.get(key)
+            for key in (
+                "reschedule_target_date",
+                "reschedule_target_time",
+                "reschedule_date_type",
+                "reschedule_day_offset",
+            )
+            if raw_intent_entities.get(key) is not None
+        }
         response = ChatResponse(
             response=protected.response,
             analysis=protected.analysis,
@@ -375,6 +387,8 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             action_data=protected.action_data,
             action_error=protected.action_error,
             intent=str(result.get("intent") or ""),
+            sub_intent=str((result.get("metadata") or {}).get("sub_intent") or ""),
+            intent_entities=public_intent_entities,
             ui=_chat_ui_directive(result),
         )
         trace_event(
@@ -449,21 +463,6 @@ async def send_driver_invitation(booking_id: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=400, detail={"code": code, "message": messages.get(code, "Unable to create driver invitation")}
         ) from exc
-
-
-@router.get("/bookings/{booking_id}/profile-summary.md", response_class=PlainTextResponse)
-async def booking_profile_summary(booking_id: str) -> PlainTextResponse:
-    """Return the booking's booker/driver profile summary as Markdown."""
-    try:
-        source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
-        markdown = await summarize_user_profile(source)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Booking not found") from exc
-    except RuntimeError as exc:
-        if str(exc) == "LLM_NOT_CONFIGURED":
-            raise HTTPException(status_code=503, detail="Profile summary LLM is not configured") from exc
-        raise
-    return PlainTextResponse(markdown, media_type="text/markdown; charset=utf-8")
 
 
 @router.get("/status")
@@ -571,6 +570,40 @@ async def chat_stream(body: ChatRequest, request: Request):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+def _floating_demo_available() -> bool:
+    settings = get_settings()
+    return settings.app_env != "production" and bool(getattr(settings, "floating_demo_enabled", False))
+
+
+@router.get("/floating-demo/capabilities")
+async def floating_demo_capabilities():
+    """Expose a harmless feature flag; production always reports disabled."""
+    return {"enabled": _floating_demo_available()}
+
+
+@router.post("/floating-demo/options")
+async def search_floating_demo_options(body: FloatingDemoOptionsRequest):
+    """Search demo availability without depending on the conversational agent."""
+    if not _floating_demo_available():
+        raise HTTPException(status_code=404, detail={"code": "FLOATING_DEMO_DISABLED", "message": "Demo không khả dụng."})
+    payload = body.model_dump(exclude_none=True)
+    decision = get_guardrails().inspect_demo_action(action="search_options", payload=payload)
+    if not decision.allowed:
+        raise HTTPException(status_code=400, detail={"code": decision.code, "message": decision.user_message})
+    try:
+        result = booking_service.search_options(
+            vehicle_model=body.vehicle_model,
+            showroom_id=body.showroom_id or None,
+            showroom_query=body.showroom_query or None,
+            showroom_limit=body.showroom_limit,
+            latitude=body.latitude,
+            longitude=body.longitude,
+        )
+    except BookingError as exc:
+        return {"success": False, "message": str(exc), "error": {"code": exc.code, "retryable": exc.retryable}}
+    return {"success": True, "data": result}
+
+
 @router.post("/demo/action")
 @router.post("/test-drive/actions")
 async def demo_action(body: DemoActionRequest, request: Request):
@@ -591,6 +624,7 @@ async def demo_action(body: DemoActionRequest, request: Request):
         "get_details": ("get_booking_details", lambda **kw: get_booking_details.invoke(kw)),
         "list_bookings": ("list_bookings", booking_service.list_bookings),
         "update_details": ("UpdateBookingDetailsCommand", booking_service.update_booking_details),
+        "search_reschedule": ("SearchRescheduleOptionsQuery", booking_service.search_reschedule_options),
         "hold_reschedule": ("HoldRescheduleSlotCommand", booking_service.hold_reschedule_slot),
         "confirm_reschedule": ("ConfirmRescheduleCommand", booking_service.confirm_reschedule),
         "cancel_booking": ("CancelBookingCommand", booking_service.cancel_booking),

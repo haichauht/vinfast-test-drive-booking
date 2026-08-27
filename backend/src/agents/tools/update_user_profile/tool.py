@@ -5,12 +5,14 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 
 from src.dependencies import profile_service, profile_update_queue
+from src.observability import trace_backend_operation
 from src.services.profile.models import SignalCandidate
 
 logger = logging.getLogger("profile.tool")
 
 
 @tool
+@trace_backend_operation("ProfileUpdateQueue.enqueue")
 async def update_user_profile(
     signals: list[SignalCandidate],
     profile_id: Annotated[str, InjectedState("profile_id")],

@@ -96,7 +96,7 @@ export function TeamPage({ token, user }) {
           <h2>{canManage ? 'Nhân sự và lịch làm việc' : 'Lịch làm việc của tôi'}</h2>
           <p>{canManage ? 'Ca làm và thời gian không khả dụng chỉ áp dụng trong showroom được cấp quyền.' : 'Chỉ hiển thị lịch gắn với hồ sơ nhân viên của bạn.'}</p>
         </div>
-        {user.role === 'operations_admin' && <select className="heading-select" value={showroomId} onChange={(event) => { setShowroomId(event.target.value); resetForm() }}><option value="">Chọn showroom</option>{(showrooms.data || []).filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
+        {user.role === 'operations_admin' && <select className="heading-select" value={showroomId} onChange={(event) => { setShowroomId(event.target.value); resetForm() }} aria-label="Chọn showroom cần quản lý nhân sự"><option value="">Chọn showroom</option>{(showrooms.data || []).filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
       </div>
       {message && <div className="form-success banner-message">{message}</div>}
       {formError && <div className="form-error banner-message">{formError}</div>}

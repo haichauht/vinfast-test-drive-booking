@@ -43,6 +43,8 @@ class ChatResponse(BaseModel):
     action_data: Any | None = None
     action_error: str = ""
     intent: str = ""
+    sub_intent: str = ""
+    intent_entities: dict[str, Any] = Field(default_factory=dict)
     ui: UiDirective | None = None
 
 
@@ -50,6 +52,15 @@ class DemoActionRequest(BaseModel):
     action: str = Field(..., min_length=1)
     payload: dict[str, Any] = Field(default_factory=dict)
     conversation_id: str = Field(default="", max_length=100)
+
+
+class FloatingDemoOptionsRequest(BaseModel):
+    vehicle_model: str = Field(..., min_length=1, max_length=120)
+    showroom_id: str = Field(default="", max_length=128)
+    showroom_query: str = Field(default="", max_length=160)
+    showroom_limit: int = Field(default=12, ge=1, le=30)
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class CsvImportRequest(BaseModel):
