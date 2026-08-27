@@ -168,6 +168,10 @@ class ManagementService(BookingBase):
                 "alternatives": [],
             }
 
+        # ``missing_fields`` guarantees this path has a valid HH:MM value,
+        # but make the invariant explicit for static type checking as well.
+        assert normalized_time is not None
+
         result = self.search_options(
             vehicle_model=current["vehicle_model_name"],
             showroom_id=current["showroom_id"],
