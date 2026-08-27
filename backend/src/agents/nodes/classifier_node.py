@@ -1,8 +1,12 @@
 import logging
 import re
 import unicodedata
+from datetime import datetime
+from typing import Literal
+from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 
 from src.agents.constants import (
@@ -17,7 +21,7 @@ from src.agents.constants import (
     SOVEREIGNTY_KEYWORDS,
 )
 from src.agents.state import AgentState
-from src.agents.trace import trace_event
+from src.agents.trace import trace_async_operation, trace_event, trace_node
 from src.dependencies import usage_budget_service
 from src.services.llm import extract_response_text, get_classifier_llm
 from src.services.usage_budget import (
@@ -101,6 +105,38 @@ def _correct_discovery_route(
     return intent, sub_intent, None
 
 
+_RESCHEDULE_DATE_FIELDS = (
+    "reschedule_date_type",
+    "reschedule_target_date",
+    "reschedule_day_offset",
+)
+
+
+def _merge_pending_reschedule(route_result: "RouteSchema", pending: dict) -> dict:
+    """Merge only structured extraction with the client-held pending target.
+
+    The classifier interprets the current message only; deterministic code
+    preserves values from a prior turn. A date is atomic because a relative
+    expression must clear a previous explicit date.
+    """
+    current = {
+        "reschedule_date_type": route_result.reschedule_date_type,
+        "reschedule_target_date": route_result.reschedule_target_date,
+        "reschedule_day_offset": route_result.reschedule_day_offset,
+        "reschedule_target_time": route_result.reschedule_target_time,
+    }
+    if route_result.sub_intent != "booking_reschedule" or not pending:
+        return current
+
+    date_was_supplied = any(current[field] is not None for field in _RESCHEDULE_DATE_FIELDS)
+    if not date_was_supplied:
+        for field in _RESCHEDULE_DATE_FIELDS:
+            current[field] = pending.get(field)
+    if current["reschedule_target_time"] is None:
+        current["reschedule_target_time"] = pending.get("reschedule_target_time")
+    return current
+
+
 def _driver_scope_block(state: AgentState, query: str, *, sub_intent: str) -> dict:
     metadata = state.get("metadata") or {}
     return {
@@ -139,9 +175,45 @@ class RouteSchema(BaseModel):
             "date range, day, or time, including shorthand such as '28 t mới rảnh'."
         ),
     )
+    reschedule_target_date: str | None = Field(
+        default=None,
+        description=(
+            "For booking_reschedule only: an explicit requested date as YYYY-MM-DD. "
+            "Keep null for relative or ambiguous expressions."
+        ),
+    )
+    reschedule_target_time: str | None = Field(
+        default=None,
+        description=(
+            "For booking_reschedule only: requested local showroom time as HH:MM (24-hour). "
+            "Interpret ordinary Vietnamese business-hour speech naturally: '1h30' means 13:30 "
+            "unless the user explicitly says morning. Otherwise null."
+        ),
+    )
+    reschedule_date_type: Literal[
+        "explicit", "relative_to_today", "relative_to_booking", "ambiguous"
+    ] | None = Field(
+        default=None,
+        description=(
+            "How to resolve the reschedule date. Use explicit for a concrete calendar date, "
+            "relative_to_today for today/tomorrow, relative_to_booking for phrases such as "
+            "'hôm sau' referring to the existing appointment, and ambiguous when clarification "
+            "is required (for example 'cuối tháng' without a specific day)."
+        ),
+    )
+    reschedule_day_offset: int | None = Field(
+        default=None,
+        ge=0,
+        le=60,
+        description=(
+            "Day offset for relative_to_today or relative_to_booking. For example tomorrow or "
+            "the day after the current appointment is 1. Null for explicit/ambiguous dates."
+        ),
+    )
 
 
-async def classifier_node(state: AgentState) -> dict:
+@trace_node("classifier")
+async def classifier_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
     query = state.get("query", "")
     context = state.get("context") or {}
     metadata = state.get("metadata") or {}
@@ -153,6 +225,7 @@ async def classifier_node(state: AgentState) -> dict:
                 break
     trace_id = metadata.get("trace_id", "")
     previous_skill = state.get("active_skill", "")
+    pending_reschedule = context.get("pendingReschedule") or {}
     post_booking_active = bool((state.get("post_booking_context") or {}).get("active"))
     is_driver_invitation = (state.get("participant_context") or {}).get("role") == "driver"
     if state.get("requested_action"):
@@ -201,6 +274,7 @@ async def classifier_node(state: AgentState) -> dict:
         trace_event("classifier.keyword_route", trace_id=trace_id, intent="sensitive", sub_intent="out_of_scope_code")
         return {"intent": "sensitive", "messages": [HumanMessage(content=query)], "metadata": {**metadata, "sub_intent": "out_of_scope_code"}, "tool_call_count": 0}
 
+    today_vietnam = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).date().isoformat()
     # Construct prompt for the LLM classifier dynamically based on system_prompt.md
     prompt = (
         "You classify requests for a VinFast test-drive assistant.\n"
@@ -290,11 +364,23 @@ async def classifier_node(state: AgentState) -> dict:
         "\n"
         "If the query contains an email, copy it exactly to contact_value. "
         "Otherwise return null. Never invent contact_value.\n"
+        "For booking_reschedule, extract the requested destination date/time into the reschedule fields. "
+        f"Today in Vietnam is {today_vietnam}. For a concrete date (including an unambiguous weekday), "
+        "set date_type=explicit and return YYYY-MM-DD. For today/tomorrow set date_type=relative_to_today "
+        "with day_offset 0/1 and do not calculate the ISO date. If 'hôm sau' refers to the current "
+        "appointment, set date_type=relative_to_booking and day_offset=1. Use date_type=ambiguous and "
+        "leave the date null for expressions such as 'cuối tháng' that need clarification. Use 24-hour showroom time; in normal "
+        "Vietnamese booking speech, '1h30' means 13:30 unless 'sáng' is explicit. Do not infer a date "
+        "or time the user did not state. Set all reschedule fields to null for other intents.\n"
+        "When Pending reschedule context is present and the user supplies a missing/corrected date or time, "
+        "classify the turn as booking_reschedule. Extract ONLY the date/time fields stated in this message; "
+        "leave fields not stated here null. Application code merges them with the pending target.\n"
         "\n"
         f"UI context: channel={context.get('channel', '')}, "
         f"stage={context.get('stage', '')}.\n"
         f"Confirmed post-booking context active: {post_booking_active}.\n"
         f"Previous active skill: {previous_skill or '(none)'}.\n"
+        f"Pending reschedule context: {pending_reschedule or '(none)'}.\n"
         f"Previous ViVi message: {previous_assistant_message or '(none)'}\n"
         f"User query: {query}"
     )
@@ -305,13 +391,19 @@ async def classifier_node(state: AgentState) -> dict:
             raise RuntimeError("LLM is not configured")
         structured_llm = llm.with_structured_output(RouteSchema)
         trace_event("llm.request", trace_id=trace_id, node="classifier", prompt=prompt)
-        result = await invoke_with_budget(
-            structured_llm,
-            prompt,
-            model=getattr(llm, "model_name", "") or "classifier",
-            metadata=metadata,
-            budget=usage_budget_service,
-            call_purpose="classifier",
+        result = await trace_async_operation(
+            "llm.classifier",
+            trace_id=trace_id,
+            input={"model": getattr(llm, "model_name", "") or "classifier", "prompt": prompt},
+            awaitable=invoke_with_budget(
+                structured_llm,
+                prompt,
+                model=getattr(llm, "model_name", "") or "classifier",
+                metadata=metadata,
+                budget=usage_budget_service,
+                call_purpose="classifier",
+                config=config,
+            ),
         )
         from typing import cast
 
@@ -367,13 +459,17 @@ async def classifier_node(state: AgentState) -> dict:
             sub_intent=sub_intent,
             active_skill=active_skill,
         )
+        reschedule_entities = _merge_pending_reschedule(route_result, pending_reschedule)
         return {
             "intent": intent,
             "active_skill": active_skill,
             "previous_active_skill": previous_skill,
             "messages": [HumanMessage(content=query)],
             "metadata": {**metadata, "sub_intent": sub_intent},
-            "intent_entities": {"contact_value": route_result.contact_value},
+            "intent_entities": {
+                "contact_value": route_result.contact_value,
+                **reschedule_entities,
+            },
             "tool_call_count": 0,
         }
     except (BudgetExceededError, LLMCallLimitExceededError) as e:

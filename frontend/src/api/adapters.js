@@ -15,6 +15,7 @@
  */
 import { modelImage, vehicleImage } from '../media/assets'
 import { withSupplementalColors } from '../data/vehicle-colors'
+import { vehiclePrice } from '../data/vehicle-prices'
 
 const vehicleMediaPrefix = '/media/vehicle-media/'
 const catalogueVehicleMediaPattern = /\/media\/vehicles\/([^/?]+)\/(?:thumbnail|studio)\.[^/?#]+/i
@@ -58,34 +59,42 @@ const productFacts = (items) => (Array.isArray(items) ? items : [])
   .filter((item) => item?.label && item?.value !== null && item?.value !== undefined)
   .map(({ label, value }) => ({ label: String(label), value: String(value) }))
 
-export const vehicleSummaryToCar = (vehicle) => ({
-  id: vehicle.id,
-  name: vehicle.name,
-  navName: vehicle.navName,
-  category: vehicle.category,
-  body: vehicle.bodyType,
-  seats: Number.isFinite(vehicle.seats) ? `${vehicle.seats} chỗ` : null,
-  price: vehicle.displayPrice || null,
-  tagline: vehicle.tagline,
-  hero: mediaView(vehicle.thumbnail).src,
-  heroMedia: mediaView(vehicle.thumbnail),
-  intro: mediaView(vehicle.thumbnail).src,
-  studioShot: {
-    ...mediaView(vehicle.studioImage),
-    mode: vehicle.studioImage?.mode || 'photo',
-  },
-  specs: productFacts(vehicle.shortSpecs),
-  highlights: productFacts(vehicle.shortSpecs),
-  // TODO(BE): Populate these lightweight summary fields from GET /vehicles so
-  // the homepage can show range, charging and colors without detail N+1 calls.
-  // Contract and acceptance criteria: frontend/BACKEND_TODO.md.
-  range: catalogueFact(vehicle.range),
-  charging: catalogueFact(vehicle.charging),
-  colorOptions: catalogueColors(vehicle.colorOptions),
-  featured: vehicle.featured,
-  testDriveEligible: vehicle.testDriveEligible,
-  sortOrder: vehicle.sortOrder,
-})
+export const vehicleSummaryToCar = (vehicle) => {
+  const officialPrice = vehiclePrice(vehicle.id)
+
+  return {
+    id: vehicle.id,
+    name: vehicle.name,
+    navName: vehicle.navName,
+    category: vehicle.category,
+    body: vehicle.bodyType,
+    seats: Number.isFinite(vehicle.seats) ? `${vehicle.seats} chỗ` : null,
+    // Giá chính thức ở frontend chỉ ghi đè những mẫu có trong tài liệu nguồn.
+    // Các mẫu chưa công bố giá giữ nguyên chuỗi catalogue/backend hiện tại.
+    price: officialPrice ? `Giá niêm yết từ ${officialPrice.from}` : vehicle.displayPrice || null,
+    priceFrom: officialPrice?.from || null,
+    priceVariants: officialPrice?.variants || null,
+    tagline: vehicle.tagline,
+    hero: mediaView(vehicle.thumbnail).src,
+    heroMedia: mediaView(vehicle.thumbnail),
+    intro: mediaView(vehicle.thumbnail).src,
+    studioShot: {
+      ...mediaView(vehicle.studioImage),
+      mode: vehicle.studioImage?.mode || 'photo',
+    },
+    specs: productFacts(vehicle.shortSpecs),
+    highlights: productFacts(vehicle.shortSpecs),
+    // TODO(BE): Populate these lightweight summary fields from GET /vehicles so
+    // the homepage can show range, charging and colors without detail N+1 calls.
+    // Contract and acceptance criteria: frontend/BACKEND_TODO.md.
+    range: catalogueFact(vehicle.range),
+    charging: catalogueFact(vehicle.charging),
+    colorOptions: catalogueColors(vehicle.colorOptions),
+    featured: vehicle.featured,
+    testDriveEligible: vehicle.testDriveEligible,
+    sortOrder: vehicle.sortOrder,
+  }
+}
 
 export const vehicleDetailToCar = (vehicle) => {
   const specificationGroups = (Array.isArray(vehicle.specifications) ? vehicle.specifications : [])

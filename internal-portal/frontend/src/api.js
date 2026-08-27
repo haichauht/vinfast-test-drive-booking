@@ -28,6 +28,24 @@ async function request(path, { token, body, method = 'GET', query } = {}) {
   return payload
 }
 
+async function requestText(url, { token } = {}) {
+  const response = await fetch(new URL(url, window.location.origin), {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    const error = new Error(messageFrom(payload, 'Không thể tạo tóm tắt hồ sơ khách hàng.'))
+    error.code = payload?.detail?.code || 'REQUEST_FAILED'
+    error.status = response.status
+    throw error
+  }
+  return {
+    text: await response.text(),
+    source: response.headers.get('X-Profile-Summary-Source') || 'generated',
+    generatedAt: response.headers.get('X-Profile-Summary-Generated-At') || '',
+  }
+}
+
 export const api = {
   login: (username, password) => request('/auth/login', { method: 'POST', body: { username, password } }),
   logout: (token) => request('/auth/logout', { method: 'POST', token }),
@@ -46,6 +64,10 @@ export const api = {
   markAllNotificationsRead: (token) => request('/notifications/read-all', { token, method: 'POST' }),
   bookings: (token, query) => request('/bookings', { token, query }),
   booking: (token, bookingId) => request(`/bookings/${bookingId}`, { token }),
+  profileSummary: (token, bookingId, { refresh = false } = {}) => requestText(
+    `${API_BASE}/bookings/${encodeURIComponent(bookingId)}/sales-brief.md${refresh ? '?refresh=true' : ''}`,
+    { token },
+  ),
   assignBooking: (token, bookingId, staffId) =>
     request(`/bookings/${bookingId}/assignment`, { token, method: 'PUT', body: { staff_id: staffId } }),
   transitionBooking: (token, bookingId, targetStatus, note) =>

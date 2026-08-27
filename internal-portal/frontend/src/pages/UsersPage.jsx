@@ -298,9 +298,9 @@ export function UsersPage({ token }) {
         </article>
       </div>
       <div className="filter-bar">
-        <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}><option value="">Tất cả vai trò</option><option value="staff">Staff</option><option value="showroom_manager">Showroom Manager</option><option value="operations_admin">Operations Admin</option></select>
-        <select value={showroomFilter} onChange={(event) => setShowroomFilter(event.target.value)}><option value="">Tất cả showroom</option>{(state.data?.showrooms || []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <select value={activeFilter} onChange={(event) => setActiveFilter(event.target.value)}><option value="">Tất cả trạng thái</option><option value="active">Đang hoạt động</option><option value="inactive">Đã khóa</option></select>
+        <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} aria-label="Lọc tài khoản theo vai trò"><option value="">Tất cả vai trò</option><option value="staff">Staff</option><option value="showroom_manager">Showroom Manager</option><option value="operations_admin">Operations Admin</option></select>
+        <select value={showroomFilter} onChange={(event) => setShowroomFilter(event.target.value)} aria-label="Lọc tài khoản theo showroom"><option value="">Tất cả showroom</option>{(state.data?.showrooms || []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <select value={activeFilter} onChange={(event) => setActiveFilter(event.target.value)} aria-label="Lọc tài khoản theo trạng thái"><option value="">Tất cả trạng thái</option><option value="active">Đang hoạt động</option><option value="inactive">Đã khóa</option></select>
         {(roleFilter || showroomFilter || activeFilter) && <button className="text-button" onClick={() => { setRoleFilter(''); setShowroomFilter(''); setActiveFilter('') }}>Xóa bộ lọc</button>}
       </div>
       {editForm && (

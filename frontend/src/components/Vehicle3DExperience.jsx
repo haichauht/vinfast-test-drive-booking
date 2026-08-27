@@ -16,6 +16,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { ArrowCounterClockwise, CursorClick, SpinnerGap } from '@phosphor-icons/react'
 import { SmartImage } from './SmartImage'
 import { chargingStation3dModel, getVehicle3dModel } from '../data/vehicle3d'
+import { getClientDeviceProfile } from '../utils/deviceProfile'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
@@ -67,6 +68,7 @@ function ModelSurface({
   quiet = false,
   interactionPrompt = 'auto',
   autoRotate = true,
+  staticMode = false,
 }) {
   const internalRef = useRef(null)
   const [engineReady, setEngineReady] = useState(false)
@@ -74,6 +76,7 @@ function ModelSurface({
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
+    if (staticMode) return undefined
     let active = true
     loadModelViewer()
       .then(() => { if (active) setEngineReady(true) })
@@ -83,9 +86,10 @@ function ModelSurface({
         onFailure?.()
       })
     return () => { active = false }
-  }, [onFailure])
+  }, [onFailure, staticMode])
 
   useEffect(() => {
+    if (staticMode) return undefined
     const viewer = internalRef.current
     if (!viewer || !engineReady) return undefined
 
@@ -106,11 +110,25 @@ function ModelSurface({
       viewer.removeEventListener('load', handleLoad)
       viewer.removeEventListener('error', handleError)
     }
-  }, [engineReady, onFailure, onReady])
+  }, [engineReady, onFailure, onReady, staticMode])
 
   const setRef = (node) => {
     internalRef.current = node
     if (viewerRef) viewerRef.current = node
+  }
+
+  if (staticMode) {
+    return (
+      <div className="vehicle-model-surface vehicle-model-surface--static">
+        <SmartImage
+          className="vehicle-model-surface__static-image"
+          src={car.motionImage || car.intro}
+          alt={`${car.name} — ảnh tối ưu cho thiết bị`}
+          eager={eager}
+          fit="contain"
+        />
+      </div>
+    )
   }
 
   return (
@@ -163,27 +181,50 @@ export function Vehicle3DExperience({ car, onEnter }) {
   const root = useRef(null)
   const viewer = useRef(null)
   const [interactive, setInteractive] = useState(false)
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const deviceProfile = getClientDeviceProfile()
+  const reducedMotion = deviceProfile.reducedMotion
+  const staticFallback = deviceProfile.constrained
 
   useEffect(() => {
-    if (!config) return undefined
+    if (!config || staticFallback) return undefined
     const fallback = window.setTimeout(() => setInteractive(true), 4500)
     return () => window.clearTimeout(fallback)
-  }, [car?.id, config])
+  }, [car?.id, config, staticFallback])
 
   useGSAP(
     () => {
       if (!config) return undefined
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const { compact, constrained, reducedMotion: reduced } = getClientDeviceProfile()
       const stage = root.current?.querySelector('.vehicle-3d__viewer')
       const copy = root.current?.querySelector('.vehicle-3d__copy')
       const streaks = root.current?.querySelectorAll('.vehicle-3d__streak')
       if (!stage) return undefined
 
-      if (reduced) {
+      if (reduced || constrained) {
         gsap.set([stage, copy], { opacity: 1, xPercent: 0, y: 0, scale: 1 })
-        setInteractive(true)
+        gsap.set(streaks, { opacity: 0 })
+        setInteractive(!constrained)
         return undefined
+      }
+
+      if (compact) {
+        gsap.set(streaks, { opacity: 0 })
+        const timeline = gsap.timeline({ paused: true, onComplete: () => setInteractive(true) })
+          .fromTo(stage, { y: 26, scale: 0.96, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.55, ease: 'power3.out' })
+          .fromTo(copy, { y: 16, opacity: 0 }, { y: 0, opacity: 1, duration: 0.42, ease: 'power3.out' }, 0.08)
+        const trigger = ScrollTrigger.create({
+          trigger: root.current,
+          start: 'top 82%',
+          once: true,
+          onEnter: () => {
+            onEnter?.()
+            timeline.play(0)
+          },
+        })
+        return () => {
+          trigger.kill()
+          timeline.kill()
+        }
       }
 
       gsap.set(copy, { opacity: 0, y: 34 })
@@ -238,7 +279,7 @@ export function Vehicle3DExperience({ car, onEnter }) {
         timeline.kill()
       }
     },
-    { scope: root, dependencies: [car?.id] },
+    { scope: root, dependencies: [car?.id, staticFallback] },
   )
 
   if (!config) return null
@@ -251,35 +292,40 @@ export function Vehicle3DExperience({ car, onEnter }) {
   }
 
   return (
-    <section className={`vehicle-3d ${interactive ? 'is-interactive' : ''}`} ref={root} aria-labelledby={`vehicle-3d-${car.id}`}>
+    <section className={`vehicle-3d ${interactive ? 'is-interactive' : ''} ${staticFallback ? 'is-static' : ''}`} ref={root} aria-labelledby={`vehicle-3d-${car.id}`}>
       <div className="vehicle-3d__ambient" aria-hidden="true" />
       <div className="vehicle-3d__streaks" aria-hidden="true">
         <span className="vehicle-3d__streak" /><span className="vehicle-3d__streak" /><span className="vehicle-3d__streak" />
       </div>
       <div className="section-frame vehicle-3d__inner">
         <div className="vehicle-3d__copy">
-          <p className="eyebrow">Góc nhìn tương tác</p>
+          <p className="eyebrow">{staticFallback ? 'Góc nhìn tối ưu' : 'Góc nhìn tương tác'}</p>
           <h2 id={`vehicle-3d-${car.id}`}>{car.name}, hiện diện trong không gian ba chiều.</h2>
-          <p>Giữ và kéo để xoay · cuộn để tiến gần hoặc lùi xa.</p>
+          <p>{staticFallback ? 'Ảnh studio nhẹ hơn được dùng để giữ trải nghiệm mượt trên thiết bị này.' : 'Giữ và kéo để xoay · cuộn để tiến gần hoặc lùi xa.'}</p>
         </div>
         <div className="vehicle-3d__viewer">
           <ModelSurface
             car={car}
             config={config}
             viewerRef={viewer}
-            interactive={interactive}
-            autoRotate={!reducedMotion}
+            interactive={interactive && !staticFallback}
+            autoRotate={!reducedMotion && !staticFallback}
             eager
             initialOrbit={config.sideOrbit}
             posterMode="dark"
+            staticMode={staticFallback}
           />
-          <div className="vehicle-3d__controls">
-            <span><CursorClick size={17} weight="light" /> Kéo để quan sát</span>
-            <button type="button" onClick={resetCamera}><ArrowCounterClockwise size={16} weight="light" /> Đặt lại góc nhìn</button>
-          </div>
-          <a className="vehicle-3d__credit" href={config.credit.source} target="_blank" rel="noreferrer">
-            3D: {config.credit.author} · {config.credit.license}
-          </a>
+          {!staticFallback && (
+            <>
+              <div className="vehicle-3d__controls">
+                <span><CursorClick size={17} weight="light" /> Kéo để quan sát</span>
+                <button type="button" onClick={resetCamera}><ArrowCounterClockwise size={16} weight="light" /> Đặt lại góc nhìn</button>
+              </div>
+              <a className="vehicle-3d__credit" href={config.credit.source} target="_blank" rel="noreferrer">
+                3D: {config.credit.author} · {config.credit.license}
+              </a>
+            </>
+          )}
         </div>
       </div>
     </section>
@@ -290,6 +336,8 @@ export function ChargingStation3DExperience({ poster }) {
   const root = useRef(null)
   const viewer = useRef(null)
   const [interactive, setInteractive] = useState(false)
+  const deviceProfile = getClientDeviceProfile()
+  const staticFallback = deviceProfile.constrained
   const station = {
     id: 'charging-station',
     name: 'Trạm sạc VinFast',
@@ -303,10 +351,27 @@ export function ChargingStation3DExperience({ poster }) {
       const copy = root.current?.querySelector('.charging-station-3d__copy')
       if (!stage) return undefined
 
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const { compact, constrained, reducedMotion } = getClientDeviceProfile()
+      if (reducedMotion || constrained) {
         gsap.set([stage, copy], { opacity: 1, y: 0, scale: 1 })
-        setInteractive(true)
+        setInteractive(!constrained)
         return undefined
+      }
+
+      if (compact) {
+        const timeline = gsap.timeline({ paused: true, onComplete: () => setInteractive(true) })
+          .fromTo(copy, { y: 16, opacity: 0 }, { y: 0, opacity: 1, duration: 0.42, ease: 'power3.out' })
+          .fromTo(stage, { y: 24, scale: 0.97, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.52, ease: 'power3.out' }, 0.08)
+        const trigger = ScrollTrigger.create({
+          trigger: root.current,
+          start: 'top 84%',
+          once: true,
+          onEnter: () => timeline.play(0),
+        })
+        return () => {
+          trigger.kill()
+          timeline.kill()
+        }
       }
 
       const timeline = gsap.timeline({ paused: true, onComplete: () => setInteractive(true) })
@@ -331,7 +396,7 @@ export function ChargingStation3DExperience({ poster }) {
         timeline.kill()
       }
     },
-    { scope: root },
+    { scope: root, dependencies: [staticFallback] },
   )
 
   const resetCamera = (target, orbit, fieldOfView) => {
@@ -342,44 +407,47 @@ export function ChargingStation3DExperience({ poster }) {
   }
 
   return (
-    <section id="charging-3d" className={`vehicle-3d vehicle-3d--station ${interactive ? 'is-interactive' : ''}`} ref={root} aria-labelledby="charging-station-3d-title">
+    <section id="charging-3d" className={`vehicle-3d vehicle-3d--station ${interactive ? 'is-interactive' : ''} ${staticFallback ? 'is-static' : ''}`} ref={root} aria-labelledby="charging-station-3d-title">
       <div className="vehicle-3d__ambient" aria-hidden="true" />
       <div className="section-frame charging-station-3d__inner">
         <header className="charging-station-3d__copy">
           <p className="eyebrow">Trạm sạc tương tác</p>
           <h2 id="charging-station-3d-title">Quan sát toàn bộ trạm sạc.</h2>
-          <p>Một góc nhìn cân đối cho toàn bộ hệ thống. Giữ và kéo trực tiếp trên mô hình để xem thiết bị từ mọi phía.</p>
+          <p>{staticFallback ? 'Ảnh toàn cảnh nhẹ hơn được dùng để giữ trang ổn định trên thiết bị này.' : 'Một góc nhìn cân đối cho toàn bộ hệ thống. Giữ và kéo trực tiếp trên mô hình để xem thiết bị từ mọi phía.'}</p>
         </header>
 
         <div className="charging-station-3d__grid">
           <article className="charging-station-3d__stage charging-station-3d__stage--overview">
             <div className="charging-station-3d__label">
-              <span>Mô hình tương tác</span>
+              <span>{staticFallback ? 'Ảnh toàn cảnh' : 'Mô hình tương tác'}</span>
               <strong>Hạ tầng trạm sạc</strong>
             </div>
             <ModelSurface
               car={station}
               config={chargingStation3dModel}
               viewerRef={viewer}
-              interactive={interactive}
+              interactive={interactive && !staticFallback}
               eager
               initialOrbit={chargingStation3dModel.orbit}
               posterMode="dark"
               interactionPrompt="none"
+              staticMode={staticFallback}
             />
-            <div className="charging-station-3d__controls">
-              <span><CursorClick size={17} weight="light" /> Giữ và kéo để xoay</span>
-              <button
-                type="button"
-                onClick={() => resetCamera(viewer, chargingStation3dModel.orbit, chargingStation3dModel.fieldOfView)}
-              >
-                <ArrowCounterClockwise size={16} weight="light" /> Về toàn cảnh
-              </button>
-            </div>
+            {!staticFallback && (
+              <div className="charging-station-3d__controls">
+                <span><CursorClick size={17} weight="light" /> Giữ và kéo để xoay</span>
+                <button
+                  type="button"
+                  onClick={() => resetCamera(viewer, chargingStation3dModel.orbit, chargingStation3dModel.fieldOfView)}
+                >
+                  <ArrowCounterClockwise size={16} weight="light" /> Về toàn cảnh
+                </button>
+              </div>
+            )}
           </article>
         </div>
 
-        <span className="charging-station-3d__credit">3D · {chargingStation3dModel.credit.author}</span>
+        {!staticFallback && <span className="charging-station-3d__credit">3D · {chargingStation3dModel.credit.author}</span>}
       </div>
     </section>
   )
@@ -393,10 +461,12 @@ export function ChargingStation3DExperience({ poster }) {
 export function BookingSuccessVehicleModel({ car, className = '' }) {
   const config = getVehicle3dModel(car?.id)
   const [failed, setFailed] = useState(false)
+  const useLiteModel = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches
+    || navigator.connection?.saveData === true
 
   useEffect(() => setFailed(false), [car?.id])
 
-  if (!config || failed) {
+  if (!config || failed || useLiteModel) {
     return (
       <SmartImage
         className={`booking-success-model__fallback vehicle-shot vehicle-shot--${car?.studioShot?.mode || 'cutout'} ${className}`.trim()}

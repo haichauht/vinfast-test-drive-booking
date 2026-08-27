@@ -65,6 +65,7 @@ import {
   vf9Sculpture,
   viviPortrait,
 } from '../data/media'
+import { getClientDeviceProfile } from '../utils/deviceProfile'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
@@ -88,6 +89,7 @@ const findVehicleFact = (specs = [], pattern) => specs.find(
 const RAIL_COPIES = 4
 const RAIL_SLIDE_DURATION = 0.9
 const RAIL_SLIDE_GAP_MS = 3200
+const HOME_DETAIL_NAVIGATION_STATE = Object.freeze({ detailOrigin: 'home', detailDepth: 1 })
 
 function VehicleRail({ items, loading, error, onRetry, colorsById }) {
   const rail = useRef(null)
@@ -176,7 +178,10 @@ function VehicleRail({ items, loading, error, onRetry, colorsById }) {
     const el = rail.current
     if (!el || !items.length) return undefined
     // Người tắt hiệu ứng chuyển động thì để dải xe đứng yên, họ tự cuộn.
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined
+    if (
+      window.matchMedia('(prefers-reduced-motion: reduce), (max-width: 900px), (pointer: coarse)').matches
+      || navigator.connection?.saveData === true
+    ) return undefined
 
     let timer
     let tween
@@ -331,6 +336,7 @@ function VehicleRail({ items, loading, error, onRetry, colorsById }) {
               <Link
                 className="vehicle-tile__core"
                 to={detailPath}
+                state={HOME_DETAIL_NAVIGATION_STATE}
                 aria-label={`Xem chi tiết ${car.name}`}
                 onFocus={() => prefetchVehicle(car.id)}
                 {...cloneProps}
@@ -427,7 +433,9 @@ function VehicleRail({ items, loading, error, onRetry, colorsById }) {
 
 export function HomePage() {
   const root = useRef(null)
+  const factoryVideoRef = useRef(null)
   const location = useLocation()
+  const deviceProfile = getClientDeviceProfile()
   const [activeGroup, setActiveGroup] = useState('personal')
   const [storyIndex, setStoryIndex] = useState(0)
   const {
@@ -452,6 +460,27 @@ export function HomePage() {
     if (location.hash === '#models-electric') setActiveGroup('personal')
   }, [location.hash])
 
+  // Video nằm sâu dưới fold: chỉ chạy khi sắp đi vào viewport và dừng ngay khi rời khỏi.
+  // Chế độ tiết kiệm dữ liệu / giảm chuyển động vẫn tải metadata để hiện frame đầu, không autoplay.
+  useEffect(() => {
+    const video = factoryVideoRef.current
+    if (!video) return undefined
+
+    const constrained = getClientDeviceProfile().reducedMotion
+      || getClientDeviceProfile().constrained
+    if (constrained) return undefined
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) video.play().catch(() => {})
+      else video.pause()
+    }, { rootMargin: '180px 0px', threshold: 0.08 })
+    observer.observe(video)
+    return () => {
+      observer.disconnect()
+      video.pause()
+    }
+  }, [])
+
   // Hero dùng media local nên phải chạy ngay ở lần paint đầu, không chờ catalogue backend.
   // Tách timeline này khỏi các ScrollTrigger bên dưới để dữ liệu xe về muộn không làm replay.
   useGSAP(
@@ -462,6 +491,30 @@ export function HomePage() {
         gsap.set('.home-hero__car img', { opacity: 1, scale: 1, xPercent: 0, yPercent: 0, filter: 'blur(0px)' })
         gsap.set('.home-hero__line, .home-hero__depth span', { opacity: 1, scaleX: 1 })
         return
+      }
+
+      const mobileLite = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches
+      if (mobileLite) {
+        const heroTimeline = gsap.timeline({ defaults: { ease: 'power3.out' } })
+        heroTimeline
+          .fromTo(
+            '.home-hero__car--lachong img',
+            { xPercent: 24, opacity: 0.78 },
+            { xPercent: 0, opacity: 1, duration: 0.78 },
+          )
+          .fromTo(
+            '[data-hero-reveal]',
+            { y: 18, opacity: 0 },
+            { y: 0, opacity: 1, duration: 0.52, stagger: 0.06 },
+            0.08,
+          )
+          .fromTo(
+            '.home-hero__line, .home-hero__depth span',
+            { scaleX: 0.35, opacity: 0 },
+            { scaleX: 1, opacity: 1, duration: 0.55, stagger: 0.04 },
+            0.16,
+          )
+        return () => heroTimeline.kill()
       }
 
       const heroTimeline = gsap.timeline({ defaults: { ease: 'power4.out' } })
@@ -502,8 +555,8 @@ export function HomePage() {
       // BACKEND/MEDIA CONTRACT: GSAP owns timing and movement; the API only selects
       // a whitelisted animationPreset and supplies correctly prepared media. Do not
       // send executable animation code or arbitrary selectors from CMS/backend.
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      if (reduced) return
+      const reducedOrMobile = window.matchMedia('(prefers-reduced-motion: reduce), (max-width: 900px), (pointer: coarse)').matches
+      if (reducedOrMobile || navigator.connection?.saveData === true) return
 
       // Xe tiến từ chiều sâu ra: nhỏ, mờ và nhoè ở xa, rõ dần và lớn dần khi cuộn tới.
       // Chỉ chạm scale/opacity/filter nên trình duyệt không phải tính lại bố cục.
@@ -763,7 +816,7 @@ export function HomePage() {
         <section className="model-marquee" aria-label="Danh sách dòng xe">
           <div className="model-marquee__track">
             {[...cars, ...cars].map((car, index) => (
-              <span key={`${car.id}-${index}`}>{car.navName}</span>
+              <span key={`${car.id}-${index}`} aria-hidden={index >= cars.length ? 'true' : undefined}>{car.navName}</span>
             ))}
           </div>
         </section>
@@ -785,7 +838,16 @@ export function HomePage() {
             video slot; preserve their separate ordering and focal points. */}
         <section id="factory-film" className="factory-film" aria-labelledby="factory-film-title">
           <div className="factory-film__media">
-            <video src={factoryFilm} autoPlay muted loop playsInline preload="auto" aria-label="Dây chuyền lắp ráp VinFast" />
+            {deviceProfile.constrained ? (
+              <SmartImage
+                className="factory-film__fallback"
+                src={factoryAerial}
+                alt="Tổ hợp sản xuất VinFast tại Hải Phòng"
+                fit="cover"
+              />
+            ) : (
+              <video ref={factoryVideoRef} src={factoryFilm} muted loop playsInline preload="metadata" aria-label="Dây chuyền lắp ráp VinFast" />
+            )}
             <div className="factory-film__veil" aria-hidden="true" />
             <div className="factory-film__copy">
               <p>Sản xuất tại Hải Phòng</p>
@@ -908,7 +970,7 @@ export function HomePage() {
               </Reveal>
 
               <Reveal className="bento-block bento-block--network" delay={0.14}>
-                <div className="double-bezel">
+                <Link to="/booking" className="double-bezel">
                   <div className="double-bezel__core bento-network">
                     <MapPin size={28} weight="light" />
                     <div>
@@ -917,7 +979,7 @@ export function HomePage() {
                     </div>
                     <span className="network-pulse" aria-hidden="true" />
                   </div>
-                </div>
+                </Link>
               </Reveal>
             </div>
           </div>
@@ -931,7 +993,7 @@ export function HomePage() {
               <p>
                 Mỗi trang mẫu xe tập hợp hình ảnh ngoại thất, khoang lái, công nghệ và thông số để bạn xem trước những điểm mình quan tâm.
               </p>
-              <IslandButton to="/models/vf8" variant="dark">
+              <IslandButton to="/models/vf8" state={HOME_DETAIL_NAVIGATION_STATE} variant="dark">
                 Xem trải nghiệm VF 8
               </IslandButton>
             </div>
@@ -1042,7 +1104,7 @@ export function HomePage() {
           </div>
         </section>
 
-        <SiteFooter />
+        <SiteFooter showLearningNotice />
       </main>
     </AppShell>
   )
