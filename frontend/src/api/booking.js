@@ -105,6 +105,14 @@ const normalizeAgentContext = (context = {}) => {
     })
   }
   if (context.bookingId) normalized.bookingId = String(context.bookingId)
+  if (context.pendingReschedule) {
+    normalized.pendingReschedule = compactObject({
+      reschedule_date_type: context.pendingReschedule.reschedule_date_type,
+      reschedule_target_date: context.pendingReschedule.reschedule_target_date,
+      reschedule_day_offset: context.pendingReschedule.reschedule_day_offset,
+      reschedule_target_time: context.pendingReschedule.reschedule_target_time,
+    })
+  }
 
   return normalized
 }
@@ -317,6 +325,15 @@ export const cancelVerifiedBooking = ({ bookingId, accessToken, reason = '' }) =
   access_session_token: accessToken,
   ui_action_id: actionId('cancel'),
   reason,
+})
+
+export const searchVerifiedReschedule = ({ bookingId, accessToken, intent }) => bookingManagementAction('search_reschedule', {
+  current_booking_id: bookingId,
+  access_session_token: accessToken,
+  date_type: intent?.reschedule_date_type || null,
+  target_date: intent?.reschedule_target_date || null,
+  day_offset: intent?.reschedule_day_offset ?? null,
+  target_time: intent?.reschedule_target_time || null,
 })
 
 export const holdVerifiedReschedule = ({ bookingId, slotId, accessToken }) => bookingManagementAction('hold_reschedule', {

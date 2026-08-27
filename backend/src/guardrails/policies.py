@@ -252,6 +252,7 @@ CONTEXT_ALLOWED_FIELDS = frozenset(
         "nearbyShowrooms",
         "userLocation",
         "bookingId",
+        "pendingReschedule",
     }
 )
 CONTEXT_NESTED_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
@@ -260,6 +261,9 @@ CONTEXT_NESTED_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     "selectedSlot": frozenset({"slotId", "time", "dateLabel", "isAvailable", "unavailableLabel"}),
     "userLocation": frozenset({"latitude", "longitude"}),
     "nearbyShowrooms": frozenset({"id", "name", "address", "distance"}),
+    "pendingReschedule": frozenset(
+        {"reschedule_date_type", "reschedule_target_date", "reschedule_day_offset", "reschedule_target_time"}
+    ),
 }
 
 # `/demo/action` is also a public tool boundary, even though it bypasses the
@@ -288,8 +292,22 @@ DEMO_ACTION_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     "update_details": frozenset(
         {"booking_id", "access_session_token", "booker_patch", "driver_patch", "driver_same_as_booker"}
     ),
-    "hold_reschedule": frozenset({"current_booking_id", "new_slot_id", "access_session_token", "ui_action_id"}),
-    "confirm_reschedule": frozenset({"current_booking_id", "new_booking_id", "access_session_token", "ui_action_id"}),
+    "search_reschedule": frozenset(
+        {
+            "current_booking_id",
+            "access_session_token",
+            "date_type",
+            "target_date",
+            "day_offset",
+            "target_time",
+        }
+    ),
+    "hold_reschedule": frozenset(
+        {"current_booking_id", "new_slot_id", "access_session_token", "ui_action_id"}
+    ),
+    "confirm_reschedule": frozenset(
+        {"current_booking_id", "new_booking_id", "access_session_token", "ui_action_id"}
+    ),
     "cancel_booking": frozenset({"booking_id", "access_session_token", "ui_action_id", "reason"}),
     "release_hold": frozenset({"booking_id"}),
 }

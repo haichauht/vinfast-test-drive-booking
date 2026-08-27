@@ -69,7 +69,7 @@ import {
   ChatCircleDots,
   Clock,
   Crosshair,
-  DotsThree,
+  List,
   MapPin,
   Minus,
   NavigationArrow,
@@ -145,6 +145,7 @@ import { clearBookingReturnContext, takeBookingReturnContext } from '../utils/bo
 
 const HOLD_TTL_MS = 5 * 60 * 1000
 const FLOATING_DEMO_STEP_DELAY_MS = 3500
+const BOOKING_MOBILE_MEDIA_QUERY = '(max-width: 900px)'
 const DEMO_PERSONA = Object.freeze({
   bookingName: 'Nguyễn Hải Đăng',
   driverName: '',
@@ -173,6 +174,30 @@ const postBookingGreetingFollowUps = (role) => (
         { text: 'Tôi muốn biết những điểm đáng chú ý trên mẫu xe này' },
       ]
 )
+const VIETNAM_SLOT_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Ho_Chi_Minh',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+const getVietnamSlotDateTime = (value) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const values = Object.fromEntries(
+    VIETNAM_SLOT_DATE_TIME_FORMATTER.formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  )
+  if (!values.year || !values.month || !values.day || values.hour === undefined || !values.minute) return null
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    minutes: Number(values.hour) * 60 + Number(values.minute),
+  }
+}
 const driverGreeting = ({ driver, booking }) => {
   const name = driver?.name || 'bạn'
   const vehicle = booking?.vehicle_model || 'xe VinFast'
@@ -184,6 +209,8 @@ const driverGreeting = ({ driver, booking }) => {
 const extractRescheduleIntent = (text = '', intentEntities = null) => {
   let targetDate = intentEntities?.reschedule_target_date || ''
   let targetTime = intentEntities?.reschedule_target_time || ''
+  const codeMatch = (text || '').toUpperCase().match(/\b(VF[A-Z0-9]{6,16})\b/)
+  const bookingCode = intentEntities?.booking_code || (codeMatch ? codeMatch[1] : '')
   if (!targetDate || !targetTime) {
     const lower = (text || '').toLowerCase()
     const dateMatch = lower.match(/(?:sang|ngày|ngay|vao|vào)\s+(\d{1,2})(?:[\/\-\.](\d{1,2}))?/)
@@ -207,7 +234,7 @@ const extractRescheduleIntent = (text = '', intentEntities = null) => {
       targetTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
     }
   }
-  return { targetDate, targetTime }
+  return { targetDate, targetTime, bookingCode }
 }
 
 const takeDriverInvitationToken = () => {
@@ -370,11 +397,15 @@ export function BookingPage() {
   const upsellCars = upsell.vehicleIds.map(getCar).filter(Boolean)
   const routeCar = getCar(searchParams.get('car'))
   const initialCar = routeCar || null
+  const restoredFloatingDemo = restoredUi.floatingDemo?.enabled && Number(restoredUi.floatingDemo?.step) > 0
+    ? restoredUi.floatingDemo
+    : null
   const shouldOfferResume = !isDriverChat && Boolean(
     !initialCar && (
       (restoredUi.stage && restoredUi.stage !== 'idle') ||
       (restoredUi.interaction?.phase && restoredUi.interaction.phase !== 'idle') ||
-      (Array.isArray(restoredUi.messages) && restoredUi.messages.length)
+      (Array.isArray(restoredUi.messages) && restoredUi.messages.length) ||
+      restoredFloatingDemo
     ),
   )
   const restoredLastConfirmed = useMemo(() => {
@@ -414,6 +445,20 @@ export function BookingPage() {
   // trong workspace; nó không được tự ý điều hướng người dùng khỏi cuộc hội thoại.
   // Trên desktop hai bề mặt vẫn cùng hiện nên thay đổi này không tác động bố cục cũ.
   const [mobileSurface, setMobileSurface] = useState('assistant')
+  const [isMobileBookingViewport, setIsMobileBookingViewport] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia(BOOKING_MOBILE_MEDIA_QUERY).matches
+  ))
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(BOOKING_MOBILE_MEDIA_QUERY)
+    const syncViewport = (event) => setIsMobileBookingViewport(event.matches)
+    setIsMobileBookingViewport(mediaQuery.matches)
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', syncViewport)
+      return () => mediaQuery.removeEventListener('change', syncViewport)
+    }
+    mediaQuery.addListener(syncViewport)
+    return () => mediaQuery.removeListener(syncViewport)
+  }, [])
   const setStage = useCallback((nextStage) => {
     dispatchInteraction({ type: InteractionEvent.SET_PHASE, stage: nextStage })
   }, [])
@@ -527,20 +572,18 @@ export function BookingPage() {
   const [inlineOtpMock, setInlineOtpMock] = useState('')
   const [inlineOtpChallengeId, setInlineOtpChallengeId] = useState('')
   const [demoCompletedModalOpen, setDemoCompletedModalOpen] = useState(false)
-  const [floatingDemoEnabled, setFloatingDemoEnabled] = useState(false)
-  const [floatingDemoStep, setFloatingDemoStep] = useState(0)
+  const [floatingDemoEnabled, setFloatingDemoEnabled] = useState(Boolean(restoredFloatingDemo))
+  const [floatingDemoStep, setFloatingDemoStep] = useState(() => Number(restoredFloatingDemo?.step) || 0)
   const [floatingDemoRunning, setFloatingDemoRunning] = useState(false)
   const [floatingDemoPaused, setFloatingDemoPaused] = useState(false)
   const [floatingDemoBusy, setFloatingDemoBusy] = useState(false)
-  // Make the optional showcase discoverable on first arrival at /booking.
-  // The presenter can still collapse it immediately, and Reset returns it to
-  // its compact state for the next run.
-  const [floatingDemoCollapsed, setFloatingDemoCollapsed] = useState(false)
-  const [floatingDemoPosition, setFloatingDemoPosition] = useState(null)
-  const [floatingDemoStatus, setFloatingDemoStatus] = useState('')
+  // Desktop demo opens as a complete, shallow controller spanning the two
+  // header rows. It never participates in the ViVi header layout.
+  const [floatingDemoCollapsed, setFloatingDemoCollapsed] = useState(Boolean(restoredFloatingDemo?.collapsed))
+  const [floatingDemoStatus, setFloatingDemoStatus] = useState(restoredFloatingDemo ? 'Đã khôi phục lượt demo trước đó' : '')
   const [floatingDemoLogs, setFloatingDemoLogs] = useState([])
   const floatingDemoRunRef = useRef(0)
-  const floatingDemoContextRef = useRef({})
+  const floatingDemoContextRef = useRef(restoredFloatingDemo?.isSimulated ? { isSimulated: true } : {})
   const floatingDemoPausedRef = useRef(false)
   const floatingDemoPauseWaitersRef = useRef([])
   const floatingDemoDelayWaitersRef = useRef([])
@@ -595,11 +638,6 @@ export function BookingPage() {
   const composerMode = useMemo(() => selectComposerMode(interaction), [interaction])
   const hasWorkspaceContent = Boolean(selectedCar || accessProfile)
   const workspaceVisible = workspaceModel.visible && hasWorkspaceContent && !workspaceHidden
-
-  useEffect(() => {
-    // Keep floating demo disabled by default; only activate if user clicks Demo in RecipientModal
-    setFloatingDemoEnabled(false)
-  }, [])
 
   // Keep a small on-screen trace for demos: it makes a failed API call
   // diagnosable without asking the presenter to open DevTools.
@@ -719,7 +757,7 @@ export function BookingPage() {
     if (isDriverChat) return
     const safeMessages = messages
       .filter((message) => !isSensitiveChatText(message.text || ''))
-      .map(({ id, role, text, type, emphasis }) => ({ id, role, text, type, emphasis }))
+      .map(({ id, role, text, type, emphasis, floatingDemoStep }) => ({ id, role, text, type, emphasis, floatingDemoStep }))
       .slice(-30)
     window.sessionStorage.setItem(BOOKING_UI_STATE_KEY, JSON.stringify({
       recipient,
@@ -731,8 +769,16 @@ export function BookingPage() {
       userLocation,
       messages: safeMessages,
       interaction: serializeInteractionState(interaction),
+      floatingDemo: floatingDemoEnabled && floatingDemoStep > 0
+        ? {
+            enabled: true,
+            step: floatingDemoStep,
+            collapsed: floatingDemoCollapsed,
+            isSimulated: Boolean(floatingDemoContextRef.current.isSimulated),
+          }
+        : null,
     }))
-  }, [recipient, selectedCarId, showroomId, nearbyShowrooms, slots, address, userLocation, messages, interaction, isDriverChat])
+  }, [recipient, selectedCarId, showroomId, nearbyShowrooms, slots, address, userLocation, messages, interaction, isDriverChat, floatingDemoEnabled, floatingDemoStep, floatingDemoCollapsed])
 
   useEffect(() => {
     if (selectedCarId || !cars.length) return
@@ -795,6 +841,7 @@ export function BookingPage() {
       : 'Lịch lái thử'
     return {
       ...booking,
+      bookingCode: booking.booking_code || booking.bookingCode || '',
       display_time: displayTime,
       display_label: `${index + 1}. ${booking.booking_code || 'Lịch lái thử'} - ${displayTime}${booking.vehicle_name ? ` - ${booking.vehicle_name}` : ''}${booking.showroom_name ? ` tại ${booking.showroom_name}` : ''}`,
     }
@@ -1022,9 +1069,10 @@ export function BookingPage() {
         setAccessError('')
         setAccessSecondsLeft(0)
         setResendSecondsLeft(0)
+        const prefilledCode = pendingRescheduleIntentRef.current?.bookingCode || toolInput.booking_code || ''
         setAccessValue((current) => ({
           ...current,
-          bookingCode: '',
+          bookingCode: prefilledCode || current.bookingCode || '',
           email: '',
           otpCode: '',
         }))
@@ -1738,6 +1786,7 @@ export function BookingPage() {
         })),
         userLocation,
         bookingId: bookingId || null,
+        pendingReschedule: pendingRescheduleIntentRef.current,
         channel: 'booking',
         })
       if (isDriverChat) {
@@ -1746,10 +1795,14 @@ export function BookingPage() {
         return
       }
       const extractedReschedule = extractRescheduleIntent(value, result.intent_entities)
-      if (result.intent === 'booking_reschedule' || extractedReschedule.targetDate || extractedReschedule.targetTime || /đổi\s*lịch|dời\s*lịch|chuyển\s*lịch/i.test(value)) {
+      if (result.intent === 'booking_reschedule' || extractedReschedule.targetDate || extractedReschedule.targetTime || extractedReschedule.bookingCode || /đổi\s*lịch|dời\s*lịch|chuyển\s*lịch/i.test(value)) {
+        const previousIntent = pendingRescheduleIntentRef.current || {}
         pendingRescheduleIntentRef.current = {
-          reschedule_target_date: extractedReschedule.targetDate || result.intent_entities?.reschedule_target_date || '',
-          reschedule_target_time: extractedReschedule.targetTime || result.intent_entities?.reschedule_target_time || '',
+          reschedule_date_type: result.intent_entities?.reschedule_date_type ?? previousIntent.reschedule_date_type ?? '',
+          reschedule_day_offset: result.intent_entities?.reschedule_day_offset ?? previousIntent.reschedule_day_offset ?? null,
+          reschedule_target_date: extractedReschedule.targetDate || result.intent_entities?.reschedule_target_date || previousIntent.reschedule_target_date || '',
+          reschedule_target_time: extractedReschedule.targetTime || result.intent_entities?.reschedule_target_time || previousIntent.reschedule_target_time || '',
+          bookingCode: extractedReschedule.bookingCode || result.intent_entities?.booking_code || previousIntent.bookingCode || '',
         }
       }
       if (mentionedCar && result.intent === 'vehicle_info') {
@@ -1953,10 +2006,9 @@ export function BookingPage() {
         return
       }
 
-      const enteredCode = (accessValue.bookingCode || '').trim().toLowerCase()
-      const targetByCode = enteredCode ? formattedBookings.find((b) => (b.bookingCode || '').toLowerCase() === enteredCode) : null
-      const targetById = verified.booking_id ? formattedBookings.find((b) => b.id === verified.booking_id) : null
-      const specificTarget = targetByCode || targetById
+      const enteredCode = (accessValue.bookingCode || pendingRescheduleIntentRef.current?.bookingCode || '').trim().toLowerCase()
+      const targetByCode = enteredCode ? formattedBookings.find((b) => ((b.booking_code || b.bookingCode || '')).toLowerCase() === enteredCode) : null
+      const specificTarget = targetByCode
 
       if (formattedBookings.length > 1 && !specificTarget) {
         setAccessProfile({
@@ -2055,6 +2107,13 @@ export function BookingPage() {
       setMobileSurface('workspace')
     } else {
       setMobileSurface('assistant')
+    }
+    if (restoredFloatingDemo) {
+      setFloatingDemoEnabled(true)
+      setFloatingDemoStep(Number(restoredFloatingDemo.step) || 0)
+      setFloatingDemoCollapsed(Boolean(restoredFloatingDemo.collapsed))
+      floatingDemoContextRef.current = restoredFloatingDemo.isSimulated ? { isSimulated: true } : {}
+      setFloatingDemoStatus('Đã tiếp tục lượt demo ở chặng trước đó')
     }
     setResumePending(false)
   }
@@ -2173,39 +2232,48 @@ export function BookingPage() {
         const targetDate = targetIntent.reschedule_target_date
         const targetTime = targetIntent.reschedule_target_time
         const dateSlots = availableSlots.filter((s) => {
-          const sDate = (s.start_at || s.startAt || s.date || '').slice(0, 10)
-          return sDate === targetDate
+          const slotDateTime = getVietnamSlotDateTime(s.start_at || s.startAt)
+          return slotDateTime?.date === targetDate
         })
-        const candidatePool = dateSlots.length > 0 ? dateSlots : availableSlots
 
-        let bestSlot = candidatePool[0]
-        if (targetTime) {
-          const [tH, tM] = targetTime.split(':').map(Number)
-          const targetMinutes = (tH || 0) * 60 + (tM || 0)
+        if (dateSlots.length > 0) {
+          let bestSlot = dateSlots[0]
+          if (targetTime) {
+            const [tH, tM] = targetTime.split(':').map(Number)
+            const targetMinutes = (tH || 0) * 60 + (tM || 0)
           let minDiff = Infinity
-          for (const s of candidatePool) {
-            const dateObj = new Date(s.start_at || s.startAt)
-            const sMinutes = dateObj.getHours() * 60 + dateObj.getMinutes()
-            const diff = Math.abs(sMinutes - targetMinutes)
-            if (diff < minDiff) {
-              minDiff = diff
-              bestSlot = s
+          for (const s of dateSlots) {
+            const slotDateTime = getVietnamSlotDateTime(s.start_at || s.startAt)
+            if (!slotDateTime) continue
+            const sMinutes = slotDateTime.minutes
+              const diff = Math.abs(sMinutes - targetMinutes)
+              if (diff < minDiff) {
+                minDiff = diff
+                bestSlot = s
+              }
             }
           }
-        }
 
-        if (bestSlot) {
+          if (bestSlot) {
+            pendingRescheduleIntentRef.current = null
+            const held = await holdVerifiedReschedule({ bookingId: targetProfile.bookingId, slotId: bestSlot.id, accessToken: targetProfile.accessToken })
+            setRescheduleState({ step: 'pending', car, showroom, slots, slot: bestSlot, newBookingId: held.booking_id })
+            setRescheduleSecondsLeft(Math.max(0, Math.ceil((new Date(held.hold_expires_at).getTime() - Date.now()) / 1000)))
+            setExpandedBookingId(targetProfile.bookingId)
+            setMobileSurface('workspace')
+            dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
+            const startsAt = new Date(bestSlot.start_at || bestSlot.startAt)
+            const timeStr = startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+            const dateStr = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(startsAt)
+            addMessage('assistant', `ViVi đã tìm thấy khung giờ ${timeStr} (${dateStr}) phù hợp nhất với yêu cầu và đã giữ tạm trong 5 phút. Bạn kiểm tra phiếu bên cạnh và bấm “Xác nhận đổi lịch” nhé!`)
+            return
+          }
+        } else {
           pendingRescheduleIntentRef.current = null
-          const held = await holdVerifiedReschedule({ bookingId: targetProfile.bookingId, slotId: bestSlot.id, accessToken: targetProfile.accessToken })
-          setRescheduleState({ step: 'pending', car, showroom, slots, slot: bestSlot, newBookingId: held.booking_id })
-          setRescheduleSecondsLeft(Math.max(0, Math.ceil((new Date(held.hold_expires_at).getTime() - Date.now()) / 1000)))
-          setExpandedBookingId(targetProfile.bookingId)
-          setMobileSurface('workspace')
-          dispatchInteraction({ type: InteractionEvent.RESCHEDULE_CONFIRM })
-          const startsAt = new Date(bestSlot.start_at || bestSlot.startAt)
-          const timeStr = startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
-          const dateStr = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(startsAt)
-          addMessage('assistant', `ViVi đã tìm thấy khung giờ ${timeStr} (${dateStr}) phù hợp nhất với yêu cầu và đã giữ tạm trong 5 phút. Bạn kiểm tra phiếu bên cạnh và bấm “Xác nhận đổi lịch” nhé!`)
+          setRescheduleState({ step: 'schedule', car, showroom, slots })
+          dispatchInteraction({ type: InteractionEvent.RESCHEDULE_SLOT })
+          const [, tMonth, tDay] = targetDate.split('-')
+          addMessage('assistant', `Ngày ${tDay}/${tMonth} hiện chưa có khung giờ trống tại ${showroom.name}. ViVi đã mở bảng lịch các ngày lân cận để bạn dễ dàng chọn lại khung giờ phù hợp nhé!`)
           return
         }
       }
@@ -2866,6 +2934,7 @@ export function BookingPage() {
   }
 
   const handleStartDemoFromModal = () => {
+    if (isMobileBookingViewport) return
     setRecipient('self')
     setFloatingDemoEnabled(true)
     setFloatingDemoCollapsed(false)
@@ -2940,13 +3009,17 @@ export function BookingPage() {
   }
 
   const toggleFloatingDemo = () => {
+    if (isMobileBookingViewport) {
+      setFloatingDemoCollapsed(true)
+      return
+    }
     setFloatingDemoCollapsed((value) => !value)
   }
 
   // Real booking and lookup flows must take back control immediately. This is
   // intentionally lighter than Reset: it cancels the demo run without wiping
   // the new conversation the visitor has just chosen to start.
-  const dismissFloatingDemoForRealFlow = () => {
+  const dismissFloatingDemoForRealFlow = useCallback(() => {
     floatingDemoRunRef.current += 1
     floatingDemoPausedRef.current = false
     floatingDemoPauseWaitersRef.current.splice(0).forEach((resolve) => resolve())
@@ -2961,7 +3034,13 @@ export function BookingPage() {
     setFloatingDemoCollapsed(true)
     setAgentTyping(false)
     setDraft('')
-  }
+  }, [])
+
+  // A demo that began on desktop remains controllable after a resize. New
+  // mobile sessions still never expose a Demo entry point.
+  useEffect(() => {
+    if (isMobileBookingViewport && floatingDemoEnabled) setFloatingDemoCollapsed(true)
+  }, [isMobileBookingViewport, floatingDemoEnabled])
 
   // Đặt lịch xong thì thanh tab chỉ còn ĐÚNG 1 nút "Phiếu lịch".
   // Ba tab kia (Đổi mẫu xe, Showroom, Lịch trống) là công cụ của lúc đang đặt; giữ lại sau khi
@@ -3047,32 +3126,53 @@ export function BookingPage() {
                     <div className="booking-history__details">
                       <p><span>Mẫu xe</span>{details.vehicleName}</p>
                       <p><span>Showroom</span>{details.showroomName}<small>{details.showroomAddress}</small></p>
-                      <p><span>Thời gian</span>{details.slotTime} · {details.slotDate}</p>
-                      {rescheduleState?.step === 'pending' && (
-                        <p className="booking-history__hold">
-                          <span>Khung giờ mới đang được giữ</span>
-                          Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}
-                        </p>
-                      )}
+                      <p><span>Thời gian hiện tại</span>{details.slotTime} · {details.slotDate}</p>
+                      {rescheduleState?.step === 'pending' && rescheduleState.slot && (() => {
+                        const startsAt = new Date(rescheduleState.slot.start_at || rescheduleState.slot.startAt)
+                        const timeStr = startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+                        const dateStr = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(startsAt)
+                        return (
+                          <div className="booking-history__hold">
+                            <p style={{ display: 'flex', justifyContent: 'space-between', margin: 0 }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Khung giờ mới đang giữ tạm</span>
+                              <small style={{ fontSize: '0.78rem', fontWeight: 600 }}>Còn lại {Math.floor(rescheduleSecondsLeft / 60)}:{String(rescheduleSecondsLeft % 60).padStart(2, '0')}</small>
+                            </p>
+                            <strong style={{ fontSize: '0.94rem', fontWeight: 600 }}>{timeStr} · {dateStr}</strong>
+                          </div>
+                        )
+                      })()}
                       <p><span>Tư vấn viên</span>{details.advisorName}<small>{details.advisorPhone || 'Chưa có số điện thoại'}</small></p>
                       <div className="booking-history__actions">
                         <span className="booking-history__actions-main">
-                          {allowedActions.includes('reschedule') && (
-                            <button type="button" className="booking-history__action" onClick={() => beginAccessibleReschedule(booking)} aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}>
-                              <PencilSimple size={13} weight="bold" /> Đổi giờ
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            className="booking-history__action"
+                            onClick={() => {
+                              if (rescheduleState?.car && rescheduleState?.showroom && rescheduleState?.slots) {
+                                setRescheduleState((current) => ({ ...current, step: 'schedule' }))
+                                dispatchInteraction({ type: InteractionEvent.RESCHEDULE_SLOT })
+                              } else {
+                                beginAccessibleReschedule(booking)
+                              }
+                            }}
+                            aria-label={`Đổi ngày giờ lịch ${bookingCodeLabel}`}
+                          >
+                            <PencilSimple size={13} weight="bold" aria-hidden="true" />
+                            <span>{rescheduleState?.step === 'pending' ? 'Đổi sang ngày giờ khác' : 'Đổi giờ'}</span>
+                          </button>
+
                           {details.allowedActions?.includes('cancel') && (
-                            <button type="button" className="booking-history__action booking-history__action--danger" onClick={() => beginAccessibleCancellation(booking)} aria-label={`Huỷ lịch ${bookingCodeLabel}`}>
-                              <Prohibit size={13} weight="bold" /> Huỷ lịch
+                            <button
+                              type="button"
+                              className="booking-history__action booking-history__action--danger"
+                              onClick={() => beginAccessibleCancellation(booking)}
+                              aria-label={`Huỷ lịch ${bookingCodeLabel}`}
+                            >
+                              <Prohibit size={13} weight="bold" aria-hidden="true" />
+                              <span>Huỷ lịch</span>
                             </button>
                           )}
                         </span>
-                        {rescheduleState?.step === 'pending' && (
-                          <button type="button" className="booking-history__update-mobile" onClick={openRescheduleConfirmation}>
-                            Cập nhật thông tin <ArrowRight size={14} weight="bold" aria-hidden="true" />
-                          </button>
-                        )}
                       </div>
                     </div>
                   )}
@@ -3113,6 +3213,17 @@ export function BookingPage() {
     && Array.isArray(latestMessage.followUps)
     ? latestMessage.followUps
     : []
+  const showFloatingDemo = floatingDemoEnabled
+    && (!isMobileBookingViewport || floatingDemoMode)
+    && Boolean(recipient)
+    && !resumePending
+    && !demoCompletedModalOpen
+    && !isDriverChat
+    && !successCinematic
+    && !confirmSlotOpen
+    && !switcherOpen
+    && !accessFlow
+    && !rescheduleState
 
   if (bookingStatus === 'unavailable') {
     return (
@@ -3130,17 +3241,16 @@ export function BookingPage() {
   }
 
   return (
-    <main id="main-content" className={`agent-booking-page ${workspaceVisible ? 'has-workspace' : 'is-agent-only'} ${stage === 'success' ? 'is-success' : ''} ${successCinematic ? 'is-cinematic' : ''}`}>
+    <main id="main-content" className={`agent-booking-page ${workspaceVisible ? 'has-workspace' : 'is-agent-only'} ${showFloatingDemo ? 'has-floating-demo' : ''} ${stage === 'success' ? 'is-success' : ''} ${successCinematic ? 'is-cinematic' : ''}`}>
       <BookingHeader />
 
-      {floatingDemoEnabled && Boolean(recipient) && !demoCompletedModalOpen && !isDriverChat && !successCinematic && !confirmSlotOpen && !switcherOpen && !accessFlow && !rescheduleState && (
+      {showFloatingDemo && (
         <FloatingDemoBar
           step={floatingDemoStep}
           running={floatingDemoRunning}
           paused={floatingDemoPaused}
           busy={floatingDemoBusy}
           collapsed={floatingDemoCollapsed}
-          position={floatingDemoPosition}
           logs={floatingDemoLogs}
           onAutoPlay={autoPlayFloatingDemo}
           onPause={toggleFloatingDemoPause}
@@ -3148,7 +3258,6 @@ export function BookingPage() {
           onBack={rewindFloatingDemo}
           onExit={resetFloatingDemo}
           onToggle={toggleFloatingDemo}
-          onPositionChange={setFloatingDemoPosition}
         />
       )}
 
@@ -3206,7 +3315,7 @@ export function BookingPage() {
             setRecipient('self')
             startLookup({ addUserMessage: false })
           }}
-          onDemo={handleStartDemoFromModal}
+          onDemo={isMobileBookingViewport ? undefined : handleStartDemoFromModal}
         />
       )}
       {demoCompletedModalOpen && (
@@ -3306,7 +3415,7 @@ export function BookingPage() {
               </div>
               {workspaceTitle && <h2 className="workspace-toolbar__title">{workspaceTitle}</h2>}
               </div>
-              <div className="booking-workspace__content" key={activeView}>{renderWorkspace()}</div>
+              <div className={`booking-workspace__content${activeView === 'map' && !rescheduleState ? ' booking-workspace__content--map' : ''}`} key={activeView}>{renderWorkspace()}</div>
             </section>
           )}
 
@@ -3325,7 +3434,7 @@ export function BookingPage() {
                   <ArrowLeft size={16} weight="bold" aria-hidden="true" />
                   <span>Trang chủ</span>
                 </Link>
-                {!isDriverChat && (
+                {!isDriverChat && !floatingDemoEnabled && (
                   <button
                     type="button"
                     className="vivi-studio__menu-button"
@@ -3333,11 +3442,11 @@ export function BookingPage() {
                     disabled={floatingDemoMode}
                     aria-haspopup="dialog"
                     aria-expanded={actionMenuOpen}
+                    aria-label="Mở menu thao tác lịch"
                     style={floatingDemoMode ? { opacity: 0.38, cursor: 'not-allowed', pointerEvents: 'none' } : undefined}
                     title={floatingDemoMode ? 'Menu tạm khóa trong chế độ demo' : 'Menu'}
                   >
-                    <DotsThree size={18} weight="bold" aria-hidden="true" />
-                    <span>Menu</span>
+                    <List size={21} weight="bold" aria-hidden="true" />
                   </button>
                 )}
               </div>

@@ -39,9 +39,13 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-height: 44px;
+  padding: 0 4px;
   color: rgba(255, 255, 255, 0.68);
+  background: transparent;
   font-size: 0.76rem;
   font-weight: 650;
+  cursor: pointer;
   transition: color 0.45s var(--ease-heavy), transform 0.45s var(--ease-heavy);
 }
 
@@ -189,11 +193,14 @@
 
 .detail-overview__facts > div {
   display: grid;
-  align-content: space-between;
-  gap: 28px;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
+  justify-items: center;
+  gap: 12px;
   min-width: 0;
   min-height: 148px;
   padding: 23px 24px 24px 0;
+  text-align: center;
 }
 
 .detail-overview__facts > div + div {
@@ -212,9 +219,16 @@
   font-weight: 650;
   letter-spacing: 0.035em;
   line-height: 1.4;
+  text-align: center;
 }
 
 .detail-overview__facts dd {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
   overflow-wrap: anywhere;
   font-family: var(--font-display);
   font-size: clamp(1.12rem, 1.65vw, 1.72rem);
@@ -328,6 +342,7 @@
 .detail-overview__facts .vehicle-price-variants {
   display: grid;
   gap: 0.2em;
+  width: 100%;
 }
 
 .detail-overview__facts .vehicle-price-variants__row {
