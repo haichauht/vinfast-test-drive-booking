@@ -20,7 +20,7 @@
  * vinfast-intro-seen:<id>. Muốn xem lại animation lần đầu: mở tab ẩn danh hoặc xoá khoá này.
  */
 import { useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
@@ -32,10 +32,12 @@ import { SmartImage } from '../components/SmartImage'
 import { SiteFooter } from '../components/SiteFooter'
 import { Vehicle3DExperience } from '../components/Vehicle3DExperience'
 import { VehicleColorConfigurator } from '../components/VehicleColorConfigurator'
+import { VehiclePriceVariants } from '../components/VehiclePrice'
 import { useVehicleCatalog, useVehicleDetail } from '../hooks/useSiteData'
 import { getVehicle3dModel } from '../data/vehicle3d'
 import { vehicleGallery } from '../data/vehicle-gallery'
 import { limoInteriorFilm } from '../data/media'
+import { getClientDeviceProfile } from '../utils/deviceProfile'
 
 gsap.registerPlugin(useGSAP, ScrollTrigger)
 
@@ -46,7 +48,18 @@ gsap.registerPlugin(useGSAP, ScrollTrigger)
  * động nên nút điều khiển chỉ làm rối mặt. Máy bật prefers-reduced-motion thì không tự chạy.
  */
 function FilmVideo({ className, src, poster, label }) {
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const { constrained, reducedMotion } = getClientDeviceProfile()
+
+  if (constrained) {
+    return (
+      <SmartImage
+        className={`${className || ''} film-video-static`.trim()}
+        src={poster}
+        alt={label}
+        fit="cover"
+      />
+    )
+  }
 
   return (
     <video
@@ -202,9 +215,23 @@ function DetailStorySection({ id, eyebrow, title, copy, car, chapters, extraImag
 
 export function CarDetailPage() {
   const { carId } = useParams()
+  const location = useLocation()
+  const navigate = useNavigate()
   const { car, loading, error, retry } = useVehicleDetail(carId)
   const { cars } = useVehicleCatalog()
   const root = useRef(null)
+  const detailDepth = Number(location.state?.detailDepth)
+  const hasHomeOrigin = location.state?.detailOrigin === 'home'
+    && Number.isInteger(detailDepth)
+    && detailDepth > 0
+
+  const returnToVehicleSource = () => {
+    if (hasHomeOrigin) {
+      navigate(-detailDepth)
+      return
+    }
+    navigate('/#models')
+  }
 
   useGSAP(
     () => {
@@ -214,6 +241,8 @@ export function CarDetailPage() {
       // documented in BACKEND_HANDOFF.md. The backend may choose a named preset,
       // while duration/easing/selectors stay controlled by this frontend.
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const mobileLite = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches
+        || navigator.connection?.saveData === true
       const visitKey = `vinfast-intro-seen:${car.id}`
       const firstVisit = !window.sessionStorage.getItem(visitKey)
       window.sessionStorage.setItem(visitKey, 'true')
@@ -232,6 +261,26 @@ export function CarDetailPage() {
           clearProps: 'transform,filter',
         })
         return
+      }
+
+      // Mobile dùng bố cục theo dòng chảy, vì vậy chỉ reveal nhẹ rồi dừng. Không kéo xe
+      // thêm 72px theo scroll: chuyển động đó hợp với sân khấu desktop nhưng dễ tạo tràn
+      // ngang và va vào vùng chữ khi điện thoại xoay màn hình.
+      if (mobileLite) {
+        const mobileIntro = gsap.timeline({ defaults: { ease: 'power3.out' } })
+        mobileIntro
+          .fromTo(
+            '.detail-hero__car',
+            { opacity: 0.45, scale: 0.96 },
+            { opacity: 1, scale: 1, duration: 0.58 },
+          )
+          .fromTo(
+            '[data-detail-copy]',
+            { y: 16, opacity: 0 },
+            { y: 0, opacity: 1, duration: 0.42, stagger: 0.05 },
+            0.08,
+          )
+        return () => mobileIntro.kill()
       }
 
       const intro = gsap.timeline({ defaults: { ease: 'power4.out' } })
@@ -390,7 +439,10 @@ export function CarDetailPage() {
   const rangeFact = car.range || findDetailFact(overviewFacts, /quang duong|tam hoat dong/)
   const chargingFact = car.charging || findDetailFact(overviewFacts, /sac|thoi gian nap/)
   const overviewItems = [
-    { label: 'Giá', value: car.price },
+    {
+      label: 'Giá niêm yết',
+      value: <VehiclePriceVariants className="vehicle-price-variants" variants={car.priceVariants} fallback={car.price} />,
+    },
     { label: 'Sức chứa', value: car.seats },
     { label: rangeFact?.label || 'Tầm hoạt động', value: rangeFact?.value },
     { label: chargingFact?.label || 'Thông tin sạc', value: chargingFact?.value },
@@ -458,10 +510,10 @@ export function CarDetailPage() {
           <div className="detail-hero__wash" aria-hidden="true" />
           <div className="detail-hero__model-word" aria-hidden="true">{car.name}</div>
           <div className="detail-hero__road" aria-hidden="true"><span /></div>
-          <Link className="detail-back" to="/#models" data-detail-copy>
+          <button className="detail-back" type="button" onClick={returnToVehicleSource} data-detail-copy>
             <ArrowLeft size={17} weight="light" />
             Tất cả ô tô
-          </Link>
+          </button>
           <div className="detail-hero__copy">
             <p data-detail-copy>{car.body}</p>
             <h1 id="detail-title" data-detail-copy>{car.name}</h1>
@@ -555,6 +607,7 @@ export function CarDetailPage() {
               <section className="detail-film" aria-labelledby="detail-film-title">
                 <FilmVideo
                   src={limoInteriorFilm}
+                  poster={car.hero}
                   label="Thước phim không gian nội thất Limo Green"
                 />
                 <div className="detail-film__veil" aria-hidden="true" />
@@ -664,7 +717,11 @@ export function CarDetailPage() {
                   Đặt lịch lái thử
                 </IslandButton>
                 {nextCar && (
-                  <IslandButton to={`/models/${nextCar.id}`} variant="ghost-light">
+                  <IslandButton
+                    to={`/models/${nextCar.id}`}
+                    state={hasHomeOrigin ? { detailOrigin: 'home', detailDepth: detailDepth + 1 } : undefined}
+                    variant="ghost-light"
+                  >
                     Xem {nextCar.name}
                   </IslandButton>
                 )}

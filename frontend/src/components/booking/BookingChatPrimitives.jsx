@@ -22,7 +22,7 @@ export function ViViAvatar({ compact = false }) {
   )
 }
 
-export function AgentMessage({ message, isLatest }) {
+export function AgentMessage({ message, isLatest, onTypingComplete }) {
   const [displayedText, setDisplayedText] = useState(
     isLatest && message.role === 'assistant' ? '' : (message.text || '')
   )
@@ -52,6 +52,7 @@ export function AgentMessage({ message, isLatest }) {
       if (index >= currentFullText.length) {
         clearInterval(timer)
         setIsTyping(false)
+        onTypingComplete?.(message.id)
       }
     }, 16)
 
@@ -59,7 +60,7 @@ export function AgentMessage({ message, isLatest }) {
       clearInterval(timer)
       setIsTyping(false)
     }
-  }, [message.role, isLatest])
+  }, [message.id, message.role, isLatest, onTypingComplete])
 
   useEffect(() => {
     if (!isTyping) {
@@ -82,7 +83,10 @@ export function AgentMessage({ message, isLatest }) {
   }
 
   return (
-    <div className={`vivi-message vivi-message--${message.role} ${message.emphasis ? 'vivi-message--emphasis' : ''}`.trim()}>
+    <div
+      className={`vivi-message vivi-message--${message.role} ${message.emphasis ? 'vivi-message--emphasis' : ''}`.trim()}
+      data-message-id={message.id}
+    >
       {message.role === 'assistant' && <ViViAvatar compact />}
       <div>
         <p>{formatText(displayedText)}</p>
@@ -112,7 +116,7 @@ export function ViviStatusTyping() {
   )
 }
 
-export function ContextualChoices({ stage, allowedActions, car, locationSuggestions, showrooms, slots, pendingSlot, highlightedDates = [], onResolveArea, onShowroom, onSlot }) {
+export function ContextualChoices({ stage, allowedActions, car, locationSuggestions, showrooms, slots, pendingSlot, highlightedDates = [], disabled = false, onResolveArea, onShowroom, onSlot }) {
   if (!car) return null
 
   if (stage === 'need_address' || stage === 'need_ward') {
@@ -125,7 +129,7 @@ export function ContextualChoices({ stage, allowedActions, car, locationSuggesti
         <div className="agent-context__heading"><span>Showroom phù hợp</span><small>Đã ưu tiên có xe trước, khoảng cách sau</small></div>
         <div className="agent-context__rail">
           {showrooms.slice(0, 4).map((showroom) => (
-            <button type="button" key={showroom.id} onClick={() => onShowroom(showroom)}>
+            <button type="button" key={showroom.id} onClick={() => onShowroom(showroom)} disabled={disabled}>
               <span><MapPin size={16} weight="light" /></span>
               <strong>{showroom.name.replace('VinFast ', '')}</strong>
               <small>{formatDistance(showroom.distance) ? `${formatDistance(showroom.distance)} · ` : ''}Có {car.name}</small>
@@ -184,7 +188,7 @@ export function ContextualChoices({ stage, allowedActions, car, locationSuggesti
         <div className="agent-context__heading"><span>Khung giờ gần nhất</span><small>Đã ghép đúng xe {car.name}</small></div>
         <div className="agent-context__rail agent-context__rail--slots">
           {displaySlots.map((slot, idx) => (
-            <button type="button" key={slot.slotId || `${slot.date}-${slot.time}-${idx}`} onClick={() => onSlot(slot)}>
+            <button type="button" key={slot.slotId || `${slot.date}-${slot.time}-${idx}`} onClick={() => onSlot(slot)} disabled={disabled}>
               <span><Clock size={16} weight="light" /></span>
               <strong>{slot.time}</strong>
               <small>{slot.dateLabel}</small>

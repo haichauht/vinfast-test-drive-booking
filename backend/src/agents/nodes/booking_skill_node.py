@@ -9,6 +9,7 @@ from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 
 from src.agents.constants import (
     PUBLIC_LLM_UNAVAILABLE_CODE,
@@ -28,7 +29,7 @@ from src.agents.tools import (
     update_booking_draft,
     verify_booking_access,
 )
-from src.agents.trace import message_to_log, messages_to_log, trace_event
+from src.agents.trace import message_to_log, messages_to_log, trace_async_operation, trace_event, trace_node
 from src.agents.utils import get_system_prompt, window_messages
 from src.dependencies import usage_budget_service
 from src.guardrails.untrusted_content import protect_tool_result_messages
@@ -538,7 +539,8 @@ def get_booking_prompt() -> str:
         return "You are the Booking Assistant. Help users search, update, verify and confirm test drive bookings."
 
 
-async def booking_skill_node(state: AgentState) -> dict:
+@trace_node("booking_skill")
+async def booking_skill_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
     response: Any
     messages = list(state.get("messages") or [])
     requested_action = state.get("requested_action")
@@ -858,13 +860,23 @@ async def booking_skill_node(state: AgentState) -> dict:
             tools=[tool.name for tool in tools],
             messages=messages_to_log(llm_messages),
         )
-        response = await invoke_with_budget(
-            llm_with_tools,
-            llm_messages,
-            model=getattr(llm, "model_name", "") or "chat",
-            metadata=metadata,
-            budget=usage_budget_service,
-            call_purpose="booking_skill",
+        response = await trace_async_operation(
+            "llm.booking_skill",
+            trace_id=trace_id,
+            input={
+                "model": getattr(llm, "model_name", "") or "chat",
+                "messages": messages_to_log(llm_messages),
+                "tools": [tool.name for tool in tools],
+            },
+            awaitable=invoke_with_budget(
+                llm_with_tools,
+                llm_messages,
+                model=getattr(llm, "model_name", "") or "chat",
+                metadata=metadata,
+                budget=usage_budget_service,
+                call_purpose="booking_skill",
+                config=config,
+            ),
         )
     except (BudgetExceededError, LLMCallLimitExceededError) as e:
         internal_error_code = "LLM_BUDGET_EXCEEDED" if isinstance(e, BudgetExceededError) else "LLM_CALL_LIMIT_EXCEEDED"

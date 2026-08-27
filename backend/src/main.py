@@ -1,3 +1,7 @@
+# ruff: noqa: E402
+#
+# LangSmith must be configured before importing graph/routes so LangChain and
+# LangGraph receive the canonical LANGSMITH_* variables during initialization.
 import asyncio
 import logging
 import time
@@ -11,17 +15,53 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from src.config import get_settings
+from src.observability import configure_langsmith
+
+settings = get_settings()
+configure_langsmith(settings)
+
 from src.agents.graph import close_persistent_agent, initialize_persistent_agent
 from src.api.routes import router
 from src.api.site_routes import router as site_router
 from src.bootstrap import initialize_database
-from src.config import get_settings
 from src.dependencies import booking_service, database, zalo_client
 from src.internal_portal.errors import InternalPortalError
 from src.internal_portal.routes import router as internal_router
 from src.logging_config import configure_logging
 from src.security.rate_limit import RateLimitMiddleware
 from src.services.zalo_bot import ZaloPollingService
+
+
+def _warn_on_development_secrets(settings) -> None:
+    """Hét lên khi ứng dụng đang chạy bằng khoá dự phòng nằm sẵn trong mã nguồn.
+
+    Chốt chặn ở Settings.require_production_otp_secret chỉ bật khi APP_ENV được
+    đặt đúng bằng "production". Quên đặt biến đó lúc triển khai là mất im lặng cả
+    bốn lớp bảo vệ, và ba khoá ký sẽ rơi về hằng số ai đọc repo cũng biết. Không
+    có cách nào để mã tự nhận ra mình đang chạy thật hay chạy máy cá nhân, nên
+    thứ duy nhất làm được là để lại một dòng log không thể bỏ sót.
+    """
+    if settings.app_env == "production":
+        return
+    missing = [
+        name
+        for name, value in (
+            ("BOOKING_ACCESS_OTP_SECRET", settings.booking_access_otp_secret),
+            ("CONVERSATION_SIGNING_SECRET", settings.conversation_signing_secret),
+        )
+        if not value
+    ]
+    if not missing:
+        return
+    logging.getLogger(__name__).warning(
+        "INSECURE STARTUP: APP_ENV=%s and %s not set, so signing keys fall back to "
+        "constants published in this repository. Anyone can forge booking invitation "
+        "links and OTP material. Never serve public traffic in this state: set "
+        "APP_ENV=production and provide the secrets.",
+        settings.app_env,
+        " and ".join(missing),
+    )
 
 
 @asynccontextmanager
@@ -34,6 +74,7 @@ async def lifespan(app: FastAPI):
         required=settings.app_env == "production",
     )
     logging.getLogger(__name__).info("Starting %s in %s mode", settings.app_name, settings.app_env)
+    _warn_on_development_secrets(settings)
     polling_task = None
     notification_task = None
     if settings.zalo_bot_enabled and settings.zalo_bot_polling_enabled and zalo_client:
@@ -89,7 +130,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-settings = get_settings()
 media_root = Path(settings.media_root).resolve()
 media_root.mkdir(parents=True, exist_ok=True)
 cors_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
