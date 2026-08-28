@@ -46,6 +46,7 @@ import {
   ArrowRight,
   BatteryCharging,
   MapPin,
+  Play,
   ShieldCheck,
 } from '@phosphor-icons/react'
 import { AppShell } from '../components/AppShell'
@@ -56,6 +57,9 @@ import { SiteFooter } from '../components/SiteFooter'
 import { prefetchVehicle } from '../api/vehicles'
 import { carGroups, carImage } from '../data/cars'
 import { LacHongPassage } from '../components/home/LacHongPassage'
+import { BackToTop } from '../components/BackToTop'
+import { FactoryFilmDialog } from '../components/home/FactoryFilmDialog'
+import { ViViJourney } from '../components/home/ViViJourney'
 import { lacHongEmerge, lacHongHero } from '../data/lachong'
 import { usePageContent, useVehicleCatalog, useVehicleColorOptions } from '../hooks/useSiteData'
 import {
@@ -63,7 +67,6 @@ import {
   factoryFilm,
   roadBanner,
   vf9Sculpture,
-  viviPortrait,
 } from '../data/media'
 import { getClientDeviceProfile } from '../utils/deviceProfile'
 
@@ -438,6 +441,7 @@ export function HomePage() {
   const deviceProfile = getClientDeviceProfile()
   const [activeGroup, setActiveGroup] = useState('personal')
   const [storyIndex, setStoryIndex] = useState(0)
+  const [factoryDialogOpen, setFactoryDialogOpen] = useState(false)
   const {
     cars,
     loading: carsLoading,
@@ -480,6 +484,23 @@ export function HomePage() {
       video.pause()
     }
   }, [])
+
+  // Không để video nền tiếp tục chạy phía sau dialog. Khi đóng, chỉ phát lại nếu
+  // khối nhà máy vẫn còn trong viewport và thiết bị cho phép chuyển động nền.
+  useEffect(() => {
+    const video = factoryVideoRef.current
+    if (!video) return
+
+    if (factoryDialogOpen) {
+      video.pause()
+      return
+    }
+
+    const profile = getClientDeviceProfile()
+    const bounds = video.getBoundingClientRect()
+    const visible = bounds.bottom > 0 && bounds.top < window.innerHeight
+    if (visible && !profile.reducedMotion && !profile.constrained) video.play().catch(() => {})
+  }, [factoryDialogOpen])
 
   // Hero dùng media local nên phải chạy ngay ở lần paint đầu, không chờ catalogue backend.
   // Tách timeline này khỏi các ScrollTrigger bên dưới để dữ liệu xe về muộn không làm replay.
@@ -546,6 +567,39 @@ export function HomePage() {
     { scope: root },
   )
 
+  // Video reveal phải chạy độc lập với catalogue. Bản trước đặt tween này trong effect
+  // chờ `cars.length`, nên khi backend chưa sẵn sàng người dùng chỉ thấy nút xem phim,
+  // còn chuyển động phóng 0.5 → 1 hoàn toàn không được khởi tạo.
+  useGSAP(
+    () => {
+      const profile = getClientDeviceProfile()
+      const compactPointer = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches
+      if (profile.reducedMotion || profile.constrained || compactPointer || navigator.connection?.saveData === true) {
+        gsap.set('.factory-film__media', { scale: 1, transformOrigin: 'center center' })
+        return
+      }
+
+      // Khớp timeline gốc của Antigravity: bắt đầu ở nửa kích thước khi section vừa
+      // chạm đáy viewport và đạt kích thước đầy đủ khi mép trên đi tới giữa viewport.
+      gsap.fromTo(
+        '.factory-film__media',
+        { scale: 0.5, transformOrigin: 'center center' },
+        {
+          scale: 1,
+          transformOrigin: 'center center',
+          ease: 'power2.out',
+          scrollTrigger: {
+            trigger: '.factory-film',
+            start: 'top bottom',
+            end: 'top center',
+            scrub: 1,
+          },
+        },
+      )
+    },
+    { scope: root },
+  )
+
   useGSAP(
     () => {
       // The testing UI has its catalogue synchronously available. In this branch,
@@ -602,22 +656,6 @@ export function HomePage() {
             start: 'top 78%',
             end: 'center 58%',
             scrub: 0.8,
-          },
-        },
-      )
-
-      gsap.fromTo(
-        '.factory-film__media',
-        { scale: 0.86, opacity: 0.3 },
-        {
-          scale: 1,
-          opacity: 1,
-          ease: 'none',
-          scrollTrigger: {
-            trigger: '.factory-film',
-            start: 'top 88%',
-            end: 'center 55%',
-            scrub: 1,
           },
         },
       )
@@ -709,6 +747,13 @@ export function HomePage() {
     window.requestAnimationFrame(() => {
       document.getElementById(nextGroup.id === 'personal' ? 'models-electric' : 'models-service')?.focus()
     })
+  }
+
+  const updateFactoryPointer = (event) => {
+    if (event.pointerType === 'touch') return
+    const bounds = event.currentTarget.getBoundingClientRect()
+    event.currentTarget.style.setProperty('--factory-pointer-x', `${event.clientX - bounds.left}px`)
+    event.currentTarget.style.setProperty('--factory-pointer-y', `${event.clientY - bounds.top}px`)
   }
 
   return (
@@ -837,7 +882,7 @@ export function HomePage() {
             independent CMS blocks. Do not composite the aerial image into this
             video slot; preserve their separate ordering and focal points. */}
         <section id="factory-film" className="factory-film" aria-labelledby="factory-film-title">
-          <div className="factory-film__media">
+          <div className="factory-film__media" onPointerMove={updateFactoryPointer}>
             {deviceProfile.constrained ? (
               <SmartImage
                 className="factory-film__fallback"
@@ -854,6 +899,17 @@ export function HomePage() {
               <h2 id="factory-film-title">Từng chiếc xe được hoàn thiện qua những công đoạn kiểm soát <em className="no-orphan">chặt chẽ.</em></h2>
               <span>Tổ hợp sản xuất VinFast · Hải Phòng</span>
             </div>
+            <button
+              className="factory-film__open"
+              type="button"
+              onClick={() => setFactoryDialogOpen(true)}
+              aria-label="Xem đoạn phim về tổ hợp sản xuất VinFast"
+              aria-haspopup="dialog"
+            />
+            <span className="factory-film__watch-pill" aria-hidden="true">
+              <span><Play size={17} weight="fill" /></span>
+              <strong>Xem câu chuyện</strong>
+            </span>
           </div>
         </section>
 
@@ -875,26 +931,7 @@ export function HomePage() {
 
         <LacHongPassage />
 
-        <section className="vivi-intro" id="vivi">
-          <div className="section-frame vivi-intro__grid">
-            <Reveal className="vivi-intro__portrait">
-              <img src={viviPortrait} alt="ViVi, trợ lý đặt lịch lái thử VinFast" />
-            </Reveal>
-            <Reveal className="vivi-intro__copy" delay={0.08}>
-              <p className="eyebrow">ViVi đặt lịch</p>
-              <h2>Đặt lịch lái thử cùng ViVi, theo từng bước rõ ràng.</h2>
-              <p>
-                Chọn mẫu xe hoặc cho ViVi biết điều bạn đang cần. Trợ lý sẽ tìm showroom có xe lái thử và những khung giờ còn trống phù hợp với bạn.
-              </p>
-              <div className="vivi-intro__steps">
-                <span>Chọn mẫu xe</span><span>Chọn showroom có xe</span><span>Giữ khung giờ</span>
-              </div>
-              <IslandButton to="/booking" variant="dark">
-                Bắt đầu cùng ViVi
-              </IslandButton>
-            </Reveal>
-          </div>
-        </section>
+        <ViViJourney />
 
         {/* Cảnh editorial Lạc Hồng: nội dung và model đứng ở hai vùng riêng biệt. */}
         <section id="drive-out" className="drive-out" aria-label="Xe tiến lại gần theo thao tác cuộn">
@@ -1106,6 +1143,14 @@ export function HomePage() {
 
         <SiteFooter showLearningNotice />
       </main>
+      <BackToTop />
+      {factoryDialogOpen && (
+        <FactoryFilmDialog
+          src={factoryFilm}
+          poster={factoryAerial}
+          onClose={() => setFactoryDialogOpen(false)}
+        />
+      )}
     </AppShell>
   )
 }

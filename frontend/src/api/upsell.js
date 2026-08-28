@@ -10,7 +10,7 @@
  * HỢP ĐỒNG DỮ LIỆU backend cần trả (chi tiết và tiêu chí nghiệm thu ở BACKEND_TODO.md):
  *   {
  *     "data": {
- *       "vehicleIds": ["vf3", "vf8", "vf9"],   // đúng 3 id, theo thứ tự admin xếp
+ *       "vehicleIds": ["vf9", "vf3", "vf8"],   // đúng 3 id, theo thứ tự admin xếp
  *       "headline": "Showroom đang ưu tiên",   // tuỳ chọn, để trống thì dùng mặc định
  *       "note": "Còn xe demo trong tuần này",  // tuỳ chọn, dòng phụ dưới tiêu đề
  *       "updatedAt": "2026-08-18T09:00:00Z"
@@ -27,10 +27,14 @@ import { apiGet } from './client'
 export const UPSELL_SLOT_COUNT = 3
 
 /**
- * Mặc định khi admin chưa cấu hình: VF 3 (tệp phổ thông), VF 8 (SUV chủ lực) và VF 9 (đầu bảng).
+ * Mặc định khi admin chưa cấu hình: VF 9 (đầu bảng) → VF 3 (tệp phổ thông) → VF 8 (SUV chủ lực).
  * Từ 2 lên 3 ô ngày 18/08/2026 — hai ô kéo ngang cả khối trông lệch, ba ô cân hơn.
+ * Thứ tự đổi ngày 28/08/2026 theo yêu cầu: mẫu đầu bảng đứng trước.
+ *
+ * THỨ TỰ Ở ĐÂY LÀ THỨ TỰ HIỂN THỊ. BookingPage map thẳng mảng này sang thẻ xe
+ * (`upsell.vehicleIds.map(getCar)`), không sắp xếp lại theo catalogue.
  */
-export const DEFAULT_UPSELL_VEHICLE_IDS = ['vf3', 'vf8', 'vf9']
+export const DEFAULT_UPSELL_VEHICLE_IDS = ['vf9', 'vf3', 'vf8']
 
 export const getBookingUpsell = (options = {}) =>
   apiGet('/settings/booking-upsell', { ...options, cacheKey: 'settings:booking-upsell' })

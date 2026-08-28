@@ -27,8 +27,10 @@ import { useDialogFocus } from '../hooks/useDialogFocus'
 
 // KHÔNG thêm mục nào dẫn về /booking vào mảng này: nút "Đặt lịch lái thử" bên phải
 // header luôn hiển thị (site-nav là position:fixed) nên một mục menu cùng đích chỉ làm
-// người dùng phải chọn giữa hai thứ giống hệt nhau. Mục "ViVi đặt lịch" cũ đã bỏ vì lý do đó.
+// người dùng phải chọn giữa hai thứ giống hệt nhau. ViVi là anchor nội dung trên trang
+// chủ nên đứng cùng cấp, cùng kiểu chữ với Công nghệ / Hệ sinh thái — không biến thành CTA.
 const links = [
+  { label: 'ViVi', to: '/#vivi' },
   { label: 'Công nghệ', to: '/#technology' },
   { label: 'Hệ sinh thái', to: '/#ecosystem' },
   { label: 'Hậu mãi', to: '/after-sales' },
