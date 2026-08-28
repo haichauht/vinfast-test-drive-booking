@@ -73,8 +73,8 @@ class Settings(BaseSettings):
     booking_access_otp_secret: str = ""
     # Local-only escape hatch for deterministic UI testing. Production ignores it.
     booking_access_expose_mock_otp: bool = False
-    # Floating Demo Bar is an operator-facing showcase tool. It is deliberately
-    # opt-in and must never create an OTP bypass on a production deployment.
+    # Floating Demo Bar is an opt-in simulation, also supported in production.
+    # Its API only searches availability; real bookings still require OTP.
     floating_demo_enabled: bool = False
 
     # Internal portal sessions are opaque, revocable bearer tokens stored as

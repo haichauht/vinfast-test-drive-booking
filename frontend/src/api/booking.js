@@ -182,8 +182,10 @@ export const searchFloatingDemoOptions = async ({ vehicleModel, showroomId = '',
       ...(longitude === undefined ? {} : { longitude }),
     })
   } catch (error) {
-    if (error.status === 404) {
-      throw new ApiError('Backend chưa có API chọn lịch demo. Hãy khởi động lại backend rồi thử lại.', {
+    // Preserve explicit backend errors (especially FLOATING_DEMO_DISABLED).
+    // Only an unclassified 404 indicates that the route may be missing.
+    if (error.status === 404 && error.code === 'NETWORK_ERROR') {
+      throw new ApiError('Không tìm thấy API chọn lịch demo. Hãy kiểm tra địa chỉ API và triển khai backend mới nhất.', {
         code: 'FLOATING_DEMO_API_OUTDATED', status: 404, retryable: false,
       })
     }
