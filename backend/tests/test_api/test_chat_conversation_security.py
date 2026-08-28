@@ -38,7 +38,11 @@ async def test_chat_generates_conversation_id_and_uses_it_as_thread_id(client, m
     assert state["action_tool"] == ""
     assert state["action_input"] == {}
     assert state["action_error"] == ""
-    assert mocked.ainvoke.await_args.kwargs["config"] == {"configurable": {"thread_id": identity.thread_id}}
+    # Kiểm đúng thứ test này quan tâm: thread bám vào conversation identity đã ký.
+    # KHÔNG so bằng cả dict config — LangSmith còn thêm run_name/tags/metadata vào
+    # đây (routes.py, commit "add: langsmith"), so bằng tuyệt đối là mỗi lần thêm
+    # một trường quan sát lại làm đỏ một test chẳng liên quan.
+    assert mocked.ainvoke.await_args.kwargs["config"]["configurable"] == {"thread_id": identity.thread_id}
 
 
 # test case of Chau + kiểm tra API giữ nguyên conversation id để tiếp tục đúng phiên hội thoại
@@ -92,7 +96,11 @@ async def test_chat_stream_reuses_guarded_chat_conversation_binding(client, monk
     identity = get_conversation_token_manager().verify(final["conversation_id"])
     assert identity is not None
     assert final["analysis"] == ""
-    assert mocked.ainvoke.await_args.kwargs["config"] == {"configurable": {"thread_id": identity.thread_id}}
+    # Kiểm đúng thứ test này quan tâm: thread bám vào conversation identity đã ký.
+    # KHÔNG so bằng cả dict config — LangSmith còn thêm run_name/tags/metadata vào
+    # đây (routes.py, commit "add: langsmith"), so bằng tuyệt đối là mỗi lần thêm
+    # một trường quan sát lại làm đỏ một test chẳng liên quan.
+    assert mocked.ainvoke.await_args.kwargs["config"]["configurable"] == {"thread_id": identity.thread_id}
 
 
 # test case of Chau + kiểm tra message trắng bị từ chối thay vì tốn một lượt gọi agent

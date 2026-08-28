@@ -360,6 +360,11 @@ def test_hold_slot_creates_booking_and_related_records(booking_service, booking_
 
     assert result["status"] == "held"
     assert result["remaining_seconds"] == 300
+    assert result["resolved_vehicle"] == {
+        "id": "model_vf6", "code": "VF6", "name": "VinFast VF 6",
+    }
+    assert result["slot_id"] == catalog["slot_main"]
+    assert result["start_at"] and result["end_at"]
     with booking_db.connect() as connection:
         booking = connection.execute("SELECT * FROM bookings WHERE id=?", (result["booking_id"],)).fetchone()
         slot = connection.execute("SELECT * FROM test_drive_slots WHERE id=?", (catalog["slot_main"],)).fetchone()

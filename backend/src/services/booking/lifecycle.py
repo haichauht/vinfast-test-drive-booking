@@ -35,7 +35,8 @@ class LifecycleService(BookingBase):
                 return cached
             slot_query = (
                 "SELECT s.*,d.is_active vehicle_active,d.operational_status,d.battery_soc,d.minimum_booking_soc,"
-                "v.required_license_class FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id "
+                "v.required_license_class,v.id resolved_model_id,v.code resolved_model_code,v.name resolved_model_name "
+                "FROM test_drive_slots s JOIN demo_vehicles d ON d.id=s.demo_vehicle_id "
                 "JOIN vehicle_variants x ON x.id=d.variant_id JOIN vehicle_models v ON v.id=x.model_id WHERE s.id=?"
                 + (" FOR UPDATE OF s" if c.dialect == "postgres" else "")
             )
@@ -138,6 +139,11 @@ class LifecycleService(BookingBase):
                 "hold_expires_at": iso(expires),
                 "remaining_seconds": ttl_seconds,
                 "showroom": showroom,
+                "resolved_vehicle": {
+                    "id": slot["resolved_model_id"],
+                    "code": slot["resolved_model_code"],
+                    "name": slot["resolved_model_name"],
+                },
                 "slot_id": slot_id,
                 "slot_date": slot_date,
                 "slot_time": slot_time,
