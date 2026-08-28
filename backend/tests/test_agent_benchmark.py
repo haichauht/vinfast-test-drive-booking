@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import os
@@ -20,12 +21,20 @@ from src.evaluation.agent_benchmark import (
     _argument_scores,
     _arguments_with_tool_evidence,
     _backup_sqlite_database,
+    _classifier_route_score,
     _deterministic_behavior_checks,
+    _estimate_model_costs,
     _eval_fixture_email,
+    _evaluate_database_assertions,
     _evaluate_slot_availability,
+    _parse_model_price,
+    _prepare_eval_case,
     _redact,
     _resolve_eval_turn_content,
     _resolve_eval_value,
+    _slot_selection_score,
+    _trusted_grounding_context,
+    _UsageCollector,
     judge_recorded_predictions,
     load_golden_dataset,
     merge_prediction_payloads,
@@ -36,6 +45,61 @@ from src.evaluation.agent_benchmark import (
 )
 from src.evaluation.stability import aggregate_stability
 from src.services.booking.common import is_valid_customer_email
+
+
+def test_classifier_intent_is_scored_independently_from_tool_selection():
+    case = {"expected": {"intent": "search_options"}}
+    prediction = {
+        "turns": [
+            {
+                "role": "user",
+                "classifier_intent": "domain",
+                "classifier_sub_intent": "booking_availability",
+            }
+        ],
+        "tool_calls": [{"name": "wrong_tool"}],
+    }
+
+    assert _classifier_route_score(case, prediction)["passed"] is True
+
+
+def test_slot_selection_requires_held_slot_to_have_been_offered():
+    calls = [
+        {
+            "name": "search_test_drive_options",
+            "status": "success",
+            "result": json.dumps({"slots": [{"id": "slot-offered"}]}),
+        },
+        {
+            "name": "hold_test_drive_slot",
+            "status": "success",
+            "arguments": {"slot_id": "slot-offered"},
+        },
+    ]
+
+    assert _slot_selection_score(calls)["recall"] == 1.0
+    calls[-1]["arguments"]["slot_id"] = "slot-not-offered"
+    assert _slot_selection_score(calls)["recall"] == 0.0
+
+
+def test_judge_grounding_context_keeps_booking_facts_without_identity_data():
+    context = _trusted_grounding_context(
+        {
+            "id": "booking-secret",
+            "status": "confirmed",
+            "start_at": "2026-09-04T09:00:00+00:00",
+            "model_code": "VF8",
+            "showroom_name": "VinFast Test",
+            "booker_email": "private@example.test",
+        }
+    )
+
+    assert context == {
+        "model_code": "VF8",
+        "showroom_name": "VinFast Test",
+        "start_at": "2026-09-04T09:00:00+00:00",
+        "status": "confirmed",
+    }
 
 
 def _small_dataset(tmp_path):
@@ -58,6 +122,132 @@ def test_eval_fixture_email_is_valid_stable_and_unique():
     assert first == _eval_fixture_email(long_case_id)
     assert first != _eval_fixture_email(f"{long_case_id}-different")
     assert is_valid_customer_email(first)
+
+
+def test_eval_case_exposes_local_dynamic_dates_without_database_setup():
+    booking_service = SimpleNamespace(now=lambda: datetime(2026, 8, 28, 17, 30, tzinfo=UTC))
+
+    bindings = _prepare_eval_case(None, booking_service, {"case_id": "DATE-001"})
+
+    assert bindings == {
+        "eval.today_date": "2026-08-29",
+        "eval.tomorrow_date": "2026-08-30",
+    }
+
+
+def test_signal_arguments_use_recursive_subset_matching():
+    expected = {
+        "booking_signals": [
+            {"key": "booker_attending", "value": True, "subject": "booker"},
+            {"key": "booker_will_drive", "value": True, "subject": "booker"},
+        ]
+    }
+    actual = {
+        "booking_signals": [
+            {
+                "category": "attendance",
+                "key": "booker_attending",
+                "value": True,
+                "subject": "booker",
+                "confidence": 1,
+            },
+            {
+                "category": "driving",
+                "key": "booker_will_drive",
+                "value": True,
+                "subject": "booker",
+                "confidence": 1,
+            },
+        ]
+    }
+
+    assert _argument_scores(expected, actual)["required_match"] is True
+    actual["booking_signals"][1]["subject"] = "driver"
+    assert _argument_scores(expected, actual)["required_match"] is False
+
+
+def test_usage_collector_attributes_tokens_to_each_model():
+    usage = _UsageCollector()
+    usage.on_chat_model_start(
+        {},
+        [],
+        run_id="classifier-run",
+        invocation_params={"model_name": "gpt-4o-mini"},
+    )
+    usage.on_llm_end(
+        SimpleNamespace(
+            llm_output={"token_usage": {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120}}
+        ),
+        run_id="classifier-run",
+    )
+
+    assert usage.as_dict()["by_model"] == {
+        "gpt-4o-mini": {"input_tokens": 100, "output_tokens": 20, "total_tokens": 120}
+    }
+
+
+def test_per_model_cost_is_complete_only_when_every_model_is_priced():
+    usage = {
+        "gpt-5.6-luna": {"input_tokens": 1_000, "output_tokens": 100, "total_tokens": 1_100},
+        "gpt-4o-mini": {"input_tokens": 2_000, "output_tokens": 200, "total_tokens": 2_200},
+    }
+
+    cost, breakdown, missing = _estimate_model_costs(
+        usage,
+        {"gpt-5.6-luna": (0.20, 1.20), "gpt-4o-mini": (0.15, 0.60)},
+    )
+
+    assert cost == pytest.approx(0.00074)
+    assert breakdown["gpt-5.6-luna"]["estimated_cost"] == 0.00032
+    assert missing == []
+    assert _estimate_model_costs(usage, {"gpt-5.6-luna": (0.20, 1.20)})[0] is None
+
+
+def test_model_price_parser_rejects_invalid_or_negative_rates():
+    assert _parse_model_price("openai/gpt-5.6-luna=0.20,1.20") == ("gpt-5.6-luna", 0.20, 1.20)
+    with pytest.raises(argparse.ArgumentTypeError):
+        _parse_model_price("gpt-5.6-luna=-1,1.20")
+
+
+def test_signal_database_assertions_verify_persisted_values(tmp_path):
+    path = tmp_path / "signals.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE user_profile_signals(profile_id TEXT,key TEXT,value_json TEXT,status TEXT,updated_at TEXT)"
+        )
+        connection.execute(
+            "CREATE TABLE test_drive_context_signals("
+            "booking_id TEXT,subject TEXT,key TEXT,value_json TEXT,status TEXT,updated_at TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO user_profile_signals VALUES(?,?,?,?,?)",
+            ("profile-1", "household_size", "4", "active", "2026-08-28"),
+        )
+        connection.execute(
+            "INSERT INTO test_drive_context_signals VALUES(?,?,?,?,?,?)",
+            ("booking-1", "booker", "booker_attending", "true", "active", "2026-08-28"),
+        )
+
+    database = Database(path)
+    assertions = [
+        {"assertion": "active_profile_signal", "key": "household_size", "value": 4},
+        {
+            "assertion": "active_booking_signal",
+            "key": "booker_attending",
+            "value": True,
+            "subject": "booker",
+        },
+    ]
+    checks = _evaluate_database_assertions(
+        database,
+        assertions,
+        [{}, {}],
+        action_error="",
+        expected_arguments={},
+        bindings={"eval.profile_id": "profile-1", "eval.current_booking_id": "booking-1"},
+    )
+
+    assert [check["passed"] for check in checks] == [True, True]
 
 
 def test_score_evaluation_reports_behavioral_and_operational_metrics(tmp_path):
@@ -186,6 +376,11 @@ def test_requested_business_metrics_use_booking_and_security_denominators(tmp_pa
     business = report["business_metrics"]
     assert business["booking_task_success"]["confirmed_booking_completion"]["rate"] == 1.0
     assert business["cost_per_completed_booking"]["cost"] == 0.00012
+    assert business["cost_per_completed_booking"]["total_agent_cost"] == 0.00012
+    assert (
+        business["cost_per_completed_booking"]["measurement_method"]
+        == "total_agent_run_cost_divided_by_completed_bookings"
+    )
     assert business["cost_per_completed_booking"]["tokens_per_completed_booking"] == 100.0
     assert business["authorization_otp_violation_rate"]["rate"] == 0.0
     assert business["double_booking_rate"]["vehicle_slot_violation_rate"] == 0.0
@@ -195,6 +390,39 @@ def test_requested_business_metrics_use_booking_and_security_denominators(tmp_pa
     unpriced = score_evaluation(dataset, predictions, dataset_path=path, negative_dataset=negative)
     assert unpriced["business_metrics"]["cost_per_completed_booking"]["status"] == "NOT_RUN"
     assert unpriced["business_metrics"]["cost_per_completed_booking"]["cost"] is None
+
+    dedicated_cost = {
+        "generated_at": "2026-08-28T08:36:51Z",
+        "dataset": {"name": "vinfast_booking_cost_e2e", "version": "1.3.0"},
+        "run": {"status": "COMPLETE"},
+        "business_metrics": {
+            "cost_per_completed_booking": {
+                "status": "COMPLETE",
+                "currency": "USD",
+                "cost": 0.0015,
+                "unrounded_cost": 0.0015,
+                "tokens_per_completed_booking": 7900.0,
+                "completed_bookings": 10,
+                "positive_confirmation_attempts": 10,
+                "total_agent_cost": 0.015,
+                "usage_scored_cases": 10,
+                "input_tokens": 78000,
+                "output_tokens": 1000,
+                "total_tokens": 79000,
+            }
+        },
+    }
+    combined = score_evaluation(
+        dataset,
+        predictions,
+        dataset_path=path,
+        negative_dataset=negative,
+        booking_cost_report=dedicated_cost,
+    )
+    combined_cost = combined["business_metrics"]["cost_per_completed_booking"]
+    assert combined_cost["cost"] == 0.0015
+    assert combined_cost["measurement_method"] == "dedicated_live_end_to_end_booking_average"
+    assert "$0.001500" in render_markdown(combined)
 
 
 def test_stability_aggregation_reports_pass_at_k_and_variance():

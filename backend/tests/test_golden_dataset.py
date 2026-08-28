@@ -14,12 +14,12 @@ def test_agent_golden_dataset_is_structured_and_deduplicated():
     cases = dataset["cases"]
 
     assert dataset["schema_version"] == "1.2"
-    assert dataset["case_count"] == len(cases) == 57
-    assert dataset["source_case_count"] == 129
+    assert dataset["case_count"] == len(cases) == 61
+    assert dataset["source_case_count"] == 133
     assert dataset["excluded_source_case_count"] == 10
     assert dataset["deduplicated_source_case_count"] == 81
     assert dataset["generated_booking_funnel_case_count"] == 9
-    assert dataset["evaluation_status_summary"] == {"active": 57}
+    assert dataset["evaluation_status_summary"] == {"active": 61}
     assert dataset["challenge_case_count"] == 12
     assert len({case["case_id"] for case in cases}) == len(cases)
     assert not any(str(case["expected"]["arguments"].get("showroom_id", "")).startswith("HN") for case in cases)
@@ -56,6 +56,12 @@ def test_stateful_cases_declare_executable_setup_and_workflow_turns():
         "showroom_limit",
         "slot_limit",
     ]
+    assert cases["POSTBOOK-KNOWLEDGE-001"]["expected"]["allowed_extra_arguments"] == [
+        "market",
+        "model_code",
+        "query",
+        "topics",
+    ]
 
     confirm_roles = [turn["role"] for turn in cases["CONFIRM-001"]["turns"]]
     expired_roles = [turn["role"] for turn in cases["HOLD_EXPIRED-001"]["turns"]]
@@ -69,6 +75,26 @@ def test_stateful_cases_declare_executable_setup_and_workflow_turns():
     assert cases["STAFF-CAPACITY-001"]["expected"]["database_assertions"] == [
         {"assertion": "offered_slots_within_staff_capacity"}
     ]
+
+    post_booking_ids = [
+        "POSTBOOK-KNOWLEDGE-001",
+        "POSTBOOK-CONTEXT-001",
+        "POSTBOOK-PROFILE-SIGNAL-001",
+        "POSTBOOK-BOOKING-SIGNAL-001",
+    ]
+    assert all(cases[case_id]["evaluation_setup"]["kind"] == "post_booking" for case_id in post_booking_ids)
+    assert [cases[case_id]["expected"]["tool"] for case_id in post_booking_ids] == [
+        "search_knowledge",
+        None,
+        "update_post_booking_signals",
+        "update_post_booking_signals",
+    ]
+    assert len(cases["POSTBOOK-CONTEXT-001"]["evaluation_setup"]["booking_signals"]) == 2
+    assert len(cases["POSTBOOK-BOOKING-SIGNAL-001"]["expected"]["database_assertions"]) == 2
+    assert cases["POSTBOOK-PROFILE-SIGNAL-001"]["expected"]["database_assertions"][0]["assertion"] == (
+        "active_profile_signal"
+    )
+    assert all(len(cases[case_id]["source_case_ids"]) == 1 for case_id in post_booking_ids)
 
 
 def test_groundedness_coverage_uses_active_tool_evidence_cases():
@@ -88,6 +114,7 @@ def test_groundedness_coverage_uses_active_tool_evidence_cases():
         "HARD-SEARCH-CODE-SWITCH-001",
         "HARD-MULTITURN-CORRECTION-001",
         "HARD-SHOWROOM-NOTFOUND-001",
+        "POSTBOOK-KNOWLEDGE-001",
     }
 
 
@@ -100,5 +127,5 @@ def test_readme_indexes_every_case_and_states_evaluation_limits():
         assert f"`{case['case_id']}`" in readme
     assert "public booking scope" in readme
     assert "challenge" in readme
-    assert "57 active case" in readme
+    assert "61 active case" in readme
     assert "Human review" in readme

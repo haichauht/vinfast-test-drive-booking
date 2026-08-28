@@ -68,9 +68,32 @@ def aggregate_stability(
     fully_scored = [case for case in cases if case["scored_runs"] == len(reports)]
     metric_paths = {
         "task_success_rate": ("quality", "task_success_rate"),
+        "regression_task_success_rate": ("quality", "regression_task_success_rate"),
+        "challenge_task_success_rate": ("quality", "challenge_task_success_rate"),
         "intent_accuracy": ("business_metrics", "intent_accuracy", "rate"),
         "tool_selection_accuracy": ("business_metrics", "tool_selection_accuracy", "rate"),
         "argument_field_f1": ("business_metrics", "argument_accuracy", "mean_field_f1"),
+        "slot_precision": (
+            "business_metrics",
+            "slot_availability_accuracy",
+            "precision",
+        ),
+        "selected_slot_recall": (
+            "business_metrics",
+            "slot_availability_accuracy",
+            "selected_slot_recall",
+        ),
+        "clean_execution_rate": ("quality", "clean_execution_rate"),
+        "hallucination_rate": (
+            "business_metrics",
+            "hallucination_constraint_violation_rate",
+            "hallucination_rate",
+        ),
+        "constraint_violation_rate": (
+            "business_metrics",
+            "hallucination_constraint_violation_rate",
+            "constraint_violation_rate",
+        ),
         "p95_latency_ms": ("business_metrics", "p95_end_to_end_latency", "latency_ms"),
     }
     metric_variance: dict[str, Any] = {}

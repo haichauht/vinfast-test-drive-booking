@@ -38,7 +38,12 @@ async def test_chat_generates_conversation_id_and_uses_it_as_thread_id(client, m
     assert state["action_tool"] == ""
     assert state["action_input"] == {}
     assert state["action_error"] == ""
-    assert mocked.ainvoke.await_args.kwargs["config"] == {"configurable": {"thread_id": identity.thread_id}}
+    config = mocked.ainvoke.await_args.kwargs["config"]
+    assert config["configurable"] == {"thread_id": identity.thread_id}
+    assert config["run_name"] == "vivi.chat"
+    assert config["tags"] == ["vivi", "public-chat"]
+    assert config["metadata"]["conversation_id"] == payload["conversation_id"]
+    assert config["metadata"]["trace_id"]
 
 
 # test case of Chau + kiểm tra API giữ nguyên conversation id để tiếp tục đúng phiên hội thoại
@@ -92,7 +97,10 @@ async def test_chat_stream_reuses_guarded_chat_conversation_binding(client, monk
     identity = get_conversation_token_manager().verify(final["conversation_id"])
     assert identity is not None
     assert final["analysis"] == ""
-    assert mocked.ainvoke.await_args.kwargs["config"] == {"configurable": {"thread_id": identity.thread_id}}
+    config = mocked.ainvoke.await_args.kwargs["config"]
+    assert config["configurable"] == {"thread_id": identity.thread_id}
+    assert config["metadata"]["conversation_id"] == final["conversation_id"]
+    assert config["metadata"]["trace_id"]
 
 
 # test case of Chau + kiểm tra message trắng bị từ chối thay vì tốn một lượt gọi agent

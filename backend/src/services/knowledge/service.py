@@ -140,11 +140,20 @@ class KnowledgeService:
             score = sum(2 for word in words if word in searchable_words)
             score += sum(1 for word in words if word in searchable and word not in searchable_words)
             score += 8 if normalized_query and normalized_query in searchable else 0
-            score += 6 if requested_topics and any(
-                topic == item or topic.startswith(f"{item} ") for item in requested_topics
-            ) else 0
-            if requested_model and _values(entry["provenance"].get("models")):
+            topic_matches = bool(
+                requested_topics
+                and any(
+                    topic == item
+                    or topic.startswith(f"{item} ")
+                    or item in topic.split()
+                    for item in requested_topics
+                )
+            )
+            score += 6 if topic_matches else 0
+            model_scoped = bool(requested_model and _values(entry["provenance"].get("models")))
+            if model_scoped:
                 score += 8
+                score += 12 if topic_matches else 0
             if trim and _values(entry["provenance"].get("trims")):
                 score += 4
             if requested_year and _values(entry["provenance"].get("model_years")):

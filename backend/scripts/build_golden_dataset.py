@@ -14,6 +14,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA_DIR = PROJECT_ROOT / "eval" / "data"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "eval" / "golden"
+DEFAULT_REGRESSION_PATH = DEFAULT_OUTPUT_DIR / "regression_cases.csv"
 DEFAULT_CHALLENGE_PATH = DEFAULT_OUTPUT_DIR / "challenge_cases.csv"
 DEFAULT_NEGATIVE_SOURCE_PATH = DEFAULT_OUTPUT_DIR / "negative_cases.csv"
 JSON_COLUMNS: dict[str, type] = {
@@ -37,6 +38,7 @@ ACTIVE_AGENT_TOOLS = {
     "search_knowledge",
     "search_test_drive_options",
     "update_booking_draft",
+    "update_post_booking_signals",
     "verify_booking_access",
 }
 KNOWN_GAPS: dict[str, str] = {}
@@ -56,7 +58,9 @@ SEARCH_CASE_MODELS = {
 ALLOWED_EXTRA_ARGUMENTS_BY_TOOL = {
     "get_booking_details": ["access_session_token", "booking_id", "booking_code"],
     "hold_test_drive_slot": ["ui_action_id"],
+    "search_knowledge": ["market", "model_code", "query", "topics"],
     "search_test_drive_options": ["address", "showroom_limit", "slot_limit"],
+    "update_post_booking_signals": ["booking_signals", "profile_signals"],
 }
 
 
@@ -164,6 +168,39 @@ def _apply_executable_contract(case: dict[str, Any]) -> None:
     expected = case["expected"]
     tool = expected["tool"]
     tags = set(case.get("tags", []))
+
+    if case_id.startswith("POSTBOOK-"):
+        setup: dict[str, Any] = {
+            "kind": "post_booking",
+            "vehicle_model": "VF 8",
+            "participant_role": "booker",
+            "slot_offset_minutes": 500 + len(case_id),
+        }
+        if case_id == "POSTBOOK-CONTEXT-001":
+            setup["booking_signals"] = [
+                {
+                    "category": "attendance",
+                    "key": "booker_attending",
+                    "value": True,
+                    "subject": "booker",
+                    "certainty": "known",
+                    "confidence": 1.0,
+                    "source_type": "explicit_user",
+                    "operation": "add",
+                },
+                {
+                    "category": "driving",
+                    "key": "booker_will_drive",
+                    "value": True,
+                    "subject": "booker",
+                    "certainty": "known",
+                    "confidence": 1.0,
+                    "source_type": "explicit_user",
+                    "operation": "add",
+                },
+            ]
+        case["evaluation_setup"] = setup
+        return
 
     if case_id in SEARCH_CASE_MODELS:
         vehicle_model = SEARCH_CASE_MODELS[case_id]
@@ -464,8 +501,8 @@ def _validate_case(
     expected = case["expected"]
     if not expected["intent"] or not expected["skill"]:
         raise SystemExit(f"{case_id}: expected intent and skill are required")
-    if expected["tool"] is None and expected["intent"] != "guardrail":
-        raise SystemExit(f"{case_id}: only guardrail cases may omit the expected tool")
+    if expected["tool"] is None and expected["intent"] not in {"advise", "guardrail"}:
+        raise SystemExit(f"{case_id}: only advisory or guardrail cases may omit the expected tool")
     if case["evaluation_status"] == "active" and expected["tool"] not in ACTIVE_AGENT_TOOLS | {None}:
         raise SystemExit(f"{case_id}: active case references unavailable tool {expected['tool']!r}")
     if (
@@ -518,6 +555,7 @@ def build(data_dir: Path) -> dict[str, Any]:
     fixtures_dir = data_dir / "fixtures"
     source_rows = [
         *_read_csv(fixtures_dir / "golden_agent_cases.csv"),
+        *_read_csv(DEFAULT_REGRESSION_PATH),
         *_read_csv(DEFAULT_CHALLENGE_PATH),
     ]
     if not source_rows:
@@ -605,9 +643,7 @@ def build(data_dir: Path) -> dict[str, Any]:
         "case_count": len(cases),
         "source_case_count": len(source_rows) - excluded_source_case_count,
         "excluded_source_case_count": excluded_source_case_count,
-        "deduplicated_source_case_count": (
-            len(source_rows) - excluded_source_case_count - deduplicated_case_count
-        ),
+        "deduplicated_source_case_count": (len(source_rows) - excluded_source_case_count - deduplicated_case_count),
         "generated_booking_funnel_case_count": generated_booking_funnel_case_count,
         "review_status_summary": dict(sorted(review_summary.items())),
         "evaluation_status_summary": dict(sorted(evaluation_summary.items())),
@@ -622,6 +658,7 @@ def build(data_dir: Path) -> dict[str, Any]:
         "provenance": {
             "source_files": [
                 "eval/data/fixtures/golden_agent_cases.csv",
+                "eval/golden/regression_cases.csv",
                 "eval/golden/challenge_cases.csv",
             ],
             "showroom_aliases": "eval/data/reference/showrooms_hanoi_demo_47.csv",
@@ -660,9 +697,7 @@ def build_negative_cases(data_dir: Path) -> dict[str, Any]:
                 "scenario": row["case"].strip(),
                 "expected_outcome": row["expected"].strip(),
                 "fixture_nodeid": row["fixture_nodeid"].strip(),
-                "metric_groups": [
-                    group.strip() for group in row.get("metric_groups", "").split("|") if group.strip()
-                ],
+                "metric_groups": [group.strip() for group in row.get("metric_groups", "").split("|") if group.strip()],
                 "review_status": "AUTOMATED_REGRESSION_NOT_HUMAN_REVIEWED",
             }
             for row in source_rows
