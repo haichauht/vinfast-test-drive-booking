@@ -43,6 +43,10 @@ class UiDirective(BaseModel):
     allowed_actions: list[str] = Field(default_factory=list)
 
 
+class FollowUp(BaseModel):
+    text: str = Field(min_length=1, max_length=240)
+
+
 class ChatResponse(BaseModel):
     response: str = Field(..., description="Phản hồi từ agent")
     analysis: str = Field(default="", description="Phân tích nội bộ")
@@ -55,6 +59,7 @@ class ChatResponse(BaseModel):
     sub_intent: str = ""
     intent_entities: dict[str, Any] = Field(default_factory=dict)
     ui: UiDirective | None = None
+    follow_ups: list[FollowUp] = Field(default_factory=list)
 
 
 class DemoActionRequest(BaseModel):

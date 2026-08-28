@@ -1,4 +1,4 @@
-import { Check, CircleNotch, ClockCounterClockwise, EnvelopeSimple, Funnel, IdentificationCard, Phone, SignIn, Sparkle, UserMinus, X } from '@phosphor-icons/react'
+import { CaretDown, Check, CircleNotch, ClockCounterClockwise, EnvelopeSimple, Funnel, IdentificationCard, Phone, SignIn, Sparkle, UserFocus, UserMinus, X } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { PageState } from '../components/PageState.jsx'
@@ -146,6 +146,7 @@ export function BookingsPage({ token, user }) {
   const [profileSummaryError, setProfileSummaryError] = useState('')
   const [profileSummaryLoading, setProfileSummaryLoading] = useState(false)
   const canViewProfileSummary = selected && ['confirmed', 'cancelled'].includes(selected.status)
+  const [profileOpen, setProfileOpen] = useState(false)
   const drawerRef = useDialogFocus({ active: Boolean(selected), onClose: () => setSelected(null) })
   const bookingState = useRemote(
     () => api.bookings(token, {

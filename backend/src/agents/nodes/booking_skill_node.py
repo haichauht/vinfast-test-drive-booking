@@ -31,7 +31,7 @@ from src.agents.tools import (
 )
 from src.agents.trace import message_to_log, messages_to_log, trace_async_operation, trace_event, trace_node
 from src.agents.utils import get_system_prompt, window_messages
-from src.dependencies import usage_budget_service
+from src.dependencies import booking_service, usage_budget_service
 from src.guardrails.untrusted_content import protect_tool_result_messages
 from src.services.llm import extract_response_text, get_llm
 from src.services.usage_budget import (
@@ -399,6 +399,36 @@ def _pending_otp_payload(messages: list[Any], query: str) -> dict[str, str] | No
     return None
 
 
+def _verified_booking_context(details: dict[str, Any], messages: list[Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Create a minimal trusted prompt context after the OTP-bound details lookup."""
+    verified_person_id = ""
+    for message in reversed(messages):
+        if isinstance(message, ToolMessage) and message.name == verify_booking_access.name:
+            args = _tool_call_input(messages, message)
+            challenge_id = str(args.get("challenge_id") or "")
+            if challenge_id:
+                identity = booking_service.verified_identity(challenge_id)
+                verified_person_id = str((identity or {}).get("id") or "")
+            break
+    def detail_section(key: str) -> dict[str, Any]:
+        value = details.get(key)
+        return value if isinstance(value, dict) else {}
+
+    booker = detail_section("booker")
+    driver = detail_section("driver")
+    role = "booker" if verified_person_id and verified_person_id == str(booker.get("id") or "") else "driver" if verified_person_id and verified_person_id == str(driver.get("id") or "") else "verified_participant"
+    vehicle = detail_section("vehicle")
+    showroom = detail_section("showroom")
+    context = {
+        "authenticated": True, "booking_code": details.get("booking_code"), "status": details.get("status"),
+        "vehicle": vehicle.get("name") or vehicle.get("vehicle_name"), "showroom": showroom.get("name"),
+        "slot_date": details.get("slot_date"), "slot_time": details.get("slot_time"),
+        "booker_name": booker.get("full_name"), "driver_name": driver.get("full_name"),
+        "participant_role": role,
+    }
+    return context, {"role": role, "authenticated": True}
+
+
 def _resolved_vehicle_name(decoded: dict[str, Any], tool_input: dict[str, Any]) -> str:
     vehicle = decoded.get("resolved_vehicle")
     if isinstance(vehicle, dict) and vehicle.get("name"):
@@ -707,7 +737,7 @@ async def booking_skill_node(state: AgentState, config: RunnableConfig | None = 
                 else _grounded_booking_details_response(decoded)
             )
             message = AIMessage(content=response_text)
-            return {
+            details_output = {
                 "messages": [message],
                 "response": response_text,
                 "action_tool": last_message.name,
@@ -716,6 +746,11 @@ async def booking_skill_node(state: AgentState, config: RunnableConfig | None = 
                 "action_error": error_code if failed else "",
                 "metadata": metadata,
             }
+            if not failed and isinstance(decoded, dict):
+                confirmed_context, participant_context = _verified_booking_context(decoded, messages)
+                details_output["confirmed_booking_context"] = confirmed_context
+                details_output["participant_context"] = participant_context
+            return details_output
         if (
             last_message.name == search_test_drive_options.name
             and getattr(last_message, "status", "success") != "error"
@@ -815,6 +850,14 @@ async def booking_skill_node(state: AgentState, config: RunnableConfig | None = 
         f"{get_system_prompt()}\n\n--- ACTIVE SKILL GUIDELINES (BOOKING) ---\n{get_booking_prompt()}"
         f"\n\n--- REAL-TIME CONTEXT ---\nCurrent Date (Vietnam): {now_vietnam}"
     )
+    confirmed_booking_context = state.get("confirmed_booking_context") or {}
+    if confirmed_booking_context.get("authenticated"):
+        authenticated_participant = {"role": confirmed_booking_context.get("participant_role"), "authenticated": True}
+        prompt += (
+            f"\n\n--- AUTHENTICATED BOOKING CONTEXT ---\n{json.dumps(confirmed_booking_context, ensure_ascii=False)}"
+            f"\n\n--- AUTHENTICATED PARTICIPANT ---\n{json.dumps(authenticated_participant, ensure_ascii=False)}"
+            "\nUse this only as trusted booking context. Do not expose internal identifiers or contact details."
+        )
 
     tools = [
         search_test_drive_options,
