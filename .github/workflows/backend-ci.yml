@@ -6,6 +6,8 @@ on:
       - 'backend/**'
       - 'eval/benchmarks/**'
       - 'eval/golden/**'
+      - 'eval/data/fixtures/golden_agent_cases.csv'
+      - 'eval/data/fixtures/negative_cases.csv'
       - '.github/workflows/backend-ci.yml'
     branches: [main]
   pull_request:
@@ -13,6 +15,8 @@ on:
       - 'backend/**'
       - 'eval/benchmarks/**'
       - 'eval/golden/**'
+      - 'eval/data/fixtures/golden_agent_cases.csv'
+      - 'eval/data/fixtures/negative_cases.csv'
       - '.github/workflows/backend-ci.yml'
     branches: [testing, develop, main]
 
@@ -69,7 +73,7 @@ jobs:
       - name: Run tests with coverage
         run: |
           mkdir -p artifacts
-          pytest backend/tests/ -v --tb=short --cov=backend/src/ --cov-report=term-missing --cov-report=json:artifacts/backend-coverage.json
+          pytest backend/tests/ -v --tb=short --cov=backend/src/ --cov-fail-under=60 --cov-report=term-missing --cov-report=json:artifacts/backend-coverage.json
         env:
           APP_ENV: test
           OPENAI_API_KEY: test-key
@@ -77,9 +81,13 @@ jobs:
       - name: Build offline agent evaluation report
         run: >
           python backend/scripts/run_agent_evaluation.py
+          --run-negative-fixtures
           --coverage-json artifacts/backend-coverage.json
+          --predictions-output artifacts/agent-evaluation/predictions.json
           --json-output artifacts/agent-evaluation/report.json
           --markdown-output artifacts/agent-evaluation/report.md
+          --fail-under-negative-accuracy 1.0
+          --fail-under-line-coverage 60
 
       - name: Upload agent evaluation report
         if: always()

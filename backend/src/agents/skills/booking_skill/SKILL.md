@@ -56,7 +56,7 @@ The `search_test_drive_options` tool consolidates multiple backend processes (no
 - **Agent Action**: Call this tool immediately when the user requests or selects a specific timeslot in the text chat (e.g., "tôi chọn 21:00", "lấy 22:30 ngày 7/8", etc.).
 - **Inputs**:
   - `slot_id`: The ID of the slot to hold.
-  - `ui_action_id`: A random UUID or unique ID.
+  - `ui_action_id`: A unique idempotency key that **must start with `hold:`** (for example `hold:chat-<uuid>`). Reuse the same key only when retrying the exact same hold request.
 - **Behavior**: This will trigger the confirmation modal on the screen. The user can then click "Xác nhận" to confirm.
 
 ---

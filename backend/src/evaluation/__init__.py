@@ -1,5 +1,5 @@
-"""Offline evaluation utilities for deterministic quality gates."""
+"""Evaluation utilities.
 
-from src.evaluation.guardrail_benchmark import load_dataset, run_benchmark
-
-__all__ = ["load_dataset", "run_benchmark"]
+Modules are intentionally not imported eagerly so the standalone Human Review
+runtime does not initialize benchmark, database, or guardrail dependencies.
+"""

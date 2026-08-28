@@ -5,6 +5,7 @@
 import asyncio
 import logging
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -167,14 +168,21 @@ async def internal_portal_error_handler(_request, exc: InternalPortalError):
 @app.middleware("http")
 async def request_logging(request, call_next):
     started = time.perf_counter()
+    is_chat_request = request.url.path == "/api/v1/chat" or (
+        request.url.path.startswith("/api/v1/driver-chat/") and request.url.path.endswith("/chat")
+    )
+    trace_id = str(uuid.uuid4()) if is_chat_request else ""
+    if trace_id:
+        request.state.trace_id = trace_id
     try:
         response = await call_next(request)
+        duration_ms = (time.perf_counter() - started) * 1000
         logging.getLogger("http").info(
             "%s %s -> %s %.1fms",
             request.method,
             request.url.path,
             response.status_code,
-            (time.perf_counter() - started) * 1000,
+            duration_ms,
         )
         return response
     except Exception:

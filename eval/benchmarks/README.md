@@ -12,7 +12,7 @@ persistent abuse ban.
 
 | File | Vai trò |
 |---|---|
-| `guardrails_cases.json` | 82 case version-controlled, có expected decision/output và coverage floor rõ ràng. |
+| `guardrails_cases.json` | 93 case version-controlled, có expected decision/output và coverage floor rõ ràng. |
 | `backend/src/evaluation/guardrail_benchmark.py` | Loader, schema validation, executor, scorer và report renderer. |
 | `backend/scripts/run_guardrail_benchmark.py` | CLI chạy từ root repo. |
 | `results/baseline.json` | Baseline máy đọc được, gồm metric và kết quả từng case. |
@@ -24,7 +24,10 @@ persistent abuse ban.
 ### Input
 
 - benign Vietnamese/English gần vocabulary nhạy cảm;
-- prompt override, secret exfiltration và role injection;
+- prompt override dạng đầy đủ và dạng ngắn/trộn ngôn ngữ trong câu hỏi booking;
+- benign đối chứng cho cụm được trích dẫn, câu phủ định và câu hỏi giả định để
+  kiểm soát false positive;
+- secret exfiltration và role injection;
 - zero-width, full-width và bidi-control obfuscation;
 - injection trong UI context;
 - indirect injection nằm trong context/nội dung không tin cậy;

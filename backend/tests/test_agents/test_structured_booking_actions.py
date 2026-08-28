@@ -37,6 +37,49 @@ async def test_structured_action_creates_the_expected_tool_call():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("action", "payload", "expected_tool"),
+    [
+        (
+            "cancel_booking",
+            {
+                "booking_id": "booking-1",
+                "access_session_token": "session-1",
+                "ui_action_id": "cancel:one",
+            },
+            "cancel_booking",
+        ),
+        (
+            "reschedule_booking",
+            {
+                "current_booking_id": "booking-1",
+                "new_slot_id": "slot-2",
+                "access_session_token": "session-1",
+                "ui_action_id": "reschedule:one",
+            },
+            "reschedule_booking",
+        ),
+    ],
+)
+async def test_destructive_management_actions_dispatch_only_as_structured_tools(
+    action,
+    payload,
+    expected_tool,
+):
+    result = await booking_skill_node(
+        {
+            "messages": [HumanMessage(content="Tôi xác nhận thao tác")],
+            "requested_action": action,
+            "action_payload": payload,
+        }
+    )
+
+    tool_call = result["messages"][0].tool_calls[0]
+    assert tool_call["name"] == expected_tool
+    assert tool_call["args"] == payload
+
+
+@pytest.mark.asyncio
 async def test_structured_action_exposes_tool_result_to_chat_contract():
     tool_result = {"booking_id": "bkg-1", "status": "held", "version": 1}
     result = await booking_skill_node(
@@ -102,3 +145,58 @@ async def test_structured_action_strips_toolnode_exception_wrapper_from_user_err
     expected_message = "Khung giờ này đã qua hoặc không còn khả dụng, vui lòng chọn giờ khác."
     assert result["response"] == expected_message
     assert result["action_error"] == "SLOT_NO_LONGER_AVAILABLE"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("code", "message_fragment"),
+    [
+        ("VEHICLE_NOT_FOUND", "mẫu xe"),
+        ("OTP_INVALID", "OTP không đúng"),
+        ("OTP_EXPIRED", "OTP đã hết hạn"),
+    ],
+)
+async def test_structured_action_preserves_public_domain_error_codes(code, message_fragment):
+    result = await booking_skill_node(
+        {
+            "messages": [
+                HumanMessage(content="Thực hiện thao tác"),
+                ToolMessage(
+                    content=json.dumps({"error": {"code": code, "message": "internal"}}),
+                    tool_call_id="call-error",
+                    name="verify_booking_access",
+                    status="error",
+                ),
+            ],
+            "requested_action": "verify_access",
+            "action_payload": {"challenge_id": "otp-1", "otp_code": "000000"},
+        }
+    )
+
+    assert result["action_error"] == code
+    assert message_fragment in result["response"]
+
+
+@pytest.mark.asyncio
+async def test_structured_confirmation_response_contains_booking_code():
+    result = await booking_skill_node(
+        {
+            "messages": [
+                HumanMessage(content="Xác nhận lịch"),
+                ToolMessage(
+                    content=json.dumps({"booking_id": "bkg-1", "booking_code": "VF260824ABC123"}),
+                    tool_call_id="call-confirm",
+                    name="confirm_test_drive_booking",
+                ),
+            ],
+            "requested_action": "confirm_booking",
+            "action_payload": {
+                "booking_id": "bkg-1",
+                "expected_version": 2,
+                "ui_action_id": "confirm:test",
+            },
+        }
+    )
+
+    assert result["action_error"] == ""
+    assert "VF260824ABC123" in result["response"]

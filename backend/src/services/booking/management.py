@@ -371,6 +371,12 @@ class ManagementService(BookingBase):
             )
             self._event(c, current_booking_id, "booking_rescheduled", "user", {"new_booking_id": new_booking_id})
             self._event(c, new_booking_id, "booking_confirmed", "user", {"old_booking_id": current_booking_id})
+            c.execute(
+                "INSERT INTO test_drive_context_signals(id,booking_id,category,key,value_json,description,subject,certainty,confidence,source_type,source_participant,source_ref,status,superseded_by_signal_id,created_at,updated_at) "
+                "SELECT 'booking_signal_copy_' || id,?,category,key,value_json,description,subject,certainty,confidence,source_type,source_participant,source_ref,'active',NULL,?,? FROM test_drive_context_signals WHERE booking_id=? AND status='active' AND key IN ('booker_attending','driver_attending','booker_will_drive','driver_will_drive','booker_evaluation_involvement','driver_evaluation_involvement','booker_purchase_involvement','driver_purchase_involvement','additional_guest_count','additional_guest_context')",
+                (new_booking_id, now, now, current_booking_id),
+            )
+            c.execute("DELETE FROM booking_profile_summaries WHERE booking_id IN (?,?)", (current_booking_id, new_booking_id))
             result = {
                 "old_booking_status": "rescheduled",
                 "new_booking_status": "confirmed",
@@ -380,6 +386,45 @@ class ManagementService(BookingBase):
             }
             self._save_idempotency(c, ui_action_id, "confirm_reschedule", request_payload, result, now)
             return result
+
+    def reschedule_booking(
+        self,
+        current_booking_id: str,
+        new_slot_id: str,
+        access_session_token: str,
+        ui_action_id: str,
+    ) -> dict:
+        """Complete a reschedule through one public, retry-safe command.
+
+        The existing hold/confirm operations remain the audit boundaries.  A
+        stable public action id is expanded into stable child ids, so retrying
+        after either step replays the recorded response instead of creating a
+        second booking.
+        """
+        prefix = "reschedule:"
+        if not ui_action_id.startswith(prefix) or not ui_action_id.removeprefix(prefix).strip():
+            raise BookingError(
+                "INVALID_INPUT",
+                "ui_action_id của reschedule_booking phải bắt đầu bằng 'reschedule:'.",
+            )
+        suffix = ui_action_id.removeprefix(prefix)
+        held = self.hold_reschedule_slot(
+            current_booking_id,
+            new_slot_id,
+            access_session_token,
+            f"reschedule-hold:{suffix}",
+        )
+        completed = self.confirm_reschedule(
+            current_booking_id,
+            held["booking_id"],
+            access_session_token,
+            f"reschedule-confirm:{suffix}",
+        )
+        return {
+            **completed,
+            "current_booking_id": current_booking_id,
+            "new_slot_id": new_slot_id,
+        }
 
     def cancel_booking(
         self, booking_id: str, access_session_token: str, ui_action_id: str, reason: str | None = None

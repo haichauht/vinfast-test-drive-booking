@@ -1,4 +1,6 @@
 import logging
+import re
+import unicodedata
 from datetime import datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
@@ -40,6 +42,73 @@ _DRIVER_BLOCKED_SUB_INTENTS = frozenset({
     "booking_new", "booking_availability", "booking_reschedule", "booking_cancel",
     "booking_update_details", "booking_update_notifications",
 })
+
+_DISCOVERY_VEHICLE_RE = re.compile(r"(?<![a-z0-9])(?:vf\s*\d+|ebus|xe\s+buyt\s+dien)(?![a-z0-9])")
+_DISCOVERY_LOCATION_TERMS = ("showroom", "dai ly", "co so", "dia diem")
+_AVAILABILITY_TERMS = ("lich", "slot", "suat", "khung gio", "gio nao", "ranh", "trong")
+_EXISTING_BOOKING_TERMS = (
+    "da dat",
+    "ma dat lich",
+    "ma booking",
+    "booking cua",
+    "lich cua toi",
+    "lich hen cua toi",
+    "huy lich",
+    "doi lich",
+    "doi gio hen",
+    "otp",
+    "ma xac thuc",
+)
+_POST_BOOKING_QA_TERMS = (
+    "bao hanh", "bao duong", "sua chua", "cuu ho", "mobile service", "pin", "sac",
+    "adas", "isofix", "camera", "tieu hao", "tam di chuyen", "range", "thong so",
+)
+_COMMERCIAL_TERMS = ("gia", "khuyen mai", "uu dai", "tra gop", "tai chinh", "giam gia")
+
+
+def _route_text(value: object) -> str:
+    normalized = unicodedata.normalize("NFD", str(value or "").casefold().replace("đ", "d"))
+    without_marks = "".join(character for character in normalized if unicodedata.category(character) != "Mn")
+    return " ".join(re.findall(r"[a-z0-9@.]+", without_marks))
+
+
+def _recent_discovery_context(messages: object) -> bool:
+    if not isinstance(messages, list):
+        return False
+    for message in reversed(messages):
+        if not isinstance(message, HumanMessage):
+            continue
+        text = _route_text(message.content)
+        return bool(_DISCOVERY_VEHICLE_RE.search(text)) or any(term in text for term in _DISCOVERY_LOCATION_TERMS)
+    return False
+
+
+def _correct_discovery_route(
+    *,
+    query: str,
+    messages: object,
+    intent: str,
+    sub_intent: str,
+) -> tuple[str, str, str | None]:
+    """Keep new-booking discovery separate from existing-booking access."""
+    normalized = _route_text(query)
+    explicitly_existing = "@" in normalized or any(term in normalized for term in _EXISTING_BOOKING_TERMS)
+    has_vehicle = bool(_DISCOVERY_VEHICLE_RE.search(normalized))
+    showroom_refinement = any(term in normalized for term in _DISCOVERY_LOCATION_TERMS)
+    continues_discovery = showroom_refinement and _recent_discovery_context(messages)
+    test_drive_request = any(term in normalized for term in ("lai thu", "chay thu", "trai nghiem"))
+
+    if explicitly_existing or not (has_vehicle or continues_discovery):
+        return intent, sub_intent, None
+    if sub_intent == "booking_lookup" or (intent == "out_of_scope" and test_drive_request):
+        corrected = (
+            "booking_availability"
+            if any(term in normalized for term in _AVAILABILITY_TERMS)
+            else "booking_new"
+        )
+        return "domain", corrected, "new_booking_discovery_must_not_open_existing_booking_access"
+    return intent, sub_intent, None
+
 
 _RESCHEDULE_DATE_FIELDS = (
     "reschedule_date_type",
@@ -96,7 +165,7 @@ class RouteSchema(BaseModel):
         description=(
             "Detailed classification. Must be one of: booking_new, booking_lookup, "
             "booking_availability, booking_reschedule, booking_cancel, booking_update_details, "
-            "booking_update_notifications, post_booking_advisory, vehicle_info, greeting, "
+            "booking_update_notifications, post_booking_advisory, vehicle_info, after_sales_info, greeting, "
             "assistant_identity, "
             "out_of_scope, others. If intent is sensitive, use others."
         )
@@ -246,6 +315,7 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
         "- booking_update_notifications\n"
         "- post_booking_advisory\n"
         "- vehicle_info\n"
+        "- after_sales_info\n"
         "- greeting\n"
         "- assistant_identity\n"
         "- others\n"
@@ -260,11 +330,15 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
         "- booking_update_notifications: change booking notification preferences.\n"
         "- post_booking_advisory: after a confirmed booking, guidance that helps the user prepare for, participate in, or evaluate the upcoming test drive, including questions about passengers, family members, children, child seats, pets, luggage, or vehicle features.\n"
         "- vehicle_info: general VinFast vehicle/product questions not specifically tied to preparing for an already-confirmed test drive (e.g. asking about car models, seat capacity for 4 or 7 people, range, charging).\n"
+        "- after_sales_info: factual warranty, maintenance, repair, rescue, battery rescue, or Mobile Service questions. These are domain questions, including after a confirmed booking; commercial eligibility, discounts, financing, and operational commitments are not after_sales_info.\n"
         "- greeting: a social opening or greeting directed at ViVi, for example 'hi', 'hello', 'xin chào', or 'alo'.\n"
         "- assistant_identity: a question about who ViVi is, ViVi's role, or what ViVi can help with, for example 'bạn là ai?' or 'ViVi hỗ trợ gì?'.\n"
         "- others: domain requests that do not fit another domain sub_intent.\n"
         "\n"
         "Use booking_lookup when the user wants to view, find, check, or retrieve an existing booking.\n"
+        "A request that names a vehicle or showroom and asks for test-drive availability is NOT "
+        "booking_lookup unless the user explicitly says the booking already exists, provides a booking "
+        "code/email, or asks to manage an appointment already made.\n"
         "IMPORTANT: When the user mentions changing/switching a vehicle model (e.g. 'đổi VF8', 'đổi xe VF5', "
         "'chuyển sang VF7', 'xem xe VF3'), classify as booking_new (NOT booking_reschedule). Only use "
         "booking_reschedule when the user explicitly asks to change an existing appointment time/date "
@@ -346,6 +420,19 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
             intent = "domain"
 
         sub_intent = route_result.sub_intent
+        intent, sub_intent, discovery_correction = _correct_discovery_route(
+            query=query,
+            messages=state.get("messages"),
+            intent=intent,
+            sub_intent=sub_intent,
+        )
+        if discovery_correction:
+            trace_event(
+                "classifier.route_correction",
+                trace_id=trace_id,
+                to_sub_intent=sub_intent,
+                reason=discovery_correction,
+            )
         if (
             intent == "domain"
             and context.get("stage") == "choose_slot"
@@ -366,8 +453,18 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
         if intent == "domain" and not post_booking_active and sub_intent == "post_booking_advisory":
             intent = "out_of_scope"
             sub_intent = "post_booking_required"
+        normalized_query = _route_text(query)
+        if post_booking_active and intent == "out_of_scope" and (
+            any(term in normalized_query for term in _POST_BOOKING_QA_TERMS)
+            or (
+                _DISCOVERY_VEHICLE_RE.search(normalized_query)
+                and not any(term in normalized_query for term in _COMMERCIAL_TERMS)
+            )
+        ):
+            intent = "domain"
+            sub_intent = "after_sales_info"
         use_post_booking = intent == "domain" and post_booking_active and (
-            sub_intent in {"post_booking_advisory", "vehicle_info"}
+            sub_intent in {"post_booking_advisory", "vehicle_info", "after_sales_info"}
             or (is_driver_invitation and sub_intent == "booking_lookup")
         )
         active_skill = "post_booking" if use_post_booking else "booking"
@@ -425,6 +522,11 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
             if post_booking_active
             and (
                 any(phrase in lower_query for phrase in ADVISORY_KEYWORDS)
+                or any(term in _route_text(query) for term in _POST_BOOKING_QA_TERMS)
+                or (
+                    bool(_DISCOVERY_VEHICLE_RE.search(_route_text(query)))
+                    and not any(term in _route_text(query) for term in _COMMERCIAL_TERMS)
+                )
                 or (is_driver_invitation and fallback_sub_intent == "booking_lookup")
             )
             else "booking"
