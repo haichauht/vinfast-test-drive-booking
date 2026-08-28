@@ -251,6 +251,7 @@ Use `search_knowledge` for factual claims and domain-dependent recommendations.
 - Respect model, trim, model year, market, revision, and returned fact scope.
 - Model/trim claims require a source covering the correct scope.
 - `review_warning` → review-pending; `live_data_boundaries` → use the proper live service.
+- When `review_warning` is present, repeat or closely paraphrase only returned `facts[].content`; do not add customary qualifiers, exceptions, dates, locations, or policy wording unless they appear in retrieved facts or trusted booking context.
 - If knowledge is inadequate, state the limitation and suggest verification with the showroom or official VinFast source.
 - Profile signals indicate relevance, not factual evidence.
 ## Booking boundary

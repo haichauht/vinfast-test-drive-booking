@@ -3,17 +3,17 @@
   "dataset_name": "vinfast_booking_agent_golden",
   "dataset_version": "5.2-postgres-enriched-baseline",
   "language": "vi-VN",
-  "case_count": 57,
-  "source_case_count": 129,
+  "case_count": 61,
+  "source_case_count": 133,
   "excluded_source_case_count": 10,
   "deduplicated_source_case_count": 81,
   "generated_booking_funnel_case_count": 9,
   "review_status_summary": {
     "CURATED_CHALLENGE_NOT_HUMAN_REVIEWED": 12,
-    "CURATED_SYNTHETIC_NOT_HUMAN_REVIEWED": 45
+    "CURATED_SYNTHETIC_NOT_HUMAN_REVIEWED": 49
   },
   "evaluation_status_summary": {
-    "active": 57
+    "active": 61
   },
   "challenge_case_count": 12,
   "human_review_required": true,
@@ -26,6 +26,7 @@
   "provenance": {
     "source_files": [
       "eval/data/fixtures/golden_agent_cases.csv",
+      "eval/golden/regression_cases.csv",
       "eval/golden/challenge_cases.csv"
     ],
     "showroom_aliases": "eval/data/reference/showrooms_hanoi_demo_47.csv",
@@ -2263,6 +2264,261 @@
       "known_gap": null
     },
     {
+      "case_id": "POSTBOOK-KNOWLEDGE-001",
+      "source_case_ids": [
+        "POSTBOOK-KNOWLEDGE-001"
+      ],
+      "turns": [
+        {
+          "role": "user",
+          "content": "VF 8 được bảo hành pin như thế nào và tôi nên kiểm tra gì trong buổi lái thử?"
+        }
+      ],
+      "ui_context": {
+        "channel": "web",
+        "locale": "vi-VN"
+      },
+      "expected": {
+        "intent": "advise",
+        "skill": "post_booking",
+        "tool": "search_knowledge",
+        "arguments": {},
+        "argument_resolutions": {},
+        "allowed_extra_arguments": [
+          "market",
+          "model_code",
+          "query",
+          "topics"
+        ],
+        "database_assertions": [],
+        "response": {
+          "must_contain": [
+            "VF 8"
+          ],
+          "forbidden_behaviors": [
+            "invent_product_spec_without_knowledge",
+            "leak_other_customer_pii"
+          ]
+        }
+      },
+      "tags": [
+        "post_booking",
+        "after_sales",
+        "groundedness"
+      ],
+      "review_status": "CURATED_SYNTHETIC_NOT_HUMAN_REVIEWED",
+      "evaluation_status": "active",
+      "known_gap": null,
+      "evaluation_setup": {
+        "kind": "post_booking",
+        "vehicle_model": "VF 8",
+        "participant_role": "booker",
+        "slot_offset_minutes": 522
+      }
+    },
+    {
+      "case_id": "POSTBOOK-CONTEXT-001",
+      "source_case_ids": [
+        "POSTBOOK-CONTEXT-001"
+      ],
+      "turns": [
+        {
+          "role": "user",
+          "content": "Trong lịch này ai sẽ tham gia và ai là người lái?"
+        }
+      ],
+      "ui_context": {
+        "channel": "web",
+        "locale": "vi-VN"
+      },
+      "expected": {
+        "intent": "advise",
+        "skill": "post_booking",
+        "tool": null,
+        "arguments": {},
+        "argument_resolutions": {},
+        "allowed_extra_arguments": [],
+        "database_assertions": [],
+        "response": {
+          "must_contain": [],
+          "forbidden_behaviors": [
+            "leak_other_customer_pii"
+          ]
+        }
+      },
+      "tags": [
+        "post_booking",
+        "participant_context"
+      ],
+      "review_status": "CURATED_SYNTHETIC_NOT_HUMAN_REVIEWED",
+      "evaluation_status": "active",
+      "known_gap": null,
+      "evaluation_setup": {
+        "kind": "post_booking",
+        "vehicle_model": "VF 8",
+        "participant_role": "booker",
+        "slot_offset_minutes": 520,
+        "booking_signals": [
+          {
+            "category": "attendance",
+            "key": "booker_attending",
+            "value": true,
+            "subject": "booker",
+            "certainty": "known",
+            "confidence": 1.0,
+            "source_type": "explicit_user",
+            "operation": "add"
+          },
+          {
+            "category": "driving",
+            "key": "booker_will_drive",
+            "value": true,
+            "subject": "booker",
+            "certainty": "known",
+            "confidence": 1.0,
+            "source_type": "explicit_user",
+            "operation": "add"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "POSTBOOK-PROFILE-SIGNAL-001",
+      "source_case_ids": [
+        "POSTBOOK-PROFILE-SIGNAL-001"
+      ],
+      "turns": [
+        {
+          "role": "user",
+          "content": "Gia đình tôi có 4 người, hãy lưu ý để tư vấn buổi lái thử phù hợp."
+        }
+      ],
+      "ui_context": {
+        "channel": "web",
+        "locale": "vi-VN"
+      },
+      "expected": {
+        "intent": "advise",
+        "skill": "post_booking",
+        "tool": "update_post_booking_signals",
+        "arguments": {
+          "profile_signals": [
+            {
+              "key": "household_size",
+              "value": 4,
+              "subject": "self"
+            }
+          ]
+        },
+        "argument_resolutions": {},
+        "allowed_extra_arguments": [
+          "booking_signals",
+          "profile_signals"
+        ],
+        "database_assertions": [
+          {
+            "assertion": "active_profile_signal",
+            "key": "household_size",
+            "value": 4
+          }
+        ],
+        "response": {
+          "must_contain": [],
+          "forbidden_behaviors": [
+            "store_booking_context_as_profile",
+            "leak_other_customer_pii"
+          ]
+        }
+      },
+      "tags": [
+        "post_booking",
+        "profile_signal"
+      ],
+      "review_status": "CURATED_SYNTHETIC_NOT_HUMAN_REVIEWED",
+      "evaluation_status": "active",
+      "known_gap": null,
+      "evaluation_setup": {
+        "kind": "post_booking",
+        "vehicle_model": "VF 8",
+        "participant_role": "booker",
+        "slot_offset_minutes": 527
+      }
+    },
+    {
+      "case_id": "POSTBOOK-BOOKING-SIGNAL-001",
+      "source_case_ids": [
+        "POSTBOOK-BOOKING-SIGNAL-001"
+      ],
+      "turns": [
+        {
+          "role": "user",
+          "content": "Tôi sẽ tham gia buổi lái thử và chính tôi sẽ lái xe."
+        }
+      ],
+      "ui_context": {
+        "channel": "web",
+        "locale": "vi-VN"
+      },
+      "expected": {
+        "intent": "advise",
+        "skill": "post_booking",
+        "tool": "update_post_booking_signals",
+        "arguments": {
+          "booking_signals": [
+            {
+              "key": "booker_attending",
+              "value": true,
+              "subject": "booker"
+            },
+            {
+              "key": "booker_will_drive",
+              "value": true,
+              "subject": "booker"
+            }
+          ]
+        },
+        "argument_resolutions": {},
+        "allowed_extra_arguments": [
+          "booking_signals",
+          "profile_signals"
+        ],
+        "database_assertions": [
+          {
+            "assertion": "active_booking_signal",
+            "key": "booker_attending",
+            "value": true,
+            "subject": "booker"
+          },
+          {
+            "assertion": "active_booking_signal",
+            "key": "booker_will_drive",
+            "value": true,
+            "subject": "booker"
+          }
+        ],
+        "response": {
+          "must_contain": [],
+          "forbidden_behaviors": [
+            "store_booking_context_as_profile",
+            "leak_other_customer_pii"
+          ]
+        }
+      },
+      "tags": [
+        "post_booking",
+        "booking_signal"
+      ],
+      "review_status": "CURATED_SYNTHETIC_NOT_HUMAN_REVIEWED",
+      "evaluation_status": "active",
+      "known_gap": null,
+      "evaluation_setup": {
+        "kind": "post_booking",
+        "vehicle_model": "VF 8",
+        "participant_role": "booker",
+        "slot_offset_minutes": 527
+      }
+    },
+    {
       "case_id": "HARD-INJECTION-MIXED-001",
       "source_case_ids": [
         "HARD-INJECTION-MIXED-001"
@@ -2670,7 +2926,7 @@
       "turns": [
         {
           "role": "user",
-          "content": "Ngày mai 25/08/2026 lúc 13 giờ 30 tôi muốn lái VF 3 ở VinFast Thăng Long Trịnh Văn Bô"
+          "content": "Ngày mai ({{eval.tomorrow_date}}) lúc 13 giờ 30 tôi muốn lái VF 3 ở VinFast Thăng Long Trịnh Văn Bô"
         }
       ],
       "ui_context": {
@@ -2684,7 +2940,7 @@
         "arguments": {
           "vehicle_model": "VF 3",
           "showroom_id": "117",
-          "preferred_date": "2026-08-25",
+          "preferred_date": "{{eval.tomorrow_date}}",
           "preferred_time": "13:30"
         },
         "argument_resolutions": {

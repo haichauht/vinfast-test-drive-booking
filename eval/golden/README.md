@@ -8,15 +8,15 @@ PostgreSQL.
 
 | Phạm vi | Trạng thái | Ý nghĩa |
 |---|---|---|
-| Cấu trúc JSON, ID, deduplication và tool registry | **ENFORCED** | File có 57 case duy nhất, không còn showroom alias cũ hoặc tên OTP tool cũ. |
-| Regression slice | **45 active case** | Luồng booking cơ bản, stateful smoke, OTP/access và lỗi nghiệp vụ. |
+| Cấu trúc JSON, ID, deduplication và tool registry | **ENFORCED** | File có 61 case duy nhất, không còn showroom alias cũ hoặc tên OTP tool cũ. |
+| Regression slice | **49 active case** | Luồng booking cơ bản, post-booking, stateful smoke, OTP/access và lỗi nghiệp vụ. |
 | Challenge slice | **12 active case** | Injection trộn intent, giả danh quyền hạn, encoded payload, benign near-miss, typo, code-switch, correction và dữ liệu không tồn tại. |
 | Clean execution | **ENFORCED** | Lỗi tool ngoài dự kiến hoặc retry cùng tool trong một lượt làm case thất bại, dù lần gọi sau phục hồi. |
-| Groundedness / hallucination | **19 case yêu cầu judge** | Mọi case search trực tiếp và challenge có tool evidence đều được gắn tag `groundedness`. |
+| Groundedness / hallucination | **20 case yêu cầu judge** | Mọi case search trực tiếp và challenge có tool evidence đều được gắn tag `groundedness`. |
 | Cancel, reschedule và staff capacity | **ENFORCED** | Tool quản lý chạy qua OTP/action xác nhận; hold và search cùng khóa capacity tư vấn viên. |
-| Human review | **REQUIRED** | 57 case agent là synthetic và chưa được domain reviewer phê duyệt đầy đủ. |
+| Human review | **REQUIRED** | 61 case agent là synthetic và chưa được domain reviewer phê duyệt đầy đủ. |
 
-Contract hiện có 57 active case, không còn known gap đã khai báo. Kết quả được báo riêng cho regression
+Contract hiện có 61 active case, không còn known gap đã khai báo. Kết quả được báo riêng cho regression
 và challenge slice để các case dễ không che lấp lỗi ở case khó. Runner và scorer nằm tại
 `backend/scripts/run_agent_evaluation.py`; hướng dẫn và cách đọc metric nằm
 trong `eval/EVALUATION.md`. Phân tích chi tiết ở `eval/results/report.md`.
@@ -24,7 +24,7 @@ Các tỷ lệ này chỉ mô tả public booking scope đã khai báo, không �
 
 ## File
 
-- `agent_cases.json`: 57 case hội thoại tiếng Việt từ 129 source row trong scope, đã
+- `agent_cases.json`: 61 case hội thoại tiếng Việt từ 133 source row trong scope, đã
   gộp 81 bản ghi trùng ngữ nghĩa và bổ sung 9 booking funnel độc lập; gồm case multi-turn và luồng OTP/access.
 - `challenge_cases.csv`: 12 case khó được track trực tiếp trong Git và được builder
   ghép với fixture nguồn trong `eval/data`.
@@ -32,7 +32,7 @@ Các tỷ lệ này chỉ mô tả public booking scope đã khai báo, không �
 - `negative_cases.json`: 16 case bảo mật, phân quyền, chống trùng lịch và tính nhất quán; mỗi case
   liên kết tới một pytest regression thực thi được.
 
-## 57 Agent Cases
+## 61 Agent Cases
 
 `active` nghĩa là intent/tool và precondition kỳ vọng có thể chạy trên agent.
 Mọi case trong contract hiện ở trạng thái `active` và có đường thực thi tự động.
@@ -96,6 +96,10 @@ Mọi case trong contract hiện ở trạng thái `active` và có đường th
 | `HARD-SEARCH-CODE-SWITCH-001` | Trộn tiếng Anh/Việt và cấm tự đổi showroom | `search_options` | `search_test_drive_options` | `active/challenge` |
 | `HARD-MULTITURN-CORRECTION-001` | Thay cả xe và showroom ở lượt sau | `search_options` | `search_test_drive_options` | `active/challenge` |
 | `HARD-SHOWROOM-NOTFOUND-001` | Showroom không tồn tại và không được tự thay thế | `search_options` | `search_test_drive_options` | `active/challenge` |
+| `POSTBOOK-KNOWLEDGE-001` | Hỏi bảo hành pin VF 8 và nội dung cần kiểm tra khi lái thử | `advise` | `search_knowledge` | `active` |
+| `POSTBOOK-CONTEXT-001` | Hỏi ai tham gia và ai lái trong lịch đã xác nhận | `advise` | Không gọi tool | `active` |
+| `POSTBOOK-PROFILE-SIGNAL-001` | Lưu quy mô gia đình để cá nhân hóa tư vấn | `advise` | `update_post_booking_signals` | `active` |
+| `POSTBOOK-BOOKING-SIGNAL-001` | Lưu người đặt sẽ tham gia và trực tiếp lái | `advise` | `update_post_booking_signals` | `active` |
 
 Chi tiết arguments, DB assertions, response bắt buộc và hành vi cấm nằm trong
 `agent_cases.json`; bảng trên chỉ là chỉ mục để review nhanh.

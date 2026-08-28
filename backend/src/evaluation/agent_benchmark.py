@@ -54,10 +54,29 @@ TOOL_TO_INTENT = {
     "get_booking_details": "get_booking_details",
     "confirm_test_drive_booking": "confirm_booking",
     "search_knowledge": "advise",
+    "update_post_booking_signals": "advise",
     "cancel_booking": "cancel_booking",
     "reschedule_booking": "reschedule_booking",
 }
 ALLOWED_TOOLS = frozenset(TOOL_TO_INTENT)
+_EXPECTED_CLASSIFIER_SUBINTENTS: dict[str, frozenset[str]] = {
+    "search_options": frozenset({"booking_new", "booking_availability"}),
+    "hold_slot": frozenset({"booking_new", "booking_availability"}),
+    "request_access": frozenset({"booking_lookup"}),
+    "get_booking_details": frozenset({"booking_lookup"}),
+    "cancel_booking": frozenset({"booking_cancel"}),
+    "reschedule_booking": frozenset({"booking_reschedule"}),
+    "advise": frozenset(
+        {
+            "post_booking_advisory",
+            "vehicle_info",
+            "after_sales_info",
+            "greeting",
+            "assistant_identity",
+            "others",
+        }
+    ),
+}
 _SECRET_KEYS = frozenset(
     {
         "access_session_token",
@@ -137,6 +156,8 @@ def _argument_value_matches(key: str, expected: Any, actual: Any) -> bool:
     # contain the same typed sentinel rather than the original contact value.
     if actual == expected:
         return True
+    if key in {"booking_signals", "profile_signals"}:
+        return _structured_subset_matches(expected, actual)
     if key == "showroom_query" and isinstance(expected, str) and isinstance(actual, str):
         generic_prefix = r"^(?:showroom|đại lý|dai ly)\s+"
         return re.sub(generic_prefix, "", actual) == re.sub(generic_prefix, "", expected)
@@ -147,6 +168,37 @@ def _argument_value_matches(key: str, expected: Any, actual: Any) -> bool:
     if actual == "[redacted]" and isinstance(expected, str):
         return key in _SECRET_KEYS
     return actual == expected
+
+
+def _structured_subset_matches(expected: Any, actual: Any) -> bool:
+    """Match stable signal fields while allowing model-generated metadata.
+
+    Signal descriptions and confidence values may vary without changing the
+    semantic operation. Every expected list item must match one distinct actual
+    item, and mappings compare only fields declared by the benchmark case.
+    """
+    if isinstance(expected, Mapping):
+        return isinstance(actual, Mapping) and all(
+            key in actual and _structured_subset_matches(value, actual[key]) for key, value in expected.items()
+        )
+    if isinstance(expected, Sequence) and not isinstance(expected, (str, bytes, bytearray)):
+        if not isinstance(actual, Sequence) or isinstance(actual, (str, bytes, bytearray)):
+            return False
+        unmatched = list(actual)
+        for expected_item in expected:
+            match_index = next(
+                (
+                    index
+                    for index, actual_item in enumerate(unmatched)
+                    if _structured_subset_matches(expected_item, actual_item)
+                ),
+                None,
+            )
+            if match_index is None:
+                return False
+            unmatched.pop(match_index)
+        return True
+    return expected == actual
 
 
 def _safe_div(numerator: float, denominator: float) -> float | None:
@@ -434,9 +486,62 @@ def _observed_intent(prediction: Mapping[str, Any], calls: Sequence[Mapping[str,
             return TOOL_TO_INTENT[name]
     if prediction.get("guardrail_blocked"):
         return "guardrail"
-    if prediction.get("skill") == "advise":
+    if prediction.get("skill") in {"advise", "post_booking"}:
         return "advise"
     return None
+
+
+def _classifier_route_score(case: Mapping[str, Any], prediction: Mapping[str, Any]) -> dict[str, Any]:
+    """Grade the classifier independently from downstream tool selection.
+
+    Structured UI actions are excluded because the classifier deliberately
+    bypasses them. Mixed user/action workflows are also excluded: their final
+    task label describes the action sequence, not the earlier natural-language
+    discovery turn.
+    """
+    traces = prediction.get("turns")
+    trace_rows = [row for row in traces if isinstance(row, Mapping)] if isinstance(traces, list) else []
+    user_indexes = [index for index, row in enumerate(trace_rows) if row.get("role") == "user"]
+    if not user_indexes or any(row.get("role") == "action" for row in trace_rows[user_indexes[-1] + 1 :]):
+        return {
+            "passed": None,
+            "expected_outer_intent": None,
+            "expected_sub_intents": [],
+            "actual_outer_intent": None,
+            "actual_sub_intent": None,
+            "reason": "structured_action_or_no_natural_language_turn",
+        }
+
+    last_user = trace_rows[user_indexes[-1]]
+    actual_outer = last_user.get("classifier_intent") or prediction.get("classifier_intent")
+    actual_sub = last_user.get("classifier_sub_intent") or prediction.get("classifier_sub_intent")
+    expected_intent = str(case.get("expected", {}).get("intent") or "")
+    if expected_intent == "guardrail":
+        passed = actual_outer in {"guardrail", "sensitive", "out_of_scope"}
+        expected_outer = "guardrail|sensitive|out_of_scope"
+        expected_subs: list[str] = []
+    else:
+        accepted_subs = _EXPECTED_CLASSIFIER_SUBINTENTS.get(expected_intent)
+        if not accepted_subs:
+            return {
+                "passed": None,
+                "expected_outer_intent": None,
+                "expected_sub_intents": [],
+                "actual_outer_intent": actual_outer,
+                "actual_sub_intent": actual_sub,
+                "reason": "no_independent_classifier_expectation",
+            }
+        passed = actual_outer == "domain" and actual_sub in accepted_subs
+        expected_outer = "domain"
+        expected_subs = sorted(accepted_subs)
+    return {
+        "passed": passed if actual_outer is not None else None,
+        "expected_outer_intent": expected_outer,
+        "expected_sub_intents": expected_subs,
+        "actual_outer_intent": actual_outer,
+        "actual_sub_intent": actual_sub,
+        "reason": None if actual_outer is not None else "classifier_output_missing",
+    }
 
 
 def _argument_scores(
@@ -533,9 +638,7 @@ def _response_scores(expected: Mapping[str, Any], prediction: Mapping[str, Any])
         "must_contain_pass": len(required_hits) == len(required),
         "must_contain_hits": len(required_hits),
         "must_contain_total": len(required),
-        "forbidden_behavior_pass": (
-            None if not forbidden or len(graded) != len(forbidden) else not any(graded)
-        ),
+        "forbidden_behavior_pass": (None if not forbidden or len(graded) != len(forbidden) else not any(graded)),
         "forbidden_behavior_graded": len(graded),
         "forbidden_behavior_total": len(forbidden),
         "forbidden_behavior_violations": violations,
@@ -567,6 +670,37 @@ def _slot_availability_score(prediction: Mapping[str, Any]) -> dict[str, Any]:
         "accuracy": _rounded(_safe_div(passed, len(graded))),
         "passed": passed,
         "total": len(graded),
+        "checks": checks,
+    }
+
+
+def _slot_selection_score(calls: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Check that every held slot was present in an earlier UI search result."""
+    offered_ids: set[str] = set()
+    checks: list[dict[str, Any]] = []
+    for call in calls:
+        if call.get("status") != "success":
+            continue
+        if call.get("name") == "search_test_drive_options":
+            decoded = _decoded_call_result(call)
+            slots = decoded.get("slots", []) if isinstance(decoded, Mapping) else []
+            offered_ids.update(str(slot["id"]) for slot in slots if isinstance(slot, Mapping) and slot.get("id"))
+            continue
+        if call.get("name") != "hold_test_drive_slot" or not offered_ids:
+            continue
+        arguments = call.get("arguments")
+        slot_id = str(arguments.get("slot_id") or "") if isinstance(arguments, Mapping) else ""
+        checks.append(
+            {
+                "slot_id": slot_id,
+                "passed": bool(slot_id and slot_id in offered_ids),
+                "offered_slot_count": len(offered_ids),
+            }
+        )
+    return {
+        "recall": _rounded(_safe_div(sum(check["passed"] is True for check in checks), len(checks))),
+        "passed": sum(check["passed"] is True for check in checks),
+        "total": len(checks),
         "checks": checks,
     }
 
@@ -623,6 +757,7 @@ def _case_score(case: Mapping[str, Any], prediction: Mapping[str, Any] | None) -
     argument["semantic_evidence"] = semantic_evidence
     actual_intent = _observed_intent(prediction, calls)
     intent_pass = actual_intent == expected.get("intent")
+    classifier_route = _classifier_route_score(case, prediction)
     actual_skill = prediction.get("skill")
     skill_pass = actual_skill == expected.get("skill")
     response = _response_scores(expected.get("response", {}), prediction)
@@ -671,6 +806,7 @@ def _case_score(case: Mapping[str, Any], prediction: Mapping[str, Any] | None) -
             deterministic.append(groundedness_pass)
     task_success = all(deterministic) if fully_graded else None
     slot_availability = _slot_availability_score(prediction)
+    slot_selection = _slot_selection_score(calls)
     raw_usage = prediction.get("token_usage")
     successful_tools = [
         str(call.get("name") or "") for call in calls if call.get("status") == "success" and call.get("name")
@@ -681,6 +817,7 @@ def _case_score(case: Mapping[str, Any], prediction: Mapping[str, Any] | None) -
         "task_success": task_success,
         "checks": {
             "intent": intent_pass,
+            "classifier_route": classifier_route,
             "skill": skill_pass,
             "tool": tool_pass,
             "arguments": argument,
@@ -692,9 +829,12 @@ def _case_score(case: Mapping[str, Any], prediction: Mapping[str, Any] | None) -
             "groundedness_score": groundedness,
             "hallucination_detected": hallucination,
             "slot_availability": slot_availability,
+            "slot_selection": slot_selection,
         },
         "observed": {
             "intent": actual_intent,
+            "classifier_intent": classifier_route.get("actual_outer_intent"),
+            "classifier_sub_intent": classifier_route.get("actual_sub_intent"),
             "skill": actual_skill,
             "tools": actual_names,
             "successful_tools": successful_tools,
@@ -820,9 +960,7 @@ def _score_negative(dataset: Mapping[str, Any], predictions: Mapping[str, Mappin
             "violation_rate": None if accuracy is None else _rounded(1 - accuracy),
             "failed_case_ids": failed_case_ids,
             "status": (
-                "COMPLETE"
-                if selected and len(outcomes) == len(selected)
-                else ("PARTIAL" if outcomes else "NOT_RUN")
+                "COMPLETE" if selected and len(outcomes) == len(selected) else ("PARTIAL" if outcomes else "NOT_RUN")
             ),
         }
 
@@ -835,13 +973,98 @@ def _score_negative(dataset: Mapping[str, Any], predictions: Mapping[str, Mappin
         return set()
 
     group_names = sorted({group for case in cases for group in metric_groups(case)})
-    groups = {
-        name: score_cases([case for case in cases if name in metric_groups(case)]) for name in group_names
-    }
+    groups = {name: score_cases([case for case in cases if name in metric_groups(case)]) for name in group_names}
     overall = score_cases(cases)
     return {
         **overall,
         "groups": groups,
+    }
+
+
+def _usage_by_model(scores: Sequence[Mapping[str, Any]], field: str) -> dict[str, dict[str, int]]:
+    totals: dict[str, dict[str, int]] = defaultdict(lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0})
+    for score in scores:
+        usage = score.get(field)
+        by_model = usage.get("by_model") if isinstance(usage, Mapping) else None
+        if not isinstance(by_model, Mapping):
+            continue
+        for model, values in by_model.items():
+            if not isinstance(values, Mapping):
+                continue
+            target = totals[str(model)]
+            for key in ("input_tokens", "output_tokens", "total_tokens"):
+                target[key] += int(values.get(key) or 0)
+    return {model: values for model, values in sorted(totals.items())}
+
+
+def _price_for_model(
+    model: str,
+    model_prices: Mapping[str, tuple[float, float]],
+) -> tuple[float, float] | None:
+    direct = model_prices.get(model)
+    if direct is not None:
+        return direct
+    candidates = [(name, prices) for name, prices in model_prices.items() if model.startswith(f"{name}-")]
+    return max(candidates, key=lambda item: len(item[0]))[1] if candidates else None
+
+
+def _estimate_model_costs(
+    usage_by_model: Mapping[str, Mapping[str, int]],
+    model_prices: Mapping[str, tuple[float, float]],
+) -> tuple[float | None, dict[str, dict[str, Any]], list[str]]:
+    breakdown: dict[str, dict[str, Any]] = {}
+    missing: list[str] = []
+    total = 0.0
+    for model, usage in usage_by_model.items():
+        prices = _price_for_model(model, model_prices)
+        input_tokens = int(usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+        cost = None
+        if prices is None:
+            missing.append(model)
+        else:
+            cost = input_tokens * prices[0] / 1_000_000 + output_tokens * prices[1] / 1_000_000
+            total += cost
+        breakdown[model] = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": int(usage.get("total_tokens") or input_tokens + output_tokens),
+            "input_cost_per_million": prices[0] if prices else None,
+            "output_cost_per_million": prices[1] if prices else None,
+            "estimated_cost": _rounded(cost, 6),
+        }
+    return (None if missing or not breakdown else total), breakdown, sorted(missing)
+
+
+def _booking_cost_metric_from_report(report: Mapping[str, Any]) -> dict[str, Any]:
+    dataset = report.get("dataset")
+    run = report.get("run")
+    business = report.get("business_metrics")
+    if not isinstance(dataset, Mapping) or dataset.get("name") != "vinfast_booking_cost_e2e":
+        raise ValueError("Booking-cost report must use the vinfast_booking_cost_e2e dataset")
+    if not isinstance(run, Mapping) or run.get("status") != "COMPLETE":
+        raise ValueError("Booking-cost report must contain a COMPLETE run")
+    metric = business.get("cost_per_completed_booking") if isinstance(business, Mapping) else None
+    if not isinstance(metric, Mapping) or metric.get("status") != "COMPLETE":
+        raise ValueError("Booking-cost report must contain a COMPLETE cost metric")
+    completed = int(metric.get("completed_bookings") or 0)
+    total_cost = float(metric.get("total_agent_cost") or 0)
+    average_cost = float(metric.get("unrounded_cost") or metric.get("cost") or 0)
+    if completed <= 0 or total_cost <= 0 or average_cost <= 0:
+        raise ValueError("Booking-cost report must contain positive bookings and agent cost")
+    if not math.isclose(total_cost / completed, average_cost, rel_tol=1e-6, abs_tol=1e-12):
+        raise ValueError("Booking-cost report average does not match total agent cost / completed bookings")
+    return {
+        **dict(metric),
+        "measurement_method": "dedicated_live_end_to_end_booking_average",
+        "source_dataset": dataset.get("name"),
+        "source_dataset_version": dataset.get("version"),
+        "source_generated_at": report.get("generated_at"),
+        "reason": (
+            f"Average observed agent cost across {completed} successful end-to-end booking runs; "
+            "each selected slot was returned by availability search and confirmed in the isolated database. "
+            "Judge and infrastructure costs are excluded."
+        ),
     }
 
 
@@ -855,6 +1078,8 @@ def score_evaluation(
     coverage_path: Path | None = None,
     input_cost_per_million: float | None = None,
     output_cost_per_million: float | None = None,
+    model_prices: Mapping[str, tuple[float, float]] | None = None,
+    booking_cost_report: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     predictions = _index_records(predictions_payload)
     negative_predictions = _index_records(predictions_payload, key="negative_cases") if predictions_payload else {}
@@ -876,6 +1101,20 @@ def score_evaluation(
         rate, count = _rate(score.get("checks", {}).get(name) for score in run_scores)
         check_metrics[f"{name}_accuracy"] = rate
         check_metrics[f"{name}_scored_cases"] = count
+    classifier_intent_rate, classifier_intent_count = _rate(
+        score.get("checks", {}).get("classifier_route", {}).get("passed") for score in run_scores
+    )
+    classifier_expected_case_ids = {
+        str(case["case_id"])
+        for case in dataset["cases"]
+        if case.get("evaluation_status") == "active"
+        and case.get("turns")
+        and case["turns"][-1].get("role") == "user"
+        and (
+            case.get("expected", {}).get("intent") == "guardrail"
+            or case.get("expected", {}).get("intent") in _EXPECTED_CLASSIFIER_SUBINTENTS
+        )
+    }
     argument_exact, argument_count = _rate(
         score.get("checks", {}).get("arguments", {}).get("exact_match") for score in run_scores
     )
@@ -931,6 +1170,13 @@ def score_evaluation(
         if isinstance(check, Mapping) and check.get("passed") is not None
     ]
     slot_availability_passes = sum(check.get("passed") is True for check in slot_checks)
+    slot_selection_checks = [
+        check
+        for score in run_scores
+        for check in score.get("checks", {}).get("slot_selection", {}).get("checks", [])
+        if isinstance(check, Mapping) and check.get("passed") is not None
+    ]
+    slot_selection_passes = sum(check.get("passed") is True for check in slot_selection_checks)
     slot_availability_case_ids = {
         str(score["case_id"])
         for score in run_scores
@@ -941,7 +1187,9 @@ def score_evaluation(
         for case in dataset["cases"]
         if case.get("evaluation_status") == "active"
         and case.get("expected", {}).get("tool") == "hold_test_drive_slot"
-        and not any(assertion.get("expect_error") for assertion in case.get("expected", {}).get("database_assertions", []))
+        and not any(
+            assertion.get("expect_error") for assertion in case.get("expected", {}).get("database_assertions", [])
+        )
     }
 
     latencies = [float(score["latency_ms"]) for score in run_scores if score.get("latency_ms") is not None]
@@ -962,11 +1210,39 @@ def score_evaluation(
     judge_total_tokens = sum(
         int(score.get("judge_token_usage", {}).get("total_tokens") or 0) for score in judge_usage_scores
     )
+    agent_usage_by_model = _usage_by_model(usage_scores, "token_usage")
+    judge_usage_by_model = _usage_by_model(judge_usage_scores, "judge_token_usage")
+    price_table = dict(model_prices or {})
     successful = sum(score.get("task_success") is True for score in run_scores)
     estimated_cost = None
-    if input_cost_per_million is not None and output_cost_per_million is not None:
+    model_cost_breakdown: dict[str, dict[str, Any]] = {}
+    unpriced_models: list[str] = []
+    if price_table:
+        estimated_cost, model_cost_breakdown, unpriced_models = _estimate_model_costs(
+            agent_usage_by_model,
+            price_table,
+        )
+    elif input_cost_per_million is not None and output_cost_per_million is not None:
         estimated_cost = input_tokens * input_cost_per_million / 1_000_000
         estimated_cost += output_tokens * output_cost_per_million / 1_000_000
+    judge_estimated_cost = None
+    judge_model_cost_breakdown: dict[str, dict[str, Any]] = {}
+    judge_unpriced_models: list[str] = []
+    if price_table and judge_usage_scores:
+        judge_estimated_cost, judge_model_cost_breakdown, judge_unpriced_models = _estimate_model_costs(
+            judge_usage_by_model,
+            price_table,
+        )
+    elif not judge_usage_scores:
+        judge_estimated_cost = 0.0
+    elif input_cost_per_million is not None and output_cost_per_million is not None:
+        judge_estimated_cost = judge_input_tokens * input_cost_per_million / 1_000_000
+        judge_estimated_cost += judge_output_tokens * output_cost_per_million / 1_000_000
+    total_eval_cost = (
+        estimated_cost + judge_estimated_cost
+        if estimated_cost is not None and judge_estimated_cost is not None
+        else None
+    )
 
     status_counts: dict[str, int] = defaultdict(int)
     for score in case_scores:
@@ -997,28 +1273,7 @@ def score_evaluation(
         and "confirm_test_drive_booking" in score.get("observed", {}).get("successful_tools", [])
     ]
     completed_bookings = len(completed_booking_scores)
-    confirmation_usage_scores = [score for score in confirmation_attempts if score.get("token_usage_observed") is True]
-    confirmation_input_tokens = sum(
-        int(score.get("token_usage", {}).get("input_tokens") or 0) for score in confirmation_usage_scores
-    )
-    confirmation_output_tokens = sum(
-        int(score.get("token_usage", {}).get("output_tokens") or 0) for score in confirmation_usage_scores
-    )
-    confirmation_total_tokens = sum(
-        int(score.get("token_usage", {}).get("total_tokens") or 0) for score in confirmation_usage_scores
-    )
-    booking_usage_complete = bool(confirmation_attempts) and len(confirmation_usage_scores) == len(
-        confirmation_attempts
-    )
-    zero_token_booking_flow = booking_usage_complete and confirmation_total_tokens == 0
-    completion_cost = 0.0 if zero_token_booking_flow else None
-    if not zero_token_booking_flow and (
-        input_cost_per_million is not None
-        and output_cost_per_million is not None
-        and len(confirmation_usage_scores) == len(confirmation_attempts)
-    ):
-        completion_cost = confirmation_input_tokens * input_cost_per_million / 1_000_000
-        completion_cost += confirmation_output_tokens * output_cost_per_million / 1_000_000
+    run_usage_complete = bool(run_scores) and len(usage_scores) == len(run_scores)
     negative_security = _score_negative(negative_dataset or {"cases": []}, negative_predictions)
     authorization_otp = negative_security.get("groups", {}).get(
         "authorization_otp",
@@ -1037,11 +1292,11 @@ def score_evaluation(
         vehicle_double_booking = negative_security.get("groups", {}).get(
             "double_booking",
             {
-            "total_cases": 0,
-            "scored_cases": 0,
-            "accuracy": None,
-            "violation_rate": None,
-            "status": "NOT_RUN",
+                "total_cases": 0,
+                "scored_cases": 0,
+                "accuracy": None,
+                "violation_rate": None,
+                "status": "NOT_RUN",
             },
         )
     staff_capacity = negative_security.get("groups", {}).get(
@@ -1067,21 +1322,24 @@ def score_evaluation(
         and expected_slot_availability_case_ids.issubset(slot_availability_case_ids)
         else ("PARTIAL" if slot_checks else "NOT_RUN")
     )
-    if zero_token_booking_flow:
-        cost_status = "COMPLETE"
-        cost_reason = "Structured booking actions used zero agent-model tokens; infrastructure cost is excluded."
-    elif input_cost_per_million is None or output_cost_per_million is None:
-        cost_status = "NOT_RUN"
-        cost_reason = "Exact input/output prices for the evaluated model and provider were not supplied."
-    elif not booking_usage_complete:
-        cost_status = "PARTIAL"
-        cost_reason = "At least one positive booking-confirmation case lacks usage metadata."
-    elif not completed_bookings:
+    if not completed_bookings:
         cost_status = "NOT_RUN"
         cost_reason = "There is no successfully confirmed booking to use as the denominator."
+    elif not price_table and (input_cost_per_million is None or output_cost_per_million is None):
+        cost_status = "NOT_RUN"
+        cost_reason = "Exact input/output prices for the evaluated model and provider were not supplied."
+    elif estimated_cost is None:
+        cost_status = "PARTIAL"
+        cost_reason = "At least one agent model used by the run has no supplied price."
+    elif not run_usage_complete:
+        cost_status = "PARTIAL"
+        cost_reason = "At least one attempted case lacks agent token-usage metadata."
     else:
         cost_status = "COMPLETE"
-        cost_reason = None
+        cost_reason = (
+            "Total observed agent cost for the full benchmark run is divided by successfully completed bookings; "
+            "judge and infrastructure costs are excluded."
+        )
     business_metrics = {
         "booking_task_success": {
             "status": "COMPLETE" if task_count == len(active_scores) else ("PARTIAL" if task_count else "NOT_RUN"),
@@ -1102,9 +1360,16 @@ def score_evaluation(
             },
         },
         "intent_accuracy": {
-            "status": "COMPLETE" if check_metrics["intent_scored_cases"] == len(active_scores) else "PARTIAL",
-            "rate": check_metrics["intent_accuracy"],
-            "scored_cases": check_metrics["intent_scored_cases"],
+            "status": (
+                "COMPLETE"
+                if classifier_intent_count == len(classifier_expected_case_ids) and classifier_expected_case_ids
+                else ("PARTIAL" if classifier_intent_count else "NOT_RUN")
+            ),
+            "rate": classifier_intent_rate,
+            "scored_cases": classifier_intent_count,
+            "expected_cases": len(classifier_expected_case_ids),
+            "excluded_structured_action_cases": len(active_scores) - len(classifier_expected_case_ids),
+            "method": "Classifier output is compared with accepted golden routes before tool selection.",
         },
         "tool_selection_accuracy": {
             "status": "COMPLETE" if check_metrics["tool_scored_cases"] == len(active_scores) else "PARTIAL",
@@ -1121,21 +1386,23 @@ def score_evaluation(
         "slot_availability_accuracy": {
             "status": slot_metric_status,
             "rate": _rounded(_safe_div(slot_availability_passes, len(slot_checks))),
+            "precision": _rounded(_safe_div(slot_availability_passes, len(slot_checks))),
             "available_slots": slot_availability_passes,
             "checked_slots": len(slot_checks),
             "scored_cases": len(slot_availability_case_ids),
             "expected_cases": len(expected_slot_availability_case_ids),
+            "selected_slot_recall": _rounded(_safe_div(slot_selection_passes, len(slot_selection_checks))),
+            "selected_slots_returned": slot_selection_passes,
+            "selected_slots_checked": len(slot_selection_checks),
             "method": "Each offered slot is checked against isolated DB state and bookability rules.",
         },
         "double_booking_rate": {
             "status": (
                 "COMPLETE"
-                if vehicle_double_booking.get("status") == "COMPLETE"
-                and staff_capacity.get("status") == "COMPLETE"
+                if vehicle_double_booking.get("status") == "COMPLETE" and staff_capacity.get("status") == "COMPLETE"
                 else (
                     "PARTIAL"
-                    if vehicle_double_booking.get("status") != "NOT_RUN"
-                    or staff_capacity.get("status") != "NOT_RUN"
+                    if vehicle_double_booking.get("status") != "NOT_RUN" or staff_capacity.get("status") != "NOT_RUN"
                     else "NOT_RUN"
                 )
             ),
@@ -1145,21 +1412,22 @@ def score_evaluation(
             "staff_capacity_violation_rate": staff_capacity.get("violation_rate"),
             "staff_capacity_scored_cases": staff_capacity.get("scored_cases", 0),
             "staff_capacity_total_cases": staff_capacity.get("total_cases", 0),
-            "reason": (
-                "Vehicle/slot conflicts and sales-staff capacity are measured by executable fixtures."
-            ),
+            "reason": ("Vehicle/slot conflicts and sales-staff capacity are measured by executable fixtures."),
         },
         "hallucination_constraint_violation_rate": {
-            "status": "COMPLETE" if hallucination_constraint_checks else "NOT_RUN",
-            "rate": _rounded(
+            "status": "COMPLETE"
+            if hallucinations and forbidden_count
+            else ("PARTIAL" if hallucination_constraint_checks else "NOT_RUN"),
+            "hallucination_rate": _rounded(_safe_div(sum(hallucinations), len(hallucinations))),
+            "hallucination_violations": sum(hallucinations),
+            "hallucination_scored_cases": len(hallucinations),
+            "constraint_violation_rate": forbidden_rate,
+            "constraint_violations": forbidden_violations,
+            "constraint_scored_cases": forbidden_count,
+            "deprecated_combined_evidence_rate": _rounded(
                 _safe_div(hallucination_constraint_violations, hallucination_constraint_checks)
             ),
-            "violations": hallucination_constraint_violations,
-            "evidence_checks": hallucination_constraint_checks,
-            "hallucination_rate": _rounded(_safe_div(sum(hallucinations), len(hallucinations))),
-            "hallucination_scored_cases": len(hallucinations),
-            "forbidden_behavior_rate": forbidden_rate,
-            "forbidden_behavior_scored_cases": forbidden_count,
+            "reason": "Hallucination and deterministic constraint violations are reported separately.",
         },
         "authorization_otp_violation_rate": {
             "status": authorization_otp.get("status", "NOT_RUN"),
@@ -1175,26 +1443,42 @@ def score_evaluation(
         },
         "cost_per_completed_booking": {
             "status": cost_status,
-            "currency": "USD" if completion_cost is not None else None,
-            "cost": _rounded(_safe_div(completion_cost, completed_bookings), 6)
-            if completion_cost is not None
-            else None,
-            "tokens_per_completed_booking": _rounded(
-                _safe_div(confirmation_total_tokens, completed_bookings), 2
-            )
-            if booking_usage_complete
+            "currency": "USD" if estimated_cost is not None else None,
+            "cost": _rounded(_safe_div(estimated_cost, completed_bookings), 6) if estimated_cost is not None else None,
+            "unrounded_cost": _safe_div(estimated_cost, completed_bookings) if estimated_cost is not None else None,
+            "tokens_per_completed_booking": _rounded(_safe_div(total_tokens, completed_bookings), 2)
+            if run_usage_complete
             else None,
             "completed_bookings": completed_bookings,
             "positive_confirmation_attempts": len(confirmation_attempts),
-            "usage_scored_cases": len(confirmation_usage_scores),
-            "input_tokens": confirmation_input_tokens if booking_usage_complete else None,
-            "output_tokens": confirmation_output_tokens if booking_usage_complete else None,
-            "total_tokens": confirmation_total_tokens if booking_usage_complete else None,
+            "measurement_method": "total_agent_run_cost_divided_by_completed_bookings",
+            "pricing_basis": "observed_agent_tokens_x_supplied_model_rates",
+            "total_agent_cost": _rounded(estimated_cost, 9),
+            "usage_scored_cases": len(usage_scores),
+            "input_tokens": input_tokens if run_usage_complete else None,
+            "output_tokens": output_tokens if run_usage_complete else None,
+            "total_tokens": total_tokens if run_usage_complete else None,
             "input_cost_per_million": input_cost_per_million,
             "output_cost_per_million": output_cost_per_million,
             "reason": cost_reason,
         },
     }
+    if booking_cost_report is not None:
+        business_metrics["cost_per_completed_booking"] = _booking_cost_metric_from_report(booking_cost_report)
+        source_business = booking_cost_report.get("business_metrics")
+        source_slot = (
+            source_business.get("slot_availability_accuracy") if isinstance(source_business, Mapping) else None
+        )
+        if isinstance(source_slot, Mapping) and source_slot.get("selected_slot_recall") is not None:
+            target_slot = business_metrics["slot_availability_accuracy"]
+            target_slot.update(
+                {
+                    "selected_slot_recall": source_slot.get("selected_slot_recall"),
+                    "selected_slots_returned": source_slot.get("selected_slots_returned"),
+                    "selected_slots_checked": source_slot.get("selected_slots_checked"),
+                    "selected_slot_source": "vinfast_booking_cost_e2e",
+                }
+            )
     report = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": _now_iso(),
@@ -1228,6 +1512,8 @@ def score_evaluation(
             "challenge_task_success_rate": challenge_rate,
             "challenge_task_success_scored_cases": challenge_count,
             **check_metrics,
+            "independent_classifier_intent_accuracy": classifier_intent_rate,
+            "independent_classifier_intent_scored_cases": classifier_intent_count,
             "intent_macro_f1": _macro_f1(expected_intents, predicted_intents),
             "argument_exact_match_rate": argument_exact,
             "argument_required_match_rate": argument_required,
@@ -1278,7 +1564,13 @@ def score_evaluation(
             "judge_output_tokens": judge_output_tokens or None,
             "judge_total_tokens": judge_total_tokens or None,
             "estimated_cost": _rounded(estimated_cost, 6),
-            "cost_currency": "USD" if estimated_cost is not None else None,
+            "model_cost_breakdown": model_cost_breakdown,
+            "unpriced_models": unpriced_models,
+            "judge_estimated_cost": _rounded(judge_estimated_cost, 6),
+            "judge_model_cost_breakdown": judge_model_cost_breakdown,
+            "judge_unpriced_models": judge_unpriced_models,
+            "estimated_total_eval_cost": _rounded(total_eval_cost, 6),
+            "cost_currency": "USD" if total_eval_cost is not None else None,
             "input_cost_per_million": input_cost_per_million,
             "output_cost_per_million": output_cost_per_million,
             "estimated_cost_per_case": _rounded(_safe_div(estimated_cost, len(run_scores)), 6)
@@ -1287,7 +1579,10 @@ def score_evaluation(
             "estimated_cost_per_success": _rounded(_safe_div(estimated_cost, successful), 6)
             if estimated_cost is not None
             else None,
-            "note": "Cost is null until explicit provider/model rates are supplied; rates are never hard-coded.",
+            "note": (
+                "Costs use explicit per-model rates when supplied; estimated_cost excludes judge cost, "
+                "while estimated_total_eval_cost includes it. Rates are never hard-coded."
+            ),
         },
         "business_metrics": business_metrics,
         "negative_security": negative_security,
@@ -1313,6 +1608,12 @@ def _format_metric(value: Any, *, percent: bool = False) -> str:
     if isinstance(value, float):
         return f"{value:.4f}"
     return str(value)
+
+
+def _format_usd(value: Any, *, decimals: int = 6) -> str:
+    if value is None:
+        return "NOT_RUN"
+    return f"${float(value):.{decimals}f}"
 
 
 def render_markdown(report: Mapping[str, Any]) -> str:
@@ -1347,7 +1648,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         "|---:|---|---:|---:|---|",
         f"| 1 | Booking task success rate | {_format_metric(business['booking_task_success']['rate'], percent=True)} | "
         f"{business['booking_task_success']['scored_cases']} active tasks | {business['booking_task_success']['status']} |",
-        f"| 2 | Intent accuracy | {_format_metric(business['intent_accuracy']['rate'], percent=True)} | "
+        f"| 2 | Independent classifier intent accuracy | {_format_metric(business['intent_accuracy']['rate'], percent=True)} | "
         f"{business['intent_accuracy']['scored_cases']} cases | {business['intent_accuracy']['status']} |",
         f"| 3 | Tool selection accuracy | {_format_metric(business['tool_selection_accuracy']['rate'], percent=True)} | "
         f"{business['tool_selection_accuracy']['scored_cases']} cases | {business['tool_selection_accuracy']['status']} |",
@@ -1355,10 +1656,11 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"{_format_metric(business['argument_accuracy']['required_match_rate'], percent=True)} / "
         f"{_format_metric(business['argument_accuracy']['mean_field_f1'])} | "
         f"{business['argument_accuracy']['scored_cases']} cases | {business['argument_accuracy']['status']} |",
-        f"| 5 | Slot availability accuracy | "
-        f"{_format_metric(business['slot_availability_accuracy']['rate'], percent=True)} | "
+        f"| 5 | Slot precision / selected-slot recall | "
+        f"{_format_metric(business['slot_availability_accuracy']['precision'], percent=True)} / "
+        f"{_format_metric(business['slot_availability_accuracy']['selected_slot_recall'], percent=True)} | "
         f"{business['slot_availability_accuracy']['checked_slots']} slots / "
-        f"{business['slot_availability_accuracy']['scored_cases']} cases | "
+        f"{business['slot_availability_accuracy']['selected_slots_checked']} selections | "
         f"{business['slot_availability_accuracy']['status']} |",
         f"| 6 | Double-booking rate (vehicle/slot; staff) | "
         f"{_format_metric(business['double_booking_rate']['vehicle_slot_violation_rate'], percent=True)}; "
@@ -1367,8 +1669,10 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"{business['double_booking_rate']['staff_capacity_scored_cases']} fixture cases | "
         f"{business['double_booking_rate']['status']} |",
         f"| 7 | Hallucination / constraint violation rate | "
-        f"{_format_metric(business['hallucination_constraint_violation_rate']['rate'], percent=True)} | "
-        f"{business['hallucination_constraint_violation_rate']['evidence_checks']} evidence checks | "
+        f"{_format_metric(business['hallucination_constraint_violation_rate']['hallucination_rate'], percent=True)} / "
+        f"{_format_metric(business['hallucination_constraint_violation_rate']['constraint_violation_rate'], percent=True)} | "
+        f"{business['hallucination_constraint_violation_rate']['hallucination_scored_cases']} judge / "
+        f"{business['hallucination_constraint_violation_rate']['constraint_scored_cases']} deterministic | "
         f"{business['hallucination_constraint_violation_rate']['status']} |",
         f"| 8 | Authorization / OTP violation rate | "
         f"{_format_metric(business['authorization_otp_violation_rate']['rate'], percent=True)} | "
@@ -1379,7 +1683,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"{business['p95_end_to_end_latency']['scored_cases']} cases | "
         f"{business['p95_end_to_end_latency']['status']} |",
         f"| 10 | Cost per completed booking | "
-        f"{_format_metric(business['cost_per_completed_booking']['cost'])} | "
+        f"{_format_usd(business['cost_per_completed_booking']['cost'])} | "
         f"{business['cost_per_completed_booking']['completed_bookings']} completed booking | "
         f"{business['cost_per_completed_booking']['status']} |",
         "",
@@ -1387,6 +1691,11 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"{business['booking_task_success']['confirmed_booking_completion']['positive_confirmation_attempts']}**; "
         f"tokens/completed booking: **{_format_metric(business['cost_per_completed_booking']['tokens_per_completed_booking'])}**.",
         f"- Double-booking scope: {business['double_booking_rate']['reason']}",
+        f"- Cost calculation: "
+        f"**{_format_usd(business['cost_per_completed_booking']['total_agent_cost'], decimals=8)} / "
+        f"{business['cost_per_completed_booking']['completed_bookings']} = "
+        f"{_format_usd(business['cost_per_completed_booking']['unrounded_cost'], decimals=9)}** per completed booking; "
+        "judge and infrastructure costs excluded.",
         f"- Cost status: {business['cost_per_completed_booking']['reason'] or 'Usage and pricing are complete.'}",
         "",
         "## Quality",
@@ -1396,8 +1705,11 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"| Task success | {_format_metric(quality['task_success_rate'], percent=True)} | {quality['task_success_scored_cases']} |",
         f"| Regression task success | {_format_metric(quality['regression_task_success_rate'], percent=True)} | {quality['regression_task_success_scored_cases']} |",
         f"| Challenge task success | {_format_metric(quality['challenge_task_success_rate'], percent=True)} | {quality['challenge_task_success_scored_cases']} |",
-        f"| Intent accuracy | {_format_metric(quality['intent_accuracy'], percent=True)} | {quality['intent_scored_cases']} |",
-        f"| Intent macro-F1 | {_format_metric(quality['intent_macro_f1'])} | {quality['intent_scored_cases']} |",
+        f"| Independent classifier intent | {_format_metric(quality['independent_classifier_intent_accuracy'], percent=True)} | "
+        f"{quality['independent_classifier_intent_scored_cases']} |",
+        f"| Functional intent alignment | {_format_metric(quality['intent_accuracy'], percent=True)} | "
+        f"{quality['intent_scored_cases']} |",
+        f"| Functional intent macro-F1 | {_format_metric(quality['intent_macro_f1'])} | {quality['intent_scored_cases']} |",
         f"| Skill accuracy | {_format_metric(quality['skill_accuracy'], percent=True)} | {quality['skill_scored_cases']} |",
         f"| Tool accuracy | {_format_metric(quality['tool_accuracy'], percent=True)} | {quality['tool_scored_cases']} |",
         f"| Action outcome accuracy | {_format_metric(quality['action_error_accuracy'], percent=True)} | {quality['action_error_scored_cases']} |",
@@ -1424,7 +1736,9 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"| Agent tokens | {_format_metric(report['usage']['total_tokens'])} "
         f"({report['usage']['status']}; {report['usage']['scored_cases']} cases) |",
         f"| LLM-judge tokens | {_format_metric(report['usage']['judge_total_tokens'])} |",
-        f"| Estimated cost | {_format_metric(report['usage']['estimated_cost'])} |",
+        f"| Estimated agent cost | {_format_metric(report['usage']['estimated_cost'])} |",
+        f"| Estimated judge cost | {_format_metric(report['usage']['judge_estimated_cost'])} |",
+        f"| Estimated total eval cost | {_format_metric(report['usage']['estimated_total_eval_cost'])} |",
         f"| Test line coverage | {_format_metric(coverage['line_coverage_percent'])}% |",
         "",
         "## Security and human evaluation",
@@ -1466,14 +1780,67 @@ class _UsageCollector(BaseCallbackHandler):
         self.input_tokens = 0
         self.output_tokens = 0
         self.total_tokens = 0
+        self.by_model: dict[str, dict[str, int]] = defaultdict(
+            lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        )
+        self._model_by_run: dict[str, str] = {}
 
-    def on_llm_end(self, response: Any, **_: Any) -> None:
-        usage = (getattr(response, "llm_output", None) or {}).get("token_usage") or {}
+    @staticmethod
+    def _model_name(serialized: Any, metadata: Any) -> str:
+        sources = [metadata]
+        if isinstance(metadata, Mapping):
+            sources.extend([metadata.get("invocation_params"), metadata.get("metadata")])
+        if isinstance(serialized, Mapping):
+            sources.extend([serialized, serialized.get("kwargs")])
+        for source in sources:
+            if not isinstance(source, Mapping):
+                continue
+            for key in ("model", "model_name", "ls_model_name"):
+                value = str(source.get(key) or "").removeprefix("openai/")
+                if value:
+                    return value
+        return ""
+
+    def _remember_model(self, serialized: Any, run_id: Any, metadata: Any) -> None:
+        model = self._model_name(serialized, metadata)
+        if model and run_id is not None:
+            self._model_by_run[str(run_id)] = model
+
+    def on_chat_model_start(
+        self,
+        serialized: Any,
+        messages: Any,
+        *,
+        run_id: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        del messages
+        self._remember_model(serialized, run_id, kwargs)
+
+    def on_llm_start(
+        self,
+        serialized: Any,
+        prompts: Any,
+        *,
+        run_id: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        del prompts
+        self._remember_model(serialized, run_id, kwargs)
+
+    def on_llm_end(self, response: Any, *, run_id: Any = None, **_: Any) -> None:
+        llm_output = getattr(response, "llm_output", None) or {}
+        usage = llm_output.get("token_usage") or {}
+        response_model = self._model_name(llm_output, llm_output)
         if not usage:
             for generations in getattr(response, "generations", []) or []:
                 for generation in generations:
                     message = getattr(generation, "message", None)
                     usage = getattr(message, "usage_metadata", None) or {}
+                    response_model = response_model or self._model_name(
+                        getattr(message, "response_metadata", None),
+                        getattr(message, "response_metadata", None),
+                    )
                     if usage:
                         break
                 if usage:
@@ -1484,20 +1851,39 @@ class _UsageCollector(BaseCallbackHandler):
         self.input_tokens += input_tokens
         self.output_tokens += output_tokens
         self.total_tokens += total_tokens
+        run_key = str(run_id) if run_id is not None else ""
+        model = self._model_by_run.pop(run_key, "") or response_model or "unknown"
+        model_usage = self.by_model[model]
+        model_usage["input_tokens"] += input_tokens
+        model_usage["output_tokens"] += output_tokens
+        model_usage["total_tokens"] += total_tokens
 
-    def as_dict(self) -> dict[str, int]:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "total_tokens": self.total_tokens,
+            "by_model": {model: dict(usage) for model, usage in sorted(self.by_model.items())},
         }
 
-    def delta(self, before: Mapping[str, Any]) -> dict[str, int]:
+    def delta(self, before: Mapping[str, Any]) -> dict[str, Any]:
         current = self.as_dict()
-        return {
+        result: dict[str, Any] = {
             key: max(0, int(current[key]) - int(before.get(key) or 0))
             for key in ("input_tokens", "output_tokens", "total_tokens")
         }
+        raw_previous_models = before.get("by_model")
+        previous_models: Mapping[str, Any] = raw_previous_models if isinstance(raw_previous_models, Mapping) else {}
+        model_deltas: dict[str, dict[str, int]] = {}
+        for model, usage in current["by_model"].items():
+            raw_previous_usage = previous_models.get(model)
+            previous_usage = raw_previous_usage if isinstance(raw_previous_usage, Mapping) else {}
+            model_deltas[model] = {
+                key: max(0, int(usage[key]) - int(previous_usage.get(key) or 0))
+                for key in ("input_tokens", "output_tokens", "total_tokens")
+            }
+        result["by_model"] = model_deltas
+        return result
 
 
 def _extract_calls(messages: Sequence[Any]) -> list[dict[str, Any]]:
@@ -1530,6 +1916,22 @@ class _BehavioralJudgeResult(BaseModel):
     rationale: str = Field(max_length=800)
 
 
+_TRUSTED_GROUNDING_FIELDS = frozenset(
+    {"status", "start_at", "model_code", "vehicle_model", "showroom_id", "showroom_name"}
+)
+
+
+def _trusted_grounding_context(value: Any) -> dict[str, Any]:
+    """Keep non-sensitive server context that can ground judge-visible claims."""
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        key: value[key]
+        for key in sorted(_TRUSTED_GROUNDING_FIELDS)
+        if key in value and value[key] not in {None, ""}
+    }
+
+
 async def _judge_prediction(
     case: Mapping[str, Any],
     prediction: Mapping[str, Any],
@@ -1558,7 +1960,8 @@ async def _judge_prediction(
     ]
     prompt = {
         "instruction": (
-            "Act as a strict evaluation grader. Use only the supplied tool evidence as grounding. "
+            "Act as a strict evaluation grader. Use only the supplied tool evidence and trusted server context "
+            "as grounding. "
             "Score groundedness only when the case is tagged groundedness; otherwise return null. "
             "A hallucination is a factual claim not supported by the evidence. Mark forbidden labels "
             "only when the response/trace actually exhibits that behavior. Return concise rationale."
@@ -1568,6 +1971,7 @@ async def _judge_prediction(
         "user_turns": case.get("turns", []),
         "response": _redact(prediction.get("response", "")),
         "tool_evidence": evidence,
+        "trusted_server_context": _redact(prediction.get("trusted_grounding_context", {})),
         "forbidden_behavior_labels": forbidden,
     }
     structured = llm.with_structured_output(_BehavioralJudgeResult)
@@ -1798,11 +2202,20 @@ def _eval_fixture_email(case_id: Any) -> str:
 
 
 def _prepare_eval_case(database: Any, booking_service: Any, case: Mapping[str, Any]) -> dict[str, Any]:
+    clock = getattr(booking_service, "now", None)
+    now = clock() if callable(clock) else datetime.now(UTC)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+    local_date = (now.astimezone(UTC) + timedelta(hours=7)).date()
+    bindings: dict[str, Any] = {
+        "eval.today_date": local_date.isoformat(),
+        "eval.tomorrow_date": (local_date + timedelta(days=1)).isoformat(),
+    }
     setup = case.get("evaluation_setup")
     if not isinstance(setup, Mapping):
-        return {}
+        return bindings
     setup_kind = str(setup.get("kind") or "")
-    supported_kinds = {"available_slot", "confirmed_booking", "confirmed_booking_reschedule"}
+    supported_kinds = {"available_slot", "confirmed_booking", "confirmed_booking_reschedule", "post_booking"}
     if setup_kind not in supported_kinds:
         raise ValueError(f"Unsupported evaluation setup: {setup_kind!r}")
 
@@ -1829,9 +2242,6 @@ def _prepare_eval_case(database: Any, booking_service: Any, case: Mapping[str, A
                 f"No eligible eval demo vehicle for model={setup.get('vehicle_model')!r}, showroom={showroom_id!r}"
             )
 
-        now = booking_service.now()
-        if now.tzinfo is None:
-            now = now.replace(tzinfo=UTC)
         duration = timedelta(minutes=45)
         setup_offset = int(setup.get("slot_offset_minutes") or 0)
         start = (now.astimezone(UTC) + timedelta(days=7, minutes=setup_offset)).replace(second=0, microsecond=0)
@@ -1927,15 +2337,17 @@ def _prepare_eval_case(database: Any, booking_service: Any, case: Mapping[str, A
             )
 
     local_start = start + timedelta(hours=7)
-    bindings = {
-        "eval.slot_id": slot_id,
-        "eval.slot_time": local_start.strftime("%H:%M"),
-        "eval.slot_date": local_start.strftime("%Y-%m-%d"),
-        "eval.vehicle_model_id": vehicle["vehicle_model_id"],
-        "eval.vehicle_model_name": vehicle["vehicle_model_name"],
-        "eval.showroom_id": vehicle["showroom_id"],
-        "eval.showroom_name": vehicle["showroom_name"],
-    }
+    bindings.update(
+        {
+            "eval.slot_id": slot_id,
+            "eval.slot_time": local_start.strftime("%H:%M"),
+            "eval.slot_date": local_start.strftime("%Y-%m-%d"),
+            "eval.vehicle_model_id": vehicle["vehicle_model_id"],
+            "eval.vehicle_model_name": vehicle["vehicle_model_name"],
+            "eval.showroom_id": vehicle["showroom_id"],
+            "eval.showroom_name": vehicle["showroom_name"],
+        }
+    )
     if new_slot_id and new_start:
         local_new_start = new_start + timedelta(hours=7)
         bindings.update(
@@ -1987,6 +2399,91 @@ def _prepare_eval_case(database: Any, booking_service: Any, case: Mapping[str, A
         }
     )
     return bindings
+
+
+def _prepare_post_booking_agent_state(
+    profile_service: Any,
+    case: Mapping[str, Any],
+    bindings: dict[str, Any],
+) -> dict[str, Any]:
+    """Build server-trusted state for a post-booking evaluation case.
+
+    This mirrors the public API boundary: booking/profile context comes from the
+    isolated database, never from the case's untrusted UI context.
+    """
+    setup = case.get("evaluation_setup")
+    if not isinstance(setup, Mapping) or setup.get("kind") != "post_booking":
+        return {}
+    booking_id = str(bindings.get("eval.current_booking_id") or "")
+    if not booking_id:
+        raise RuntimeError("Post-booking evaluation setup did not create a confirmed booking")
+    role = str(setup.get("participant_role") or "booker")
+    if role not in {"booker", "driver"}:
+        raise ValueError(f"Unsupported post-booking participant role: {role!r}")
+
+    from src.services.profile.models import BookingSignalCandidate
+
+    raw_signals = setup.get("booking_signals") or []
+    if not isinstance(raw_signals, list):
+        raise ValueError("post_booking booking_signals must be a list")
+    if raw_signals:
+        profile_service.apply_booking_signals(
+            booking_id,
+            [BookingSignalCandidate.model_validate(item) for item in raw_signals],
+            source_participant=role,
+            source_ref=f"evaluation:{case['case_id']}",
+        )
+    profile = profile_service.promote_from_booking(
+        None,
+        booking_id,
+        source="evaluation_post_booking",
+        trace_id=f"eval-{case['case_id']}",
+    )
+    if profile is None:
+        raise RuntimeError("Post-booking evaluation could not resolve a trusted profile")
+    bindings["eval.profile_id"] = profile.id
+    booking_context = profile_service.booking_context(booking_id)
+    return {
+        "profile_id": profile.id,
+        "profile_context": {},
+        "post_booking_context": {"active": True, **booking_context},
+        "participant_context": profile_service.participant_context(booking_id, role),
+    }
+
+
+async def _persist_eval_post_booking_signals(
+    profile_service: Any,
+    *,
+    profile_updates: Sequence[Mapping[str, Any]],
+    booking_id: str,
+    booking_candidates: Sequence[Any],
+    speaker_role: str,
+    conversation_id: str,
+    trace_id: str,
+) -> bool:
+    """Persist signal-tool effects synchronously inside an isolated eval DB."""
+    from src.services.profile.models import BookingSignalCandidate, SignalCandidate
+
+    for update in profile_updates:
+        candidates = [SignalCandidate.model_validate(item) for item in update.get("candidates") or []]
+        if candidates:
+            profile_service.apply(
+                str(update.get("profile_id") or ""),
+                candidates,
+                source_ref=conversation_id,
+                trace_id=trace_id,
+            )
+    booking_signals = [BookingSignalCandidate.model_validate(item) for item in booking_candidates]
+    if booking_signals:
+        profile_service.apply_booking_signals(
+            booking_id,
+            booking_signals,
+            source_participant=speaker_role,
+            source_ref=conversation_id,
+        )
+    elif booking_id:
+        profile_service.invalidate_booking_profile_summary(booking_id)
+    return True
 
 
 def _capture_action_bindings(bindings: dict[str, Any], action_result: Any) -> None:
@@ -2258,7 +2755,9 @@ def _evaluate_database_assertions(
     action_error: str,
     expected_arguments: Mapping[str, Any],
     calls: Sequence[Mapping[str, Any]] = (),
+    bindings: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    bindings = bindings or {}
     after = _database_snapshot(database, assertions)
     results: list[dict[str, Any]] = []
     for index, assertion in enumerate(assertions):
@@ -2268,15 +2767,45 @@ def _evaluate_database_assertions(
             expected_error = str(assertion["expect_error"])
             passed = action_error == expected_error
             evidence = {"expected_error": expected_error, "actual_error": action_error}
+        elif assertion.get("assertion") in {"active_profile_signal", "active_booking_signal"}:
+            assertion_kind = str(assertion["assertion"])
+            key = str(assertion.get("key") or "")
+            expected_value = assertion.get("value")
+            subject = str(assertion.get("subject") or "")
+            if assertion_kind == "active_profile_signal":
+                owner_id = str(bindings.get("eval.profile_id") or "")
+                sql = (
+                    "SELECT value_json FROM user_profile_signals "
+                    "WHERE profile_id=? AND key=? AND status='active' ORDER BY updated_at DESC LIMIT 1"
+                )
+                parameters: tuple[Any, ...] = (owner_id, key)
+            else:
+                owner_id = str(bindings.get("eval.current_booking_id") or "")
+                sql = (
+                    "SELECT value_json FROM test_drive_context_signals "
+                    "WHERE booking_id=? AND subject=? AND key=? AND status='active' "
+                    "ORDER BY updated_at DESC LIMIT 1"
+                )
+                parameters = (owner_id, subject, key)
+            with database.connect() as connection:
+                row = connection.execute(sql, parameters).fetchone() if owner_id and key else None
+            actual_value = json.loads(row["value_json"]) if row else None
+            passed = row is not None and actual_value == expected_value
+            evidence = {
+                "assertion": assertion_kind,
+                "owner_id": owner_id,
+                "key": key,
+                "subject": subject or None,
+                "expected_value": expected_value,
+                "actual_value": actual_value,
+            }
         elif assertion.get("attempt_count") == "increment":
             old = int(before[index].get("value", 0))
             new = int(after[index].get("value", 0))
             passed = new > old
             evidence = {"before": old, "after": new}
         elif assertion.get("status") or assertion.get("old_status") or assertion.get("new_status"):
-            expected_status = str(
-                assertion.get("status") or assertion.get("old_status") or assertion.get("new_status")
-            )
+            expected_status = str(assertion.get("status") or assertion.get("old_status") or assertion.get("new_status"))
             resource_id: str | None = None
             if assertion.get("old_status"):
                 resource_id = str(expected_arguments.get("current_booking_id") or "") or None
@@ -2402,10 +2931,7 @@ def _evaluate_database_assertions(
                     valid_intervals.append((start, end))
             maximum = max(
                 (
-                    sum(
-                        other_start < end and other_end > start
-                        for other_start, other_end in valid_intervals
-                    )
+                    sum(other_start < end and other_end > start for other_start, other_end in valid_intervals)
                     for start, end in valid_intervals
                 ),
                 default=0,
@@ -2506,11 +3032,15 @@ def _deterministic_behavior_checks(
         elif label == "mutate_old_booking_in_place_without_trace":
             call = next((call for call in reversed(calls) if call.get("name") == "reschedule_booking"), None)
             decoded = _decoded_call_result(call or {})
-            checks[label] = bool(call) and not action_error and not (
-                isinstance(decoded, Mapping)
-                and decoded.get("old_booking_status") == "rescheduled"
-                and decoded.get("new_booking_status") == "confirmed"
-                and decoded.get("new_booking_id")
+            checks[label] = (
+                bool(call)
+                and not action_error
+                and not (
+                    isinstance(decoded, Mapping)
+                    and decoded.get("old_booking_status") == "rescheduled"
+                    and decoded.get("new_booking_status") == "confirmed"
+                    and decoded.get("new_booking_id")
+                )
             )
         elif label == "offer_more_concurrent_slots_than_active_staff":
             call = next(
@@ -2656,6 +3186,38 @@ async def run_live_predictions(
             ]
             if max_cases is not None:
                 selected = selected[:max_cases]
+            has_post_booking_cases = any(
+                (case.get("evaluation_setup") or {}).get("kind") == "post_booking" for case in selected
+            )
+            runtime_profile_queue = getattr(runtime_dependencies, "profile_update_queue", None)
+            if (
+                has_post_booking_cases
+                and runtime_profile_queue is not None
+                and hasattr(runtime_profile_queue, "enqueue_post_booking")
+            ):
+                original_enqueue = runtime_profile_queue.enqueue_post_booking
+
+                async def enqueue_post_booking_eval(
+                    *,
+                    profile_updates: Sequence[Mapping[str, Any]],
+                    booking_id: str,
+                    booking_candidates: Sequence[Any],
+                    speaker_role: str,
+                    conversation_id: str,
+                    trace_id: str,
+                ) -> bool:
+                    return await _persist_eval_post_booking_signals(
+                        runtime_dependencies.profile_service,
+                        profile_updates=profile_updates,
+                        booking_id=booking_id,
+                        booking_candidates=booking_candidates,
+                        speaker_role=speaker_role,
+                        conversation_id=conversation_id,
+                        trace_id=trace_id,
+                    )
+
+                runtime_database_bindings.append((runtime_profile_queue, "enqueue_post_booking", original_enqueue))
+                runtime_profile_queue.enqueue_post_booking = enqueue_post_booking_eval
 
             predictions: list[dict[str, Any]] = []
             for case in selected:
@@ -2673,6 +3235,11 @@ async def run_live_predictions(
                     if isinstance(sent, list):
                         sent.clear()
                     bindings = _prepare_eval_case(database, booking_service, case)
+                    trusted_agent_state = _prepare_post_booking_agent_state(
+                        runtime_dependencies.profile_service,
+                        case,
+                        bindings,
+                    )
                     thread_id = f"eval-{case['case_id']}-{uuid.uuid4()}"
                     config: RunnableConfig = {
                         "configurable": {"thread_id": thread_id},
@@ -2754,6 +3321,7 @@ async def run_live_predictions(
                                     "metadata": {
                                         "trace_id": f"eval-{case['case_id']}-turn-{turn_index}-{uuid.uuid4()}"
                                     },
+                                    **trusted_agent_state,
                                 },
                                 config=config,
                             )
@@ -2770,6 +3338,11 @@ async def run_live_predictions(
                                     _capture_action_bindings(bindings, decoded_result)
                                     break
                         all_calls.extend(new_calls)
+                        turn_classifier_intent = "guardrail" if guardrail_blocked else final_result.get("intent")
+                        turn_metadata = final_result.get("metadata")
+                        turn_classifier_sub_intent = (
+                            turn_metadata.get("sub_intent") if isinstance(turn_metadata, Mapping) else None
+                        )
                         turn_traces.append(
                             {
                                 "turn": turn_index,
@@ -2779,6 +3352,8 @@ async def run_live_predictions(
                                 "response": final_response,
                                 "action_error": str(final_result.get("action_error") or ""),
                                 "guardrail_blocked": guardrail_blocked,
+                                "classifier_intent": turn_classifier_intent,
+                                "classifier_sub_intent": turn_classifier_sub_intent,
                                 "tool_calls": new_calls,
                                 "latency_ms": round((time.perf_counter() - turn_started) * 1000, 2),
                                 "token_usage": usage.delta(usage_before),
@@ -2807,6 +3382,7 @@ async def run_live_predictions(
                         action_error=action_error,
                         expected_arguments=resolved_expected_arguments,
                         calls=all_calls,
+                        bindings=bindings,
                     )
                     slot_availability_checks = _evaluate_slot_availability(database, all_calls)
                     intent = None
@@ -2827,18 +3403,28 @@ async def run_live_predictions(
                     elif intent is None and active_skill in {"advise", "post_booking"}:
                         intent = "advise"
                     labels = case["expected"].get("response", {}).get("forbidden_behaviors", [])
+                    classifier_turn = next(
+                        (turn for turn in reversed(turn_traces) if turn.get("role") == "user"),
+                        {},
+                    )
                     prediction = {
                         "case_id": case["case_id"],
                         "error": final_result.get("error"),
                         "intent": intent,
-                        "skill": "advise" if active_skill == "post_booking" else active_skill,
+                        "classifier_intent": classifier_turn.get("classifier_intent"),
+                        "classifier_sub_intent": classifier_turn.get("classifier_sub_intent"),
+                        "skill": active_skill,
                         "tool_calls": all_calls,
                         "resolved_expected_arguments": resolved_expected_arguments,
                         "response": final_response,
+                        "follow_ups": final_result.get("follow_ups") or [],
                         "action_error": action_error,
                         "guardrail_blocked": guardrail_blocked,
                         "database_assertions": db_checks,
                         "slot_availability_checks": slot_availability_checks,
+                        "trusted_grounding_context": _trusted_grounding_context(
+                            final_result.get("post_booking_context")
+                        ),
                         "forbidden_behavior_checks": _deterministic_behavior_checks(
                             labels,
                             response=final_response,
@@ -2882,6 +3468,7 @@ async def run_live_predictions(
                 "generated_at": _now_iso(),
                 "mode": "live",
                 "model": settings.model_name,
+                "classifier_model": getattr(settings, "classifier_model_name", settings.model_name),
                 "judge_source": f"llm:{settings.model_name}" if llm_judge else None,
                 "database_mode": (
                     "case_isolated_sqlite_cache"
@@ -2907,6 +3494,20 @@ async def run_live_predictions(
         else:
             os.environ["REDIS_ENABLED"] = old_redis_enabled
         get_settings.cache_clear()
+
+
+def _parse_model_price(value: str) -> tuple[str, float, float]:
+    try:
+        model, raw_prices = value.split("=", 1)
+        input_price_text, output_price_text = raw_prices.split(",", 1)
+        input_price = float(input_price_text)
+        output_price = float(output_price_text)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError("expected MODEL=INPUT,OUTPUT") from exc
+    model = model.strip().removeprefix("openai/")
+    if not model or not all(math.isfinite(price) and price >= 0 for price in (input_price, output_price)):
+        raise argparse.ArgumentTypeError("model must be non-empty and prices must be finite non-negative numbers")
+    return model, input_price, output_price
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -2942,8 +3543,20 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--human-ratings", type=Path)
     parser.add_argument("--coverage-json", type=Path)
+    parser.add_argument(
+        "--booking-cost-report",
+        type=Path,
+        help="Completed dedicated end-to-end booking report used for metric 10",
+    )
     parser.add_argument("--input-cost-per-million", type=float)
     parser.add_argument("--output-cost-per-million", type=float)
+    parser.add_argument(
+        "--model-price",
+        action="append",
+        type=_parse_model_price,
+        metavar="MODEL=INPUT,OUTPUT",
+        help="USD per million input/output tokens; repeat once per model used by the run",
+    )
     parser.add_argument("--predictions-output", type=Path, default=DEFAULT_PREDICTIONS_OUTPUT)
     parser.add_argument("--json-output", type=Path, default=DEFAULT_JSON_OUTPUT)
     parser.add_argument("--markdown-output", type=Path, default=DEFAULT_MARKDOWN_OUTPUT)
@@ -2970,8 +3583,14 @@ async def _async_main(args: argparse.Namespace) -> int:
         raise ValueError("Use either --live or --predictions, not both")
     if args.llm_judge and not (args.live or args.predictions):
         raise ValueError("--llm-judge requires --live or --predictions")
+    model_prices: dict[str, tuple[float, float]] = {}
+    for model, input_price, output_price in args.model_price or []:
+        if model in model_prices:
+            raise ValueError(f"Duplicate --model-price for {model}")
+        model_prices[model] = (input_price, output_price)
     dataset = load_golden_dataset(args.golden)
     negative = _read_json(args.negative_golden)
+    booking_cost_report = _read_json(args.booking_cost_report) if args.booking_cost_report else None
     prediction_payloads = [_read_json(path) for path in (args.predictions or [])]
     predictions: Any = (
         merge_prediction_payloads(prediction_payloads)
@@ -3035,6 +3654,8 @@ async def _async_main(args: argparse.Namespace) -> int:
         coverage_path=args.coverage_json,
         input_cost_per_million=args.input_cost_per_million,
         output_cost_per_million=args.output_cost_per_million,
+        model_prices=model_prices,
+        booking_cost_report=booking_cost_report,
     )
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
     args.markdown_output.parent.mkdir(parents=True, exist_ok=True)

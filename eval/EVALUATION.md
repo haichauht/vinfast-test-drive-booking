@@ -28,12 +28,12 @@ Không chuyển metric chưa chấm thành `0`, vì `0` có nghĩa là đã ch�
 | Metric | Cách tính và phạm vi hiện tại |
 |---|---|
 | Booking Task Success Rate | Active case đạt đồng thời intent, skill, tool, argument, response, DB/policy và clean execution / active case được chấm. Completion booking dương tính được ghi riêng để không nhầm với conversion funnel. |
-| Intent Accuracy | Intent đúng / active case được chấm. |
+| Intent Accuracy | Output `intent/sub_intent` của classifier ở lượt ngôn ngữ tự nhiên cuối được đối chiếu với route chấp nhận trong golden set, trước và độc lập với tool selection. Structured action không đi qua classifier nên bị loại khỏi mẫu số thay vì tự động tính đúng. |
 | Tool Selection Accuracy | Chọn đúng tool bắt buộc, hoặc không gọi tool khi expected tool là `null`, / active case được chấm. |
 | Argument Accuracy | Báo required-field match, exact match và macro field F1; field thừa chỉ được bỏ qua khi contract khai báo `allowed_extra_arguments`. |
-| Slot Availability Accuracy | Mỗi slot tool trả về được đối chiếu với DB cô lập: đúng showroom/xe/thời gian, xe đủ điều kiện, slot bookable và không có xung đột active có từ trước. State do chính trace tạo sau search không làm sai kết quả hồi tố. |
+| Slot Availability Accuracy | Precision: slot hợp lệ theo DB / toàn bộ slot được search trả về. Selected-slot recall: booking giữ thành công một slot đã xuất hiện trong kết quả search trước đó / toàn bộ booking giữ slot có đủ search evidence. Hai mẫu số được báo riêng. |
 | Double-booking Rate | Tỷ lệ fixture chống giữ trùng, slot chồng giờ, idempotency, concurrent hold và capacity sales staff bị xuyên thủng. Xe/slot và staff capacity có denominator riêng. |
-| Hallucination / Constraint Violation Rate | Tổng hallucination do judge phát hiện và forbidden behavior vi phạm / tổng evidence check thật sự được chấm; đồng thời giữ hai component riêng. |
+| Hallucination / Constraint Violation Rate | Hallucination rate = case bị judge phát hiện bịa dữ liệu / case có judge evidence. Constraint violation rate = deterministic forbidden-behavior check bị vi phạm / case có constraint evidence. Không gộp hai mẫu số khác bản chất thành một chỉ số chính. |
 | Authorization / OTP Violation Rate | Fixture cross-customer, session hết hạn/thu hồi, OTP lock/single-use và quyền staff/manager/admin bị xuyên thủng / fixture auth-OTP được chấm. |
 | P95 End-to-End Latency | Percentile 95 của thời gian toàn case, gồm tất cả turn và tool call. Gate release hiện là 20.000 ms. |
 | Cost per Completed Booking | Chi phí agent-model của các positive confirmation workflow / booking xác nhận thành công. Structured workflow có usage đầy đủ và đúng 0 token được ghi 0 USD; workflow có model token chỉ có giá khi truyền đúng đơn giá provider. Không gồm hạ tầng, notification hoặc LLM judge. |
@@ -48,7 +48,7 @@ groundedness.
 
 Task success còn yêu cầu `clean execution`: tool error chỉ được chấp nhận khi đúng
 `expect_error` của case. Lỗi ngoài dự kiến hoặc gọi lặp cùng tool trong một lượt làm
-case fail, kể cả khi agent tự sửa và đạt trạng thái cuối. Toàn bộ 57 golden case là
+case fail, kể cả khi agent tự sửa và đạt trạng thái cuối. Toàn bộ 61 golden case là
 regression suite; 12 case gắn tag `challenge` chỉ là lát cắt nội bộ của regression,
 không phải hidden holdout.
 
@@ -113,7 +113,7 @@ Chạy lặp để đo variance, observed pass@k và pass ở mọi lần chạy
   --case CANCEL-001 --case RESCHEDULE-001 --case STAFF-CAPACITY-001
 ```
 
-Không truyền `--case` nếu muốn đo lặp toàn bộ 57 active case. Artifact mặc định nằm tại
+Không truyền `--case` nếu muốn đo lặp toàn bộ 61 active case. Artifact mặc định nằm tại
 `eval/results/agent-stability.json`, `agent-stability.md` và `agent-stability-runs.json`.
 
 ## Hidden holdout one-shot
@@ -207,8 +207,9 @@ liệu.
 
 ## Những giới hạn cần công bố
 
-- 57 case agent là regression suite synthetic và đều active. Chỉ 10/57 case hiện có
-  đủ hai human review hoàn chỉnh theo gate mới.
+- 61 case agent là regression suite synthetic và đều active. Human review phải được
+  báo theo đúng số case/reviewer có dữ liệu tại thời điểm chạy; LLM judge không được
+  xem là human review.
 - Hidden holdout one-shot đạt 16/30 (53,33%); multi-turn 0/5 là lát cắt yếu nhất.
   Dataset/label/raw trace nằm trong thư mục private và checksum được khóa trong manifest.
 - Case stateful dùng `evaluation_setup`, structured `action` turn và `fixture`
@@ -220,8 +221,10 @@ liệu.
 - `search_knowledge` dùng corpus 37 entry có provenance, nhưng toàn bộ vẫn
   `pending_internal_review` và retrieval hiện là lexical. Chưa thể tuyên bố RAG
   groundedness/faithfulness đạt chuẩn production.
-- Stability hiện phủ đủ 57/57 regression case qua 3 lần chạy; pass@3 và pass-all-3 đều
-  100%. P95 từng run nằm trong 10.380,04–12.941,61 ms. Hidden holdout không được rerun,
+- Stability ngày 28/08/2026 phủ đủ 61/61 case qua 3 lần chạy: observed pass@3
+  98,36%, pass-all-3 95,08%, hallucination 0/20; `MULTITURN-SEARCH-001` và
+  `SEARCH-005` không ổn định.
+  P95 từng run nằm trong 10.236,37–12.121,22 ms. Hidden holdout không được rerun,
   còn ba regression run không thay thế dữ liệu tải production dài hạn.
 - Human satisfaction và CSAT chỉ hợp lệ sau khi có người dùng/reviewer thực.
 - LLM-as-judge cần ghi rõ model/judge source; không thay thế hoàn toàn human
