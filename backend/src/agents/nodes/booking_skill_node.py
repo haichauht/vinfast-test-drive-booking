@@ -410,11 +410,15 @@ def _verified_booking_context(details: dict[str, Any], messages: list[Any]) -> t
                 identity = booking_service.verified_identity(challenge_id)
                 verified_person_id = str((identity or {}).get("id") or "")
             break
-    booker = details.get("booker") if isinstance(details.get("booker"), dict) else {}
-    driver = details.get("driver") if isinstance(details.get("driver"), dict) else {}
+    def detail_section(key: str) -> dict[str, Any]:
+        value = details.get(key)
+        return value if isinstance(value, dict) else {}
+
+    booker = detail_section("booker")
+    driver = detail_section("driver")
     role = "booker" if verified_person_id and verified_person_id == str(booker.get("id") or "") else "driver" if verified_person_id and verified_person_id == str(driver.get("id") or "") else "verified_participant"
-    vehicle = details.get("vehicle") if isinstance(details.get("vehicle"), dict) else {}
-    showroom = details.get("showroom") if isinstance(details.get("showroom"), dict) else {}
+    vehicle = detail_section("vehicle")
+    showroom = detail_section("showroom")
     context = {
         "authenticated": True, "booking_code": details.get("booking_code"), "status": details.get("status"),
         "vehicle": vehicle.get("name") or vehicle.get("vehicle_name"), "showroom": showroom.get("name"),
@@ -733,7 +737,7 @@ async def booking_skill_node(state: AgentState, config: RunnableConfig | None = 
                 else _grounded_booking_details_response(decoded)
             )
             message = AIMessage(content=response_text)
-            output = {
+            details_output = {
                 "messages": [message],
                 "response": response_text,
                 "action_tool": last_message.name,
@@ -744,9 +748,9 @@ async def booking_skill_node(state: AgentState, config: RunnableConfig | None = 
             }
             if not failed and isinstance(decoded, dict):
                 confirmed_context, participant_context = _verified_booking_context(decoded, messages)
-                output["confirmed_booking_context"] = confirmed_context
-                output["participant_context"] = participant_context
-            return output
+                details_output["confirmed_booking_context"] = confirmed_context
+                details_output["participant_context"] = participant_context
+            return details_output
         if (
             last_message.name == search_test_drive_options.name
             and getattr(last_message, "status", "success") != "error"

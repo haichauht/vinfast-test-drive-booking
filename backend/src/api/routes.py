@@ -40,6 +40,7 @@ from src.models.schemas import (
     DatasetImportRequest,
     DemoActionRequest,
     FloatingDemoOptionsRequest,
+    FollowUp,
     UiDirective,
 )
 from src.services.booking import BookingError
@@ -388,7 +389,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             if raw_intent_entities.get(key) is not None
         }
         raw_follow_ups = result.get("follow_ups") or []
-        public_follow_ups = []
+        public_follow_ups: list[FollowUp] = []
         if (
             result.get("active_skill") == "post_booking"
             and not result.get("action_tool")
@@ -400,7 +401,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                 text = str(item.get("text") or "") if isinstance(item, dict) else ""
                 safe_text = guardrails.protect_output({"response": text}).response
                 if safe_text:
-                    public_follow_ups.append({"text": safe_text})
+                    public_follow_ups.append(FollowUp(text=safe_text))
         response = ChatResponse(
             response=protected.response,
             analysis=protected.analysis,
