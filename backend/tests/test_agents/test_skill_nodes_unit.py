@@ -102,6 +102,35 @@ async def test_booking_search_does_not_restore_cleared_showroom(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_booking_search_drops_variant_filter(monkeypatch):
+    """Lái thử đặt theo MẪU XE: Eco và Plus là một xe, không phải hai.
+
+    Bỏ trống `vehicle_variant` thì catalogue tìm trên mọi biến thể đang hoạt động,
+    nên danh sách khung giờ của "VF 9" đã gồm cả xe Eco lẫn xe Plus. Nếu để LLM gửi
+    biến thể lên, danh sách bị lọc hẹp lại và khách mất đi khung giờ có thật.
+    """
+    response = AIMessage(content="", tool_calls=[{
+        "id": "search", "name": "search_test_drive_options",
+        "args": {
+            "vehicle_model": "VF 9", "vehicle_variant": "Plus",
+            "showroom_id": "207221", "preferred_date": "2026-09-03", "preferred_time": "09:00",
+        },
+    }])
+    llm, _ = _mock_bound_llm(response)
+    monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+    result = await booking_skill_node({"messages": [
+        HumanMessage(content="pick lúc 9h ngày 3/9 dùm"),
+    ]})
+    arguments = result["messages"][0].tool_calls[0]["args"]
+    assert "vehicle_variant" not in arguments
+    # Phần còn lại của yêu cầu phải đi qua nguyên vẹn.
+    assert arguments == {
+        "vehicle_model": "VF 9", "showroom_id": "207221",
+        "preferred_date": "2026-09-03", "preferred_time": "09:00",
+    }
+
+
+@pytest.mark.asyncio
 async def test_booking_can_clarify_ambiguous_time_even_with_selected_vehicle_and_showroom(monkeypatch):
     response = AIMessage(content="Quý khách muốn 9 giờ sáng hay 9 giờ tối ạ?")
     llm, _ = _mock_bound_llm(response)
@@ -346,6 +375,60 @@ async def test_booking_reschedule_intent_forces_manage_access_flow(monkeypatch):
     assert tool_call["args"] == {"purpose": "manage", "contact_value": ""}
     assert result["tool_call_count"] == 1
     get_llm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_providing_contact_details_does_not_send_an_otp(monkeypatch):
+    """Đưa tên và email cho lịch ĐANG đặt không phải là yêu cầu tra cứu lịch cũ.
+
+    Nhánh tắt ở booking_skill_node bắn thẳng request_booking_access cho mọi
+    sub_intent thuộc nhóm quản lý lịch, KHÔNG qua LLM. Trước đây classifier gán
+    booking_lookup cho câu này chỉ vì trong đó có dấu '@', nên khách đang điền
+    thông tin lại bị gửi OTP và luồng đặt lịch đứt giữa chừng (log 28/08/2026:
+    tool_dispatched request_booking_access -> otp.delivery_failed).
+
+    Nhãn booking_provide_contact nằm ngoài BOOKING_MANAGEMENT_INTENTS nên câu đi
+    tiếp xuống LLM, nơi SKILL.md dặn gọi update_booking_draft với booker_patch +
+    driver_patch.
+    """
+    response = AIMessage(content="", tool_calls=[{
+        "id": "draft", "name": "update_booking_draft",
+        "args": {
+            "booking_id": "bk_1",
+            "booker_patch": {"full_name": "Nguyễn Hoàng Minh", "email": "minh@example.com"},
+            "driver_patch": {"full_name": "Trần B", "email": "b@example.com"},
+        },
+    }])
+    llm, _ = _mock_bound_llm(response)
+    get_llm = MagicMock(return_value=llm)
+    monkeypatch.setattr(booking_module, "get_llm", get_llm)
+
+    result = await booking_skill_node(
+        {
+            "messages": [HumanMessage(
+                content="tôi tên Nguyễn Hoàng Minh, minh@example.com, bạn tôi là Trần B, b@example.com"
+            )],
+            "metadata": {"sub_intent": "booking_provide_contact"},
+            "intent_entities": {"contact_value": "minh@example.com"},
+            "context": {"stage": "collect_info", "bookingId": "bk_1"},
+            "tool_call_count": 0,
+        }
+    )
+
+    tool_call = result["messages"][0].tool_calls[0]
+    assert tool_call["name"] != "request_booking_access"
+    assert tool_call["name"] == "update_booking_draft"
+    # Một câu mang hai người: giữ đủ cả hai, không gộp làm một.
+    assert tool_call["args"]["booker_patch"]["email"] == "minh@example.com"
+    assert tool_call["args"]["driver_patch"]["email"] == "b@example.com"
+    get_llm.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_provide_contact_is_outside_management_intents():
+    """Chốt bằng khẳng định trực tiếp: đổi frozenset là test này đỏ ngay."""
+    assert "booking_provide_contact" not in booking_module.BOOKING_MANAGEMENT_INTENTS
+    assert "booking_lookup" in booking_module.BOOKING_MANAGEMENT_INTENTS
 
 
 @pytest.mark.asyncio

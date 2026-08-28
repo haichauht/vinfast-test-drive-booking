@@ -208,7 +208,18 @@ def _natural_hold_action_id(*, request_identity: str, slot_id: object) -> str:
 
 
 def _normalize_natural_hold_calls(response: Any, *, trace_id: str) -> Any:
-    """Repair only LLM-generated hold IDs; structured UI payloads remain strict."""
+    """Repair LLM tool calls from free chat; structured UI payloads remain strict.
+
+    Two repairs, cả hai chỉ áp cho lời gọi do LLM tự soạn:
+
+    1. Hold ID không đúng hợp đồng idempotency `hold:`.
+    2. `vehicle_variant` trong lời gọi tìm kiếm. Lái thử đặt theo MẪU XE — VF 9 Eco
+       và VF 9 Plus là một xe đặt được, không phải hai. Bỏ trống trường này thì
+       catalogue tìm trên mọi biến thể đang hoạt động (catalog.py: `if vehicle_variant`),
+       nên danh sách khung giờ của "VF 9" đã gồm cả Eco lẫn Plus. Gửi biến thể lên chỉ
+       lọc hẹp danh sách và giấu mất khung giờ có thật. SKILL.md đã dặn LLM đừng gửi,
+       nhưng lời dặn chỉ là lời dặn — đây mới là chỗ cưỡng chế.
+    """
     tool_calls = getattr(response, "tool_calls", None)
     if not isinstance(tool_calls, list):
         return response
@@ -218,6 +229,20 @@ def _normalize_natural_hold_calls(response: Any, *, trace_id: str) -> Any:
     for raw_call in tool_calls:
         call = dict(raw_call)
         args = call.get("args")
+        if (
+            call.get("name") == search_test_drive_options.name
+            and isinstance(args, dict)
+            and args.get("vehicle_variant") is not None
+        ):
+            args = {key: value for key, value in args.items() if key != "vehicle_variant"}
+            call["args"] = args
+            changed = True
+            trace_event(
+                "booking.variant_filter_dropped",
+                trace_id=trace_id,
+                node="booking_skill",
+                vehicle_model=str(args.get("vehicle_model") or ""),
+            )
         if call.get("name") == hold_test_drive_slot.name and isinstance(args, dict):
             normalized_args = dict(args)
             ui_action_id = str(normalized_args.get("ui_action_id") or "")
