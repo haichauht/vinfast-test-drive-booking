@@ -30,6 +30,11 @@ _ADMINISTRATIVE_LOCATION_TOKENS = frozenset({
 })
 
 
+# Điểm khớp tên tối thiểu để coi truy vấn là chỉ đích danh một showroom.
+# Cùng thang điểm với _showroom_query_score: 100 = trùng mã, 90 = trùng tên/định danh.
+_SHOWROOM_QUERY_CONFIDENT_SCORE = 90
+
+
 def _showroom_identity_text(value: object) -> str:
     normalized = normalize_location_text(str(value or ""))
     return " ".join(token for token in normalized.split() if token not in _GENERIC_SHOWROOM_TOKENS)
@@ -397,15 +402,23 @@ class CatalogService(BookingBase):
                 else:
                     showrooms.sort(key=lambda item: (-int(item.get("available_slot_count") or 0), item["name"]))
 
-                return {
-                    "resolved_vehicle": {**model, "variants": variants},
-                    "license_requirement": model["required_license_class"],
-                    "showrooms": showrooms[: min(max(showroom_limit, 1), 30)],
-                    "target_coordinates": target_coords,
-                    "slots": [],
-                    "search_stage": "showroom_selection",
-                    "missing_fields": [],
-                }
+                # Khách gọi thẳng tên showroom thì họ đã chọn rồi, đừng bắt chọn lại.
+                # Trả về "showroom_selection" ở đây làm luồng đứng lại một bước thừa và
+                # vứt luôn ngày/giờ khách vừa nói, vì nhánh này không đọc lịch trống.
+                # Chỉ đi tiếp khi truy vấn chỉ đích danh đúng MỘT nơi; còn mơ hồ thì vẫn
+                # trả danh sách cho khách chọn như cũ.
+                promoted = self._unique_confident_showroom(showrooms) if showroom_query else None
+                if promoted is None:
+                    return {
+                        "resolved_vehicle": {**model, "variants": variants},
+                        "license_requirement": model["required_license_class"],
+                        "showrooms": showrooms[: min(max(showroom_limit, 1), 30)],
+                        "target_coordinates": target_coords,
+                        "slots": [],
+                        "search_stage": "showroom_selection",
+                        "missing_fields": [],
+                    }
+                showroom_id = str(promoted["id"])
             selected = self._row(
                 c.execute("SELECT * FROM showrooms WHERE id=? AND is_active=1", (showroom_id,)).fetchone()
             )
@@ -566,6 +579,23 @@ class CatalogService(BookingBase):
         requested = normalize_location_tokens(address)
         candidate = _showroom_location_tokens(showroom)
         return len(requested & candidate)
+
+    @staticmethod
+    def _unique_confident_showroom(showrooms: list[dict]) -> dict | None:
+        """Trả showroom mà một truy vấn theo TÊN chỉ đích danh, hoặc None nếu còn mơ hồ.
+
+        Chỉ nhận điểm >= 90, tức khớp nguyên mã (100) hoặc nguyên tên/định danh (90).
+        Điểm 70 là "truy vấn nằm trong tên" và 50 là "nằm trong địa chỉ" — hai mức đó
+        có thể trúng nhiều nơi cùng lúc ("Minh Đạo Phát" ra ba showroom), nên tuyệt đối
+        không tự chọn. Có từ hai ứng viên đích danh trở lên cũng trả None: lúc đó phải
+        để khách tự chọn chứ không đoán hộ.
+        """
+        confident = [
+            showroom
+            for showroom in showrooms
+            if int(showroom.get("text_match_score") or 0) >= _SHOWROOM_QUERY_CONFIDENT_SCORE
+        ]
+        return confident[0] if len(confident) == 1 else None
 
     @staticmethod
     def _showroom_query_score(query: str, showroom: dict) -> int:
