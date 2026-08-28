@@ -599,12 +599,12 @@ async def chat_stream(body: ChatRequest, request: Request):
 
 def _floating_demo_available() -> bool:
     settings = get_settings()
-    return settings.app_env != "production" and bool(getattr(settings, "floating_demo_enabled", False))
+    return bool(getattr(settings, "floating_demo_enabled", False))
 
 
 @router.get("/floating-demo/capabilities")
 async def floating_demo_capabilities():
-    """Expose a harmless feature flag; production always reports disabled."""
+    """Expose the opt-in flag for the simulation, including in production."""
     return {"enabled": _floating_demo_available()}
 
 
@@ -612,7 +612,7 @@ async def floating_demo_capabilities():
 async def search_floating_demo_options(body: FloatingDemoOptionsRequest):
     """Search demo availability without depending on the conversational agent."""
     if not _floating_demo_available():
-        raise HTTPException(status_code=404, detail={"code": "FLOATING_DEMO_DISABLED", "message": "Demo không khả dụng."})
+        raise HTTPException(status_code=404, detail={"code": "FLOATING_DEMO_DISABLED", "message": "Demo đang tắt trên máy chủ. Cần bật FLOATING_DEMO_ENABLED=true để sử dụng."})
     payload = body.model_dump(exclude_none=True)
     decision = get_guardrails().inspect_demo_action(action="search_options", payload=payload)
     if not decision.allowed:
