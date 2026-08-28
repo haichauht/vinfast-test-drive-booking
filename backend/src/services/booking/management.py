@@ -371,6 +371,12 @@ class ManagementService(BookingBase):
             )
             self._event(c, current_booking_id, "booking_rescheduled", "user", {"new_booking_id": new_booking_id})
             self._event(c, new_booking_id, "booking_confirmed", "user", {"old_booking_id": current_booking_id})
+            c.execute(
+                "INSERT INTO test_drive_context_signals(id,booking_id,category,key,value_json,description,subject,certainty,confidence,source_type,source_participant,source_ref,status,superseded_by_signal_id,created_at,updated_at) "
+                "SELECT 'booking_signal_copy_' || id,?,category,key,value_json,description,subject,certainty,confidence,source_type,source_participant,source_ref,'active',NULL,?,? FROM test_drive_context_signals WHERE booking_id=? AND status='active' AND key IN ('booker_attending','driver_attending','booker_will_drive','driver_will_drive','booker_evaluation_involvement','driver_evaluation_involvement','booker_purchase_involvement','driver_purchase_involvement','additional_guest_count','additional_guest_context')",
+                (new_booking_id, now, now, current_booking_id),
+            )
+            c.execute("DELETE FROM booking_profile_summaries WHERE booking_id IN (?,?)", (current_booking_id, new_booking_id))
             result = {
                 "old_booking_status": "rescheduled",
                 "new_booking_status": "confirmed",

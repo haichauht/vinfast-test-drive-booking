@@ -572,6 +572,14 @@
 .agent-context__rail strong { overflow: hidden; font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
 .agent-context__rail small { grid-column: 2; overflow: hidden; color: var(--muted); font-size: 0.58rem; text-overflow: ellipsis; white-space: nowrap; }
 .agent-context__rail--slots button { grid-template-columns: auto 1fr; }
+
+/* Post-booking suggestions are conversational replies, not booking commands. */
+.post-booking-follow-ups { display: grid; gap: 7px; margin: 2px 0 13px; }
+.post-booking-follow-ups button { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%; padding: 10px 12px; border: 1px solid rgba(20, 100, 244, 0.22); border-radius: 14px; color: var(--ink); background: rgba(20, 100, 244, 0.045); font: inherit; font-size: 0.75rem; line-height: 1.4; text-align: left; cursor: pointer; transition: border-color 0.25s var(--ease-soft), background 0.25s var(--ease-soft), transform 0.25s var(--ease-heavy); }
+.post-booking-follow-ups button > svg { color: var(--blue); }
+.post-booking-follow-ups button:hover:not(:disabled) { border-color: rgba(20, 100, 244, 0.5); background: rgba(20, 100, 244, 0.09); transform: translateY(-1px); }
+.post-booking-follow-ups button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.post-booking-follow-ups button:disabled { cursor: not-allowed; opacity: 0.5; }
 .booking-success-layout {
   display: grid;
   grid-template-columns: minmax(420px, 0.84fr) minmax(0, 1.16fr);

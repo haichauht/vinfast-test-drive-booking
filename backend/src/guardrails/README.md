@@ -144,7 +144,7 @@ liệu với instruction trong các paraphrase chưa biết hay không.
 - `analysis` luôn trở thành chuỗi rỗng. Internal reasoning không phải API contract công khai.
 - Literal secret tìm được trong kết quả tool bị loại khỏi natural-language `response` và `action_error`.
 - Assignment dạng `api_key=...`, `password: ...`, `otp_code=...` và standalone provider token/JWT phổ biến bị redact.
-- Số điện thoại, email và CCCD 12 chữ số trong natural-language response được thay bằng marker; phone có hỗ trợ dạng ngoặc như `(+84) 901 234 567`.
+- Số điện thoại trong natural-language response được thay bằng “hotline chính thức của showroom”; email và CCCD 12 chữ số được thay bằng marker. Phone có hỗ trợ dạng ngoặc như `(+84) 901 234 567`.
 - Nếu output chứa marker của system prompt, toàn bộ text được thay bằng safe fallback.
 - Output quá dài bị cắt theo `GUARDRAILS_MAX_OUTPUT_CHARS`.
 - `tool_input` là diagnostic field nên phone, email, OTP, token và contact đều bị redact đệ quy. Tên key được canonicalize nên `openrouter_api_key`, `openrouterApiKey` và `openrouter-api-key` được xử lý nhất quán.

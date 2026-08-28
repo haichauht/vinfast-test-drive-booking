@@ -99,6 +99,9 @@ present them as self-reported facts. Keep uncertain non-third-party inferences
 separate from confirmed/self-provided information as well.
 
 Return readable Markdown with only useful sections. Prefer short bullets and practical wording.
+When the input includes test_drive_context, start with a clearly labeled "Test-Drive Context" section.
+Render attendance, driving participation, evaluation/purchase involvement, guests/logistics, then other relevant booking context.
+Keep its certainty clear and never turn booking-scoped information into a person profile fact.
 When the input contains separate booker and driver profiles, keep them in clearly labeled sections
 and never transfer facts from one person to the other. If a profile is unavailable, state that the
 person has not provided profile information. When same_person is true, do not duplicate the profile.
@@ -188,6 +191,16 @@ non-technical sales staff.
 **Showroom:** {showroom}
 
 **Thời gian lái thử:** {start_at}
+
+---
+
+### Bối cảnh buổi lái thử
+
+- [Summarize only the supplied `test_drive_context`: attendance, who will drive,
+  evaluation or purchase involvement, guests, and logistics. Keep the stated
+  certainty and participant source clear. Do not expose raw signal fields,
+  IDs, confidence scores, or source-system details. Write "Chưa có thông tin"
+  when no relevant context was supplied.]
 
 ---
 

@@ -50,7 +50,6 @@ artifacts/
 eval/human/reviews.csv
 eval/human/reviewers.json
 eval/holdout/private/
-
 # Docker
 docker-compose.override.yml
 
