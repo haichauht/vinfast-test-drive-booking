@@ -389,8 +389,10 @@ class ProfileService:
                     continue
                 signal_id = _id("booking_signal")
                 confidence = candidate.confidence
-                if old and candidate.operation == "strengthen": confidence = max(confidence, min(1.0, float(old["confidence"] or .5) + .15))
-                if old and candidate.operation == "weaken": confidence = min(confidence, max(0.0, float(old["confidence"] or .5) - .25))
+                if old and candidate.operation == "strengthen":
+                    confidence = max(confidence, min(1.0, float(old["confidence"] or .5) + .15))
+                if old and candidate.operation == "weaken":
+                    confidence = min(confidence, max(0.0, float(old["confidence"] or .5) - .25))
                 c.execute("INSERT INTO test_drive_context_signals VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                     signal_id, booking_id, candidate.category, candidate.key, json.dumps(candidate.value, ensure_ascii=False),
                     candidate.description, candidate.subject, candidate.certainty, confidence, candidate.source_type,
