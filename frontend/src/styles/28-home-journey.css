@@ -970,14 +970,12 @@
 @keyframes journey-visual-in { from { opacity: 0; transform: translateY(16px) scale(0.985); } }
 @keyframes journey-copy-in { from { opacity: 0; transform: translateY(14px); } }
 
+/* Chỉ phần tiêu đề đổi sang một cột ở đây. Việc xếp dọc cả sân khấu do khối
+ * @media (max-width: 900px) bên dưới lo — cùng mốc với 26-mobile-hardening.css. */
 @media (max-width: 1120px) {
   .vivi-journey__heading { grid-template-columns: 1fr; align-items: start; gap: 30px; }
   .vivi-journey__intro { display: block; }
   .vivi-journey__intro > p { margin: 0; }
-  .vivi-journey__stage { grid-template-columns: 1fr; }
-  .vivi-journey__media { min-height: 690px; }
-  .vivi-journey__story { min-height: 540px; }
-  .vivi-journey__panel h3 { max-width: 17ch; }
 }
 
 @media (max-width: 720px) {
@@ -1062,15 +1060,14 @@
   .vivi-journey__confirmation { --email-pad: 14px; }
   .vivi-journey__email-headline { font-size: 1.5rem; }
   .vivi-journey__email-panel dl div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .vivi-journey__email-panel dl div:last-child { display: none; }
   .vivi-journey__invite-vehicle,
   .vivi-journey__invite-vehicle .smart-image { height: 86px; min-height: 86px; }
   .factory-film__watch-pill strong { display: none; }
   .factory-film__watch-pill { padding: 7px; }
 }
 
-/* ViVi giữ bố cục hai cột trên tablet ngang; chỉ xếp dọc khi không còn đủ
- * chiều rộng thật cho thanh 5 bước và phần nội dung. */
+/* Tablet ngang vẫn đủ chiều rộng thật cho thanh 5 bước cạnh phần media, nên giữ
+ * hai cột; chỉ bóp lại tỉ lệ và khoảng đệm. */
 @media (min-width: 901px) and (max-width: 1120px) {
   .vivi-journey__stage {
     grid-template-columns: minmax(0, 1.14fr) minmax(360px, 0.86fr);
@@ -1160,7 +1157,7 @@
 
   .vivi-journey__panel > span { margin-top: 20px; }
   .vivi-journey__vehicle-card { padding-inline: 0; }
-  .vivi-journey__showroom-list { background: rgba(0, 0, 0, 0.38); }
+  .vivi-journey__showroom-list { background: rgba(255, 255, 255, 0.94); }
 }
 
 @media (max-width: 430px) {
@@ -1184,4 +1181,107 @@
   .factory-film__watch-pill,
   .vivi-journey__tabs button,
   .vivi-journey__controls button { transition: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Tối ưu mobile cho khối ViVi
+ *
+ * Bám đúng thang breakpoint đang dùng chung của site (xem styles/README.md và
+ * 09-responsive.css): 980 · 900 · 720 · 560 · 430 · 360. Đặt ở CUỐI file vì
+ * theo luật thứ tự, khối sau thắng khối trước khi cùng độ đặc hiệu.
+ *
+ * Nguyên tắc: desktop coi thư và thiệp ở bước 5 là ẢNH THU NHỎ nên chữ cỡ 8px
+ * đọc như hoạ tiết. Trên mobile hai thẻ đó rộng gần hết màn, không còn là ảnh
+ * thu nhỏ nữa — chữ phải là chữ đọc được. Đây là chỗ khác biệt lớn nhất giữa
+ * hai đầu, không phải chỉ thu nhỏ đều mọi thứ.
+ * ═════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 900px) {
+  /* Mascot đứng trong dải đệm đáy của sân khấu. Trước đây nó đè lên góc thẻ ở
+   * bước 3 và bước 5 vì thẻ trên mobile rộng gần hết panel, khác desktop. */
+  .vivi-journey__mascot { bottom: -4px; left: -14px; width: 100px; opacity: 0.92; }
+  .vivi-journey__media { min-height: 0; padding: 40px clamp(24px, 6vw, 56px) 104px; }
+  .vivi-journey__illustration { min-height: 400px; }
+}
+
+@media (max-width: 720px) {
+  .vivi-journey__mascot { width: 92px; }
+  .vivi-journey__media { padding: 30px 20px 96px; }
+  .vivi-journey__illustration { min-height: 350px; }
+  .vivi-journey__media-note { right: 16px; bottom: 18px; }
+
+  /* Danh sách showroom là mặt phẳng sáng trên trường chấm, không phải thẻ tối. */
+  .vivi-journey__showroom-layout { min-height: 320px; }
+
+  /* Bước 5 — chữ trở lại cỡ đọc được. Căn đều trên cột hẹp tạo khe trắng loang
+   * lổ giữa các từ, nên chuyển về căn trái. */
+  .vivi-journey__email-lede { font-size: 0.74rem; line-height: 1.7; text-align: left; }
+  .vivi-journey__email > header strong { font-size: 0.8rem; letter-spacing: 0.26em; }
+  .vivi-journey__email > header small { font-size: 0.6rem; }
+  .vivi-journey__email > header img { width: 25px; height: 25px; }
+  .vivi-journey__email-headline { font-size: clamp(1.75rem, 7.4vw, 2.3rem); }
+  .vivi-journey__email-name { padding-block: 11px; font-size: 0.76rem; }
+  .vivi-journey__email-panel { padding: 17px 15px; }
+  .vivi-journey__email-panel > strong { font-size: 1.02rem; }
+  .vivi-journey__email-panel dl div { padding: 10px 0; }
+  .vivi-journey__email-panel dt { font-size: 0.6rem; letter-spacing: 0.08em; }
+  .vivi-journey__email-panel dd { font-size: 0.7rem; line-height: 1.55; }
+  .vivi-journey__email-cta { padding: 14px 10px; font-size: 0.62rem; letter-spacing: 0.12em; }
+
+  .vivi-journey__invite > header small { font-size: 0.6rem; }
+  .vivi-journey__invite > header strong { font-size: 1.32rem; }
+  .vivi-journey__invite-card { padding: 16px; }
+  .vivi-journey__invite-card small { font-size: 0.56rem; }
+  .vivi-journey__invite-when p:first-child strong { font-size: 1.7rem; }
+  .vivi-journey__invite-when p:last-child strong { font-size: 0.9rem; }
+  .vivi-journey__invite-when b { font-size: 0.68rem; }
+  .vivi-journey__invite-where strong { font-size: 0.82rem; }
+  .vivi-journey__invite-code strong { font-size: 0.72rem; }
+}
+
+/* Dưới 560px, năm bước xếp một hàng ép nhãn xuống ~7px. Bẻ thành hai hàng 3+2
+ * để nhãn về cỡ đọc được và ô chạm rộng hơn ngón tay. */
+@media (max-width: 560px) {
+  .vivi-journey__tabs {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .vivi-journey__tabs button,
+  .vivi-journey__tabs button:nth-child(n + 4) {
+    min-height: 78px;
+    grid-column: span 2;
+    grid-template-rows: 32px auto;
+    gap: 7px;
+    padding: 13px 6px 10px;
+  }
+
+  .vivi-journey__tabs button:nth-child(n + 4) { grid-column: span 3; }
+  .vivi-journey__step-icon { width: 32px; height: 32px; }
+  .vivi-journey__step-icon svg { width: 20px; height: 20px; }
+  .vivi-journey__step-number { top: 7px; right: 8px; font-size: 0.5rem; }
+  .vivi-journey__tabs strong { font-size: 0.66rem; }
+}
+
+@media (max-width: 430px) {
+  .vivi-journey__mascot { width: 84px; }
+  .vivi-journey__media { min-height: 0; padding: 26px 15px 88px; }
+  .vivi-journey__illustration { min-height: 320px; }
+  .vivi-journey__media-note { font-size: 0.6rem; }
+  .vivi-journey__story { min-height: 0; padding-inline: 14px; }
+
+  /* Bản đồ đã ẩn ở khổ này nên thẻ showroom phải ôm sát nội dung, đừng giữ
+   * min-height của bố cục hai cột — nó để lại một mảng trống hơn 150px. */
+  .vivi-journey__showroom-layout { min-height: 0; }
+  .vivi-journey__showroom-list { min-height: 0; padding-bottom: 18px; }
+
+  /* Nhãn và giá trị xếp chồng, hàng nào cũng còn đủ chỗ thở. */
+  .vivi-journey__email-panel dl div { gap: 5px; padding: 9px 0; }
+  .vivi-journey__invite-when { gap: 14px; }
+}
+
+@media (max-width: 360px) {
+  .vivi-journey__tabs strong { font-size: 0.62rem; }
+  .vivi-journey__email-lede { font-size: 0.72rem; }
+  .vivi-journey__invite-code { flex-direction: column; align-items: flex-start; gap: 4px; }
 }
