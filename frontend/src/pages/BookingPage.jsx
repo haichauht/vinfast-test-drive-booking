@@ -108,6 +108,7 @@ import {
   sendDriverChatMessage,
   sendBookingMessage,
   searchBookingOptions,
+  searchBookingCalendar,
   updateVerifiedBooking,
   verifyBookingAccess,
 } from '../api/booking'
@@ -142,6 +143,7 @@ import { BookingHeader } from '../components/booking/BookingHeader'
 import { FloatingDemoBar } from '../components/booking/FloatingDemoBar'
 import { useDialogFocus } from '../hooks/useDialogFocus'
 import { clearBookingReturnContext, takeBookingReturnContext } from '../utils/bookingReturnContext'
+import { calendarRequestForSearch, groupSlots, heldSlotFromResult, mergeAvailability } from '../state/bookingSchedule'
 
 const HOLD_TTL_MS = 5 * 60 * 1000
 const FLOATING_DEMO_STEP_DELAY_MS = 3500
@@ -540,6 +542,10 @@ export function BookingPage() {
   const [rescheduleState, setRescheduleState] = useState(null)
   const [rescheduleSecondsLeft, setRescheduleSecondsLeft] = useState(0)
   const [slots, setSlots] = useState(Array.isArray(restoredUi.slots) ? restoredUi.slots : [])
+  const [calendarState, setCalendarState] = useState({
+    loading: false,
+    error: restoredUi.calendarIncomplete ? 'Lịch chưa tải đầy đủ.' : '',
+  })
   const [serverHighlightedDates, setServerHighlightedDates] = useState([])
   const [bookingId, setBookingId] = useState('')
   const [bookingVersion, setBookingVersion] = useState(0)
@@ -557,11 +563,13 @@ export function BookingPage() {
   // ai về sau thắng, nên nếu không đánh số thì slot của A có thể đắp lên tên showroom B.
   const showroomRequestRef = useRef(0)
   const showroomIdRef = useRef(showroomId) // mirror của showroomId để tránh stale closure trong async handlers
+  useEffect(() => () => { showroomRequestRef.current += 1 }, [])
   const confirmActionIdsRef = useRef(new Map())
   const holdExpiredRef = useRef(false)
   const otpChallengeIdRef = useRef('')
   const otpCodeRef = useRef('')
   const sendingRef = useRef(false)
+  const bookingMutationRef = useRef(false)
   // Sync ref với state để async handlers luôn đọc đúng showroomId mới nhất (tránh stale closure)
   showroomIdRef.current = showroomId
   const driverConversationIdRef = useRef('')
@@ -765,6 +773,7 @@ export function BookingPage() {
       showroomId,
       nearbyShowrooms,
       slots,
+      calendarIncomplete: calendarState.loading || Boolean(calendarState.error),
       address,
       userLocation,
       messages: safeMessages,
@@ -778,7 +787,7 @@ export function BookingPage() {
           }
         : null,
     }))
-  }, [recipient, selectedCarId, showroomId, nearbyShowrooms, slots, address, userLocation, messages, interaction, isDriverChat, floatingDemoEnabled, floatingDemoStep, floatingDemoCollapsed])
+  }, [recipient, selectedCarId, showroomId, nearbyShowrooms, slots, calendarState, address, userLocation, messages, interaction, isDriverChat, floatingDemoEnabled, floatingDemoStep, floatingDemoCollapsed])
 
   useEffect(() => {
     if (selectedCarId || !cars.length) return
@@ -796,43 +805,6 @@ export function BookingPage() {
     y: 25 + ((index * 19) % 55),
     models: [vehicleId],
   }))
-
-  const groupSlots = (items) => Object.values(items.reduce((groups, item) => {
-    const start = new Date(item.start_at)
-    const value = item.start_at.slice(0, 10)
-    const time = start.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
-    if (!groups[value]) groups[value] = {
-      value,
-      dateLabel: new Intl.DateTimeFormat('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(start),
-      times: [],
-    }
-    // Giữ luôn giờ kết thúc: màn hướng dẫn sau đặt lịch cần nói thời lượng buổi lái thử,
-    // mà backend chỉ trả start_at/end_at ở đây — bỏ end_at đi là mất căn cứ, phải đoán.
-    const end = item.end_at ? new Date(item.end_at) : null
-    groups[value].times.push({
-      time,
-      endTime: end ? end.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '',
-      durationMinutes: end ? Math.max(0, Math.round((end - start) / 60000)) : 0,
-      // Mốc ISO gốc: cần cho việc đếm số ngày còn lại và tạo file lịch (.ics).
-      // Chuỗi hiển thị "17:30 · Th 4, 19/08" không parse ngược lại được cho chắc.
-      startAt: item.start_at,
-      endAt: item.end_at || '',
-      slotId: item.id,
-      isAvailable: item.status === 'available',
-      unavailableLabel: item.status === 'held' ? 'Đang được giữ' : 'Đã có lịch',
-    })
-    return groups
-  }, {}))
-
-  // Khi tìm lịch theo ngày cụ thể, backend chỉ trả data của ngày đó.
-  // mergeSlots giữ nguyên các ngày cũ, chỉ ghi đè ngày có data mới — UI luôn hiện đủ lịch của cả tuần.
-  const mergeSlots = (existingSlots, newSlots) => {
-    const map = new Map(existingSlots.map((day) => [day.value, day]))
-    for (const day of newSlots) {
-      map.set(day.value, day)
-    }
-    return Array.from(map.values()).sort((a, b) => (a.value < b.value ? -1 : 1))
-  }
 
   const formatBookingSummary = (booking, index = 0) => {
     const startsAt = booking.start_at ? new Date(booking.start_at) : null
@@ -990,19 +962,11 @@ export function BookingPage() {
     return null
   }
 
-  /**
-   * Tra ra khung giờ THẬT của một slot vừa được giữ.
-   *
-   * Vì sao cần: backend trả về khi giữ chỗ chỉ gồm booking_id, status, version,
-   * hold_expires_at, remaining_seconds và showroom — KHÔNG có ngày/giờ của slot
-   * (backend/src/services/booking/lifecycle.py, hàm hold_slot).
-   *
-   * Bản trước xử lý thiếu dữ liệu bằng cách ghi cứng `time: '21:00 - 22:00'` rồi mang
-   * đúng chuỗi đó ra modal xác nhận, phiếu review và màn thành công — tức là hiển thị
-   * một giờ hẹn KHÔNG có thật cho người dùng xác nhận. Nay không bịa nữa: tra trong danh
-   * sách đang có, không thấy thì hỏi lại backend đúng showroom đó.
-   */
-  const resolveHeldSlot = async (slotId, slotShowroomId) => {
+  // Holds carry authoritative timestamps. Availability searches exclude held
+  // slots, so searching again cannot recover a newly held slot.
+  const resolveHeldSlot = async (slotId, slotShowroomId, heldData) => {
+    const held = heldSlotFromResult(heldData)
+    if (held) return held
     const local = findSlotById(slots, slotId)
     if (local) return local
     if (!selectedCar || !slotShowroomId) return null
@@ -1019,6 +983,28 @@ export function BookingPage() {
     }
   }
 
+  const clearHeldSelection = () => {
+    if (bookingId && holdExpiresAt && !bookingCode) {
+      releaseBookingHold(bookingId).catch(() => {})
+    }
+    setPendingSlot(null)
+    setSelectedSlot(null)
+    setConfirmSlotOpen(false)
+    setBookingId('')
+    setBookingVersion(0)
+    setBookingCode('')
+    setBookingAdvisor(null)
+    setHoldExpiresAt(null)
+    setTimeLeft('')
+    setInlineOtpChallengeId('')
+    setInlineOtpDigits(['', '', '', '', '', ''])
+    setInlineOtpError('')
+    setInlineOtpMock('')
+    otpChallengeIdRef.current = ''
+    holdActionIdsRef.current.clear()
+    confirmActionIdsRef.current.clear()
+  }
+
   /**
    * Xoá SẠCH mọi thứ phụ thuộc vào mẫu xe đang chọn.
    *
@@ -1033,19 +1019,36 @@ export function BookingPage() {
    */
   const resetSelectionForVehicleChange = () => {
     showroomRequestRef.current += 1 // vô hiệu hoá mọi lượt tìm khung giờ đang bay
-    setPendingSlot(null)
-    setSelectedSlot(null)
-    setConfirmSlotOpen(false)
+    setCalendarState({ loading: false, error: '' })
+    clearHeldSelection()
     setNearbyShowrooms([])
     setLocationSuggestions([])
     setShowroomId('')
     setSlots([])
     setAddress({ province: '', detail: '' })
-    setBookingId('')
-    setBookingVersion(0)
-    setHoldExpiresAt(null)
-    setTimeLeft('')
+    setServerHighlightedDates([])
     setBackendError('')
+  }
+
+  const refreshCalendar = async (request) => {
+    const requestId = ++showroomRequestRef.current
+    setCalendarState({ loading: true, error: '' })
+    try {
+      const fullCalendar = await searchBookingCalendar(request)
+      if (requestId !== showroomRequestRef.current) return
+      if (fullCalendar.search_stage !== 'slot_selection'
+        || fullCalendar.selected_showroom?.id !== request.showroomId
+        || !Array.isArray(fullCalendar.slots)) {
+        throw new Error('Dữ liệu lịch trả về không đúng showroom.')
+      }
+      // The later full read owns availability. Do not overlay the earlier chat
+      // subset, which could reintroduce a slot reserved while this was loading.
+      setSlots(groupSlots(fullCalendar.slots))
+      setCalendarState({ loading: false, error: '' })
+    } catch (error) {
+      if (requestId !== showroomRequestRef.current) return
+      setCalendarState({ loading: false, error: `Chưa tải được lịch đầy đủ: ${error.message}` })
+    }
   }
 
   const applyAgentToolResult = async (result) => {
@@ -1189,10 +1192,23 @@ export function BookingPage() {
     }
 
     if (result.tool_name === 'search_test_drive_options') {
+      // Also supersede a previous calendar refresh for the same selection.
+      showroomRequestRef.current += 1
+      setCalendarState({ loading: false, error: '' })
       const data = result.action_data
       const toolInput = result.tool_input || {}
       const agentCar = resolveAgentCar(data.resolved_vehicle)
       const vehicleId = agentCar?.id || selectedCarId
+      const vehicleChanged = vehicleId !== selectedCarId
+      const selectionChanged = vehicleChanged
+        || data.search_stage !== 'slot_selection'
+        || data.selected_showroom?.id !== showroomIdRef.current
+      if (selectionChanged) {
+        showroomRequestRef.current += 1
+        clearHeldSelection()
+        setSlots([])
+        setServerHighlightedDates([])
+      }
 
       if (agentCar) {
         if (!recipient) setRecipient('self')
@@ -1255,10 +1271,8 @@ export function BookingPage() {
         setLocationSuggestions([])
         setNearbyShowrooms((current) => current.some((item) => item.id === showroom.id) ? current : [...current, showroom])
         const newGrouped = groupSlots(data.slots || [])
-        // Nếu cùng showroom → merge để giữ lịch các ngày cũ, chỉ cập nhật ngày mới được tìm
-        // Dùng showroomIdRef.current (thay vì showroomId closure) để luôn so sánh với giá trị mới nhất
-        const isSameShowroom = showroom.id === showroomIdRef.current
-        setSlots((current) => isSameShowroom ? mergeSlots(current, newGrouped) : newGrouped)
+        const sameSelection = !vehicleChanged && showroom.id === showroomIdRef.current
+        setSlots((current) => mergeAvailability(current, newGrouped, { sameSelection, data }))
         setShowroomId(showroom.id)
         if (Array.isArray(data.highlighted_dates) && data.highlighted_dates.length > 0) {
           setServerHighlightedDates(data.highlighted_dates)
@@ -1269,6 +1283,8 @@ export function BookingPage() {
         }
         setStage('choose_slot')
         showMobileWorkspace('schedule')
+        const calendarRequest = calendarRequestForSearch(data, toolInput)
+        if (calendarRequest) await refreshCalendar(calendarRequest)
       }
       return
     }
@@ -1276,19 +1292,28 @@ export function BookingPage() {
     if (result.tool_name === 'hold_test_drive_slot') {
       const data = result.action_data
       const toolInput = result.tool_input || {}
+      // A chat turn can search a different model and hold it before returning.
+      // In that case the final hold, not the previous UI vehicle, owns the ticket.
+      const heldCar = resolveAgentCar(data.resolved_vehicle)
+      if (heldCar && heldCar.id !== selectedCarId) {
+        clearHeldSelection()
+        setSelectedCarId(heldCar.id)
+        setSlots([])
+        setServerHighlightedDates([])
+      }
       setBookingId(data.booking_id)
       setBookingVersion(data.version ?? 1)
       setHoldExpiresAt(data.hold_expires_at ? new Date(data.hold_expires_at).getTime() : Date.now() + HOLD_TTL_MS)
 
       let slotShowroomId = showroomId
       if (data.showroom) {
-        const [mappedShowroom] = mapShowrooms([data.showroom], selectedCarId)
+        const [mappedShowroom] = mapShowrooms([data.showroom], heldCar?.id || selectedCarId)
         setNearbyShowrooms((current) => current.some((item) => item.id === mappedShowroom.id) ? current : [...current, mappedShowroom])
         setShowroomId(mappedShowroom.id)
         slotShowroomId = mappedShowroom.id
       }
 
-      const targetSlot = await resolveHeldSlot(toolInput.slot_id, slotShowroomId)
+      const targetSlot = await resolveHeldSlot(toolInput.slot_id, slotShowroomId, data)
 
       // Không tra được ngày giờ thật thì KHÔNG mở hộp xác nhận. Bắt người dùng bấm
       // "Xác nhận khung giờ" dưới một cái giờ mình tự bịa là điều tệ nhất có thể làm ở đây.
@@ -1394,6 +1419,7 @@ export function BookingPage() {
     if (result.tool_name === 'confirm_test_drive_booking') {
       const data = result.action_data
       setBookingCode(data.booking_code)
+      setHoldExpiresAt(null)
       setStage('success')
     }
   }
@@ -1482,12 +1508,15 @@ export function BookingPage() {
   }, [mobileSurface, stage, composerMode, selectedCarId, nearbyShowrooms.length, slots.length, upsellCars.length, accessFlow?.phase])
 
   useEffect(() => {
-    if (!holdExpiresAt || (stage !== 'collect_info' && stage !== 'review')) {
+    if (!holdExpiresAt || successCinematic || (stage !== 'collect_info' && stage !== 'review')) {
       setTimeLeft('')
       return
     }
 
     const updateTimer = () => {
+      // The server decides whether an in-flight save/confirmation beat expiry.
+      // Never erase the ticket while its final response is still pending.
+      if (bookingMutationRef.current) return
       const diff = holdExpiresAt - Date.now()
       if (diff <= 0) {
         setTimeLeft('Đã hết hạn giữ')
@@ -1535,7 +1564,7 @@ export function BookingPage() {
     updateTimer()
     const interval = setInterval(updateTimer, 1000)
     return () => clearInterval(interval)
-  }, [bookingId, holdExpiresAt, selectedSlot?.slotId, stage])
+  }, [bookingId, holdExpiresAt, selectedSlot?.slotId, stage, successCinematic])
 
   useEffect(() => {
     holdExpiredRef.current = false
@@ -1583,6 +1612,7 @@ export function BookingPage() {
   }
 
   const chooseCar = (car, fromPrompt = false) => {
+    if (bookingMutationRef.current || sendingRef.current) return
     if (interaction.mode === BookingMode.MANAGE_BOOKING) {
       clearManagementContext({ event: InteractionEvent.VIEW_VEHICLE })
     }
@@ -1599,6 +1629,7 @@ export function BookingPage() {
 
   // Đổi mẫu xe sẽ quay lại bước địa chỉ để Agent kiểm tra tồn xe/showroom lại từ đầu.
   const switchCar = (car) => {
+    if (bookingMutationRef.current || sendingRef.current) return
     setSwitcherOpen(false)
     if (!car || car.id === selectedCarId) return
 
@@ -1629,12 +1660,15 @@ export function BookingPage() {
   }
 
   const chooseShowroom = async (showroom, fromPrompt = false) => {
+    if (bookingMutationRef.current || sendingRef.current) return
     // ĐÃ XONG một phần: khung giờ đã là dữ liệu thật theo showroom + mẫu xe.
     // TODO [BACKEND/DRAFT — P0]: chưa lưu showroomId lên draft phía server nên đổi máy
     // là mất tiến trình. Chi tiết ở mục 1.3 trong BACKEND_HANDOFF.md.
     if (!fromPrompt) addMessage('user', `Tôi chọn ${showroom.name}.`)
     const requestId = showroomRequestRef.current + 1
     showroomRequestRef.current = requestId
+    setCalendarState({ loading: false, error: '' })
+    clearHeldSelection()
 
     setWorkspaceHidden(false)
     setShowroomId(showroom.id)
@@ -1670,15 +1704,19 @@ export function BookingPage() {
   }
 
   const chooseSlot = (slot) => {
+    if (agentTyping || calendarState.loading || sendingRef.current || bookingMutationRef.current) return
     setPendingSlot(slot)
     setConfirmSlotOpen(true)
   }
 
   const confirmSlot = async () => {
+    if (!pendingSlot?.slotId || bookingMutationRef.current || sendingRef.current) return
+    bookingMutationRef.current = true
+    setSubmitting(true)
     setBackendError('')
     setAgentTyping(true)
     try {
-      if (bookingId && selectedSlot && selectedSlot.slotId === pendingSlot.slotId) {
+      if (bookingId && selectedSlot?.slotId === pendingSlot.slotId && holdExpiresAt > Date.now()) {
         setConfirmSlotOpen(false)
         setStage('collect_info')
         showMobileAssistant()
@@ -1707,13 +1745,16 @@ export function BookingPage() {
         holdActionIdsRef.current.clear()
       }
       const actionKey = pendingSlot.slotId
-      const uiActionId = actionId('hold')
+      const uiActionId = holdActionIdsRef.current.get(actionKey) || actionId('hold')
+      holdActionIdsRef.current.set(actionKey, uiActionId)
       const held = await holdBookingSlot(pendingSlot.slotId, uiActionId)
       holdActionIdsRef.current.delete(actionKey)
       setBookingId(held.booking_id)
       setBookingVersion(held.version ?? 1)
       setHoldExpiresAt(held.hold_expires_at ? new Date(held.hold_expires_at).getTime() : Date.now() + HOLD_TTL_MS)
-      setSelectedSlot(pendingSlot)
+      const confirmedSlot = heldSlotFromResult(held) || pendingSlot
+      setSelectedSlot(confirmedSlot)
+      setPendingSlot(confirmedSlot)
       setConfirmSlotOpen(false)
       addMessage('user', `Tôi xác nhận ${pendingSlot.time}, ${pendingSlot.dateLabel}.`)
       setStage('collect_info')
@@ -1728,12 +1769,16 @@ export function BookingPage() {
         setSelectedSlot(null)
       }
       reply(`Không thể giữ khung giờ: ${error.message}`)
+    } finally {
+      bookingMutationRef.current = false
+      setSubmitting(false)
+      setAgentTyping(false)
     }
   }
 
   const handlePrompt = async (event, suggestedText = '') => {
     event.preventDefault()
-    if (sendingRef.current) return
+    if (sendingRef.current || bookingMutationRef.current || agentTyping || calendarState.loading) return
     const value = (suggestedText || draft).trim()
     if (!value) return
     if (value.length > CHAT_MESSAGE_MAX_LENGTH) {
@@ -1750,16 +1795,8 @@ export function BookingPage() {
     setBackendError('')
 
     const mentionedCar = isDriverChat ? null : resolveAgentCar(value)
-    if (mentionedCar) {
-      if (!recipient) setRecipient('self')
-      setWorkspaceHidden(false)
-      if (interaction.mode === BookingMode.MANAGE_BOOKING) {
-        clearManagementContext({ resetConversation: false, event: InteractionEvent.VIEW_VEHICLE })
-      } else {
-        dispatchInteraction({ type: InteractionEvent.VIEW_VEHICLE })
-      }
-      setSelectedCarId(mentionedCar.id)
-    }
+    // Keep the current vehicle and its slots consistent until the search succeeds.
+    // A failed chat must not leave VF 9 availability under a VF 3 heading.
     setCheckingVehicleName(mentionedCar?.name || '')
 
     setAgentTyping(true)
@@ -1805,7 +1842,7 @@ export function BookingPage() {
           bookingCode: extractedReschedule.bookingCode || result.intent_entities?.booking_code || previousIntent.bookingCode || '',
         }
       }
-      if (mentionedCar && result.intent === 'vehicle_info') {
+      if (mentionedCar && (result.sub_intent || result.intent) === 'vehicle_info' && !result.action_error) {
         if (interaction.mode === BookingMode.MANAGE_BOOKING) {
           clearManagementContext({ event: InteractionEvent.VIEW_VEHICLE })
         }
@@ -2432,12 +2469,13 @@ export function BookingPage() {
 
   const confirmFinalBooking = async (overrideCode) => {
     const codeToVerify = typeof overrideCode === 'string' ? overrideCode : inlineOtpCode
-    if (codeToVerify.length !== 6 || submitting) return
+    if (codeToVerify.length !== 6 || submitting || bookingMutationRef.current) return
     const challengeId = inlineOtpChallengeId || otpChallengeIdRef.current
     if (!challengeId) {
       setInlineOtpError('Phiên xác thực chưa sẵn sàng. Bấm "Gửi lại OTP" giúp tôi nhé.')
       return
     }
+    bookingMutationRef.current = true
     setSubmitting(true)
     setInlineOtpError('')
     try {
@@ -2460,6 +2498,8 @@ export function BookingPage() {
       setSubmitting(false)
       setBookingCode(confirmed.booking_code)
       setBookingAdvisor(confirmed.advisor || null)
+      setHoldExpiresAt(null)
+      setTimeLeft('')
       setSuccessCinematic(true)
 
       try {
@@ -2491,11 +2531,19 @@ export function BookingPage() {
         return
       }
       setInlineOtpError(accessErrorMessage(err) || 'Mã OTP chưa đúng, bạn kiểm tra lại giúp tôi nhé.')
+    } finally {
+      bookingMutationRef.current = false
+      setSubmitting(false)
     }
   }
 
   const submitPerson = async (event) => {
     event.preventDefault()
+    if (bookingMutationRef.current || submitting) return
+    if (!bookingId || !selectedSlot) {
+      setBackendError('Chưa có khung giờ được giữ. Bạn vui lòng chọn và xác nhận khung giờ trước.')
+      return
+    }
     const errors = {}
     if (person.bookingName.trim().length < 2) errors.bookingName = 'Bạn vui lòng cho tôi biết tên người đứng ra đặt lịch.'
     if (recipient === 'other' && person.driverName.trim().length < 2) errors.driverName = 'Bạn vui lòng cho tôi biết tên người sẽ trực tiếp lái thử.'
@@ -2516,6 +2564,8 @@ export function BookingPage() {
     if (Object.keys(errors).length) return
 
     setBackendError('')
+    bookingMutationRef.current = true
+    setSubmitting(true)
     try {
       const saved = await saveBookingCustomer({ bookingId, version: bookingVersion, recipient, person })
       setBookingVersion(saved.version)
@@ -2525,9 +2575,12 @@ export function BookingPage() {
       setInlineOtpError('')
       addMessage('user', 'Tôi đã hoàn tất thông tin người lái.')
       reply('ViVi đã lưu phiếu tạm cho bạn. Mã OTP 6 chữ số vừa được gửi qua email. Bạn nhập mã 6 số vào ô bên phải để kích hoạt nút "Xác nhận đặt lịch" nhé.')
-      requestInlineOtp(person.email)
+      await requestInlineOtp(person.email)
     } catch (error) {
       reply(`ViVi chưa lưu được thông tin của bạn: ${error.message}`)
+    } finally {
+      bookingMutationRef.current = false
+      setSubmitting(false)
     }
   }
 
@@ -3197,7 +3250,7 @@ export function BookingPage() {
       )
     }
     if (activeView === 'map') return <BookingShowroomMap car={selectedCar} showrooms={nearbyShowrooms} selectedId={showroomId} onSelect={setShowroomId} onConfirm={chooseShowroom} userLocation={userLocation} searchedLocation={searchedLocation} disabled={floatingDemoMode} />
-    if (activeView === 'schedule' && selectedShowroom) return <SchedulePanel car={selectedCar} showroom={selectedShowroom} slots={slots} pendingSlot={pendingSlot} highlightedDates={highlightedDates} onPick={chooseSlot} disabled={floatingDemoMode} />
+    if (activeView === 'schedule' && selectedShowroom) return <SchedulePanel car={selectedCar} showroom={selectedShowroom} slots={slots} pendingSlot={pendingSlot} highlightedDates={highlightedDates} onPick={chooseSlot} disabled={floatingDemoMode || agentTyping || isSending || submitting || calendarState.loading} calendarLoading={calendarState.loading} calendarError={calendarState.error} />
     if (activeView === 'ticket' && selectedShowroom && selectedSlot) return <BookingTicket car={selectedCar} showroom={selectedShowroom} slot={selectedSlot} person={person} recipient={recipient} bookingCode={bookingCode} advisor={bookingAdvisor} />
     return <VehiclePanel car={selectedCar} />
   }
@@ -3597,7 +3650,8 @@ export function BookingPage() {
                   recipient={recipient}
                   value={person}
                   errors={formErrors}
-                  disabled={floatingDemoMode}
+                  disabled={floatingDemoMode || submitting}
+                  busy={submitting}
                   onChange={changePerson}
                   onSubmit={submitPerson}
                   onBack={async () => {
@@ -3776,7 +3830,7 @@ export function BookingPage() {
               <div><dt>Thời gian</dt><dd>{pendingSlot.time} · {pendingSlot.dateLabel}</dd></div>
               <div><dt>Mẫu xe</dt><dd>{selectedCar.name} đã được giữ cho slot này</dd></div>
             </dl>
-            <div className="slot-confirm-actions"><button type="button" onClick={confirmSlot}>Xác nhận khung giờ</button><button type="button" onClick={() => setConfirmSlotOpen(false)}>Hủy xác nhận</button></div>
+            <div className="slot-confirm-actions"><button type="button" onClick={confirmSlot} disabled={submitting}>{submitting ? 'Đang giữ khung giờ...' : 'Xác nhận khung giờ'}</button><button type="button" disabled={submitting} onClick={() => setConfirmSlotOpen(false)}>Hủy xác nhận</button></div>
           </div>
         </div>
       )}

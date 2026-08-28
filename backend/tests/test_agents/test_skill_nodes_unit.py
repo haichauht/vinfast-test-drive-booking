@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -21,62 +20,102 @@ def _mock_bound_llm(response):
 
 
 @pytest.mark.parametrize(
-    ("query", "expected"),
+    ("query", "schedule"),
     [
-        (
-            "ngay kia 26/08/2026 luc hai ruoi chieu",
-            {"preferred_date": "2026-08-26", "preferred_time": "14:30"},
-        ),
-        ("ngay mai luc muoi gio ba muoi", {"preferred_date": "2026-08-25", "preferred_time": "10:30"}),
+        ("tôi hconj ngày 30 9 giờ sáng xe vf3",
+         {"preferred_date": "2026-08-30", "preferred_time": "09:00"}),
+        ("tôi chọn 9 giờ tối ngày 30",
+         {"preferred_date": "2026-08-30", "preferred_time": "21:00"}),
+        ("không phải 9 giờ tối, chọn 10 giờ sáng ngày 30",
+         {"preferred_date": "2026-08-30", "preferred_time": "10:00"}),
+        ("không phải 30/08/2026, chọn 01/09/2026 lúc 10h",
+         {"preferred_date": "2026-09-01", "preferred_time": "10:00"}),
+        ("ngày 30/08/2026 hoặc 01/09/2026",
+         {"preferred_dates": ["2026-08-30", "2026-09-01"]}),
+        ("từ 30/08/2026 đến 02/09/2026",
+         {"preferred_date_from": "2026-08-30", "preferred_date_to": "2026-09-02"}),
+        ("đổi sang VF3, giữ ngày và giờ đã chọn",
+         {"preferred_date_from": "2026-09-01", "preferred_date_to": "2026-09-07",
+          "preferred_time": "14:30"}),
+        ("ngày nào giờ nào cũng được", {}),
+        ("bỏ ngày và giờ đã chọn",
+         {"preferred_date": None, "preferred_dates": None, "preferred_date_from": None,
+          "preferred_date_to": None, "preferred_time": None}),
     ],
 )
-def test_extract_schedule_constraints_keeps_explicit_vietnamese_date_and_time(query, expected):
-    assert booking_module._extract_schedule_constraints(
-        query,
-        today=datetime(2026, 8, 24),
-    ) == expected
-
-
-def test_search_normalization_carries_multi_turn_constraints_and_overrides_schedule():
-    prior_search = AIMessage(
-        content="",
-        tool_calls=[
-            {
-                "id": "search-prior",
-                "name": "search_test_drive_options",
-                "args": {
-                    "vehicle_model": "VF 7",
-                    "showroom_query": "VinFast Thanh Ha",
-                    "preferred_date": "2026-08-25",
-                    "preferred_time": "09:00",
-                },
-            }
-        ],
+@pytest.mark.asyncio
+async def test_booking_search_dispatches_llm_arguments_without_reinterpreting_text(monkeypatch, query, schedule):
+    # These are model-output contract tests, not an evaluation of a real LLM.
+    # Old behavior reparsed the first date/time or restored cleared filters.
+    previous = AIMessage(content="", tool_calls=[{
+        "id": "previous-search", "name": "search_test_drive_options",
+        "args": {"vehicle_model": "VF 9", "showroom_id": "207221",
+                 "preferred_date_from": "2026-09-01", "preferred_date_to": "2026-09-07",
+                 "preferred_time": "14:30"},
+    }])
+    previous_result = ToolMessage(
+        content=json.dumps({"search_stage": "slot_selection", "slots": []}),
+        name="search_test_drive_options", tool_call_id="previous-search",
     )
-    response = AIMessage(
-        content="",
-        tool_calls=[
-            {
-                "id": "search-next",
-                "name": "search_test_drive_options",
-                "args": {},
-            }
-        ],
-    )
+    arguments = {"vehicle_model": "VF 3", "showroom_id": "207221", **schedule}
+    response = AIMessage(content="", tool_calls=[{
+        "id": "current-search", "name": "search_test_drive_options", "args": arguments,
+    }])
+    llm, bound = _mock_bound_llm(response)
+    monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+    user_message = HumanMessage(content=query)
 
-    normalized = booking_module._normalize_search_calls(
-        response,
-        messages=[prior_search, HumanMessage(content="ngay kia luc hai ruoi chieu")],
-        current_query="ngay kia luc hai ruoi chieu",
-        today=datetime(2026, 8, 24),
-    )
+    result = await booking_skill_node({
+        "messages": [previous, previous_result, user_message],
+        "metadata": {"sub_intent": "booking_availability"},
+        "context": {"stage": "choose_slot",
+                    "selectedVehicle": {"id": "vf9", "name": "VF 9"},
+                    "selectedShowroom": {"id": "207221", "name": "HTA Đàm Quang Trung"}},
+    })
 
-    assert normalized.tool_calls[0]["args"] == {
-        "vehicle_model": "VF 7",
-        "showroom_query": "VinFast Thanh Ha",
-        "preferred_date": "2026-08-26",
-        "preferred_time": "14:30",
-    }
+    assert result["messages"][0].tool_calls == response.tool_calls
+    assert result["messages"][0].tool_calls[0]["args"] == arguments
+    assert result["tool_call_count"] == 1
+    sent = bound.ainvoke.await_args.args[0]
+    assert sent[-1] is user_message
+    assert any(isinstance(message, AIMessage) and message.tool_calls == previous.tool_calls for message in sent)
+    assert any("selectedVehicle" in str(message.content) for message in sent)
+
+
+@pytest.mark.asyncio
+async def test_booking_search_does_not_restore_cleared_showroom(monkeypatch):
+    previous = AIMessage(content="", tool_calls=[{
+        "id": "previous-search", "name": "search_test_drive_options",
+        "args": {"vehicle_model": "VF 9", "showroom_id": "207221"},
+    }])
+    response = AIMessage(content="", tool_calls=[{
+        "id": "new-search", "name": "search_test_drive_options", "args": {"vehicle_model": "VF 3"},
+    }])
+    llm, _ = _mock_bound_llm(response)
+    monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+    result = await booking_skill_node({"messages": [
+        previous,
+        ToolMessage(content='{"slots": []}', name="search_test_drive_options", tool_call_id="previous-search"),
+        HumanMessage(content="đổi VF3, bỏ showroom cũ, tìm tất cả showroom"),
+    ]})
+    assert result["messages"][0].tool_calls[0]["args"] == {"vehicle_model": "VF 3"}
+
+
+@pytest.mark.asyncio
+async def test_booking_can_clarify_ambiguous_time_even_with_selected_vehicle_and_showroom(monkeypatch):
+    response = AIMessage(content="Quý khách muốn 9 giờ sáng hay 9 giờ tối ạ?")
+    llm, _ = _mock_bound_llm(response)
+    monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+    result = await booking_skill_node({
+        "messages": [HumanMessage(content="9 giờ nhé")],
+        "metadata": {"sub_intent": "booking_availability"},
+        "context": {"stage": "choose_slot",
+                    "selectedVehicle": {"name": "VF 3"}, "selectedShowroom": {"id": "207221"}},
+    })
+    assert "tool_choice" not in llm.bind_tools.call_args.kwargs
+    assert result["response"] == response.content
+    assert not result["messages"][0].tool_calls
+    assert result["tool_call_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -210,7 +249,7 @@ async def test_booking_skill_increments_count_for_tool_call(monkeypatch):
     ],
 )
 @pytest.mark.asyncio
-async def test_booking_availability_forces_search_tool_when_ui_context_is_ready(
+async def test_booking_availability_uses_llm_search_when_ui_context_is_ready(
     monkeypatch,
     message,
     date_arguments,
@@ -244,7 +283,7 @@ async def test_booking_availability_forces_search_tool_when_ui_context_is_ready(
         }
     )
 
-    assert llm.bind_tools.call_args.kwargs["tool_choice"] == "search_test_drive_options"
+    assert "tool_choice" not in llm.bind_tools.call_args.kwargs
     assert result["messages"][0].tool_calls[0]["name"] == "search_test_drive_options"
 
 

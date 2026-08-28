@@ -221,6 +221,13 @@ export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, 
   },
 )
 
+// Read the complete calendar without adding a synthetic turn to chat history
+// or calling the LLM. The same backend search validation still applies.
+export const searchBookingCalendar = ({ vehicleModel, showroomId }) => apiPost('/test-drive/actions', {
+  action: 'search_options',
+  payload: { vehicle_model: vehicleModel, showroom_id: showroomId },
+})
+
 export const holdBookingSlot = (slotId, uiActionId = actionId('hold')) => agentAction(
   'hold_slot',
   'Tôi xác nhận chọn khung giờ này. Hãy giữ chỗ giúp tôi.',

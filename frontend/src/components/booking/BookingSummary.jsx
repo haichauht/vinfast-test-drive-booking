@@ -65,7 +65,8 @@ const timeAsMinutes = (value) => {
  * làm mắt phải lọc. `onBack` là lối quay về danh sách lịch — trước đây vào màn này là kẹt,
  * không có đường lùi.
  */
-export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDates = [], onPick, onBack, backLabel = 'Chọn lịch khác', compact = false, disabled = false }) {
+export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDates = [], onPick, onBack, backLabel = 'Chọn lịch khác', compact = false, disabled = false, calendarLoading = false, calendarError = '' }) {
+  const calendarIncomplete = calendarLoading || Boolean(calendarError)
   const root = useRef(null)
   const direction = useRef(0)
   const today = new Date()
@@ -125,7 +126,11 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDa
   useEffect(() => {
     const current = new Date()
     current.setHours(12, 0, 0, 0)
-    setWeekStart(startOfWeek(current))
+    // Switching vehicles must keep the requested week, including when the
+    // highlighted date is identical to the previous vehicle's selection.
+    const [month, day] = String(highlightedDates[0] || '').split('-').map(Number)
+    const target = month && day ? new Date(current.getFullYear(), month - 1, day, 12) : current
+    setWeekStart(startOfWeek(target))
   }, [car.id, showroom.id])
 
   useEffect(() => {
@@ -195,7 +200,7 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDa
   const gridStyle = { gridTemplateColumns: `72px repeat(${weekDays.length}, minmax(118px, 1fr))` }
 
   return (
-    <section className="studio-schedule studio-schedule--calendar" aria-label="Lịch lái thử" ref={root}>
+    <section className="studio-schedule studio-schedule--calendar" aria-label="Lịch lái thử" aria-busy={calendarLoading} ref={root}>
       {/* Ở chế độ compact (luồng đổi giờ) chỉ còn ĐÚNG một dòng tiêu đề, canh ngang với thanh
           công cụ phía trên. Nhãn "Lịch có đúng mẫu xe" và câu hướng dẫn đã bỏ: cả hai không nói
           thêm gì mà chiếm mất hai dòng ngay phía trên bảng lịch. Lối lùi nay nằm trên thanh
@@ -211,6 +216,8 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDa
         </div>
       )}
 
+      {calendarLoading && <p role="status">Đang tải đầy đủ lịch của mẫu xe tại showroom…</p>}
+      {calendarError && <p role="alert">{calendarError} Các ô chưa tải không có nghĩa là hết lịch.</p>}
       <div className="schedule-calendar">
         <header className="schedule-calendar__toolbar">
           <div className="schedule-calendar__navigation" aria-label="Điều hướng tuần">
@@ -220,7 +227,7 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDa
           </div>
           <div className="schedule-calendar__range">
             <strong>{rangeLabel}</strong>
-            <small>{weekAvailableCount ? `${weekAvailableCount} khung giờ còn xe` : 'Chưa có lịch trống trong tuần này'}</small>
+            <small>{calendarIncomplete ? 'Lịch đang hiển thị chưa đầy đủ' : weekAvailableCount ? `${weekAvailableCount} khung giờ còn xe` : 'Chưa có lịch trống trong tuần này'}</small>
           </div>
           {!compact && (
             <div className="schedule-calendar__legend" aria-label="Chú thích trạng thái">
@@ -273,7 +280,7 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDa
                             <strong>{entry.isAvailable ? (compact ? 'Còn xe' : `Có ${car.name}`) : entry.unavailableLabel}</strong>
                             {!compact && <small>{entry.isAvailable ? 'Sẵn sàng lái thử' : 'Không thể chọn'}</small>}
                           </button>
-                        ) : <span className="schedule-calendar__empty-cell" aria-label="Showroom chưa mở lịch" />}
+                        ) : <span className="schedule-calendar__empty-cell" aria-label={calendarIncomplete ? 'Chưa tải đủ lịch' : 'Showroom chưa mở lịch'} />}
                       </div>
                     )
                   })}
@@ -283,7 +290,7 @@ export function SchedulePanel({ car, showroom, slots, pendingSlot, highlightedDa
           </div>
         </div>
 
-        {!weekSlotCount && (
+        {!weekSlotCount && !calendarIncomplete && (
           <div className="schedule-calendar__empty">
             <CalendarBlank size={19} weight="light" />
             <span><strong>Showroom chưa mở lịch cho tuần này.</strong><small>Chuyển sang tuần khác hoặc nhắn ViVi ngày bạn mong muốn.</small></span>
