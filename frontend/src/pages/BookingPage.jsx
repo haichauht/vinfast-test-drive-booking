@@ -562,6 +562,11 @@ export function BookingPage() {
   // Đếm lượt tìm khung giờ. Bấm showroom A rồi bấm nhanh sang B sẽ có 2 request cùng bay;
   // ai về sau thắng, nên nếu không đánh số thì slot của A có thể đắp lên tên showroom B.
   const showroomRequestRef = useRef(0)
+  // Ngày/giờ khách nói khi chưa chọn showroom. Trước đây bị vứt: chooseShowroom chỉ
+  // hỏi lại lịch theo xe + showroom, nên khách nói "VF 9 ngày 4/9 lúc 10:30" rồi bấm
+  // showroom là phải dò lại từ đầu. Giữ ở ref chứ không phải state vì nó chỉ dùng đúng
+  // một lần ngay sau đó và không được phép gây render lại.
+  const pendingScheduleRef = useRef(null)
   const showroomIdRef = useRef(showroomId) // mirror của showroomId để tránh stale closure trong async handlers
   useEffect(() => () => { showroomRequestRef.current += 1 }, [])
   const confirmActionIdsRef = useRef(new Map())
@@ -1224,6 +1229,12 @@ export function BookingPage() {
       if (data.search_stage === 'showroom_selection') {
         const mapped = mapShowrooms(data.showrooms || [], vehicleId)
         const queriedAddress = String(toolInput.address || '').trim()
+        // Khách đã nói giờ nhưng chưa có showroom: nhớ lại để bước sau dùng.
+        const requestedDate = String(toolInput.preferred_date || '').slice(0, 10)
+        const requestedTime = String(toolInput.preferred_time || '')
+        pendingScheduleRef.current = requestedDate || requestedTime
+          ? { date: requestedDate, time: requestedTime }
+          : null
         setPendingSlot(null)
         setSelectedSlot(null)
         setConfirmSlotOpen(false)
@@ -1689,7 +1700,41 @@ export function BookingPage() {
       setStage('choose_slot')
       showMobileWorkspace('schedule')
       setAgentTyping(false)
-      reply(`${showroom.name} đã được chọn. ViVi đã tìm thấy ${result.slots?.length || 0} khung giờ trống cho bạn.`)
+
+      // Khách đã nói ngày/giờ từ trước thì đưa họ thẳng tới đúng khung giờ đó.
+      // Vẫn giữ NGUYÊN lịch đầy đủ của showroom — chỉ tô sáng và mở hộp xác nhận,
+      // không lọc bớt, để khách còn thấy lựa chọn khác nếu đổi ý.
+      const requested = pendingScheduleRef.current
+      pendingScheduleRef.current = null
+      const requestedDay = requested?.date ? grouped.find((day) => day.value === requested.date) : null
+      const requestedSlot = requested?.time
+        ? requestedDay?.times.find((slot) => slot.time === requested.time && slot.isAvailable)
+        : null
+
+      // Dạng MM-DD, đúng hợp đồng backend trả ở `highlighted_dates`. BookingSummary
+      // parse [month, day] từ chuỗi này (dòng 131) nên đưa YYYY-MM-DD vào là nó đọc
+      // 2026 thành tháng và nhảy sai tuần.
+      if (requestedDay) setServerHighlightedDates([requestedDay.value.slice(5)])
+
+      if (requestedSlot) {
+        // Modal xác nhận đọc `date` và `dateLabel`, mà groupSlots đặt hai trường đó ở
+        // cấp NGÀY chứ không ở từng khung giờ. Đưa thẳng entry vào là dòng "Thời gian"
+        // hiện "10:30 ·" cụt mất ngày. Ghép cho khớp đúng hình dạng SchedulePanel gửi.
+        setPendingSlot({
+          date: requestedDay.value,
+          dateLabel: requestedDay.dateLabel,
+          time: requestedSlot.time,
+          slotId: requestedSlot.slotId,
+        })
+        setConfirmSlotOpen(true)
+        reply(`${showroom.name} đã được chọn. Khung giờ ${requestedSlot.time} ${requestedDay.dateLabel} bạn muốn vẫn còn trống, bạn xác nhận giúp ViVi nhé.`)
+      } else if (requested?.time && requestedDay) {
+        reply(`${showroom.name} đã được chọn. Khung giờ ${requested.time} ${requestedDay.dateLabel} không còn trống, ViVi đã mở lịch ngày đó để bạn chọn giờ khác.`)
+      } else if (requested?.date) {
+        reply(`${showroom.name} đã được chọn. Ngày bạn muốn chưa có khung giờ trống, ViVi hiện toàn bộ lịch của showroom để bạn chọn.`)
+      } else {
+        reply(`${showroom.name} đã được chọn. ViVi đã tìm thấy ${result.slots?.length || 0} khung giờ trống cho bạn.`)
+      }
     } catch (error) {
       if (showroomRequestRef.current !== requestId) return
       setAgentTyping(false)
@@ -3752,9 +3797,16 @@ export function BookingPage() {
                 </>
               ) : (
                 <form className="vivi-prompt" onSubmit={handlePrompt} aria-busy={composerDisabled}>
+                {/* Ô nhập KHÔNG disable trong lúc ViVi trả lời. Phần tử disabled không giữ
+                    được tiêu điểm — trình duyệt blur nó ngay, và khi bật lại thì tiêu điểm
+                    KHÔNG tự quay về, nên sau mỗi câu trả lời người dùng phải bấm lại vào ô.
+                    Chặn gửi trùng đã có đủ ba lớp: guard sendingRef trong handlePrompt, nút
+                    submit disabled, và nhánh Enter bên dưới. Giữ ô mở còn cho phép gõ trước
+                    câu tiếp theo trong lúc chờ. Chỉ chế độ demo mới thật sự khoá ô nhập.
+                    Trạng thái bận vẫn thấy được qua aria-busy (nền ô đổi màu, 11-booking-upsell.css). */}
                   <label htmlFor="vivi-booking-prompt">Nhắn cho ViVi</label>
                   <div>
-                    <textarea id="vivi-booking-prompt" rows="2" value={draft} maxLength={CHAT_MESSAGE_MAX_LENGTH} disabled={composerDisabled} onChange={(event) => setDraft(event.target.value)} placeholder={floatingDemoMode ? 'Demo đang mở — dùng điều khiển demo để tiếp tục' : composerDisabled ? 'ViVi đang thực hiện tác vụ cho bạn' : isDriverChat ? 'Chia sẻ điều bạn muốn chuẩn bị cho buổi lái thử…' : stage === 'need_address' || stage === 'need_ward' ? 'Ví dụ: Phường Bến Nghé, TP. Hồ Chí Minh' : 'Nhập mẫu xe, địa chỉ, showroom hoặc thời gian…'} onKeyDown={(event) => {
+                    <textarea id="vivi-booking-prompt" rows="2" value={draft} maxLength={CHAT_MESSAGE_MAX_LENGTH} disabled={floatingDemoMode} onChange={(event) => setDraft(event.target.value)} placeholder={floatingDemoMode ? 'Demo đang mở — dùng điều khiển demo để tiếp tục' : composerDisabled ? 'ViVi đang thực hiện tác vụ cho bạn' : isDriverChat ? 'Chia sẻ điều bạn muốn chuẩn bị cho buổi lái thử…' : stage === 'need_address' || stage === 'need_ward' ? 'Ví dụ: Phường Bến Nghé, TP. Hồ Chí Minh' : 'Nhập mẫu xe, địa chỉ, showroom hoặc thời gian…'} onKeyDown={(event) => {
                       if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault()
                         if (!composerDisabled) event.currentTarget.form?.requestSubmit()
