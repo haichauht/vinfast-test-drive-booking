@@ -40,6 +40,7 @@ from src.models.schemas import (
     DatasetImportRequest,
     DemoActionRequest,
     FloatingDemoOptionsRequest,
+    FollowUp,
     UiDirective,
 )
 from src.services.booking import BookingError
@@ -167,7 +168,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
     """Chat với AI agent."""
     try:
         settings = get_settings()
-        trace_id = str(uuid.uuid4())
+        trace_id = str(getattr(request.state, "trace_id", "") or uuid.uuid4())
         token_manager = get_conversation_token_manager()
         conversation_identity = token_manager.verify(body.conversation_id) if body.conversation_id else None
         if conversation_identity is None:
@@ -224,6 +225,10 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
                 stored_booking_context = profile_service.latest_booking_context(profile.id)
                 if stored_booking_context.get("active"):
                     participant_context = {"role": "booker", "booking_id": stored_booking_context.get("id")}
+            if participant_context.get("booking_id"):
+                participant_context = profile_service.participant_context(
+                    str(participant_context["booking_id"]), str(participant_context["role"])
+                )
             profile_context = build_profile_context(profile, body.message)
         except KeyError as exc:
             if body.driver_invitation_token:
@@ -293,7 +298,12 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             action=body.action,
             action_payload=body.action_payload,
         )
-        config = {"configurable": {"thread_id": conversation_identity.thread_id}}
+        config = {
+            "run_name": "vivi.chat",
+            "tags": ["vivi", "public-chat"],
+            "metadata": {"trace_id": trace_id, "conversation_id": conversation_id},
+            "configurable": {"thread_id": conversation_identity.thread_id},
+        }
         logging.getLogger("agent.requests").info(
             "chat_started trace_id=%s conversation_id=%s requested_action=%s",
             trace_id,
@@ -378,6 +388,20 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             )
             if raw_intent_entities.get(key) is not None
         }
+        raw_follow_ups = result.get("follow_ups") or []
+        public_follow_ups: list[FollowUp] = []
+        if (
+            result.get("active_skill") == "post_booking"
+            and not result.get("action_tool")
+            and result.get("action_result") is None
+            and _chat_ui_directive(result) is None
+            and not result.get("action_error")
+        ):
+            for item in raw_follow_ups[:2]:
+                text = str(item.get("text") or "") if isinstance(item, dict) else ""
+                safe_text = guardrails.protect_output({"response": text}).response
+                if safe_text:
+                    public_follow_ups.append(FollowUp(text=safe_text))
         response = ChatResponse(
             response=protected.response,
             analysis=protected.analysis,
@@ -390,6 +414,9 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             sub_intent=str((result.get("metadata") or {}).get("sub_intent") or ""),
             intent_entities=public_intent_entities,
             ui=_chat_ui_directive(result),
+            # Suggestions are exclusive to a completed conversational Post-Booking
+            # turn. Booking tools and UI workflows own the next interaction.
+            follow_ups=public_follow_ups,
         )
         trace_event(
             "chat.response",

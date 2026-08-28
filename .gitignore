@@ -17,7 +17,6 @@ env/
 .env.local
 .env.production
 backend/cloudflare/r2-cors.json
-
 # IDE
 .vscode/
 .idea/
@@ -28,7 +27,6 @@ backend/cloudflare/r2-cors.json
 # OS
 .DS_Store
 Thumbs.db
-
 # Data (never commit large data)
 data/
 incoming-data/
@@ -42,11 +40,14 @@ backups/
 # Logs
 logs/
 *.log
-
 # Test coverage
 htmlcov/
 .coverage
 coverage.xml
+artifacts/
+eval/human/reviews.csv
+eval/human/reviewers.json
+eval/holdout/private/
 
 # Docker
 docker-compose.override.yml
@@ -80,7 +81,6 @@ notes/
 deploy_tutorial.md
 eval/datav2/
 gcp-key.json
-
 # Local build artefacts and scratch media (never commit, tmp/ alone is 556 MB)
 tmp/
 .tmp/

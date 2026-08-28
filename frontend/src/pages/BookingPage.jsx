@@ -161,7 +161,19 @@ const vinfastLogo = commonMedia.vinfastLogo
 const driveCars = []
 const BOOKING_UI_STATE_KEY = 'vinfast:booking-ui-state'
 const DRIVER_INVITATION_HISTORY_KEY = 'vinfastDriverInvitationToken'
-const BOOKING_PREPARATION_GREETING = 'ViVi sẽ đồng hành cùng bạn chuẩn bị cho buổi lái thử. Mình có thể giúp Anh/Chị chuẩn bị những nội dung nên ưu tiên trải nghiệm trên xe, các điểm cần trao đổi với tư vấn viên và checklist trước giờ hẹn. Anh/Chị có thể chia sẻ thêm về nhu cầu và cách mình dự định sử dụng xe trong thực tế; từ đó, ViVi sẽ gợi ý những tình huống và tiêu chí nên tập trung kiểm tra trong buổi lái thử để sát với nhu cầu của Anh/Chị hơn.'
+const BOOKING_PREPARATION_GREETING =
+  'ViVi sẽ đồng hành cùng Anh/Chị chuẩn bị cho buổi lái thử. Ngoài việc giải đáp về xe, ViVi có thể giúp Anh/Chị xác định những nội dung nên ưu tiên trải nghiệm, các điểm cần trao đổi với tư vấn viên và cách đánh giá xe sát với nhu cầu sử dụng thực tế. Nếu buổi lái thử có người thân hoặc người khác cùng tham gia đánh giá, Anh/Chị cũng có thể chia sẻ để ViVi gợi ý những điểm mỗi người nên chú ý. Càng hiểu rõ cách Anh/Chị dự định sử dụng xe và những ai sẽ cùng trải nghiệm, ViVi càng có thể giúp buổi lái thử tập trung vào những điều thực sự quan trọng.'
+const postBookingGreetingFollowUps = (role) => (
+  role === 'driver'
+    ? [
+        { text: 'Tôi muốn xác định những gì mình nên ưu tiên trải nghiệm' },
+        { text: 'Tôi muốn biết những điểm đáng chú ý khi lái mẫu xe này' },
+      ]
+    : [
+        { text: 'Tôi muốn chuẩn bị cho buổi lái thử cùng gia đình/người đi cùng' },
+        { text: 'Tôi muốn biết những điểm đáng chú ý trên mẫu xe này' },
+      ]
+)
 const VIETNAM_SLOT_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
   timeZone: 'Asia/Ho_Chi_Minh',
   year: 'numeric',
@@ -186,12 +198,12 @@ const getVietnamSlotDateTime = (value) => {
     minutes: Number(values.hour) * 60 + Number(values.minute),
   }
 }
-
 const driverGreeting = ({ driver, booking }) => {
   const name = driver?.name || 'bạn'
   const vehicle = booking?.vehicle_model || 'xe VinFast'
   const showroom = booking?.showroom_name || 'showroom VinFast'
-  return `Chào ${name}, ViVi rất vui được hỗ trợ bạn chuẩn bị cho buổi lái thử ${vehicle} tại ${showroom}. Mình có thể giúp Anh/Chị chuẩn bị những nội dung nên ưu tiên trải nghiệm trên xe, các điểm cần trao đổi với tư vấn viên và checklist trước giờ hẹn. Anh/Chị có thể chia sẻ thêm về nhu cầu và cách mình dự định sử dụng xe trong thực tế; từ đó, ViVi sẽ gợi ý những tình huống và tiêu chí nên tập trung kiểm tra trong buổi lái thử để sát với nhu cầu của Anh/Chị hơn.`
+
+  return `Chào ${name}, ViVi rất vui được đồng hành cùng bạn trong buổi lái thử ${vehicle} tại ${showroom}. ViVi có thể giúp Anh/Chị xác định những điểm nên ưu tiên trải nghiệm, những nội dung cần trao đổi với tư vấn viên và các tiêu chí đáng chú ý dựa trên cách Anh/Chị dự định sử dụng xe. Nếu có người thân hoặc người khác cùng tham gia đánh giá chiếc xe, Anh/Chị cũng có thể chia sẻ để ViVi giúp chuẩn bị trải nghiệm phù hợp cho cả buổi lái thử.`
 }
 
 const extractRescheduleIntent = (text = '', intentEntities = null) => {
@@ -463,15 +475,18 @@ export function BookingPage() {
     setMobileSurface('assistant')
   }, [])
   const [messages, setMessages] = useState(isDriverChat
-    ? [{ id: 'driver-invitation-greeting', role: 'assistant', text: driverGreeting({}) }]
+    ? [{ id: 'driver-invitation-greeting', role: 'assistant', text: driverGreeting({}), followUps: postBookingGreetingFollowUps('driver') }]
     : (shouldOfferResume && Array.isArray(restoredUi.messages) ? restoredUi.messages : []))
+  // Follow-up chỉ xuất hiện sau khi AgentMessage đã hoàn tất hiệu ứng in chữ.
+  // Không dùng `agentTyping` cho việc này vì state đó chỉ biểu thị thời gian chờ API.
+  const [completedAssistantMessageId, setCompletedAssistantMessageId] = useState('')
   useEffect(() => {
     if (!driverInvitationToken) return undefined
     let cancelled = false
     getDriverInvitationContext(driverInvitationToken)
       .then((context) => {
         if (!cancelled) {
-          setMessages([{ id: 'driver-invitation-greeting', role: 'assistant', text: driverGreeting(context) }])
+          setMessages([{ id: 'driver-invitation-greeting', role: 'assistant', text: driverGreeting(context), followUps: postBookingGreetingFollowUps('driver') }])
         }
       })
       .catch(() => {})
@@ -676,6 +691,7 @@ export function BookingPage() {
           id: `${Date.now()}-${current.length + 2}-demo-preparation`,
           role: 'assistant',
           text: BOOKING_PREPARATION_GREETING,
+          followUps: postBookingGreetingFollowUps('booker'),
           floatingDemoStep: 7,
         },
       ])
@@ -710,6 +726,7 @@ export function BookingPage() {
         id: `${Date.now()}-${current.length + 1}`,
         role: 'assistant',
         text: BOOKING_PREPARATION_GREETING,
+        followUps: postBookingGreetingFollowUps('booker'),
       },
     ])
   }
@@ -1419,6 +1436,7 @@ export function BookingPage() {
   }, [])
 
   const revealCompletedAssistantMessage = useCallback((messageId) => {
+    setCompletedAssistantMessageId(String(messageId))
     if (!window.matchMedia('(max-width: 900px)').matches) return
     if (Date.now() - lastMessageScrollIntentAtRef.current < 3000) return
 
@@ -1713,10 +1731,10 @@ export function BookingPage() {
     }
   }
 
-  const handlePrompt = async (event) => {
+  const handlePrompt = async (event, suggestedText = '') => {
     event.preventDefault()
     if (sendingRef.current) return
-    const value = draft.trim()
+    const value = (suggestedText || draft).trim()
     if (!value) return
     if (value.length > CHAT_MESSAGE_MAX_LENGTH) {
       setBackendError(`Tin nhắn không được vượt quá ${CHAT_MESSAGE_MAX_LENGTH.toLocaleString('vi-VN')} ký tự.`)
@@ -1773,7 +1791,7 @@ export function BookingPage() {
         })
       if (isDriverChat) {
         driverConversationIdRef.current = result.conversation_id || driverConversationIdRef.current
-        addMessage('assistant', result.response)
+        addMessage('assistant', result.response, { followUps: result.follow_ups || [] })
         return
       }
       const extractedReschedule = extractRescheduleIntent(value, result.intent_entities)
@@ -1798,7 +1816,7 @@ export function BookingPage() {
         primeLocationSuggestions(mentionedCar)
       }
       const handledMessage = await applyAgentToolResult(result)
-      if (!handledMessage) addMessage('assistant', result.response)
+      if (!handledMessage) addMessage('assistant', result.response, { followUps: result.follow_ups || [] })
     } catch (error) {
       addMessage('assistant', `Không thể kết nối ViVi: ${error.message}`)
     } finally {
@@ -3185,6 +3203,16 @@ export function BookingPage() {
   }
 
   const showVehicleChoices = allowedActions.includes('choose_vehicle') && !accessProfile && interaction.mode !== BookingMode.MANAGE_BOOKING
+  const latestMessage = messages[messages.length - 1]
+  const bookingWorkflowOwnsComposer = composerMode !== 'chat'
+    || showVehicleChoices
+    || ['need_address', 'need_ward', 'choose_showroom', 'choose_slot', 'collect_info', 'review'].includes(stage)
+  const visibleFollowUps = !agentTyping && !isSending && !bookingWorkflowOwnsComposer
+    && latestMessage?.role === 'assistant'
+    && String(latestMessage.id) === completedAssistantMessageId
+    && Array.isArray(latestMessage.followUps)
+    ? latestMessage.followUps
+    : []
   const showFloatingDemo = floatingDemoEnabled
     && (!isMobileBookingViewport || floatingDemoMode)
     && Boolean(recipient)
@@ -3505,6 +3533,22 @@ export function BookingPage() {
                 onShowroom={chooseShowroom}
                 onSlot={chooseSlot}
               />
+
+              {visibleFollowUps.length > 0 && (
+                <div className="post-booking-follow-ups" aria-label="Gợi ý câu hỏi tiếp theo">
+                  {visibleFollowUps.map((followUp, index) => (
+                    <button
+                      key={`${followUp.text}-${index}`}
+                      type="button"
+                      disabled={composerDisabled}
+                      onClick={() => handlePrompt({ preventDefault: () => {} }, followUp.text)}
+                    >
+                      {followUp.text}
+                      <ArrowRight size={15} weight="bold" aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Hàng nút nhanh ngay trên ô nhập.
                   Các thao tác quản lý lịch và hậu đặt lịch đã được gom vào menu ở header:

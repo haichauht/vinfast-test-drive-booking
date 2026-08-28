@@ -635,6 +635,10 @@ TABLES = {
         "booking_profile_summaries",
         frozenset({"booking_id", "summary_markdown", "generated_at", "updated_at"}),
     ),
+    "test_drive_context_signals": TableSchema(
+        "test_drive_context_signals",
+        frozenset({"id", "booking_id", "category", "key", "value_json", "description", "subject", "certainty", "confidence", "source_type", "source_participant", "source_ref", "status", "superseded_by_signal_id", "created_at", "updated_at"}),
+    ),
     "driver_chat_invitations": TableSchema(
         "driver_chat_invitations",
         frozenset(
@@ -922,6 +926,16 @@ CREATE TABLE IF NOT EXISTS booking_profile_summaries (
  generated_at TEXT NOT NULL,
  updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS test_drive_context_signals (
+ id TEXT PRIMARY KEY, booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+ category TEXT NOT NULL, key TEXT NOT NULL, value_json TEXT NOT NULL, description TEXT,
+ subject TEXT NOT NULL CHECK(subject IN ('booking','booker','driver','group')),
+ certainty TEXT NOT NULL CHECK(certainty IN ('known','likely','possible')), confidence REAL,
+ source_type TEXT NOT NULL CHECK(source_type IN ('explicit_user','implicit_user','trusted_domain')),
+ source_participant TEXT NOT NULL CHECK(source_participant IN ('booker','driver','system')),
+ source_ref TEXT, status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','superseded','retracted')),
+ superseded_by_signal_id TEXT REFERENCES test_drive_context_signals(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS driver_chat_invitations (
  id TEXT PRIMARY KEY, booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
  driver_person_id TEXT NOT NULL REFERENCES people(id), token_hash TEXT NOT NULL UNIQUE,
@@ -937,6 +951,7 @@ CREATE INDEX IF NOT EXISTS idx_sales_showroom ON sales_staff(showroom_id,status)
 CREATE INDEX IF NOT EXISTS idx_people_normalized_phone ON people(normalized_phone);
 CREATE INDEX IF NOT EXISTS idx_people_normalized_email ON people(normalized_email);
 CREATE INDEX IF NOT EXISTS idx_slot_sales_slot ON slot_sales_assignments(slot_id,status);
+CREATE INDEX IF NOT EXISTS idx_slot_sales_staff ON slot_sales_assignments(sales_staff_id,status,assignment_role);
 CREATE INDEX IF NOT EXISTS idx_bookings_expiry ON bookings(status,hold_expires_at);
 CREATE INDEX IF NOT EXISTS idx_otp_active ON otp_challenges(booking_id,status,expires_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_due ON notification_jobs(status,scheduled_at);
@@ -961,5 +976,6 @@ CREATE INDEX IF NOT EXISTS idx_user_profiles_merged ON user_profiles(merged_into
 CREATE INDEX IF NOT EXISTS idx_profile_signals_status ON user_profile_signals(profile_id,status);
 CREATE INDEX IF NOT EXISTS idx_profile_signals_key ON user_profile_signals(profile_id,category,key,status);
 CREATE INDEX IF NOT EXISTS idx_booking_profile_summaries_generated ON booking_profile_summaries(generated_at);
+CREATE INDEX IF NOT EXISTS idx_test_drive_context_active ON test_drive_context_signals(booking_id,subject,category,key,status);
 CREATE INDEX IF NOT EXISTS idx_driver_chat_invitation_booking ON driver_chat_invitations(booking_id,status,expires_at);
 """

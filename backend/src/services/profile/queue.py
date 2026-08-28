@@ -9,13 +9,14 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from src.database.redis_client import RedisClient
-from src.services.profile.models import SignalCandidate
+from src.services.profile.models import BookingSignalCandidate, SignalCandidate
 from src.services.profile.service import ProfileService
 
 logger = logging.getLogger("profile.queue")
 QUEUE_NAME = "profile-update-v2"
 MAX_RETRIES = 3
 _CANDIDATES = TypeAdapter(list[SignalCandidate])
+_BOOKING_CANDIDATES = TypeAdapter(list[BookingSignalCandidate])
 
 
 class ProfileUpdateQueue:
@@ -53,6 +54,27 @@ class ProfileUpdateQueue:
             logger.warning("profile.queue.enqueue_failed trace_id=%s profile_id=%s", trace_id, profile_id)
         return queued
 
+    async def enqueue_post_booking(self, *, profile_updates: list[dict[str, Any]], booking_id: str,
+                                   booking_candidates: list[BookingSignalCandidate], speaker_role: str,
+                                   conversation_id: str, trace_id: str) -> bool:
+        if not profile_updates and not booking_candidates:
+            return True
+        if not self.redis.available:
+            return False
+        serialized_booking = [item.model_dump(mode="json") for item in booking_candidates]
+        payload = {"profile_updates": profile_updates, "booking_id": booking_id,
+                   "booking_candidates": serialized_booking, "speaker_role": speaker_role,
+                   "conversation_id": conversation_id, "trace_id": trace_id, "retry_count": 0}
+        canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        dedupe_key = hashlib.sha256(f"{conversation_id}\0{canonical}".encode()).hexdigest()
+        try:
+            queued = await asyncio.wait_for(asyncio.to_thread(self.redis.enqueue_reliable, QUEUE_NAME, payload, dedupe_key=dedupe_key), timeout=0.5)
+        except TimeoutError:
+            queued = False
+        if queued:
+            self.start()
+        return queued
+
     def start(self) -> None:
         if self.redis.available and (self._worker_task is None or self._worker_task.done()):
             self._worker_task = asyncio.create_task(self._run(), name="profile-update-worker")
@@ -86,6 +108,21 @@ class ProfileUpdateQueue:
     async def _process(self, encoded: str) -> None:
         try:
             payload: dict[str, Any] = json.loads(encoded)
+            if "profile_updates" in payload or "booking_candidates" in payload:
+                for update in payload.get("profile_updates") or []:
+                    candidates = _CANDIDATES.validate_python(update.get("candidates") or [])
+                    if candidates:
+                        await asyncio.to_thread(self.profiles.apply, str(update["profile_id"]), candidates,
+                            source_ref=str(payload.get("conversation_id") or ""), trace_id=str(payload.get("trace_id") or ""))
+                booking_candidates = _BOOKING_CANDIDATES.validate_python(payload.get("booking_candidates") or [])
+                if booking_candidates:
+                    await asyncio.to_thread(self.profiles.apply_booking_signals, str(payload["booking_id"]), booking_candidates,
+                        source_participant=str(payload.get("speaker_role") or "system"), source_ref=str(payload.get("conversation_id") or ""))
+                elif payload.get("booking_id"):
+                    # A durable signal can also change this booking's sales brief.
+                    await asyncio.to_thread(self.profiles.invalidate_booking_profile_summary, str(payload["booking_id"]))
+                await asyncio.to_thread(self.redis.ack_reliable, QUEUE_NAME, encoded)
+                return
             candidates = _CANDIDATES.validate_python(payload.get("candidates") or [])
             if candidates:
                 await asyncio.to_thread(self.profiles.apply, str(payload["profile_id"]), candidates,

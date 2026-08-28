@@ -1,3 +1,5 @@
+import json
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -16,6 +18,104 @@ def _mock_bound_llm(response):
     bound.ainvoke = AsyncMock(return_value=response)
     llm.bind_tools.return_value = bound
     return llm, bound
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "ngay kia 26/08/2026 luc hai ruoi chieu",
+            {"preferred_date": "2026-08-26", "preferred_time": "14:30"},
+        ),
+        ("ngay mai luc muoi gio ba muoi", {"preferred_date": "2026-08-25", "preferred_time": "10:30"}),
+    ],
+)
+def test_extract_schedule_constraints_keeps_explicit_vietnamese_date_and_time(query, expected):
+    assert booking_module._extract_schedule_constraints(
+        query,
+        today=datetime(2026, 8, 24),
+    ) == expected
+
+
+def test_search_normalization_carries_multi_turn_constraints_and_overrides_schedule():
+    prior_search = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "search-prior",
+                "name": "search_test_drive_options",
+                "args": {
+                    "vehicle_model": "VF 7",
+                    "showroom_query": "VinFast Thanh Ha",
+                    "preferred_date": "2026-08-25",
+                    "preferred_time": "09:00",
+                },
+            }
+        ],
+    )
+    response = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "search-next",
+                "name": "search_test_drive_options",
+                "args": {},
+            }
+        ],
+    )
+
+    normalized = booking_module._normalize_search_calls(
+        response,
+        messages=[prior_search, HumanMessage(content="ngay kia luc hai ruoi chieu")],
+        current_query="ngay kia luc hai ruoi chieu",
+        today=datetime(2026, 8, 24),
+    )
+
+    assert normalized.tool_calls[0]["args"] == {
+        "vehicle_model": "VF 7",
+        "showroom_query": "VinFast Thanh Ha",
+        "preferred_date": "2026-08-26",
+        "preferred_time": "14:30",
+    }
+
+
+@pytest.mark.asyncio
+async def test_pending_otp_verification_wins_over_repeated_booking_lookup(monkeypatch):
+    get_llm = MagicMock(side_effect=AssertionError("OTP continuation must not call the chat LLM"))
+    monkeypatch.setattr(booking_module, "get_llm", get_llm)
+    access_request = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "access-pending",
+                "name": "request_booking_access",
+                "args": {"purpose": "manage", "contact_value": "person@example.test"},
+            }
+        ],
+    )
+    access_result = ToolMessage(
+        content=json.dumps({"challenge_id": "challenge-1", "requires_otp": True}),
+        tool_call_id="access-pending",
+        name="request_booking_access",
+    )
+
+    result = await booking_skill_node(
+        {
+            "messages": [
+                access_request,
+                access_result,
+                HumanMessage(content="Ma OTP 123456, xem booking giup toi"),
+            ],
+            "metadata": {"sub_intent": "booking_lookup"},
+            "tool_call_count": 1,
+        }
+    )
+
+    call = result["messages"][0].tool_calls[0]
+    assert call["name"] == "verify_booking_access"
+    assert call["args"] == {"challenge_id": "challenge-1", "otp_code": "123456"}
+    assert result["tool_call_count"] == 2
+    get_llm.assert_not_called()
 
 
 # Confirmation is intentionally absent: only the structured confirm_booking
@@ -247,6 +347,93 @@ async def test_booking_access_result_opens_email_form_without_another_llm_call(m
 
 
 @pytest.mark.asyncio
+async def test_verified_access_binds_session_directly_to_booking_details(monkeypatch):
+    get_llm = MagicMock(side_effect=AssertionError("chat LLM must not copy access credentials"))
+    monkeypatch.setattr(booking_module, "get_llm", get_llm)
+    verify_request = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "verify-call-1",
+                "name": "verify_booking_access",
+                "args": {"challenge_id": "otp-1", "otp_code": "123456"},
+            }
+        ],
+    )
+    verify_result = ToolMessage(
+        content=json.dumps(
+            {
+                "access_session_token": "session-secret",
+                "booking_id": "booking-1",
+                "permissions": ["read_booking"],
+            }
+        ),
+        tool_call_id="verify-call-1",
+        name="verify_booking_access",
+    )
+
+    result = await booking_skill_node(
+        {
+            "messages": [verify_request, verify_result],
+            "tool_call_count": 1,
+            "metadata": {"sub_intent": "booking_lookup"},
+        }
+    )
+
+    tool_call = result["messages"][0].tool_calls[0]
+    assert tool_call["name"] == "get_booking_details"
+    assert tool_call["args"] == {
+        "access_session_token": "session-secret",
+        "booking_id": "booking-1",
+        "booking_code": None,
+    }
+    assert result["tool_call_count"] == 2
+    get_llm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_booking_details_are_rendered_only_from_tool_facts(monkeypatch):
+    get_llm = MagicMock(side_effect=AssertionError("chat LLM must not reinterpret booking state"))
+    monkeypatch.setattr(booking_module, "get_llm", get_llm)
+    details_request = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "details-call-1",
+                "name": "get_booking_details",
+                "args": {"access_session_token": "session-secret", "booking_id": "booking-1"},
+            }
+        ],
+    )
+    details_result = ToolMessage(
+        content=json.dumps(
+            {
+                "booking_code": "BK-001",
+                "status": "confirmed",
+                "slot_time": "09:00",
+                "slot_date": "Thứ 7, 08/08",
+                "vehicle": {"name": "VinFast VF 3", "variant_name": "Standard"},
+                "showroom": {"name": "VinFast Huế", "address": "38 Phạm Văn Đồng"},
+                "allowed_actions": ["reschedule", "cancel", "update_details"],
+            },
+            ensure_ascii=False,
+        ),
+        tool_call_id="details-call-1",
+        name="get_booking_details",
+    )
+
+    result = await booking_skill_node({"messages": [details_request, details_result]})
+
+    assert "BK-001" in result["response"]
+    assert "VinFast VF 3 Standard" in result["response"]
+    assert "Đã xác nhận" in result["response"]
+    assert "đã diễn ra" not in result["response"].casefold()
+    assert "session-secret" not in result["response"]
+    assert result["action_result"]["booking_code"] == "BK-001"
+    get_llm.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_booking_skill_lets_vivi_explain_invalid_date_range(monkeypatch):
     tool_request = AIMessage(
         content="",
@@ -289,6 +476,184 @@ async def test_booking_skill_lets_vivi_explain_invalid_date_range(monkeypatch):
     assert result["action_result"] is None
     assert "Quý khách vui lòng xác nhận lại" in result["response"]
     assert "tool_choice" not in llm.bind_tools.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_booking_skill_normalizes_llm_hold_id_before_tool_execution(monkeypatch):
+    raw_response = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "hold-call-1",
+                "name": "hold_test_drive_slot",
+                "args": {"slot_id": "slot-main", "ui_action_id": "ui-hold-unsafe"},
+            }
+        ],
+    )
+    llm, _ = _mock_bound_llm(raw_response)
+    monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+    state = {
+        "messages": [HumanMessage(content="Giữ khung giờ này giúp tôi")],
+        "metadata": {"trace_id": "trace-hold-normalization"},
+    }
+
+    first = await booking_skill_node(state)
+    second = await booking_skill_node(state)
+
+    first_args = first["messages"][0].tool_calls[0]["args"]
+    second_args = second["messages"][0].tool_calls[0]["args"]
+    assert first_args["ui_action_id"].startswith("hold:agent:")
+    assert first_args["ui_action_id"] == second_args["ui_action_id"]
+    assert raw_response.tool_calls[0]["args"]["ui_action_id"] == "ui-hold-unsafe"
+
+
+@pytest.mark.asyncio
+async def test_booking_skill_replaces_search_prose_with_grounded_tool_evidence(monkeypatch):
+    tool_request = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "search-grounded-1",
+                "name": "search_test_drive_options",
+                "args": {"vehicle_model": "VF 3", "showroom_id": "HN001"},
+            }
+        ],
+    )
+    tool_result = ToolMessage(
+        content=json.dumps(
+            {
+                "resolved_vehicle": {"name": "VinFast VF 3"},
+                "selected_showroom": {"name": "VinFast Thăng Long Trịnh Văn Bô"},
+                "slots": [{"formatted_schedule": "Thứ 2, 24/08 09:00"}],
+                "search_stage": "slot_selection",
+            },
+            ensure_ascii=False,
+        ),
+        tool_call_id="search-grounded-1",
+        name="search_test_drive_options",
+    )
+    llm, _ = _mock_bound_llm(AIMessage(content="Bảng bên trái đã cập nhật và ViVi sẽ giữ chỗ ngay."))
+    monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+
+    result = await booking_skill_node({"messages": [tool_request, tool_result]})
+
+    assert "VinFast Thăng Long Trịnh Văn Bô" in result["response"]
+    assert "Thứ 2, 24/08 09:00" in result["response"]
+    assert "bảng bên trái" not in result["response"].lower()
+    assert "giữ chỗ" not in result["response"].lower()
+
+
+@pytest.mark.asyncio
+async def test_booking_skill_does_not_substitute_an_inexact_showroom_query(monkeypatch):
+    tool_request = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "search-not-found-1",
+                "name": "search_test_drive_options",
+                "args": {"vehicle_model": "VF 3", "showroom_query": "VinFast Mặt Trăng"},
+            }
+        ],
+    )
+    tool_result = ToolMessage(
+        content=json.dumps(
+            {
+                "resolved_vehicle": {"name": "VinFast VF 3"},
+                "showrooms": [{"name": "VinFast Newway Mỹ Đình"}],
+                "slots": [],
+                "search_stage": "showroom_selection",
+            },
+            ensure_ascii=False,
+        ),
+        tool_call_id="search-not-found-1",
+        name="search_test_drive_options",
+    )
+    llm, _ = _mock_bound_llm(AIMessage(content="Tôi đã chọn VinFast Newway Mỹ Đình thay thế."))
+    monkeypatch.setattr(booking_module, "get_llm", lambda: llm)
+
+    result = await booking_skill_node({"messages": [tool_request, tool_result]})
+
+    assert "Chưa tìm thấy showroom VinFast Mặt Trăng" in result["response"]
+    assert "VinFast Newway Mỹ Đình" not in result["response"]
+
+
+@pytest.mark.asyncio
+async def test_booking_skill_preserves_requested_datetime_in_showroom_stage(monkeypatch):
+    get_llm = MagicMock(side_effect=AssertionError("showroom evidence must terminate the tool loop"))
+    monkeypatch.setattr(booking_module, "get_llm", get_llm)
+    tool_request = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "search-datetime-1",
+                "name": "search_test_drive_options",
+                "args": {
+                    "vehicle_model": "VF 3",
+                    "showroom_query": "VinFast Thăng Long Trịnh Văn Bô",
+                    "preferred_date": "2026-08-25",
+                    "preferred_time": "13:30",
+                },
+            }
+        ],
+    )
+    tool_result = ToolMessage(
+        content=json.dumps(
+            {
+                "resolved_vehicle": {"name": "VinFast VF 3"},
+                "showrooms": [{"name": "VinFast Thăng Long Trịnh Văn Bô"}],
+                "slots": [],
+                "search_stage": "showroom_selection",
+            },
+            ensure_ascii=False,
+        ),
+        tool_call_id="search-datetime-1",
+        name="search_test_drive_options",
+    )
+
+    result = await booking_skill_node({"messages": [tool_request, tool_result]})
+
+    assert "25/08/2026" in result["response"]
+    assert "13:30" in result["response"]
+    assert "VinFast Thăng Long Trịnh Văn Bô" in result["response"]
+    get_llm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_booking_skill_accepts_a_confident_partial_showroom_name(monkeypatch):
+    get_llm = MagicMock(side_effect=AssertionError("showroom evidence must terminate the tool loop"))
+    monkeypatch.setattr(booking_module, "get_llm", get_llm)
+    tool_request = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "search-partial-showroom-1",
+                "name": "search_test_drive_options",
+                "args": {"vehicle_model": "VF 3", "showroom_query": "Thăng Long Trịnh Văn Bô"},
+            }
+        ],
+    )
+    tool_result = ToolMessage(
+        content=json.dumps(
+            {
+                "resolved_vehicle": {"name": "VinFast VF 3"},
+                "showrooms": [
+                    {"name": "VinFast Thăng Long Trịnh Văn Bô", "text_match_score": 70},
+                    {"name": "VinFast Thăng Long Hoài Đức", "text_match_score": 30},
+                ],
+                "slots": [],
+                "search_stage": "showroom_selection",
+            },
+            ensure_ascii=False,
+        ),
+        tool_call_id="search-partial-showroom-1",
+        name="search_test_drive_options",
+    )
+
+    result = await booking_skill_node({"messages": [tool_request, tool_result]})
+
+    assert "VinFast Thăng Long Trịnh Văn Bô" in result["response"]
+    assert "VinFast Thăng Long Hoài Đức" not in result["response"]
+    get_llm.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -404,10 +769,7 @@ async def test_skill_nodes_hide_internal_llm_limit_details(monkeypatch, module, 
     assert result["action_error"] == "SERVICE_TEMPORARILY_UNAVAILABLE"
     assert "AI" not in result["response"]
     assert "chi phí" not in result["response"]
-    assert any(
-        call.kwargs.get("error_code") == "LLM_BUDGET_EXCEEDED"
-        for call in trace.call_args_list
-    )
+    assert any(call.kwargs.get("error_code") == "LLM_BUDGET_EXCEEDED" for call in trace.call_args_list)
 
 
 # test case of Chau + kiểm tra prompt loader của hai skill có fallback khi file không đọc được

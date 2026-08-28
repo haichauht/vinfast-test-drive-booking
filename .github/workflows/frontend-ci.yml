@@ -5,12 +5,14 @@ on:
     paths:
       - 'frontend/**'
       - 'internal-portal/frontend/**'
+      - 'human-review/frontend/**'
       - '.github/workflows/frontend-ci.yml'
     branches: [main]
   pull_request:
     paths:
       - 'frontend/**'
       - 'internal-portal/frontend/**'
+      - 'human-review/frontend/**'
       - '.github/workflows/frontend-ci.yml'
     branches: [testing, develop, main]
 
@@ -62,6 +64,34 @@ jobs:
           path: frontend/dist
           if-no-files-found: error
           retention-days: 1
+
+  build-human-review:
+    name: Build Human Review Portal
+    runs-on: self-hosted
+    steps:
+      - name: Configure Git Buffer
+        run: |
+          git config --global http.postBuffer 524288000
+          git config --global http.version HTTP/1.1
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: human-review/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: human-review/frontend
+        run: npm ci
+
+      - name: Build check
+        working-directory: human-review/frontend
+        run: npm run build
 
   build-internal-portal:
     name: Build Internal Portal
