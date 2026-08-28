@@ -57,6 +57,7 @@ import { SiteFooter } from '../components/SiteFooter'
 import { prefetchVehicle } from '../api/vehicles'
 import { carGroups, carImage } from '../data/cars'
 import { LacHongPassage } from '../components/home/LacHongPassage'
+import { BackToTop } from '../components/BackToTop'
 import { FactoryFilmDialog } from '../components/home/FactoryFilmDialog'
 import { ViViJourney } from '../components/home/ViViJourney'
 import { lacHongEmerge, lacHongHero } from '../data/lachong'
@@ -1142,6 +1143,7 @@ export function HomePage() {
 
         <SiteFooter showLearningNotice />
       </main>
+      <BackToTop />
       {factoryDialogOpen && (
         <FactoryFilmDialog
           src={factoryFilm}
