@@ -182,8 +182,10 @@ export const searchFloatingDemoOptions = async ({ vehicleModel, showroomId = '',
       ...(longitude === undefined ? {} : { longitude }),
     })
   } catch (error) {
-    if (error.status === 404) {
-      throw new ApiError('Backend chưa có API chọn lịch demo. Hãy khởi động lại backend rồi thử lại.', {
+    // Preserve explicit backend errors (especially FLOATING_DEMO_DISABLED).
+    // Only an unclassified 404 indicates that the route may be missing.
+    if (error.status === 404 && error.code === 'NETWORK_ERROR') {
+      throw new ApiError('Không tìm thấy API chọn lịch demo. Hãy kiểm tra địa chỉ API và triển khai backend mới nhất.', {
         code: 'FLOATING_DEMO_API_OUTDATED', status: 404, retryable: false,
       })
     }
@@ -218,6 +220,13 @@ export const searchBookingOptions = ({ vehicleModel, showroomId, showroomQuery, 
     ...(slotLimit === undefined ? {} : { slot_limit: slotLimit }),
   },
 )
+
+// Read the complete calendar without adding a synthetic turn to chat history
+// or calling the LLM. The same backend search validation still applies.
+export const searchBookingCalendar = ({ vehicleModel, showroomId }) => apiPost('/test-drive/actions', {
+  action: 'search_options',
+  payload: { vehicle_model: vehicleModel, showroom_id: showroomId },
+})
 
 export const holdBookingSlot = (slotId, uiActionId = actionId('hold')) => agentAction(
   'hold_slot',

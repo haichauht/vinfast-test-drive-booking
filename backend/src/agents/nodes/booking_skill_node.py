@@ -3,7 +3,7 @@ import json
 import logging
 import re
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 from zoneinfo import ZoneInfo
@@ -61,22 +61,6 @@ def _safe_tool_input(payload: dict[str, Any]) -> dict[str, Any]:
         else:
             safe[key] = value
     return safe
-
-
-def _availability_context_ready(context: object) -> bool:
-    """Return whether canonical UI context can anchor an availability query."""
-    if not isinstance(context, dict):
-        return False
-    if context.get("stage") != "choose_slot":
-        return False
-    vehicle = context.get("selectedVehicle")
-    showroom = context.get("selectedShowroom")
-    return (
-        isinstance(vehicle, dict)
-        and isinstance(showroom, dict)
-        and bool(vehicle.get("name"))
-        and bool(showroom.get("id"))
-    )
 
 
 STRUCTURED_ACTION_TO_TOOL = {
@@ -224,7 +208,18 @@ def _natural_hold_action_id(*, request_identity: str, slot_id: object) -> str:
 
 
 def _normalize_natural_hold_calls(response: Any, *, trace_id: str) -> Any:
-    """Repair only LLM-generated hold IDs; structured UI payloads remain strict."""
+    """Repair LLM tool calls from free chat; structured UI payloads remain strict.
+
+    Two repairs, cả hai chỉ áp cho lời gọi do LLM tự soạn:
+
+    1. Hold ID không đúng hợp đồng idempotency `hold:`.
+    2. `vehicle_variant` trong lời gọi tìm kiếm. Lái thử đặt theo MẪU XE — VF 9 Eco
+       và VF 9 Plus là một xe đặt được, không phải hai. Bỏ trống trường này thì
+       catalogue tìm trên mọi biến thể đang hoạt động (catalog.py: `if vehicle_variant`),
+       nên danh sách khung giờ của "VF 9" đã gồm cả Eco lẫn Plus. Gửi biến thể lên chỉ
+       lọc hẹp danh sách và giấu mất khung giờ có thật. SKILL.md đã dặn LLM đừng gửi,
+       nhưng lời dặn chỉ là lời dặn — đây mới là chỗ cưỡng chế.
+    """
     tool_calls = getattr(response, "tool_calls", None)
     if not isinstance(tool_calls, list):
         return response
@@ -234,6 +229,20 @@ def _normalize_natural_hold_calls(response: Any, *, trace_id: str) -> Any:
     for raw_call in tool_calls:
         call = dict(raw_call)
         args = call.get("args")
+        if (
+            call.get("name") == search_test_drive_options.name
+            and isinstance(args, dict)
+            and args.get("vehicle_variant") is not None
+        ):
+            args = {key: value for key, value in args.items() if key != "vehicle_variant"}
+            call["args"] = args
+            changed = True
+            trace_event(
+                "booking.variant_filter_dropped",
+                trace_id=trace_id,
+                node="booking_skill",
+                vehicle_model=str(args.get("vehicle_model") or ""),
+            )
         if call.get("name") == hold_test_drive_slot.name and isinstance(args, dict):
             normalized_args = dict(args)
             ui_action_id = str(normalized_args.get("ui_action_id") or "")
@@ -255,131 +264,6 @@ def _lookup_key(value: object) -> str:
     normalized = unicodedata.normalize("NFKD", str(value or "")).casefold()
     without_marks = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
     return re.sub(r"[^a-z0-9]+", " ", without_marks).strip()
-
-
-_SEARCH_LOCATION_FIELDS = ("showroom_id", "showroom_query", "address", "latitude", "longitude")
-_SEARCH_SCHEDULE_FIELDS = (
-    "preferred_date",
-    "preferred_dates",
-    "preferred_date_from",
-    "preferred_date_to",
-    "preferred_time",
-)
-_VIETNAMESE_NUMBERS = {
-    "mot": 1,
-    "hai": 2,
-    "ba": 3,
-    "bon": 4,
-    "tu": 4,
-    "nam": 5,
-    "sau": 6,
-    "bay": 7,
-    "tam": 8,
-    "chin": 9,
-    "muoi": 10,
-    "muoi mot": 11,
-    "muoi hai": 12,
-}
-
-
-def _latest_search_arguments(messages: list[Any]) -> dict[str, Any]:
-    for message in reversed(messages):
-        if not isinstance(message, AIMessage):
-            continue
-        for call in reversed(getattr(message, "tool_calls", []) or []):
-            if call.get("name") == search_test_drive_options.name and isinstance(call.get("args"), dict):
-                return {key: value for key, value in call["args"].items() if value is not None}
-    return {}
-
-
-def _extract_schedule_constraints(query: str, *, today: datetime) -> dict[str, str]:
-    """Extract explicit Vietnamese date/time constraints without guessing missing values."""
-    normalized = _lookup_key(query)
-    result: dict[str, str] = {}
-
-    iso_match = re.search(r"(?<!\d)(20\d{2})[-/](\d{1,2})[-/](\d{1,2})(?!\d)", query)
-    day_first = re.search(r"(?<!\d)(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?!\d)", query)
-    word_date = re.search(r"\bngay\s+(\d{1,2})\s+thang\s+(\d{1,2})\s+nam\s+(\d{4})\b", normalized)
-    try:
-        if iso_match:
-            parsed_date = datetime(
-                int(iso_match.group(1)),
-                int(iso_match.group(2)),
-                int(iso_match.group(3)),
-            )
-            result["preferred_date"] = parsed_date.date().isoformat()
-        elif day_first:
-            year = int(day_first.group(3))
-            if year < 100:
-                year += 2000
-            parsed_date = datetime(year, int(day_first.group(2)), int(day_first.group(1)))
-            result["preferred_date"] = parsed_date.date().isoformat()
-        elif word_date:
-            parsed_date = datetime(int(word_date.group(3)), int(word_date.group(2)), int(word_date.group(1)))
-            result["preferred_date"] = parsed_date.date().isoformat()
-        elif "ngay kia" in normalized:
-            result["preferred_date"] = (today + timedelta(days=2)).date().isoformat()
-        elif re.search(r"\bngay mai\b|\bmai\b", normalized):
-            result["preferred_date"] = (today + timedelta(days=1)).date().isoformat()
-    except ValueError:
-        pass
-
-    numeric_time = re.search(r"(?<!\d)([01]?\d|2[0-3])\s*(?::|h|gio)\s*([0-5]?\d)?", normalized)
-    hour: int | None = None
-    minute = 0
-    if numeric_time:
-        hour = int(numeric_time.group(1))
-        if numeric_time.group(2):
-            minute = int(numeric_time.group(2))
-    else:
-        words = "|".join(sorted((re.escape(value) for value in _VIETNAMESE_NUMBERS), key=len, reverse=True))
-        word_time = re.search(rf"\b({words})\s+(gio(?:\s+ba muoi)?|ruoi)\b", normalized)
-        if word_time:
-            hour = _VIETNAMESE_NUMBERS[word_time.group(1)]
-            minute = 30 if word_time.group(2) in {"ruoi", "gio ba muoi"} else 0
-    if hour is not None:
-        if any(marker in normalized for marker in ("chieu", "toi")) and 1 <= hour < 12:
-            hour += 12
-        result["preferred_time"] = f"{hour:02d}:{minute:02d}"
-    return result
-
-
-def _normalize_search_calls(
-    response: Any,
-    *,
-    messages: list[Any],
-    current_query: str,
-    today: datetime,
-) -> Any:
-    calls = getattr(response, "tool_calls", None)
-    if not calls:
-        return response
-    previous = _latest_search_arguments(messages)
-    parsed_schedule = _extract_schedule_constraints(current_query, today=today)
-    normalized_calls: list[dict[str, Any]] = []
-    changed = False
-    for raw_call in calls:
-        call = dict(raw_call)
-        if call.get("name") != search_test_drive_options.name or not isinstance(call.get("args"), dict):
-            normalized_calls.append(call)
-            continue
-        arguments = dict(call["args"])
-        if not arguments.get("vehicle_model") and previous.get("vehicle_model"):
-            arguments["vehicle_model"] = previous["vehicle_model"]
-        has_current_location = any(arguments.get(field) is not None for field in _SEARCH_LOCATION_FIELDS)
-        if not has_current_location:
-            for field in _SEARCH_LOCATION_FIELDS:
-                if previous.get(field) is not None:
-                    arguments[field] = previous[field]
-        for field in _SEARCH_SCHEDULE_FIELDS:
-            if arguments.get(field) is None and previous.get(field) is not None:
-                arguments[field] = previous[field]
-        arguments.update(parsed_schedule)
-        if arguments != call["args"]:
-            call["args"] = arguments
-            changed = True
-        normalized_calls.append(call)
-    return response.model_copy(update={"tool_calls": normalized_calls}) if changed else response
 
 
 def _pending_otp_payload(messages: list[Any], query: str) -> dict[str, str] | None:
@@ -874,16 +758,7 @@ async def booking_skill_node(state: AgentState, config: RunnableConfig | None = 
         llm = get_llm()
         if llm is None:
             raise RuntimeError("LLM is not configured")
-        force_availability_search = (
-            metadata.get("sub_intent") == "booking_availability"
-            and isinstance(last_message, HumanMessage)
-            and _availability_context_ready(safe_context)
-        )
-        llm_with_tools = (
-            llm.bind_tools(tools, tool_choice=search_test_drive_options.name)
-            if force_availability_search
-            else llm.bind_tools(tools)
-        )
+        llm_with_tools = llm.bind_tools(tools)
         context_messages = []
         if safe_context:
             context_messages.append(
@@ -945,13 +820,8 @@ async def booking_skill_node(state: AgentState, config: RunnableConfig | None = 
         }
 
     response = _normalize_natural_hold_calls(response, trace_id=str(trace_id))
-    current_query = str(last_message.content) if isinstance(last_message, HumanMessage) else ""
-    response = _normalize_search_calls(
-        response,
-        messages=messages,
-        current_query=current_query,
-        today=now_vietnam_dt,
-    )
+    # Search arguments are interpreted by the LLM and validated by the tool.
+    # Do not reparse user text or silently restore previous search filters here.
 
     # Search facts are rendered from the completed tool result. The LLM may
     # still choose a follow-up tool (for example hold_slot), but free text is

@@ -24,7 +24,7 @@
 import { ArrowRight, Check } from '@phosphor-icons/react'
 import { EMAIL_MAX_LENGTH, NAME_MAX_LENGTH, PHONE_LENGTH } from '../../utils/contactValidation'
 
-export function BookingCustomerForm({ recipient, value, errors, disabled = false, onChange, onSubmit, onBack }) {
+export function BookingCustomerForm({ recipient, value, errors, disabled = false, busy = false, onChange, onSubmit, onBack }) {
   const bookingForOther = recipient === 'other'
   const shareContact = value.driverSameContact !== false
 
@@ -81,7 +81,7 @@ export function BookingCustomerForm({ recipient, value, errors, disabled = false
           lại phiếu. Nút đưa về bảng lịch bên trái, nơi đổi được khung giờ / showroom / mẫu xe —
           tức mọi lựa chọn đã chốt TRƯỚC bước điền form này. */}
       <div className="vivi-customer-form__actions">
-        <button type="submit" disabled={disabled}>{disabled ? 'Hồ sơ mẫu trong demo' : 'Tạo phiếu để kiểm tra'} <ArrowRight size={16} weight="light" /></button>
+        <button type="submit" disabled={disabled}>{busy ? 'Đang lưu thông tin...' : disabled ? 'Hồ sơ mẫu trong demo' : 'Tạo phiếu để kiểm tra'} <ArrowRight size={16} weight="light" /></button>
         {onBack && (
           <button type="button" onClick={onBack} disabled={disabled}>Hủy</button>
         )}
