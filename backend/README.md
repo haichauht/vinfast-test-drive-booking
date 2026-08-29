@@ -66,6 +66,17 @@ CHROMA_PERSIST_DIR=./data/chroma
 
 `DATABASE_URL` hỗ trợ PostgreSQL cho production và SQLite cho test/phát triển nhỏ. Nếu không dùng Agent/LLM, có thể để trống các API key; catalogue, content và booking service vẫn chạy.
 
+### Demo mô phỏng trên production
+
+Giữ `APP_ENV=production` và đặt `FLOATING_DEMO_ENABLED=true` trên backend để bật
+API tìm showroom/khung giờ cho nút demo. Biến này mặc định là `false`; sau khi đổi
+cấu hình cần khởi động lại dịch vụ hoặc tạo revision mới. Bản backend triển khai
+phải có hỗ trợ demo trên production.
+
+Demo chỉ mô phỏng giữ chỗ và xác nhận trên giao diện, không tạo lịch thật hay bỏ
+qua OTP. Kiểm tra bằng `GET /api/v1/floating-demo/capabilities`: khi bật sẽ trả
+`{"enabled": true}`. Nếu tắt, API options trả mã `FLOATING_DEMO_DISABLED`.
+
 ## API chính
 
 | Method | Endpoint | Mục đích |

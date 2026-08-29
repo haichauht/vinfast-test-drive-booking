@@ -38,6 +38,7 @@ async def test_chat_generates_conversation_id_and_uses_it_as_thread_id(client, m
     assert state["action_tool"] == ""
     assert state["action_input"] == {}
     assert state["action_error"] == ""
+    # Assert only the contract fields this test owns; observability may add more config fields.
     config = mocked.ainvoke.await_args.kwargs["config"]
     assert config["configurable"] == {"thread_id": identity.thread_id}
     assert config["run_name"] == "vivi.chat"
@@ -97,6 +98,7 @@ async def test_chat_stream_reuses_guarded_chat_conversation_binding(client, monk
     identity = get_conversation_token_manager().verify(final["conversation_id"])
     assert identity is not None
     assert final["analysis"] == ""
+    # Assert only the contract fields this test owns; observability may add more config fields.
     config = mocked.ainvoke.await_args.kwargs["config"]
     assert config["configurable"] == {"thread_id": identity.thread_id}
     assert config["metadata"]["conversation_id"] == final["conversation_id"]
