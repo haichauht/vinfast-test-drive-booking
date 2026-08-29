@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SignalCandidate(BaseModel):
@@ -31,6 +31,21 @@ class BookingSignalCandidate(BaseModel):
     confidence: float = Field(default=0.5, ge=0, le=1)
     source_type: Literal["explicit_user", "implicit_user", "trusted_domain"] = "implicit_user"
     operation: Literal["add", "strengthen", "weaken", "revise", "retract"] = "add"
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_values(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        normalized = dict(data)
+        key = str(data.get("key") or "")
+        if key.endswith(("_evaluation_involvement", "_purchase_involvement")) and isinstance(
+            data.get("value"), bool
+        ):
+            normalized["value"] = "high" if data["value"] else "none"
+        if key == "additional_guest_context" and isinstance(data.get("value"), str):
+            normalized["value"] = [data["value"]]
+        return normalized
 
     def model_post_init(self, __context: Any) -> None:
         bool_keys = {"booker_attending", "driver_attending", "booker_will_drive", "driver_will_drive"}

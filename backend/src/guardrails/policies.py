@@ -154,7 +154,7 @@ PROMPT_INJECTION_PATTERNS: tuple[tuple[str, str], ...] = (
 ABUSIVE_LANGUAGE_PATTERNS: tuple[str, ...] = (
     r"\b(?:địt|đụ|đéo|cặc|lồn|buồi)\b",
     r"\b(?:dit\s+(?:me|ma)|du\s+ma|deo\s+(?:me|can|hieu)|vai\s+lon|cai\s+lon|"
-    r"con\s+di|suc\s+vat|(?:do|thang|con|may)\s+ngu|oc\s+cho|"
+    r"con\s+đĩ|suc\s+vat|(?:do|thang|con|may)\s+ngu|oc\s+cho|"
     r"cut\s+(?:di|me)|me\s+may)\b",
     r"\b(?:fuck(?:\s+you)?|motherfucker|asshole|bitch|piece\s+of\s+shit)\b",
 )

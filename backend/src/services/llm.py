@@ -242,8 +242,19 @@ booking fact is missing, write "Chưa có thông tin" rather than guessing.
 """
 
 
-async def summarize_user_profile(profile_data: dict[str, Any]) -> str:
+async def summarize_user_profile(
+    profile_data: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+) -> str:
     """Generate a sales-facing profile summary with the main LLM service."""
+    from src.services.profile.brief import is_booking_sales_brief_source, render_booking_sales_brief
+
+    if is_booking_sales_brief_source(profile_data):
+        # Factual booking briefs are rendered from typed signals. Keeping this
+        # path deterministic prevents an LLM from converting household size to
+        # attendance, omitting supplied guest context, or recalculating totals.
+        return render_booking_sales_brief(profile_data)
     llm = get_llm()
     if llm is None:
         raise RuntimeError("LLM_NOT_CONFIGURED")
@@ -251,6 +262,7 @@ async def summarize_user_profile(profile_data: dict[str, Any]) -> str:
         [
             SystemMessage(content=SALES_BRIEF_PROMPT_V2),
             HumanMessage(content=json.dumps(profile_data, ensure_ascii=False, default=str)),
-        ]
+        ],
+        config=config,
     )
     return extract_response_text(response)

@@ -270,7 +270,15 @@ async def booking_sales_brief(
     if booking["status"] not in {"confirmed", "cancelled"}:
         raise HTTPException(status_code=409, detail="Sales brief is available only for confirmed or cancelled bookings")
     cached = await asyncio.to_thread(profile_service.booking_profile_summary, booking_id)
-    if cached and not refresh:
+    cache_is_current = bool(
+        cached
+        and await asyncio.to_thread(
+            profile_service.booking_profile_summary_is_current,
+            booking_id,
+            cached["generated_at"],
+        )
+    )
+    if cached and cache_is_current and not refresh:
         return PlainTextResponse(
             cached["summary"],
             media_type="text/markdown; charset=utf-8",
