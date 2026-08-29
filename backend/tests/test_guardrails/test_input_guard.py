@@ -308,6 +308,15 @@ def test_abusive_language_policy_avoids_common_vietnamese_false_positives(messag
     assert decision.allowed is True
 
 
+def test_abusive_language_policy_allows_benign_child_transport_sentence():
+    decision = _inspect(
+        _guard(),
+        message="nếu mục đích sử dụng xe chính của tôi là di chuyển nội thành như đưa đón con đi trẻ",
+    )
+
+    assert decision.allowed is True
+
+
 def test_does_not_block_benign_question_about_a_system_feature():
     decision = _inspect(_guard(), message="Hệ thống đặt lịch lái thử hoạt động thế nào?")
 

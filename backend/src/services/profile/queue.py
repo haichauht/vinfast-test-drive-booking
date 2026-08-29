@@ -59,8 +59,24 @@ class ProfileUpdateQueue:
                                    conversation_id: str, trace_id: str) -> bool:
         if not profile_updates and not booking_candidates:
             return True
-        if not self.redis.available:
-            return False
+        connected = False
+        if self.redis.available:
+            try:
+                connected = await asyncio.wait_for(
+                    asyncio.to_thread(self.redis.is_connected),
+                    timeout=0.5,
+                )
+            except TimeoutError:
+                logger.warning("profile.queue.redis_ping_timeout trace_id=%s", trace_id)
+        if not connected:
+            return await self._persist_post_booking_direct(
+                profile_updates=profile_updates,
+                booking_id=booking_id,
+                booking_candidates=booking_candidates,
+                speaker_role=speaker_role,
+                conversation_id=conversation_id,
+                trace_id=trace_id,
+            )
         serialized_booking = [item.model_dump(mode="json") for item in booking_candidates]
         payload = {"profile_updates": profile_updates, "booking_id": booking_id,
                    "booking_candidates": serialized_booking, "speaker_role": speaker_role,
@@ -73,7 +89,67 @@ class ProfileUpdateQueue:
             queued = False
         if queued:
             self.start()
-        return queued
+            return True
+        logger.warning(
+            "profile.queue.post_booking_enqueue_failed trace_id=%s booking_id=%s; using_sql_fallback",
+            trace_id,
+            booking_id,
+        )
+        return await self._persist_post_booking_direct(
+            profile_updates=profile_updates,
+            booking_id=booking_id,
+            booking_candidates=booking_candidates,
+            speaker_role=speaker_role,
+            conversation_id=conversation_id,
+            trace_id=trace_id,
+        )
+
+    async def _persist_post_booking_direct(
+        self,
+        *,
+        profile_updates: list[dict[str, Any]],
+        booking_id: str,
+        booking_candidates: list[BookingSignalCandidate],
+        speaker_role: str,
+        conversation_id: str,
+        trace_id: str,
+    ) -> bool:
+        """Persist accepted post-booking facts to SQL when Redis is unavailable."""
+        try:
+            for update in profile_updates:
+                candidates = _CANDIDATES.validate_python(update.get("candidates") or [])
+                if candidates:
+                    await asyncio.to_thread(
+                        self.profiles.apply,
+                        str(update["profile_id"]),
+                        candidates,
+                        source_ref=conversation_id,
+                        trace_id=trace_id,
+                    )
+            validated_booking = _BOOKING_CANDIDATES.validate_python(booking_candidates)
+            if validated_booking:
+                await asyncio.to_thread(
+                    self.profiles.apply_booking_signals,
+                    booking_id,
+                    validated_booking,
+                    source_participant=speaker_role,
+                    source_ref=conversation_id,
+                )
+            elif booking_id:
+                await asyncio.to_thread(self.profiles.invalidate_booking_profile_summary, booking_id)
+            logger.info(
+                "profile.queue.post_booking_sql_fallback_completed trace_id=%s booking_id=%s",
+                trace_id,
+                booking_id,
+            )
+            return True
+        except Exception:
+            logger.exception(
+                "profile.queue.post_booking_sql_fallback_failed trace_id=%s booking_id=%s",
+                trace_id,
+                booking_id,
+            )
+            return False
 
     def start(self) -> None:
         if self.redis.available and (self._worker_task is None or self._worker_task.done()):

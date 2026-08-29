@@ -374,7 +374,7 @@ class ProfileService:
         with self.db.transaction(immediate=True) as c:
             for candidate in candidates:
                 old = c.execute(
-                    "SELECT id,source_type,source_participant,confidence FROM test_drive_context_signals "
+                    "SELECT id,value_json,source_type,source_participant,confidence FROM test_drive_context_signals "
                     "WHERE booking_id=? AND subject=? AND category=? AND key=? AND status='active' ORDER BY updated_at DESC LIMIT 1",
                     (booking_id, candidate.subject, candidate.category, candidate.key),
                 ).fetchone()
@@ -393,8 +393,27 @@ class ProfileService:
                     confidence = max(confidence, min(1.0, float(old["confidence"] or .5) + .15))
                 if old and candidate.operation == "weaken":
                     confidence = min(confidence, max(0.0, float(old["confidence"] or .5) - .25))
+                value = candidate.value
+                if (
+                    old
+                    and candidate.key == "additional_guest_context"
+                    and candidate.operation in {"add", "strengthen"}
+                ):
+                    try:
+                        old_value = json.loads(old["value_json"])
+                    except (TypeError, json.JSONDecodeError):
+                        old_value = []
+                    old_items = old_value if isinstance(old_value, list) else [old_value]
+                    new_items = value if isinstance(value, list) else [value]
+                    value = []
+                    seen: set[str] = set()
+                    for item in [*old_items, *new_items]:
+                        marker = json.dumps(item, ensure_ascii=False, sort_keys=True)
+                        if marker not in seen:
+                            seen.add(marker)
+                            value.append(item)
                 c.execute("INSERT INTO test_drive_context_signals VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
-                    signal_id, booking_id, candidate.category, candidate.key, json.dumps(candidate.value, ensure_ascii=False),
+                    signal_id, booking_id, candidate.category, candidate.key, json.dumps(value, ensure_ascii=False),
                     candidate.description, candidate.subject, candidate.certainty, confidence, candidate.source_type,
                     source_participant, source_ref, "active", None, now, now,
                 ))
@@ -417,6 +436,28 @@ class ProfileService:
         if not row:
             return None
         return {"summary": str(row["summary_markdown"]), "generated_at": str(row["generated_at"])}
+
+    def booking_profile_summary_is_current(self, booking_id: str, generated_at: str) -> bool:
+        """Check whether a cached brief is newer than every factual source it uses."""
+        with self.db.connect() as c:
+            row = c.execute(
+                """SELECT MAX(source_updated_at) source_updated_at FROM (
+                SELECT b.updated_at source_updated_at FROM bookings b WHERE b.id=?
+                UNION ALL
+                SELECT s.updated_at FROM test_drive_context_signals s
+                WHERE s.booking_id=? AND s.status='active'
+                UNION ALL
+                SELECT ps.updated_at FROM bookings b
+                JOIN user_profile_identities i
+                  ON i.identity_type='person'
+                 AND i.identity_value IN (b.booker_person_id,b.driver_person_id)
+                JOIN user_profile_signals ps ON ps.profile_id=i.profile_id
+                WHERE b.id=? AND ps.status='active'
+                )""",
+                (booking_id, booking_id, booking_id),
+            ).fetchone()
+        source_updated_at = str(row["source_updated_at"] or "") if row else ""
+        return not source_updated_at or generated_at >= source_updated_at
 
     def save_booking_profile_summary(self, booking_id: str, summary: str) -> dict[str, str]:
         """Persist the newest generated sales brief for a booking."""

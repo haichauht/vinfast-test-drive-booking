@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import unicodedata
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -19,6 +20,17 @@ _HOUSEHOLD_SIZE_STATEMENT = re.compile(
     r"\b(?:gia\s+đình|nhà)\s+(?:của\s+)?(?:tôi|mình|em|anh|chị|ta)?\s*"
     r"(?:có|gồm)\s+\d+\s+(?:người|thành\s+viên)\b",
     re.IGNORECASE,
+)
+_POST_BOOKING_SIGNAL_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\b(?:gia dinh|nha)\b.{0,45}\b(?:co|gom)\b.{0,15}\b(?:nguoi|thanh vien)\b",
+        r"\b(?:chong|vo|con|con trai|con gai|be|em be|tre em|bo|me|ong|ba)\b.{0,80}\b(?:di cung|tham gia|den lai thu)\b",
+        r"\b(?:chong|vo|toi|minh|anh|chi|nguoi di cung)\b.{0,70}\b(?:lai thu|lai xe)\b",
+        r"\b(?:muc dich su dung|nhu cau su dung|dung xe chu yeu|su dung xe chinh)\b",
+        r"\b(?:toi|minh|em|anh|chi)\b.{0,35}\b(?:moi co bang|moi lay bang|chua co kinh nghiem lai)\b",
+        r"\b(?:toi noi nham|noi nham|sua lai|dinh chinh|khong di nua|khong tham gia nua|khong lai nua)\b",
+    )
 )
 _FOLLOW_UPS_BLOCK = re.compile(r"<<<FOLLOW_UPS>>>\s*(\[.*?\])\s*<<<END_FOLLOW_UPS>>>", re.DOTALL)
 _TEST_DRIVE_TERMS = ("lái thử", "lai thu", "buổi lái", "buoi lai", "kiểm tra", "kiem tra")
@@ -55,6 +67,13 @@ def get_post_booking_prompt() -> str:
     return SKILL_PATH.read_text(encoding="utf-8")
 
 
+def _folded_text(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", value.casefold()).replace("đ", "d")
+    return " ".join(
+        "".join(character for character in decomposed if not unicodedata.combining(character)).split()
+    )
+
+
 def _requires_profile_capture(messages: Sequence[object]) -> bool:
     """Identify explicit, durable statements that must not be answered without capture.
 
@@ -63,11 +82,13 @@ def _requires_profile_capture(messages: Sequence[object]) -> bool:
     when the model prioritizes a knowledge-search tool for the same turn.
     """
     last = messages[-1] if messages else None
-    return bool(
-        last
-        and getattr(last, "type", "") == "human"
-        and _HOUSEHOLD_SIZE_STATEMENT.search(str(getattr(last, "content", "")))
-    )
+    if not last or getattr(last, "type", "") != "human":
+        return False
+    content = str(getattr(last, "content", ""))
+    if _HOUSEHOLD_SIZE_STATEMENT.search(content):
+        return True
+    folded = _folded_text(content)
+    return any(pattern.search(folded) for pattern in _POST_BOOKING_SIGNAL_PATTERNS)
 
 
 def _last_user_text(messages: Sequence[object]) -> str:
@@ -88,6 +109,21 @@ def _tool_call_prose_before(messages: Sequence[object]) -> str:
             prose, _ = _extract_follow_ups(extract_response_text(message))
             return prose
     return ""
+
+
+def _profile_update_failure(message: object) -> str | None:
+    if not isinstance(message, ToolMessage) or getattr(message, "name", "") != update_post_booking_signals.name:
+        return None
+    try:
+        payload = json.loads(str(message.content))
+    except (TypeError, json.JSONDecodeError):
+        return None
+    status = str(payload.get("status") or "") if isinstance(payload, dict) else ""
+    if status == "unavailable":
+        return "ViVi chưa lưu được thông tin này do hệ thống lưu hồ sơ đang tạm gián đoạn. Vui lòng thử lại sau."
+    if status == "skipped":
+        return "ViVi chưa xác định đủ dữ liệu để lưu thông tin này. Bạn vui lòng nói rõ thông tin cần ghi nhận cho buổi lái thử."
+    return None
 
 
 def _knowledge_fact_score(fact: dict, user_text: str) -> int:
@@ -181,6 +217,16 @@ async def post_booking_skill_node(state: AgentState, config: RunnableConfig | No
     last = messages[-1] if messages else None
     if isinstance(last, ToolMessage):
         trace_event("tool.result", trace_id=trace_id, node="post_booking_skill", tool_message=message_to_log(last))
+        update_failure = _profile_update_failure(last)
+        if update_failure:
+            response = AIMessage(content=update_failure)
+            return {
+                "messages": [response],
+                "response": update_failure,
+                "active_skill": "post_booking",
+                "post_booking_context": booking_context,
+                "metadata": metadata,
+            }
     try:
         llm = get_llm()
         grounded_knowledge_response = _render_grounded_knowledge_response(last, _last_user_text(messages))
