@@ -103,17 +103,25 @@ PROMPT_INJECTION_PATTERNS: tuple[tuple[str, str], ...] = (
     (
         "SECRET_EXFILTRATION",
         r"\b(?:hiển\s+thị|tiết\s+lộ|in\s+ra|trả\s+về|đọc\s+ra)\b.{0,80}"
-        r"\b(?:system\s*prompt|chỉ\s+thị\s+ẩn|khóa\s*api|api\s*key|token|biến\s+môi\s+trường|bí\s+mật)\b",
+        r"\b(?:system\s*prompt|chỉ\s+thị\s+ẩn|khóa\s*api|api\s*key|"
+        r"(?:access|auth|bearer|đăng\s+nhập|truy\s+cập|hệ\s+thống)\s*token|"
+        r"token\s*(?:đăng\s+nhập|truy\s+cập|xác\s+thực|hệ\s+thống)|"
+        r"biến\s+môi\s+trường|bí\s+mật)\b",
     ),
     (
         "SECRET_EXFILTRATION",
         r"\b(?:hien\s+thi|tiet\s+lo|in\s+ra|tra\s+ve|doc\s+ra)\b.{0,80}"
-        r"\b(?:system\s*prompt|chi\s+thi\s+an|khoa\s*api|api\s*key|token|bien\s+moi\s+truong|bi\s+mat)\b",
+        r"\b(?:system\s*prompt|chi\s+thi\s+an|khoa\s*api|api\s*key|"
+        r"(?:access|auth|bearer|dang\s+nhap|truy\s+cap|he\s+thong)\s*token|"
+        r"token\s*(?:dang\s+nhap|truy\s+cap|xac\s+thuc|he\s+thong)|"
+        r"bien\s+moi\s+truong|bi\s+mat)\b",
     ),
     (
         "SECRET_EXFILTRATION",
         r"\b(?:cho|gui|dua|lay)\s+(?:giup\s+)?toi\b.{0,80}"
-        r"\b(?:token|khoa\s*api|api\s*key|bi\s+mat|chi\s+thi\s+an|system\s*prompt)\b",
+        r"\b(?:(?:access|auth|bearer|dang\s+nhap|truy\s+cap|he\s+thong)\s*token|"
+        r"token\s*(?:dang\s+nhap|truy\s+cap|xac\s+thuc|he\s+thong)|"
+        r"khoa\s*api|api\s*key|bi\s+mat|chi\s+thi\s+an|system\s*prompt)\b",
     ),
     (
         "PRIVACY_EXFILTRATION",

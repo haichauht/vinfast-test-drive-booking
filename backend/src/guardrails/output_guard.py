@@ -9,6 +9,7 @@ from src.guardrails.policies import (
     NEVER_PUBLIC_ACTION_DATA_KEYS,
     PUBLIC_TOOL_INPUT_SECRET_KEYS,
     SECRET_VALUE_KEYS,
+    canonicalize_sensitive_key,
     is_sensitive_key,
 )
 from src.guardrails.structure import normalize_text
@@ -48,6 +49,14 @@ _SAFE_LEAK_FALLBACK = (
     "Tôi có thể hỗ trợ thông tin xe VinFast và đặt lịch lái thử."
 )
 
+_PUBLIC_CONTACT_CONTAINER_KEYS = frozenset(
+    {"advisor", "salesadvisor", "salesstaff", "showroom", "showrooms"}
+)
+_PUBLIC_CONTACT_VALUE_KEYS = frozenset({"email", "hotline", "phone"})
+_PRIVATE_CONTACT_CONTAINER_KEYS = frozenset(
+    {"booker", "customer", "driver", "participant", "person", "profile"}
+)
+
 
 class OutputGuard:
     def __init__(self, *, max_output_chars: int) -> None:
@@ -55,7 +64,12 @@ class OutputGuard:
 
     def protect(self, result: Mapping[str, Any]) -> ProtectedOutput:
         secret_values = _collect_secret_values(result)
-        response = self._sanitize_text(result.get("response", ""), secret_values=secret_values)
+        public_contacts = _collect_trusted_public_contacts(result.get("action_result"))
+        response = self._sanitize_text(
+            result.get("response", ""),
+            secret_values=secret_values,
+            public_contacts=public_contacts,
+        )
         action_error = self._sanitize_text(result.get("action_error", ""), secret_values=secret_values)
         action_input = result.get("action_input")
         tool_input = _redact_mapping(
@@ -72,10 +86,28 @@ class OutputGuard:
             action_error=action_error,
         )
 
-    def _sanitize_text(self, value: Any, *, secret_values: set[str]) -> str:
+    def _sanitize_text(
+        self,
+        value: Any,
+        *,
+        secret_values: set[str],
+        public_contacts: set[str] | None = None,
+    ) -> str:
         text = normalize_text(value if isinstance(value, str) else str(value or ""))
         if _SYSTEM_PROMPT_LEAK_RE.search(text):
             return _SAFE_LEAK_FALLBACK
+
+        # Only backend tool data under an explicitly public role may exempt a
+        # contact from PII redaction. Model text and customer/driver contacts
+        # stay private by default.
+        placeholders: dict[str, str] = {}
+        allowed_contacts = (public_contacts or set()) - secret_values
+        for index, contact in enumerate(sorted(allowed_contacts, key=len, reverse=True)):
+            normalized_contact = normalize_text(contact)
+            if normalized_contact and normalized_contact in text:
+                placeholder = f"PUBLICCONTACTPLACEHOLDER{index}"
+                text = text.replace(normalized_contact, placeholder)
+                placeholders[placeholder] = normalized_contact
 
         for secret in sorted(secret_values, key=len, reverse=True):
             if len(secret) >= 4:
@@ -85,6 +117,8 @@ class OutputGuard:
         text = _EMAIL_RE.sub("[email]", text)
         text = _PHONE_RE.sub("[phone]", text)
         text = _VIETNAM_ID_RE.sub("[personal-id]", text)
+        for placeholder, contact in placeholders.items():
+            text = text.replace(placeholder, contact)
         if len(text) > self.max_output_chars:
             text = text[: self.max_output_chars] + "…[truncated]"
         return text
@@ -100,6 +134,34 @@ def _collect_secret_values(value: Any, *, key: str = "") -> set[str]:
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         for nested in value:
             found.update(_collect_secret_values(nested, key=key))
+    return found
+
+
+def _collect_trusted_public_contacts(
+    value: Any,
+    *,
+    path: tuple[str, ...] = (),
+) -> set[str]:
+    """Read public contacts only from typed backend action-result containers."""
+    found: set[str] = set()
+    if isinstance(value, Mapping):
+        for nested_key, nested in value.items():
+            canonical_key = canonicalize_sensitive_key(str(nested_key))
+            nested_path = (*path, canonical_key)
+            has_public_source = any(key in _PUBLIC_CONTACT_CONTAINER_KEYS for key in path)
+            has_private_source = any(key in _PRIVATE_CONTACT_CONTAINER_KEYS for key in path)
+            if (
+                canonical_key in _PUBLIC_CONTACT_VALUE_KEYS
+                and has_public_source
+                and not has_private_source
+                and isinstance(nested, str)
+                and nested
+            ):
+                found.add(normalize_text(nested))
+            found.update(_collect_trusted_public_contacts(nested, path=nested_path))
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        for nested in value:
+            found.update(_collect_trusted_public_contacts(nested, path=path))
     return found
 
 

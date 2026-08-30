@@ -14,6 +14,7 @@ from src.agents.constants import (
     BOOKING_CANCEL_KEYWORDS,
     BOOKING_MUTATION_KEYWORDS,
     BOOKING_RESCHEDULE_KEYWORDS,
+    HO_CHI_MINH_HISTORY_KEYWORDS,
     LOOKUP_KEYWORDS,
     OUT_OF_SCOPE_KEYWORDS,
     PUBLIC_LLM_UNAVAILABLE_CODE,
@@ -65,11 +66,54 @@ _POST_BOOKING_QA_TERMS = (
 )
 _COMMERCIAL_TERMS = ("gia", "khuyen mai", "uu dai", "tra gop", "tai chinh", "giam gia")
 
+_CIVIC_DOMAIN_TERMS = (
+    "duong",
+    "dia chi",
+    "vi tri",
+    "dinh vi",
+    "showroom",
+    "gan nhat",
+    "dat lich",
+    "lai thu",
+    "chay thu",
+    "chon xe",
+    "chon showroom",
+)
+_PARTY_TOPIC_TERMS = (
+    "thanh lap",
+    "ra doi",
+    "lich su",
+    "vai tro",
+    "lanh dao",
+    "dieu 4",
+    "ai sang lap",
+    "ngay nao",
+    "nam nao",
+    "la gi",
+)
+
 
 def _route_text(value: object) -> str:
     normalized = unicodedata.normalize("NFD", str(value or "").casefold().replace("đ", "d"))
     without_marks = "".join(character for character in normalized if unicodedata.category(character) != "Mn")
     return " ".join(re.findall(r"[a-z0-9@.]+", without_marks))
+
+
+def _has_civic_domain_context(query: str) -> bool:
+    """Recognize civic words used as ordinary booking/location context."""
+    normalized = _route_text(query)
+    return any(term in normalized for term in _CIVIC_DOMAIN_TERMS)
+
+
+def _is_party_history_query(query: str) -> bool:
+    normalized = _route_text(query)
+    if _has_civic_domain_context(query):
+        return False
+    if "dang cong san viet nam" in normalized:
+        return True
+    return bool(re.search(r"\bdang\b", normalized)) and any(
+        term in normalized for term in _PARTY_TOPIC_TERMS
+    )
 
 
 def _recent_discovery_context(messages: object) -> bool:
@@ -266,13 +310,48 @@ async def classifier_node(state: AgentState, config: RunnableConfig | None = Non
     # Check basic keywords as immediate priority bypass for sensitive subjects
     # to avoid LLM hallucinations and save API token cost
     lower_query = query.lower()
+    has_civic_domain_context = _has_civic_domain_context(query)
 
-    if any(kw in lower_query for kw in SOVEREIGNTY_KEYWORDS):
+    if (
+        not has_civic_domain_context
+        and any(kw in lower_query for kw in HO_CHI_MINH_HISTORY_KEYWORDS)
+    ):
+        trace_event(
+            "classifier.keyword_route",
+            trace_id=trace_id,
+            intent="sensitive",
+            sub_intent="ho_chi_minh_history",
+        )
+        return {
+            "intent": "sensitive",
+            "messages": [HumanMessage(content=query)],
+            "metadata": {**metadata, "sub_intent": "ho_chi_minh_history"},
+            "tool_call_count": 0,
+        }
+
+    if (
+        not has_civic_domain_context
+        and any(kw in lower_query for kw in SOVEREIGNTY_KEYWORDS)
+    ):
         trace_event("classifier.keyword_route", trace_id=trace_id, intent="sensitive", sub_intent="sovereignty")
         return {
             "intent": "sensitive",
             "messages": [HumanMessage(content=query)],
             "metadata": {**metadata, "sub_intent": "sovereignty"},
+            "tool_call_count": 0,
+        }
+
+    if _is_party_history_query(query):
+        trace_event(
+            "classifier.keyword_route",
+            trace_id=trace_id,
+            intent="sensitive",
+            sub_intent="party_history",
+        )
+        return {
+            "intent": "sensitive",
+            "messages": [HumanMessage(content=query)],
+            "metadata": {**metadata, "sub_intent": "party_history"},
             "tool_call_count": 0,
         }
 

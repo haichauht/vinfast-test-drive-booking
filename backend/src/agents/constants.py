@@ -18,6 +18,18 @@ SOVEREIGNTY_KEYWORDS: list[str] = [
     "spratly",
 ]
 
+# Benign civic/history questions that require a stable, deterministic answer.
+# Keep person phrases specific so a booking location such as "ở Hồ Chí Minh"
+# continues through the normal location flow.
+HO_CHI_MINH_HISTORY_KEYWORDS: list[str] = [
+    "chủ tịch hồ chí minh",
+    "chủ tịch hcm",
+    "chu tich ho chi minh",
+    "chu tich hcm",
+    "bác hồ",
+    "bac ho",
+]
+
 OUT_OF_SCOPE_KEYWORDS: list[str] = [
     "viết code",
     "lập trình",

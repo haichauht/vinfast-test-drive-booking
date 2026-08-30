@@ -23,6 +23,72 @@ def test_redacts_secrets_and_pii_from_natural_language_output():
     assert "[email]" in protected.response
 
 
+def test_preserves_public_advisor_contact_from_typed_backend_result():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": "Tư vấn viên: 09131302323, son.advisor@vinfast.vn",
+            "action_result": {
+                "advisor": {
+                    "full_name": "Lê Mai Sơn",
+                    "phone": "09131302323",
+                    "email": "son.advisor@vinfast.vn",
+                }
+            },
+        }
+    )
+
+    assert "09131302323" in protected.response
+    assert "son.advisor@vinfast.vn" in protected.response
+
+
+def test_preserves_public_showroom_contact_from_typed_backend_result_list():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": "Showroom: 0901234567, showroom@vinfast.vn",
+            "action_result": {
+                "showrooms": [
+                    {
+                        "name": "VinFast Test",
+                        "phone": "0901234567",
+                        "email": "showroom@vinfast.vn",
+                    }
+                ]
+            },
+        }
+    )
+
+    assert "0901234567" in protected.response
+    assert "showroom@vinfast.vn" in protected.response
+
+
+def test_still_redacts_customer_contact_even_when_backend_result_contains_it():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {
+            "response": "Khách: 0987654321, customer@example.com",
+            "action_result": {
+                "customer": {
+                    "phone": "0987654321",
+                    "email": "customer@example.com",
+                }
+            },
+        }
+    )
+
+    assert "0987654321" not in protected.response
+    assert "customer@example.com" not in protected.response
+    assert "[phone]" in protected.response
+    assert "[email]" in protected.response
+
+
+def test_model_only_contact_claim_is_not_treated_as_trusted_public_data():
+    protected = OutputGuard(max_output_chars=8000).protect(
+        {"response": "Showroom: 0901234567, showroom@example.com"}
+    )
+
+    assert "0901234567" not in protected.response
+    assert "showroom@example.com" not in protected.response
+
+
 def test_hides_analysis_and_redacts_public_diagnostic_tool_input():
     protected = OutputGuard(max_output_chars=8000).protect(
         {
