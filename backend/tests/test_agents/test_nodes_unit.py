@@ -281,6 +281,82 @@ async def test_classifier_sensitive_keyword_bypasses_llm(monkeypatch):
     get_llm.assert_not_called()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "expected_sub_intent"),
+    [
+        ("Đảng Cộng sản Việt Nam được thành lập khi nào?", "party_history"),
+        ("Chủ tịch Hồ Chí Minh là ai?", "ho_chi_minh_history"),
+        ("Bác Hồ sinh năm nào?", "ho_chi_minh_history"),
+    ],
+)
+async def test_classifier_civic_history_keywords_bypass_llm(
+    monkeypatch,
+    query,
+    expected_sub_intent,
+):
+    get_llm = MagicMock(side_effect=AssertionError("LLM must not be called"))
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", get_llm)
+
+    result = await classifier_node({"query": query})
+
+    assert result["intent"] == "sensitive"
+    assert result["metadata"]["sub_intent"] == expected_sub_intent
+    get_llm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_classifier_does_not_confuse_ho_chi_minh_city_with_the_person(monkeypatch):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        return_value=RouteSchema(
+            intent="domain",
+            sub_intent="booking_new",
+            has_schedule_preference=False,
+        )
+    )
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+
+    result = await classifier_node({"query": "Tôi đang ở Hồ Chí Minh"})
+
+    assert result["intent"] == "domain"
+    assert result["metadata"]["sub_intent"] == "booking_new"
+    structured.ainvoke.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Tôi ở đường Trường Sa, TP.HCM, tìm showroom gần nhất",
+        "Tôi ở đường Hoàng Sa, Đà Nẵng và muốn lái thử VF 9",
+        "Tôi là đảng viên và muốn đặt lịch lái thử VF 3",
+    ],
+)
+async def test_classifier_civic_words_in_booking_context_use_domain_route(monkeypatch, query):
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        return_value=RouteSchema(
+            intent="domain",
+            sub_intent="booking_new",
+            has_schedule_preference=False,
+        )
+    )
+    llm = MagicMock()
+    llm.model_name = "test-classifier"
+    llm.with_structured_output.return_value = structured
+    monkeypatch.setattr(classifier_module, "get_classifier_llm", lambda: llm)
+
+    result = await classifier_node({"query": query})
+
+    assert result["intent"] == "domain"
+    assert result["metadata"]["sub_intent"] == "booking_new"
+    structured.ainvoke.assert_awaited_once()
+
+
 # test case of Chau + kiểm tra classifier map sub intent domain sang đúng active skill
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -592,6 +668,8 @@ async def test_classifier_rejects_unknown_llm_intent(monkeypatch):
     ("sub_intent", "expected_text"),
     [
         ("sovereignty", "Việt Nam"),
+        ("party_history", "3/2/1930"),
+        ("ho_chi_minh_history", "1890–1969"),
         ("out_of_scope_code", "không hỗ trợ viết mã"),
         ("out_of_scope_math", "giải các bài toán"),
         ("out_of_scope", "tìm showroom"),

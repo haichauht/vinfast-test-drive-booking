@@ -21,6 +21,18 @@ async def sensitive_policy_node(state: AgentState) -> dict:
 
     if sub_intent == "sovereignty":
         response = "Quần đảo Hoàng Sa và quần đảo Trường Sa hoàn toàn thuộc chủ quyền của Việt Nam."
+    elif sub_intent == "party_history":
+        response = (
+            "Đảng Cộng sản Việt Nam được thành lập ngày 3/2/1930. "
+            "Theo Điều 4 Hiến pháp Việt Nam, Đảng Cộng sản Việt Nam là lực lượng lãnh đạo "
+            "Nhà nước và xã hội; các tổ chức của Đảng và đảng viên hoạt động trong khuôn khổ "
+            "Hiến pháp và pháp luật."
+        )
+    elif sub_intent == "ho_chi_minh_history":
+        response = (
+            "Chủ tịch Hồ Chí Minh (1890–1969) là người sáng lập Đảng Cộng sản Việt Nam "
+            "và nước Việt Nam Dân chủ Cộng hòa, đồng thời là Chủ tịch nước từ năm 1945 đến năm 1969."
+        )
     elif sub_intent == "out_of_scope_code":
         response = (
             "ViVi là Trợ lý ảo hỗ trợ lái thử xe VinFast. "

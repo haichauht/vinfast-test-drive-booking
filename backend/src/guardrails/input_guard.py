@@ -86,6 +86,52 @@ _SHOWROOM_CONTEXT_STAGES = frozenset({"choose_slot", "collect_info", "review", "
 _SLOT_CONTEXT_STAGES = frozenset({"collect_info", "review", "success"})
 _NEARBY_SHOWROOM_CONTEXT_STAGES = frozenset({"choose_showroom", "choose_slot"})
 
+_QUOTED_SPAN_RE = re.compile(
+    r'"[^"\n]*"|\'[^\'\n]*\'|`[^`\n]*`|“[^”\n]*”',
+    re.IGNORECASE,
+)
+_SECURITY_VOCABULARY_RE = re.compile(
+    r"\b(?:ignore|disregard|override|bypass|prompt\s+injection|system\s+prompt|"
+    r"bo\s+qua|phot\s+lo|ghi\s+de|vuot\s+qua|chi\s+thi\s+an)\b",
+    re.IGNORECASE,
+)
+_EXPLANATORY_SECURITY_RE = re.compile(
+    r"\b(?:explain|meaning|what\s+does|why\s+is|example\s+of|quoted|quote|"
+    r"giai\s+thich|nghia\s+la\s+gi|tai\s+sao|vi\s+sao|phan\s+tich|"
+    r"vi\s+du|trich\s+dan|cau|cum\s+tu)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_EXECUTION_RE = re.compile(
+    r"\b(?:please|kindly|hay|vui\s+long)\s+(?:execute|run|follow|obey|"
+    r"ignore|disregard|override|bypass|bo\s+qua|ghi\s+de|"
+    r"lam\s+theo|thuc\s+thi|thuc\s+hien|ap\s+dung)\b|"
+    r"\b(?:and\s+then|then|roi|sau\s+do)\b.{0,80}"
+    r"\b(?:reveal|show|dump|execute|run|ignore|disregard|override|bypass|"
+    r"bo\s+qua|ghi\s+de|tiet\s+lo|hien\s+thi|in\s+ra)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_QUOTED_IMPERATIVE_RE = re.compile(
+    r"^\s*(?:please|kindly|hay|vui\s+long)\b(?!\s*(?:explain|analyze|"
+    r"giai\s+thich|phan\s+tich))",
+    re.IGNORECASE,
+)
+
+
+def _is_benign_security_discussion(value: str) -> bool:
+    """Allow quoted or explanatory security vocabulary, never an execution request."""
+    folded = fold_text_for_policy(value)
+    quoted_spans = _QUOTED_SPAN_RE.findall(folded)
+    without_quotes = _QUOTED_SPAN_RE.sub(" ", folded)
+    quoted_example = any(_SECURITY_VOCABULARY_RE.search(span) for span in quoted_spans)
+    explanatory = bool(_EXPLANATORY_SECURITY_RE.search(folded))
+    if not quoted_example and not explanatory:
+        return False
+    execution_text = without_quotes if quoted_example else folded
+    return not (
+        _EXPLICIT_EXECUTION_RE.search(execution_text)
+        or (quoted_example and _QUOTED_IMPERATIVE_RE.search(execution_text))
+    )
+
 
 class InputGuard:
     def __init__(self, payload_limits: PayloadLimits) -> None:
@@ -135,7 +181,13 @@ class InputGuard:
         for candidate in candidates:
             normalized_candidate = normalize_text(candidate)
             folded_candidate = fold_text_for_policy(normalized_candidate)
+            benign_security_discussion = _is_benign_security_discussion(normalized_candidate)
             for code, pattern in self._injection_patterns:
+                if benign_security_discussion and code in {
+                    "PROMPT_INJECTION_OVERRIDE",
+                    "ROLE_INJECTION",
+                }:
+                    continue
                 if pattern.search(normalized_candidate) or pattern.search(folded_candidate):
                     return GuardrailDecision.block(
                         code,
