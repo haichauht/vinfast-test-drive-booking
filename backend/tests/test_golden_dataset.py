@@ -41,6 +41,25 @@ def test_all_declared_agent_cases_are_active_and_negative_cases_are_unique():
     assert all(case["review_status"] == "AUTOMATED_REGRESSION_NOT_HUMAN_REVIEWED" for case in negative["cases"])
 
 
+def test_profile_sales_brief_focused_dataset_is_separate_and_three_layered():
+    dataset = _read("profile_sales_brief_cases.json")
+    cases = dataset["cases"]
+
+    assert dataset["dataset_name"] == "vinfast_profile_sales_brief_focused"
+    assert dataset["case_count"] == len(cases) == 10
+    assert len({case["case_id"] for case in cases}) == 10
+    assert all(case["evaluation_setup"]["kind"] == "post_booking" for case in cases)
+    assert all(case["turns"][-1] == {"role": "portal", "action": "generate_sales_brief"} for case in cases)
+    assert all(
+        any(item.get("assertion") == "sales_brief_exists" for item in case["expected"]["database_assertions"])
+        for case in cases
+    )
+    assert any(
+        any(str(item.get("assertion") or "").startswith("no_active_") for item in case["expected"]["database_assertions"])
+        for case in cases
+    )
+
+
 def test_stateful_cases_declare_executable_setup_and_workflow_turns():
     cases = {case["case_id"]: case for case in _read("agent_cases.json")["cases"]}
 

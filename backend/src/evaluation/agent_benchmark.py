@@ -2486,6 +2486,50 @@ async def _persist_eval_post_booking_signals(
     return True
 
 
+async def _generate_eval_sales_profile(
+    profile_service: Any,
+    internal_portal_service: Any,
+    *,
+    booking_id: str,
+    usage: _UsageCollector,
+) -> dict[str, Any]:
+    """Run the production sales-brief path and include its LLM usage in the eval."""
+    from src.internal_portal.auth import InternalPrincipal, InternalRole
+    from src.services.llm import summarize_user_profile
+
+    principal = InternalPrincipal(
+        user_id="evaluation-sales-admin",
+        username="evaluation.sales",
+        display_name="Evaluation Sales",
+        role=InternalRole.OPERATIONS_ADMIN,
+        staff_id=None,
+        showroom_ids=(),
+    )
+    booking = internal_portal_service.get_booking(principal, booking_id)
+    if booking.get("status") not in {"confirmed", "cancelled"}:
+        raise RuntimeError("Sales profile requires a confirmed or cancelled booking")
+    source = await asyncio.to_thread(profile_service.booking_profiles_context, booking_id)
+    source["test_drive_context"] = await asyncio.to_thread(
+        profile_service.booking_context_signals,
+        booking_id,
+    )
+    markdown = await summarize_user_profile(source, config={"callbacks": [usage]})
+    stored = await asyncio.to_thread(
+        profile_service.save_booking_profile_summary,
+        booking_id,
+        markdown,
+    )
+    return {
+        "status": "completed",
+        "booking_id": booking_id,
+        "source": "generated",
+        "generated_at": stored["generated_at"],
+        "brief_length": len(stored["summary"]),
+        "brief": stored["summary"],
+        "portal_profile_available": booking.get("customer_profile") is not None,
+    }
+
+
 def _capture_action_bindings(bindings: dict[str, Any], action_result: Any) -> None:
     if not isinstance(action_result, Mapping):
         return
@@ -2767,12 +2811,25 @@ def _evaluate_database_assertions(
             expected_error = str(assertion["expect_error"])
             passed = action_error == expected_error
             evidence = {"expected_error": expected_error, "actual_error": action_error}
-        elif assertion.get("assertion") in {"active_profile_signal", "active_booking_signal"}:
+        elif assertion.get("assertion") in {
+            "active_profile_signal",
+            "active_booking_signal",
+            "no_active_profile_signal",
+            "no_active_booking_signal",
+        }:
             assertion_kind = str(assertion["assertion"])
             key = str(assertion.get("key") or "")
             expected_value = assertion.get("value")
             subject = str(assertion.get("subject") or "")
-            if assertion_kind == "active_profile_signal":
+            profile_assertion = assertion_kind in {
+                "active_profile_signal",
+                "no_active_profile_signal",
+            }
+            absence_assertion = assertion_kind in {
+                "no_active_profile_signal",
+                "no_active_booking_signal",
+            }
+            if profile_assertion:
                 owner_id = str(bindings.get("eval.profile_id") or "")
                 sql = (
                     "SELECT value_json FROM user_profile_signals "
@@ -2790,7 +2847,17 @@ def _evaluate_database_assertions(
             with database.connect() as connection:
                 row = connection.execute(sql, parameters).fetchone() if owner_id and key else None
             actual_value = json.loads(row["value_json"]) if row else None
-            passed = row is not None and actual_value == expected_value
+            value_contains = [str(term) for term in assertion.get("value_contains") or []]
+            contains_checks = {
+                term: _normalize_text(term) in _normalize_text(json.dumps(actual_value, ensure_ascii=False))
+                for term in value_contains
+            }
+            if absence_assertion:
+                passed = row is None
+            elif value_contains:
+                passed = row is not None and all(contains_checks.values())
+            else:
+                passed = row is not None and actual_value == expected_value
             evidence = {
                 "assertion": assertion_kind,
                 "owner_id": owner_id,
@@ -2798,6 +2865,50 @@ def _evaluate_database_assertions(
                 "subject": subject or None,
                 "expected_value": expected_value,
                 "actual_value": actual_value,
+                "value_contains_checks": contains_checks,
+            }
+        elif assertion.get("assertion") == "sales_brief_exists":
+            booking_id = str(bindings.get("eval.current_booking_id") or bindings.get("action.booking_id") or "")
+            with database.connect() as connection:
+                row = (
+                    connection.execute(
+                        "SELECT summary_markdown,generated_at FROM booking_profile_summaries WHERE booking_id=?",
+                        (booking_id,),
+                    ).fetchone()
+                    if booking_id
+                    else None
+                )
+            markdown = str(row["summary_markdown"] or "") if row else ""
+            minimum_length = int(assertion.get("minimum_length") or 1)
+            forbidden_terms = [str(term) for term in assertion.get("forbidden_terms") or []]
+            required_terms = [str(term) for term in assertion.get("required_terms") or []]
+            occurrence_limits = {
+                str(term): int(limit)
+                for term, limit in (assertion.get("maximum_occurrences") or {}).items()
+            }
+            normalized_markdown = _normalize_text(markdown)
+            required_checks = {term: _normalize_text(term) in normalized_markdown for term in required_terms}
+            forbidden_checks = {term: _normalize_text(term) in normalized_markdown for term in forbidden_terms}
+            occurrence_checks = {
+                term: normalized_markdown.count(_normalize_text(term)) <= limit
+                for term, limit in occurrence_limits.items()
+            }
+            passed = (
+                row is not None
+                and len(markdown.strip()) >= minimum_length
+                and all(required_checks.values())
+                and not any(forbidden_checks.values())
+                and all(occurrence_checks.values())
+            )
+            evidence = {
+                "assertion": "sales_brief_exists",
+                "booking_id": booking_id,
+                "stored": row is not None,
+                "generated_at": str(row["generated_at"]) if row else None,
+                "brief_length": len(markdown),
+                "required_term_checks": required_checks,
+                "forbidden_term_checks": forbidden_checks,
+                "maximum_occurrence_checks": occurrence_checks,
             }
         elif assertion.get("attempt_count") == "increment":
             old = int(before[index].get("value", 0))
@@ -3187,7 +3298,9 @@ async def run_live_predictions(
             if max_cases is not None:
                 selected = selected[:max_cases]
             has_post_booking_cases = any(
-                (case.get("evaluation_setup") or {}).get("kind") == "post_booking" for case in selected
+                (case.get("evaluation_setup") or {}).get("kind") == "post_booking"
+                or bool((case.get("evaluation_setup") or {}).get("continue_to_sales_profile"))
+                for case in selected
             )
             runtime_profile_queue = getattr(runtime_dependencies, "profile_update_queue", None)
             if (
@@ -3228,6 +3341,7 @@ async def run_live_predictions(
                 all_calls: list[dict[str, Any]] = []
                 turn_traces: list[dict[str, Any]] = []
                 final_result: dict[str, Any] = {}
+                sales_profile_result: dict[str, Any] = {}
                 try:
                     booking_service = runtime_booking_service
 
@@ -3272,6 +3386,43 @@ async def run_live_predictions(
                                     "turn": turn_index,
                                     "role": "fixture",
                                     "fixture_action": fixture_action,
+                                }
+                            )
+                            continue
+                        if role == "portal":
+                            executed_turns += 1
+                            portal_started = time.perf_counter()
+                            usage_before = usage.as_dict()
+                            portal_action = str(turn.get("action") or "")
+                            if portal_action != "generate_sales_brief":
+                                raise ValueError(f"Unsupported portal action: {portal_action!r}")
+                            booking_id = str(
+                                bindings.get("eval.current_booking_id")
+                                or bindings.get("action.booking_id")
+                                or ""
+                            )
+                            if not booking_id:
+                                raise RuntimeError("generate_sales_brief requires a confirmed booking binding")
+                            sales_profile_result = await _generate_eval_sales_profile(
+                                runtime_dependencies.profile_service,
+                                runtime_dependencies.internal_portal_service,
+                                booking_id=booking_id,
+                                usage=usage,
+                            )
+                            final_response = str(sales_profile_result.get("brief") or "")
+                            turn_traces.append(
+                                {
+                                    "turn": turn_index,
+                                    "role": "portal",
+                                    "action": portal_action,
+                                    "status": sales_profile_result.get("status"),
+                                    "source": sales_profile_result.get("source"),
+                                    "brief_length": sales_profile_result.get("brief_length"),
+                                    "portal_profile_available": sales_profile_result.get(
+                                        "portal_profile_available"
+                                    ),
+                                    "latency_ms": round((time.perf_counter() - portal_started) * 1000, 2),
+                                    "token_usage": usage.delta(usage_before),
                                 }
                             )
                             continue
@@ -3337,6 +3488,39 @@ async def run_live_predictions(
                                 if isinstance(decoded_result, Mapping) and "error" not in decoded_result:
                                     _capture_action_bindings(bindings, decoded_result)
                                     break
+                            action_result = final_result.get("action_result")
+                            setup = case.get("evaluation_setup") or {}
+                            if (
+                                setup.get("continue_to_sales_profile")
+                                and final_result.get("action_tool") == "confirm_test_drive_booking"
+                                and isinstance(action_result, Mapping)
+                                and action_result.get("status") == "confirmed"
+                            ):
+                                booking_id = str(action_result.get("booking_id") or "")
+                                promoted = runtime_dependencies.profile_service.promote_from_booking(
+                                    trusted_agent_state.get("profile_id") or None,
+                                    booking_id,
+                                    source="evaluation_booking_confirmed",
+                                    trace_id=f"eval-{case['case_id']}-confirm",
+                                )
+                                if promoted is None:
+                                    raise RuntimeError("Confirmed booking could not be promoted to a profile")
+                                bindings["eval.current_booking_id"] = booking_id
+                                bindings["eval.profile_id"] = promoted.id
+                                trusted_agent_state.update(
+                                    {
+                                        "profile_id": promoted.id,
+                                        "profile_context": {},
+                                        "post_booking_context": {
+                                            "active": True,
+                                            **runtime_dependencies.profile_service.booking_context(booking_id),
+                                        },
+                                        "participant_context": runtime_dependencies.profile_service.participant_context(
+                                            booking_id,
+                                            "booker",
+                                        ),
+                                    }
+                                )
                         all_calls.extend(new_calls)
                         turn_classifier_intent = "guardrail" if guardrail_blocked else final_result.get("intent")
                         turn_metadata = final_result.get("metadata")
@@ -3433,6 +3617,7 @@ async def run_live_predictions(
                         ),
                         "turn_count": executed_turns,
                         "turns": turn_traces,
+                        "sales_profile": sales_profile_result,
                         "latency_ms": round((time.perf_counter() - case_started) * 1000, 2),
                         "token_usage": usage.as_dict(),
                     }
