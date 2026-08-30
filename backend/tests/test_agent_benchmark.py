@@ -220,12 +220,20 @@ def test_signal_database_assertions_verify_persisted_values(tmp_path):
             "booking_id TEXT,subject TEXT,key TEXT,value_json TEXT,status TEXT,updated_at TEXT)"
         )
         connection.execute(
+            "CREATE TABLE booking_profile_summaries("
+            "booking_id TEXT,summary_markdown TEXT,generated_at TEXT)"
+        )
+        connection.execute(
             "INSERT INTO user_profile_signals VALUES(?,?,?,?,?)",
             ("profile-1", "household_size", "4", "active", "2026-08-28"),
         )
         connection.execute(
             "INSERT INTO test_drive_context_signals VALUES(?,?,?,?,?,?)",
             ("booking-1", "booker", "booker_attending", "true", "active", "2026-08-28"),
+        )
+        connection.execute(
+            "INSERT INTO booking_profile_summaries VALUES(?,?,?)",
+            ("booking-1", "# Brief cho sales\n\nGia đình có 4 người.", "2026-08-28"),
         )
 
     database = Database(path)
@@ -237,17 +245,35 @@ def test_signal_database_assertions_verify_persisted_values(tmp_path):
             "value": True,
             "subject": "booker",
         },
+        {
+            "assertion": "sales_brief_exists",
+            "minimum_length": 20,
+            "required_terms": ["gia đình", "4"],
+            "forbidden_terms": ["profile_"],
+            "maximum_occurrences": {"Gia đình có 4 người": 1},
+        },
+        {"assertion": "no_active_profile_signal", "key": "primary_use"},
+        {
+            "assertion": "no_active_booking_signal",
+            "key": "additional_guest_count",
+            "subject": "group",
+        },
+        {
+            "assertion": "active_profile_signal",
+            "key": "household_size",
+            "value_contains": ["4"],
+        },
     ]
     checks = _evaluate_database_assertions(
         database,
         assertions,
-        [{}, {}],
+        [{}, {}, {}, {}, {}, {}],
         action_error="",
         expected_arguments={},
         bindings={"eval.profile_id": "profile-1", "eval.current_booking_id": "booking-1"},
     )
 
-    assert [check["passed"] for check in checks] == [True, True]
+    assert [check["passed"] for check in checks] == [True, True, True, True, True, True]
 
 
 def test_score_evaluation_reports_behavioral_and_operational_metrics(tmp_path):
