@@ -1,7 +1,11 @@
 # VinFast Test Drive Booking
 
-[![Backend CI](https://github.com/AI20K-Build-Phase-Cohort-3/P-053/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/AI20K-Build-Phase-Cohort-3/P-053/actions/workflows/backend-ci.yml)
-[![Frontend CI](https://github.com/AI20K-Build-Phase-Cohort-3/P-053/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/AI20K-Build-Phase-Cohort-3/P-053/actions/workflows/frontend-ci.yml)
+> Dự án nhóm thực hiện trong chương trình AI20K Build Phase (Cohort 3). Đây là dự án học tập,
+> không phải sản phẩm chính thức của VinFast.
+>
+> Bản public này giữ lại code, test và kết quả đánh giá; đã lược bỏ ảnh, video, brochure, dữ liệu
+> nguồn và ghi chú nội bộ. Khi chạy local, đặt `VITE_MEDIA_BASE_URL` để frontend lấy ảnh từ CDN.
+> Các địa chỉ triển khai bên dưới thuộc giai đoạn thực hiện dự án và có thể không còn hoạt động.
 
 MVP công khai cho phép người dùng xem catalogue VinFast, trò chuyện với ViVi, tìm showroom, tạo lịch lái thử và tra cứu/sửa/hủy lịch bằng luồng OTP demo.
 
@@ -64,7 +68,6 @@ backend/        FastAPI, agent, booking service, database adapter, seed scripts
 frontend/       React/Vite UI và công cụ upload media R2
 human-review/   Human Review Portal độc lập và hướng dẫn cấp tài khoản reviewer
 eval/data/      Bộ CSV nguồn cho lần khởi tạo database
-change_logs/    Nhật ký thay đổi theo ngày
 .github/        Frontend và backend CI/CD workflows
 ```
 
@@ -312,9 +315,7 @@ xuất từ PostgreSQL sau khi gộp 10 showroom trùng, gồm 319 showroom, 900
 319 manager, một operations admin, 1.356 xe demo, 576.300 slot và 9.369 booking.
 Lịch seed kéo dài đến 31/10/2026; cửa sổ đặt lịch mặc định là 30 ngày và có thể
 cấu hình. Số liệu chi tiết nằm trong `eval/data/DATASET_OVERVIEW.md` và
-`eval/data/VALIDATION_REPORT.json`. Dữ liệu nguồn đầy đủ được lưu tại:
-
-<REMOVED-PRIVATE-LINK>
+`eval/data/VALIDATION_REPORT.json`. Dữ liệu nguồn đầy đủ không có trong repo công khai này.
 
 ### Import lần đầu
 
