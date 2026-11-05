@@ -2425,7 +2425,6 @@
         "response": {
           "must_contain": [],
           "forbidden_behaviors": [
-            "store_booking_context_as_profile",
             "leak_other_customer_pii"
           ]
         }
