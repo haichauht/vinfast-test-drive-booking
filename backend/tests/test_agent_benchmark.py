@@ -114,6 +114,23 @@ def _small_dataset(tmp_path):
     return dataset, path
 
 
+def test_postbook_profile_signal_case_is_graded_by_argument_and_database_contract():
+    dataset = load_golden_dataset(DEFAULT_GOLDEN_PATH)
+    case = next(
+        item for item in dataset["cases"] if item["case_id"] == "POSTBOOK-PROFILE-SIGNAL-001"
+    )
+
+    assert case["expected"]["arguments"]["profile_signals"] == [
+        {"key": "household_size", "value": 4, "subject": "self"}
+    ]
+    assert case["expected"]["database_assertions"] == [
+        {"assertion": "active_profile_signal", "key": "household_size", "value": 4}
+    ]
+    assert "store_booking_context_as_profile" not in case["expected"]["response"][
+        "forbidden_behaviors"
+    ]
+
+
 def test_eval_fixture_email_is_valid_stable_and_unique():
     long_case_id = "V1X-FLOW-RESCHEDULE-001-" + ("very-long-case-id-" * 20)
 

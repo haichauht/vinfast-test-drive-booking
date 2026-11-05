@@ -136,6 +136,25 @@ Field hạ tầng chỉ được bỏ qua khi có tên trong `allowed_extra_argu
 - Không gồm LLM judge, hạ tầng, database, Redis, notification hoặc nhân sự.
 - Đây là chi phí từ observed token × configured rate, không phải đối soát hóa đơn provider.
 
+### 4.11 Cost per Completed Sales Profile — rerun 29/08/2026
+
+10 workflow độc lập đều thực hiện đầy đủ: chat tìm lịch → chọn slot → hold → cập nhật thông tin → confirm booking → hội thoại post-booking → lưu profile signal → lưu booking signal → nhân viên sale mở portal → sinh và lưu Sales Brief.
+
+**Công thức:**
+
+`Cost per Completed Sales Profile = tổng LLM cost của toàn bộ lần thử, gồm retry / số Sales Profile hoàn tất`
+
+**Kết quả:** `$0.19361705 / 10 = $0.019361705` mỗi Sales Profile hoàn tất.
+
+- Hoàn tất end-to-end: **10/10** profile; có **1 retry** do lỗi DNS/provider, tổng cộng 11 lần thực thi.
+- Tổng token: **910.225**; tương đương **91.022,5 token/profile hoàn tất**.
+- Booking chat: **172.445 token**, **$0.03489100**.
+- Post-booking/profile chat: **718.780 token**, **$0.15059505**.
+- Sales Brief generation: **19.000 token**, **$0.00813100**.
+- Tất cả case đều xác minh booking `confirmed`, `profile.household_size=4`, ba booking signal, quyền đọc của sales và Sales Brief đã lưu trong DB.
+- Strict task success là **9/10** vì một case gọi `update_post_booking_signals` hai lần thành công trong cùng turn; dữ liệu cuối vẫn đúng nhưng bị đánh fail clean-execution do thao tác dư thừa.
+- Chi phí gồm cả lần gọi trùng, lần gọi lỗi mạng và retry; không gồm judge, email/SMS/Zalo, Redis/DB/hosting hoặc nhân sự.
+
 ## 5. Các chỉ số bổ sung
 
 - Skill accuracy: **61/61 = 100%**.
@@ -184,7 +203,7 @@ Pass 2/3. Đây là lỗi không ổn định, không fail ở baseline trung v�
 
 ### `POSTBOOK-PROFILE-SIGNAL-001`
 
-Fail 3/3. Agent gọi đúng tool nhưng payload không khớp `profile_signals.household_size=4`; DB assertion `active_profile_signal` fail. Đây là lỗi schema mapping/lưu profile thật, không phải lỗi cách chấm.
+Baseline lịch sử fail 3/3 vì agent gọi đúng tool nhưng payload không khớp `profile_signals.household_size=4`. Ngày 29/08, tool boundary đã được bổ sung chuẩn hóa alias family-size, nhận diện household fact từ câu người dùng và loại booking inference sai. Dedicated booking-to-sales-profile rerun xác minh assertion này pass **10/10**; full 61-case stability vẫn cần chạy lại trước khi thay điểm baseline lịch sử.
 
 ### `ACCESS-DETAILS-MULTITURN-001`
 
@@ -240,6 +259,8 @@ Ba vòng stability chính thức sau replacement:
 
 Chi phí thực sự phát sinh cho ba full run ban đầu, ba targeted rerun sửa case ngày động và ba targeted rerun xác nhận hallucination fix là **$0.504342**. Dedicated 10-booking cost run phát sinh thêm **$0.0158662**. Không cộng diagnostic smoke không có artifact giá đầy đủ và không gọi con số này là hóa đơn provider.
 
+Dedicated booking-to-sales-profile baseline mới có tổng observed LLM cost **$0.19361705**, đã gồm một retry mạng và cho **10/10** profile hoàn tất.
+
 ## 10. Artifact tái lập
 
 - Report JSON/Markdown chính: `artifacts/agent-evaluation/final-evaluation-report.json`, `final-evaluation-report.md`.
@@ -247,12 +268,13 @@ Chi phí thực sự phát sinh cho ba full run ban đầu, ba targeted rerun s�
 - Stability: `artifacts/agent-evaluation/final-stability-3.json`, `final-stability-3.md`, `final-stability-3-runs.json`.
 - Hallucination fix: `artifacts/agent-evaluation/hallucination-fix-report.json`, `hallucination-fix-stability.json`, `hallucination-fix-stability-runs.json`.
 - Dedicated cost: `artifacts/agent-evaluation/booking-cost-10-report.json`, `booking-cost-10-report.md`, `booking-cost-10-predictions.json`.
+- Booking-to-sales-profile cost: `artifacts/agent-evaluation/booking-to-sales-profile-cost-10-retry-inclusive-report.json`, `booking-to-sales-profile-cost-10-retry-inclusive-report.md`, `booking-to-sales-profile-cost-10-retry-inclusive-predictions.json`.
 - Coverage: `artifacts/agent-evaluation/coverage.json`.
 - Golden dataset: `eval/golden/agent_cases.json`; negative set: `eval/golden/negative_cases.json`.
 
 ## 11. Việc cần làm tiếp theo
 
-1. P0: sửa `POSTBOOK-PROFILE-SIGNAL-001` và tăng test cho tool/profile service.
+1. P0: chạy lại full 61-case stability trên boundary fix mới trước khi thay baseline lịch sử của `POSTBOOK-PROFILE-SIGNAL-001`.
 2. P1: gửi response đã sửa của `POSTBOOK-KNOWLEDGE-001` cho ít nhất hai human reviewer để kiểm tra mức độ tự nhiên và faithfulness.
 3. P1: sửa giữ showroom constraint ở multi-turn và classifier `booking_lookup`; giữ `SEARCH-005` trong stability gate.
 4. P1: cấp browser backend rồi chạy frontend E2E thật trên booking funnel; không chấp nhận build-only thay E2E.
@@ -261,4 +283,4 @@ Chi phí thực sự phát sinh cho ba full run ban đầu, ba targeted rerun s�
 
 ## 12. Kết luận cuối
 
-Evaluation đã được làm sạch và khách quan hơn đáng kể: mọi metric chính có mẫu số, nguồn evidence và trạng thái; cost dùng 10 booking thật trong DB cô lập; 61 case được chạy đủ ba lần; negative fixture, coverage, Redis và concurrency đều có bằng chứng thực thi. Điểm hiện tại là **96,72%**, hallucination **0/20**, nhưng không che hai failure baseline còn lại. Trước release cần xử lý profile signal, độ ổn định multi-turn, human review và frontend browser E2E.
+Evaluation đã được làm sạch và khách quan hơn đáng kể: mọi metric chính có mẫu số, nguồn evidence và trạng thái; cost dùng workflow thật trong DB cô lập; 61 case được chạy đủ ba lần; negative fixture, coverage, Redis và concurrency đều có bằng chứng thực thi. Điểm baseline lịch sử là **96,72%**, hallucination **0/20**. Profile signal đã pass **10/10** trong dedicated booking-to-sales-profile rerun nhưng chưa được dùng để thay điểm 61-case cũ; trước release cần chạy lại full stability, xử lý độ ổn định multi-turn, human review và frontend browser E2E.
